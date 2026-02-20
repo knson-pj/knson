@@ -15,7 +15,9 @@
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
   const LS_WORK = "onbid_dash_work_v1";
-  const LS_CACHE = "onbid_dash_cache_v1";
+
+  // ✅ 캐시 포맷 변경 → 예전 캐시 무시(링크 필드 누락 문제 해결)
+  const LS_CACHE = "onbid_dash_cache_v2";
 
   // ====== UI elements ======
   const $ = (id) => document.getElementById(id);
@@ -107,21 +109,28 @@
     return `${Math.round(n)}%`;
   }
 
+  // ✅ 값 우선순위: (item[field] -> item._raw[field] -> "")
+  function pick(item, field) {
+    const v1 = item?.[field];
+    if (v1 !== undefined && v1 !== null && String(v1).trim() !== "") return String(v1);
+    const v2 = item?._raw?.[field];
+    if (v2 !== undefined && v2 !== null && String(v2).trim() !== "") return String(v2);
+    return "";
+  }
+
   // ✅ 온비드 상세 정식 URL (사용자가 준 패턴)
   // https://www.onbid.co.kr/op/cta/cltrdtl/collateralRealEstateDetail.do?cltrHstrNo=...&cltrNo=...&plnmNo=...&pbctNo=...&scrnGrpCd=0001&pbctCdtnNo=...
   function buildOnbidLink(item) {
-    const cltrHstrNo = safe(item?.cltrHstrNo);
-    const cltrNo = safe(item?.cltrNo);
-    const plnmNo = safe(item?.plnmNo);
-    const pbctNo = safe(item?.pbctNo);
-    const pbctCdtnNo = safe(item?.pbctCdtnNo);
-    const cltrMngNo = safe(item?.cltrMngNo);
+    const cltrHstrNo = pick(item, "cltrHstrNo");
+    const cltrNo = pick(item, "cltrNo");
+    const plnmNo = pick(item, "plnmNo");
+    const pbctNo = pick(item, "pbctNo");
+    const pbctCdtnNo = pick(item, "pbctCdtnNo");
+    const scrnGrpCd = pick(item, "scrnGrpCd") || "0001";
 
-    const hasDetail =
-      cltrHstrNo && cltrNo && plnmNo && pbctNo && pbctCdtnNo;
+    const hasDetail = cltrHstrNo && cltrNo && plnmNo && pbctNo && pbctCdtnNo;
 
     if (hasDetail) {
-      const scrnGrpCd = safe(item?.scrnGrpCd) || "0001";
       return (
         `https://www.onbid.co.kr/op/cta/cltrdtl/collateralRealEstateDetail.do` +
         `?cltrHstrNo=${encodeURIComponent(cltrHstrNo)}` +
@@ -133,10 +142,8 @@
       );
     }
 
-    // 혹시 일부 물건에서 상세 파라미터가 누락될 때를 위한 안전 우회
-    return `https://www.google.com/search?q=${encodeURIComponent(
-      `site:onbid.co.kr ${cltrMngNo} ${pbctCdtnNo}`
-    )}`;
+    // ✅ 마지막 fallback: 온비드 메인(404/빈검색 방지)
+    return "https://www.onbid.co.kr/";
   }
 
   // ====== API 응답 파싱 ======
@@ -194,7 +201,7 @@
       cltrMngNo: safe(it.cltrMngNo),
       pbctCdtnNo: safe(it.pbctCdtnNo),
 
-      // ✅ 상세 링크용 파라미터 (네가 확인한 필드들)
+      // ✅ 상세 링크용 파라미터
       cltrHstrNo: safe(it.cltrHstrNo),
       cltrNo: safe(it.cltrNo),
       plnmNo: safe(it.plnmNo),
@@ -306,16 +313,6 @@
     } catch (e) {
       console.error(e);
       setStatus(`오류: ${e.message || e}`);
-
-      // 캐시라도 보여주기
-      try {
-        const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
-        if (cache?.items?.length) {
-          rawItems = cache.items.map(normalize);
-          applyFilter();
-          setStatus(`오류로 캐시 표시: ${rawItems.length}건`);
-        }
-      } catch {}
     } finally {
       els.btnSync.disabled = false;
     }
@@ -443,10 +440,8 @@
     // row click -> editor
     [...els.tbody.querySelectorAll("tr[data-key]")].forEach(tr => {
       tr.addEventListener("click", (e) => {
-        // 링크 클릭은 row 선택 트리거 막기(링크는 링크대로 열리게)
         const a = e.target?.closest?.("a");
         if (a) return;
-
         const key = tr.getAttribute("data-key");
         selectItem(key);
       });
@@ -545,15 +540,17 @@
       const w = work[key] || {};
       const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
       const ratioText = formatPct(it.apslPrcCtrsLowstBidRto);
+      const onbidUrl = buildOnbidLink(it);
 
       return {
         key,
         cltrMngNo: it.cltrMngNo,
         pbctCdtnNo: it.pbctCdtnNo,
-        cltrHstrNo: it.cltrHstrNo,
-        cltrNo: it.cltrNo,
-        plnmNo: it.plnmNo,
-        pbctNo: it.pbctNo,
+        cltrHstrNo: pick(it, "cltrHstrNo"),
+        cltrNo: pick(it, "cltrNo"),
+        plnmNo: pick(it, "plnmNo"),
+        pbctNo: pick(it, "pbctNo"),
+        onbidUrl,
 
         물건명: it.onbidCltrNm,
         시도: it.lctnSdnm,
@@ -603,7 +600,7 @@
       applyFilter();
     });
 
-    // 캐시 로드
+    // 캐시 로드(v2)
     try {
       const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
       if (cache?.items?.length) {
