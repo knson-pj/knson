@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>온비드 부동산 공매 - 매입 후보 대시보드(내부)</title>
+  <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Excel Export (SheetJS) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">ONBID</div>
+      <div class="title">
+        <div class="h1">매입 후보 대시보드</div>
+        <div class="sub">후보 수집 → 필터링 → 담당자 배정 → 권리분석/현장실사 피드백</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="btnSync" class="btn primary">동기화(조회)</button>
+      <button id="btnExport" class="btn">엑셀로 내보내기</button>
+      <button id="btnResetLocal" class="btn danger">로컬 기록 초기화</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Settings / Filters -->
+    <section class="card">
+      <div class="card-head">
+        <h2>조회 설정</h2>
+        <div class="hint">* data.go.kr 직접 호출이 막히면 사내 프록시(API_BASE)를 사용해야 해</div>
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label>API_BASE (사내 프록시)</label>
+          <input id="apiBase" type="text" placeholder="예: https://intra.company.com/api" />
+          <div class="help">list.js에서 기본값은 <code>/api</code>로 되어있어</div>
+        </div>
+
+        <div class="field">
+          <label>페이지당 건수</label>
+          <input id="numOfRows" type="number" min="1" max="200" value="50" />
+        </div>
+
+        <div class="field">
+          <label>페이지(시작)</label>
+          <input id="pageNo" type="number" min="1" value="1" />
+        </div>
+
+        <div class="field">
+          <label>최대 페이지</label>
+          <input id="maxPages" type="number" min="1" max="50" value="3" />
+        </div>
+
+        <div class="field">
+          <label>시/도</label>
+          <input id="fSido" type="text" placeholder="예: 서울특별시 / 경기도" />
+        </div>
+
+        <div class="field">
+          <label>시/군/구</label>
+          <input id="fSigungu" type="text" placeholder="예: 송파구 / 고양시 일산동구" />
+        </div>
+
+        <div class="field">
+          <label>최저가 범위(원)</label>
+          <div class="row">
+            <input id="fMinPrice" type="number" min="0" placeholder="최소" />
+            <span class="sep">~</span>
+            <input id="fMaxPrice" type="number" min="0" placeholder="최대" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>감정가 대비 최저가(%) 최대</label>
+          <input id="fMaxRatio" type="number" min="0" max="100" step="0.1" placeholder="예: 20 (20% 이하)" />
+        </div>
+
+        <div class="field">
+          <label>유찰횟수(최소)</label>
+          <input id="fMinFail" type="number" min="0" placeholder="예: 2" />
+        </div>
+
+        <div class="field">
+          <label>입찰 종료일(YYYYMMDDHHmm) 이전</label>
+          <input id="fEndBefore" type="text" placeholder="예: 202605312359" />
+        </div>
+
+        <div class="field">
+          <label>검색(물건명)</label>
+          <input id="fKeyword" type="text" placeholder="예: 아파트 / 창고 / 대지" />
+        </div>
+
+        <div class="field">
+          <label>담당자(필터)</label>
+          <input id="fAssignee" type="text" placeholder="예: 홍길동" />
+        </div>
+      </div>
+
+      <div class="bar">
+        <button id="btnApplyFilter" class="btn">필터 적용</button>
+        <button id="btnClearFilter" class="btn ghost">필터 초기화</button>
+        <div class="status" id="statusText">대기 중</div>
+      </div>
+    </section>
+
+    <!-- Result Table -->
+    <section class="card">
+      <div class="card-head">
+        <h2>후보 리스트</h2>
+        <div class="pill" id="countPill">0건</div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table" id="tbl">
+          <thead>
+            <tr>
+              <th>담당</th>
+              <th>상태</th>
+              <th>피드백</th>
+              <th>물건명</th>
+              <th>소재지</th>
+              <th class="num">감정가</th>
+              <th class="num">최저가</th>
+              <th class="num">비율(%)</th>
+              <th class="num">유찰</th>
+              <th>입찰종료</th>
+              <th>키</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td class="muted" colspan="11">동기화(조회) 후 목록이 표시돼.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Drawer / Editor -->
+    <section class="card">
+      <div class="card-head">
+        <h2>선택 물건 작업</h2>
+        <div class="hint">담당자 배정 + 진행상태 + 권리분석/현장실사 결과를 남겨</div>
+      </div>
+
+      <div class="editor" id="editor">
+        <div class="muted">테이블에서 한 행을 클릭하면 여기에서 편집할 수 있어.</div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="muted">
+        내부용 MVP. 데이터는 브라우저 <b>localStorage</b>에 임시 저장(서버 저장은 다음 단계에서 붙이면 됨).
+      </div>
+    </footer>
+  </main>
+
+  <script src="./list.js"></script>
+</body>
+</html>
