@@ -75,8 +75,11 @@
   const buildKey = (it) => `${safe(it.cltrMngNo)}|${safe(it.pbctCdtnNo)}`;
 
   const loadWork = () => {
-    try { return JSON.parse(localStorage.getItem(LS_WORK) || "{}"); }
-    catch { return {}; }
+    try {
+      return JSON.parse(localStorage.getItem(LS_WORK) || "{}");
+    } catch {
+      return {};
+    }
   };
 
   const saveWork = (work) => localStorage.setItem(LS_WORK, JSON.stringify(work));
@@ -84,7 +87,9 @@
   const loadApiBase = () => localStorage.getItem(LS_API_BASE) || DEFAULT_API_BASE;
   const saveApiBase = (v) => localStorage.setItem(LS_API_BASE, v);
 
-  const setStatus = (msg) => { els.statusText.textContent = msg; };
+  const setStatus = (msg) => {
+    els.statusText.textContent = msg;
+  };
 
   function escapeHtml(str) {
     return String(str)
@@ -102,27 +107,47 @@
     return `${Math.round(n)}%`;
   }
 
-  // ✅ 키 클릭 → 온비드 이동 (경로는 실제 온비드 상세 URL에 맞춰 필요 시 1회 수정)
+  // ✅ 온비드 상세 정식 URL (사용자가 준 패턴)
+  // https://www.onbid.co.kr/op/cta/cltrdtl/collateralRealEstateDetail.do?cltrHstrNo=...&cltrNo=...&plnmNo=...&pbctNo=...&scrnGrpCd=0001&pbctCdtnNo=...
   function buildOnbidLink(item) {
-    const cltrMngNo = item?.cltrMngNo || "";
-    const pbctCdtnNo = item?.pbctCdtnNo || "";
-    // 1차 기본형: 파라미터로 전달 (온비드가 메인으로만 가면 URL 패턴 1개만 보내줘. 바로 고정해줄게.)
-    return `https://www.onbid.co.kr/op/portal/portalMain.do?cltrMngNo=${encodeURIComponent(cltrMngNo)}&pbctCdtnNo=${encodeURIComponent(pbctCdtnNo)}`;
+    const cltrHstrNo = safe(item?.cltrHstrNo);
+    const cltrNo = safe(item?.cltrNo);
+    const plnmNo = safe(item?.plnmNo);
+    const pbctNo = safe(item?.pbctNo);
+    const pbctCdtnNo = safe(item?.pbctCdtnNo);
+    const cltrMngNo = safe(item?.cltrMngNo);
+
+    const hasDetail =
+      cltrHstrNo && cltrNo && plnmNo && pbctNo && pbctCdtnNo;
+
+    if (hasDetail) {
+      const scrnGrpCd = safe(item?.scrnGrpCd) || "0001";
+      return (
+        `https://www.onbid.co.kr/op/cta/cltrdtl/collateralRealEstateDetail.do` +
+        `?cltrHstrNo=${encodeURIComponent(cltrHstrNo)}` +
+        `&cltrNo=${encodeURIComponent(cltrNo)}` +
+        `&plnmNo=${encodeURIComponent(plnmNo)}` +
+        `&pbctNo=${encodeURIComponent(pbctNo)}` +
+        `&scrnGrpCd=${encodeURIComponent(scrnGrpCd)}` +
+        `&pbctCdtnNo=${encodeURIComponent(pbctCdtnNo)}`
+      );
+    }
+
+    // 혹시 일부 물건에서 상세 파라미터가 누락될 때를 위한 안전 우회
+    return `https://www.google.com/search?q=${encodeURIComponent(
+      `site:onbid.co.kr ${cltrMngNo} ${pbctCdtnNo}`
+    )}`;
   }
 
   // ====== API 응답 파싱 ======
   function extractItems(payload) {
     if (!payload) return [];
 
-    // 우리 Vercel 프록시는 data.go.kr 원본 JSON을 그대로 반환함
-    // 케이스1) { response: { header, body } } (body가 문자열인 경우가 많음)
-    // 케이스2) payload.items 식으로 단순화된 경우
     let p = payload;
 
     if (p.response?.header) {
       const rc = p.response.header.resultCode;
       if (rc && rc !== "00") {
-        // resultMsg는 NORMAL_CODE 등
         const msg = p.response.header.resultMsg || "API Error";
         throw new Error(`${rc} ${msg}`.trim());
       }
@@ -130,36 +155,51 @@
 
     let body = p.response?.body ?? p.body ?? p;
 
-    // ✅ 핵심: body가 문자열(JSON string)로 오는 케이스
+    // ✅ body가 문자열(JSON string)로 오는 케이스
     if (typeof body === "string") {
-      try { body = JSON.parse(body); } catch {}
+      try {
+        body = JSON.parse(body);
+      } catch {}
     }
 
-    // items 경로 흡수
-    const items = body?.items?.item
-      ?? body?.items
-      ?? body?.item
-      ?? body?.list
-      ?? null;
+    const items =
+      body?.items?.item ??
+      body?.items ??
+      body?.item ??
+      body?.list ??
+      null;
 
-    return Array.isArray(items) ? items : (items ? [items] : []);
+    return Array.isArray(items) ? items : items ? [items] : [];
   }
 
   // Normalize
   function normalize(it) {
     const appraised = toInt(it.apslEvlAmt);
     const minBid = toInt(it.lowstBidPrcIndctCont);
+
     const ratio = (() => {
-      if (it.apslPrcCtrsLowstBidRto !== undefined && it.apslPrcCtrsLowstBidRto !== null && it.apslPrcCtrsLowstBidRto !== "") {
+      if (
+        it.apslPrcCtrsLowstBidRto !== undefined &&
+        it.apslPrcCtrsLowstBidRto !== null &&
+        it.apslPrcCtrsLowstBidRto !== ""
+      ) {
         const x = Number(it.apslPrcCtrsLowstBidRto);
-        return Number.isFinite(x) ? x : (appraised && minBid ? (minBid / appraised) * 100 : null);
+        return Number.isFinite(x) ? x : appraised && minBid ? (minBid / appraised) * 100 : null;
       }
       return appraised && minBid ? (minBid / appraised) * 100 : null;
     })();
 
     return {
+      // 목록 키
       cltrMngNo: safe(it.cltrMngNo),
       pbctCdtnNo: safe(it.pbctCdtnNo),
+
+      // ✅ 상세 링크용 파라미터 (네가 확인한 필드들)
+      cltrHstrNo: safe(it.cltrHstrNo),
+      cltrNo: safe(it.cltrNo),
+      plnmNo: safe(it.plnmNo),
+      pbctNo: safe(it.pbctNo),
+      scrnGrpCd: safe(it.scrnGrpCd),
 
       onbidCltrNm: safe(it.onbidCltrNm),
       rqstOrgNm: safe(it.rqstOrgNm),
@@ -209,7 +249,7 @@
 
     const endBefore = els.fEndBefore.value.trim();
     if (endBefore && endBefore.length >= 8) {
-      o.bidPrdYmdEnd = endBefore.slice(0, 8); // yyyyMMdd
+      o.bidPrdYmdEnd = endBefore.slice(0, 8);
     }
 
     return o;
@@ -392,7 +432,7 @@
           <td class="num">${fmtNum(it.usbdNft ?? 0)}</td>
           <td>${escapeHtml(it.cltrBidEndDt)}</td>
           <td class="wrap-soft">
-            <a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer" title="온비드로 이동">
+            <a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer" title="온비드 상세로 이동">
               ${escapeHtml(it.cltrMngNo || "")}${it.pbctCdtnNo ? `<span class="muted">/${escapeHtml(it.pbctCdtnNo)}</span>` : ""}
             </a>
           </td>
@@ -437,7 +477,7 @@
           <div>유찰</div><div>${fmtNum(it.usbdNft ?? 0)}</div>
           <div>입찰기간</div><div>${escapeHtml(it.cltrBidBgngDt)} ~ ${escapeHtml(it.cltrBidEndDt)}</div>
           <div>공고기관</div><div>${escapeHtml(it.rqstOrgNm) || "-"}</div>
-          <div>온비드</div><div><a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">바로가기</a></div>
+          <div>온비드</div><div><a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">상세 바로가기</a></div>
           <div>키</div><div class="muted">${escapeHtml(key)}</div>
         </div>
 
@@ -510,6 +550,11 @@
         key,
         cltrMngNo: it.cltrMngNo,
         pbctCdtnNo: it.pbctCdtnNo,
+        cltrHstrNo: it.cltrHstrNo,
+        cltrNo: it.cltrNo,
+        plnmNo: it.plnmNo,
+        pbctNo: it.pbctNo,
+
         물건명: it.onbidCltrNm,
         시도: it.lctnSdnm,
         시군구: it.lctnSggnm,
@@ -535,10 +580,10 @@
 
     const stamp = new Date();
     const y = stamp.getFullYear();
-    const m = String(stamp.getMonth()+1).padStart(2,"0");
-    const d = String(stamp.getDate()).padStart(2,"0");
-    const hh = String(stamp.getHours()).padStart(2,"0");
-    const mm = String(stamp.getMinutes()).padStart(2,"0");
+    const m = String(stamp.getMonth() + 1).padStart(2, "0");
+    const d = String(stamp.getDate()).padStart(2, "0");
+    const hh = String(stamp.getHours()).padStart(2, "0");
+    const mm = String(stamp.getMinutes()).padStart(2, "0");
 
     XLSX.writeFile(wb, `onbid_candidates_${y}${m}${d}_${hh}${mm}.xlsx`);
   }
