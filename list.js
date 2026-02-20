@@ -25,7 +25,7 @@
   // ====== 사내 프록시 기본값 ======
   // 프론트에서 /api/onbid/list 형태로 호출한다고 가정
   // (서버에서 data.go.kr로 중계)
-  const DEFAULT_API_BASE = "https://<너의-vercel-프로젝트>.vercel.app/api";
+  const DEFAULT_API_BASE = "https://knson.vercel.app/api";
 
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
@@ -555,3 +555,4 @@
   init();
 
 })();
+
