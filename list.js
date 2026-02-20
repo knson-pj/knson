@@ -1,20 +1,7 @@
 (() => {
   "use strict";
 
-  /**
-   * 내부 구조
-   * - 원천 데이터: 온비드 목록 API(사내 프록시를 통해 호출)
-   * - 관리 데이터(배정/상태/피드백): localStorage
-   *
-   * 다음 단계(권장):
-   * - localStorage → 사내 DB 저장(API)으로 교체
-   */
-
   // ====== 문서 기반 기본값(부동산/매각/인터넷입찰) ======
-  // prptDivCd: 재산유형코드 (복수 가능)
-  // dspsMthodCd: 0001(매각)
-  // bidDivCd: 0001(인터넷)
-  // resultType: json
   const DEFAULT_QUERY = {
     resultType: "json",
     prptDivCd: "0007,0010,0005,0002,0003,0006,0008,0011",
@@ -22,15 +9,13 @@
     bidDivCd: "0001",
   };
 
-  // ====== 사내 프록시 기본값 ======
-  // 프론트에서 /api/onbid/list 형태로 호출한다고 가정
-  // (서버에서 data.go.kr로 중계)
+  // ✅ GitHub Pages에서 바로 동작하게: 기본은 너 Vercel 프록시로
   const DEFAULT_API_BASE = "https://knson.vercel.app/api";
 
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
-  const LS_WORK = "onbid_dash_work_v1"; // { "<key>": {assignee,status,notes,updatedAt} }
-  const LS_CACHE = "onbid_dash_cache_v1"; // last fetched list (optional)
+  const LS_WORK = "onbid_dash_work_v1";
+  const LS_CACHE = "onbid_dash_cache_v1";
 
   // ====== UI elements ======
   const $ = (id) => document.getElementById(id);
@@ -64,9 +49,9 @@
   };
 
   // ====== State ======
-  let rawItems = [];      // normalized items from API
-  let filteredItems = []; // after filters
-  let selectedKey = null; // cltrMngNo|pbctCdtnNo
+  let rawItems = [];
+  let filteredItems = [];
+  let selectedKey = null;
 
   // ====== Utils ======
   const fmtNum = (n) => {
@@ -101,29 +86,68 @@
 
   const setStatus = (msg) => { els.statusText.textContent = msg; };
 
-  // Convert API response to list array
-  // API 응답 구조는 프록시 서버에서 "items 배열만" 내려주게 만들면 가장 편함.
-  // 그래도 혹시 몰라 몇 가지 케이스를 흡수함.
-  function extractItems(payload) {
-    if (!payload) return [];
-    if (Array.isArray(payload)) return payload;
-    if (Array.isArray(payload.items)) return payload.items;
-
-    // data.go.kr 스타일 (문서엔 resultCode/resultMsg/pageNo/totalCount 등 + 목록)로 안내됨
-    // 실응답이 {response:{body:{items:[...]}}} 형태일 수 있어 fallback
-    const r = payload.response || payload;
-    const body = r.body || r;
-    const items = body.items || body.item || body.list || null;
-    if (Array.isArray(items)) return items;
-    if (items && Array.isArray(items.item)) return items.item;
-    return [];
+  function escapeHtml(str) {
+    return String(str)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
-  // Normalize fields based on docx spec:
-  // cltrMngNo, pbctCdtnNo, onbidCltrNm, lctnSdnm, lctnSggnm, apslEvlAmt, lowstBidPrcIndctCont, apslPrcCtrsLowstBidRto, usbdNft, cltrBidEndDt ...
+  // ✅ 비율: 소수점 제거 + % 붙이기
+  function formatPct(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "-";
+    return `${Math.round(n)}%`;
+  }
+
+  // ✅ 키 클릭 → 온비드 이동 (경로는 실제 온비드 상세 URL에 맞춰 필요 시 1회 수정)
+  function buildOnbidLink(item) {
+    const cltrMngNo = item?.cltrMngNo || "";
+    const pbctCdtnNo = item?.pbctCdtnNo || "";
+    // 1차 기본형: 파라미터로 전달 (온비드가 메인으로만 가면 URL 패턴 1개만 보내줘. 바로 고정해줄게.)
+    return `https://www.onbid.co.kr/op/portal/portalMain.do?cltrMngNo=${encodeURIComponent(cltrMngNo)}&pbctCdtnNo=${encodeURIComponent(pbctCdtnNo)}`;
+  }
+
+  // ====== API 응답 파싱 ======
+  function extractItems(payload) {
+    if (!payload) return [];
+
+    // 우리 Vercel 프록시는 data.go.kr 원본 JSON을 그대로 반환함
+    // 케이스1) { response: { header, body } } (body가 문자열인 경우가 많음)
+    // 케이스2) payload.items 식으로 단순화된 경우
+    let p = payload;
+
+    if (p.response?.header) {
+      const rc = p.response.header.resultCode;
+      if (rc && rc !== "00") {
+        // resultMsg는 NORMAL_CODE 등
+        const msg = p.response.header.resultMsg || "API Error";
+        throw new Error(`${rc} ${msg}`.trim());
+      }
+    }
+
+    let body = p.response?.body ?? p.body ?? p;
+
+    // ✅ 핵심: body가 문자열(JSON string)로 오는 케이스
+    if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch {}
+    }
+
+    // items 경로 흡수
+    const items = body?.items?.item
+      ?? body?.items
+      ?? body?.item
+      ?? body?.list
+      ?? null;
+
+    return Array.isArray(items) ? items : (items ? [items] : []);
+  }
+
+  // Normalize
   function normalize(it) {
     const appraised = toInt(it.apslEvlAmt);
-    // lowstBidPrcIndctCont may be number string or "비공개" etc
     const minBid = toInt(it.lowstBidPrcIndctCont);
     const ratio = (() => {
       if (it.apslPrcCtrsLowstBidRto !== undefined && it.apslPrcCtrsLowstBidRto !== null && it.apslPrcCtrsLowstBidRto !== "") {
@@ -136,39 +160,68 @@
     return {
       cltrMngNo: safe(it.cltrMngNo),
       pbctCdtnNo: safe(it.pbctCdtnNo),
+
       onbidCltrNm: safe(it.onbidCltrNm),
+      rqstOrgNm: safe(it.rqstOrgNm),
+
       lctnSdnm: safe(it.lctnSdnm),
       lctnSggnm: safe(it.lctnSggnm),
       lctnEmdNm: safe(it.lctnEmdNm),
+
       apslEvlAmt: appraised,
       lowstBidPrcIndctCont: safe(it.lowstBidPrcIndctCont),
       lowstBidAmt: minBid,
       apslPrcCtrsLowstBidRto: ratio,
+
       usbdNft: toInt(it.usbdNft) ?? 0,
       cltrBidEndDt: safe(it.cltrBidEndDt),
       cltrBidBgngDt: safe(it.cltrBidBgngDt),
-      rqstOrgNm: safe(it.rqstOrgNm),
+
       prptDivNm: safe(it.prptDivNm),
       dspsMthodNm: safe(it.dspsMthodNm),
       bidDivNm: safe(it.bidDivNm),
+
       thnlImgUrlAdr: safe(it.thnlImgUrlAdr),
+
       _raw: it,
     };
   }
 
   // ====== Fetch ======
+  function buildApiFiltersFromUI() {
+    const o = {};
+
+    const minP = els.fMinPrice.value ? String(Math.max(0, Number(els.fMinPrice.value))) : "";
+    const maxP = els.fMaxPrice.value ? String(Math.max(0, Number(els.fMaxPrice.value))) : "";
+    if (minP) o.lowstBidPrcStart = minP;
+    if (maxP) o.lowstBidPrcEnd = maxP;
+
+    const minFail = els.fMinFail.value ? String(Math.max(0, Number(els.fMinFail.value))) : "";
+    if (minFail) o.usbdNftStart = minFail;
+
+    const sido = els.fSido.value.trim();
+    const sigungu = els.fSigungu.value.trim();
+    if (sido) o.lctnSdnm = sido;
+    if (sigungu) o.lctnSggnm = sigungu;
+
+    const keyword = els.fKeyword.value.trim();
+    if (keyword) o.onbidCltrNm = keyword;
+
+    const endBefore = els.fEndBefore.value.trim();
+    if (endBefore && endBefore.length >= 8) {
+      o.bidPrdYmdEnd = endBefore.slice(0, 8); // yyyyMMdd
+    }
+
+    return o;
+  }
+
   async function fetchPage(apiBase, pageNo, numOfRows) {
-    // 프론트 → 사내 프록시
-    // 프록시가 받는 쿼리는 그대로 data.go.kr에 전달하면 됨.
-    // 예: GET {apiBase}/onbid/rlst-list?serviceKey=...&pageNo=1&numOfRows=50...
-    // 단, serviceKey는 프론트에 노출하면 안 되므로 반드시 서버에서 주입하도록 설계!
-    const url = new URL(`${apiBase.replace(/\/$/, "")}/onbid/rlst-list`, window.location.origin);
+    const url = new URL(`${apiBase.replace(/\/$/, "")}/onbid/rlst-list`);
 
     url.searchParams.set("pageNo", String(pageNo));
     url.searchParams.set("numOfRows", String(numOfRows));
     Object.entries(DEFAULT_QUERY).forEach(([k, v]) => url.searchParams.set(k, v));
 
-    // 추가 검색 조건들(선택): 문서상 옵션 파라미터
     const q = buildApiFiltersFromUI();
     Object.entries(q).forEach(([k, v]) => {
       if (v !== null && v !== undefined && String(v).trim() !== "") {
@@ -184,42 +237,9 @@
     return res.json();
   }
 
-  function buildApiFiltersFromUI() {
-    // API 검색용 파라미터(옵션) - 문서 기준 명칭 사용
-    // 여기서는 대표적인 것들만 연결해둠.
-    const o = {};
-
-    // 가격/면적/입찰기간/유찰횟수 등은 API에 직접 필터 가능
-    const minP = els.fMinPrice.value ? String(Math.max(0, Number(els.fMinPrice.value))) : "";
-    const maxP = els.fMaxPrice.value ? String(Math.max(0, Number(els.fMaxPrice.value))) : "";
-    if (minP) o.lowstBidPrcStart = minP;
-    if (maxP) o.lowstBidPrcEnd = maxP;
-
-    const minFail = els.fMinFail.value ? String(Math.max(0, Number(els.fMinFail.value))) : "";
-    if (minFail) o.usbdNftStart = minFail;
-
-    // 지역/키워드는 API에 옵션이 있을 수도 있지만(문서에 lctnSdnm 등 '요청 명세'가 있음) 0(옵션)이라서 전달 가능
-    const sido = els.fSido.value.trim();
-    const sigungu = els.fSigungu.value.trim();
-    if (sido) o.lctnSdnm = sido;
-    if (sigungu) o.lctnSggnm = sigungu;
-
-    const keyword = els.fKeyword.value.trim();
-    if (keyword) o.onbidCltrNm = keyword;
-
-    // 종료일 전(프론트 필터로도 가능하지만 API 옵션에 bidPrdYmdStart/End가 있어 날짜(yyyyMMdd)만 받음)
-    // 여기서는 사용자가 YYYYMMDDHHmm을 넣더라도 API에는 yyyyMMdd만 넣도록 처리(앞 8자리)
-    const endBefore = els.fEndBefore.value.trim();
-    if (endBefore && endBefore.length >= 8) {
-      // bidPrdYmdEnd: 검색할 입찰기간 종료일자(yyyyMMdd)
-      o.bidPrdYmdEnd = endBefore.slice(0, 8);
-    }
-
-    return o;
-  }
-
   async function sync() {
-    const apiBase = els.apiBase.value.trim() || DEFAULT_API_BASE;
+    const apiBase = (els.apiBase.value.trim() || DEFAULT_API_BASE).replace(/\/$/, "");
+    els.apiBase.value = apiBase;
     saveApiBase(apiBase);
 
     const numOfRows = Number(els.numOfRows.value || 50);
@@ -246,6 +266,7 @@
     } catch (e) {
       console.error(e);
       setStatus(`오류: ${e.message || e}`);
+
       // 캐시라도 보여주기
       try {
         const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
@@ -298,7 +319,6 @@
         if (f < minFail) return false;
       }
       if (endBefore) {
-        // 비교: 문자열이 YYYYMMDDHHmm 형태라고 가정
         if (it.cltrBidEndDt && it.cltrBidEndDt > endBefore) return false;
       }
       if (keyword) {
@@ -336,15 +356,6 @@
     return `<span class="badge">${escapeHtml(s || "미배정")}</span>`;
   }
 
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
   function renderTable() {
     const work = loadWork();
     els.countPill.textContent = `${filteredItems.length}건`;
@@ -358,37 +369,44 @@
       const key = buildKey(it);
       const w = work[key] || {};
       const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
-      const ratio = it.apslPrcCtrsLowstBidRto;
-      const ratioText = (ratio === null || ratio === undefined) ? "" : ratio.toFixed(2);
+      const ratioText = formatPct(it.apslPrcCtrsLowstBidRto);
 
       const notesPreview = (w.notes || "").trim().slice(0, 24);
       const notesText = notesPreview ? escapeHtml(notesPreview) + (w.notes.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
 
+      const onbidUrl = buildOnbidLink(it);
+
       return `
-        <tr data-key="${escapeHtml(key)}" class="${key === selectedKey ? "selected" : ""}">
+        <tr data-key="${escapeHtml(key)}">
           <td>${escapeHtml(w.assignee || "") || `<span class="muted">-</span>`}</td>
           <td>${badgeForStatus(w.status || "미배정")}</td>
           <td>${notesText}</td>
-          <td>
-            <div style="font-weight:800;">${escapeHtml(it.onbidCltrNm)}</div>
-            <div class="muted" style="font-size:12px;margin-top:2px;">
-              ${escapeHtml([it.prptDivNm, it.dspsMthodNm, it.bidDivNm].filter(Boolean).join(" · "))}
-            </div>
+          <td class="wrap-soft" title="${escapeHtml(it.onbidCltrNm)}">
+            <div class="cell-title">${escapeHtml(it.onbidCltrNm)}</div>
+            <div class="cell-sub">${escapeHtml([it.prptDivNm, it.dspsMthodNm, it.bidDivNm].filter(Boolean).join(" · "))}</div>
           </td>
-          <td>${escapeHtml(addr) || `<span class="muted">-</span>`}</td>
+          <td class="wrap-soft">${escapeHtml(addr) || `<span class="muted">-</span>`}</td>
           <td class="num">${fmtNum(it.apslEvlAmt)}</td>
           <td class="num">${it.lowstBidAmt !== null ? fmtNum(it.lowstBidAmt) : escapeHtml(it.lowstBidPrcIndctCont)}</td>
-          <td class="num">${ratioText}</td>
+          <td class="num">${escapeHtml(ratioText)}</td>
           <td class="num">${fmtNum(it.usbdNft ?? 0)}</td>
           <td>${escapeHtml(it.cltrBidEndDt)}</td>
-          <td class="muted">${escapeHtml(key)}</td>
+          <td class="wrap-soft">
+            <a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer" title="온비드로 이동">
+              ${escapeHtml(it.cltrMngNo || "")}${it.pbctCdtnNo ? `<span class="muted">/${escapeHtml(it.pbctCdtnNo)}</span>` : ""}
+            </a>
+          </td>
         </tr>
       `;
     }).join("");
 
-    // row click handler
+    // row click -> editor
     [...els.tbody.querySelectorAll("tr[data-key]")].forEach(tr => {
-      tr.addEventListener("click", () => {
+      tr.addEventListener("click", (e) => {
+        // 링크 클릭은 row 선택 트리거 막기(링크는 링크대로 열리게)
+        const a = e.target?.closest?.("a");
+        if (a) return;
+
         const key = tr.getAttribute("data-key");
         selectItem(key);
       });
@@ -401,13 +419,11 @@
     const it = filteredItems.find(x => buildKey(x) === key) || rawItems.find(x => buildKey(x) === key);
     if (!it) return;
 
-    renderTable();
-
     const work = loadWork();
     const w = work[key] || { assignee: "", status: "미배정", notes: "" };
     const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
-    const ratio = it.apslPrcCtrsLowstBidRto;
-    const ratioText = (ratio === null || ratio === undefined) ? "" : ratio.toFixed(2);
+    const ratioText = formatPct(it.apslPrcCtrsLowstBidRto);
+    const onbidUrl = buildOnbidLink(it);
 
     els.editor.innerHTML = `
       <div class="panel">
@@ -417,10 +433,11 @@
           <div>소재지</div><div>${escapeHtml(addr) || "-"}</div>
           <div>감정가</div><div>${fmtNum(it.apslEvlAmt) || "-"}</div>
           <div>최저가</div><div>${it.lowstBidAmt !== null ? fmtNum(it.lowstBidAmt) : escapeHtml(it.lowstBidPrcIndctCont)}</div>
-          <div>비율(%)</div><div>${ratioText || "-"}</div>
+          <div>비율(%)</div><div>${escapeHtml(ratioText) || "-"}</div>
           <div>유찰</div><div>${fmtNum(it.usbdNft ?? 0)}</div>
           <div>입찰기간</div><div>${escapeHtml(it.cltrBidBgngDt)} ~ ${escapeHtml(it.cltrBidEndDt)}</div>
           <div>공고기관</div><div>${escapeHtml(it.rqstOrgNm) || "-"}</div>
+          <div>온비드</div><div><a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">바로가기</a></div>
           <div>키</div><div class="muted">${escapeHtml(key)}</div>
         </div>
 
@@ -450,12 +467,13 @@
 - 현장실사: 접근성, 임대현황, 리스크, 사진 링크
 - 결론: 매입/보류/제외 사유
 ">${escapeHtml(w.notes || "")}</textarea>
-        <div class="help">현재는 브라우저에만 저장돼(내부 서버 저장은 다음 단계에서 붙이면 됨).</div>
+        <div class="help">현재는 브라우저에만 저장돼(서버 저장은 다음 단계에서 붙이면 됨).</div>
       </div>
     `;
 
     const btnSave = document.getElementById("btnSave");
     const btnClearNotes = document.getElementById("btnClearNotes");
+
     btnSave.addEventListener("click", () => {
       const assignee = document.getElementById("edAssignee").value.trim();
       const status = document.getElementById("edStatus").value;
@@ -465,7 +483,7 @@
       work2[key] = { assignee, status, notes, updatedAt: Date.now() };
       saveWork(work2);
 
-      applyFilter(); // reflect filters
+      applyFilter();
       setStatus("저장 완료");
     });
 
@@ -486,8 +504,7 @@
       const key = buildKey(it);
       const w = work[key] || {};
       const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
-      const ratio = it.apslPrcCtrsLowstBidRto;
-      const ratioText = (ratio === null || ratio === undefined) ? "" : ratio.toFixed(2);
+      const ratioText = formatPct(it.apslPrcCtrsLowstBidRto);
 
       return {
         key,
@@ -528,7 +545,7 @@
 
   // ====== Init ======
   function init() {
-    els.apiBase.value = loadApiBase();
+    els.apiBase.value = loadApiBase().replace(/\/$/, "");
 
     els.btnSync.addEventListener("click", sync);
     els.btnExport.addEventListener("click", exportExcel);
@@ -541,7 +558,7 @@
       applyFilter();
     });
 
-    // try load cache
+    // 캐시 로드
     try {
       const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
       if (cache?.items?.length) {
@@ -553,6 +570,4 @@
   }
 
   init();
-
 })();
-
