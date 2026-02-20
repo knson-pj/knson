@@ -31,14 +31,14 @@
     <section class="card">
       <div class="card-head">
         <h2>조회 설정</h2>
-        <div class="hint">* data.go.kr 직접 호출이 막히면 사내 프록시(API_BASE)를 사용해야 해</div>
+        <div class="hint">* data.go.kr는 프록시(Vercel) 경유 권장(키 보호/CORS). API_BASE에 Vercel 주소를 넣어줘.</div>
       </div>
 
       <div class="grid">
         <div class="field">
-          <label>API_BASE (사내 프록시)</label>
-          <input id="apiBase" type="text" placeholder="예: https://intra.company.com/api" />
-          <div class="help">list.js에서 기본값은 <code>/api</code>로 되어있어</div>
+          <label>API_BASE (Vercel 프록시)</label>
+          <input id="apiBase" type="text" placeholder="예: https://knson.vercel.app/api" />
+          <div class="help">현재 값은 브라우저에 저장돼(다음 접속에도 유지).</div>
         </div>
 
         <div class="field">
@@ -102,8 +102,10 @@
       </div>
 
       <div class="bar">
-        <button id="btnApplyFilter" class="btn">필터 적용</button>
-        <button id="btnClearFilter" class="btn ghost">필터 초기화</button>
+        <div class="bar-left">
+          <button id="btnApplyFilter" class="btn">필터 적용</button>
+          <button id="btnClearFilter" class="btn ghost">필터 초기화</button>
+        </div>
         <div class="status" id="statusText">대기 중</div>
       </div>
     </section>
@@ -129,7 +131,7 @@
               <th class="num">비율(%)</th>
               <th class="num">유찰</th>
               <th>입찰종료</th>
-              <th>키</th>
+              <th>키(온비드)</th>
             </tr>
           </thead>
           <tbody id="tbody">
@@ -139,7 +141,7 @@
       </div>
     </section>
 
-    <!-- Drawer / Editor -->
+    <!-- Editor -->
     <section class="card">
       <div class="card-head">
         <h2>선택 물건 작업</h2>
@@ -153,7 +155,7 @@
 
     <footer class="footer">
       <div class="muted">
-        내부용 MVP. 데이터는 브라우저 <b>localStorage</b>에 임시 저장(서버 저장은 다음 단계에서 붙이면 됨).
+        내부용 MVP. 배정/피드백은 현재 <b>localStorage</b>에 저장(서버 저장은 다음 단계에서 붙이면 됨).
       </div>
     </footer>
   </main>
