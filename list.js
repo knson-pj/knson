@@ -459,7 +459,12 @@
   // ====== API 응답 파싱 ======
   function extractItems(payload) {
     if (!payload) return [];
-    const p = payload;
+    // 프록시가 { result: ... } / { data: ... } 형태로 한 번 감싸는 경우 대응
+    let p = payload;
+    if (p && typeof p === "object") {
+      if (p.result && typeof p.result === "object") p = p.result;
+      else if (p.data && typeof p.data === "object") p = p.data;
+    }
 
     // 공공데이터 표준 wrapper (response.header) 또는 (header)
     const header = p.response?.header ?? p.header ?? null;
@@ -469,13 +474,29 @@
 
     let body = p.response?.body ?? p.body ?? p;
 
+    // body 자체가 다시 wrapper인 경우 추가 대응
+    if (body && typeof body === "object") {
+      if (body.result && typeof body.result === "object") body = body.result;
+      else if (body.data && typeof body.data === "object") body = body.data;
+    }
+
     if (typeof body === "string") {
       try {
         body = JSON.parse(body);
       } catch {}
     }
 
-    const items = body?.items?.item ?? body?.items ?? body?.item ?? body?.list ?? null;
+    const items =
+      body?.items?.item ??
+      body?.items ??
+      body?.item ??
+      body?.list ??
+      body?.result?.items?.item ??
+      body?.result?.items ??
+      body?.data?.items?.item ??
+      body?.data?.items ??
+      null;
+
     return Array.isArray(items) ? items : items ? [items] : [];
   }
 
@@ -553,8 +574,9 @@
     if (sido) o.lctnSdnm = sido;
     if (sigungu) o.lctnSggnm = sigungu;
 
-    const keyword = FIXED_ITEM_NAME_KEYWORD;
-    if (keyword) o.onbidCltrNm = keyword;
+    // NOTE: '검색(물건명)' UI는 근린생활시설 고정 표시만 하고,
+    // 실제 API 검색어(onbidCltrNm)는 보내지 않는다.
+    // 이유: 물건명에 '근린생활시설' 문자열이 없는 경우가 많아 0건이 될 수 있음.
 
     const endBefore = els.fEndBefore?.value?.trim() || "";
     if (endBefore && endBefore.length >= 8) o.bidPrdYmdEnd = endBefore.slice(0, 8);
@@ -630,7 +652,7 @@
 
       if (rawItems.length === 0) {
         const topKeys = firstPayload ? Object.keys(firstPayload).slice(0, 10).join(", ") : "(no payload)";
-        const hint = firstPayload?.response ? "response wrapper" : firstPayload?.body ? "body wrapper" : "unknown";
+        const hint = firstPayload?.response ? "response wrapper" : firstPayload?.body ? "body wrapper" : firstPayload?.result ? "result wrapper" : "unknown";
         setStatus(`완료: 0건 로드 (응답키: ${topKeys} / 형태: ${hint})`);
       } else {
         setStatus(`완료: ${rawItems.length}건 로드`);
@@ -654,7 +676,7 @@
     const maxRatio = els.fMaxRatio?.value ? Number(els.fMaxRatio.value) : null;
     const minFail = els.fMinFail?.value ? Number(els.fMinFail.value) : null;
     const endBefore = els.fEndBefore?.value?.trim() || "";
-    const keyword = FIXED_ITEM_NAME_KEYWORD.trim().toLowerCase();
+    const keyword = ""; // UI 고정표시는 유지, 실제 필터링은 재산유형 고정조건으로 대체
     const assigneeFilter = (els.fAssignee?.value || "").trim();
     const bidResultFilter = (els.fBidResult?.value || "").trim();
     const pvctTrgtFilter = (els.fPvctTrgtYn?.value || "").trim().toUpperCase();
