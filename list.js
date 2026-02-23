@@ -43,6 +43,7 @@
     fEndBefore: $("fEndBefore"),
     fKeyword: $("fKeyword"),
     fAssignee: $("fAssignee"),
+    fBidResult: $("fBidResult"),
 
     btnSync: $("btnSync"),
     btnExport: $("btnExport"),
@@ -117,6 +118,160 @@
     const code = safe(it?.cptnMthodCd).trim();
     if (name && code) return `${name} (${code})`;
     return name || code || "-";
+  }
+
+  function uniqSorted(values) {
+    return [...new Set(values.map((v) => safe(v).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+  }
+
+  function getBidEndFilterValue(it) {
+    const result = safe(it?.pbctStatNm).trim();
+    const method = safe(it?.cptnMthodNm).trim();
+    const merged = `${result} ${method}`.trim();
+
+    if (!merged) return "";
+    if (/수의/.test(merged)) return "수의계약";
+    if (/경쟁/.test(merged)) return "입찰경쟁";
+    if (/유찰/.test(merged)) return "유찰";
+    if (/낙찰/.test(merged)) return "낙찰";
+    if (/취소/.test(merged)) return "취소";
+    if (/변경/.test(merged)) return "변경";
+    return result || method || "";
+  }
+
+  function upgradeInputToSelect(id, placeholderText) {
+    let el = document.getElementById(id);
+    if (!el) return null;
+    if (el.tagName === "SELECT") return el;
+
+    const select = document.createElement("select");
+    select.id = el.id;
+    select.name = el.name || "";
+    select.className = el.className || "";
+    select.title = el.title || placeholderText || "";
+    select.setAttribute("aria-label", placeholderText || id);
+
+    // dataset/inline style 최대한 보존
+    [...el.attributes].forEach((attr) => {
+      if (["id", "name", "type", "value", "placeholder"].includes(attr.name)) return;
+      try {
+        select.setAttribute(attr.name, attr.value);
+      } catch {}
+    });
+
+    const firstOpt = document.createElement("option");
+    firstOpt.value = "";
+    firstOpt.textContent = placeholderText || "전체";
+    select.appendChild(firstOpt);
+
+    select.value = el.value || "";
+    el.replaceWith(select);
+    return select;
+  }
+
+  function ensureBidResultFilterControl() {
+    let el = document.getElementById("fBidResult");
+    if (el) {
+      els.fBidResult = el;
+      return el;
+    }
+
+    const anchor = els.fAssignee || els.fKeyword || els.fEndBefore || null;
+    if (!anchor || !anchor.parentNode) return null;
+
+    const select = document.createElement("select");
+    select.id = "fBidResult";
+    select.className = anchor.className || "";
+    select.title = "입찰종료 필터";
+    select.setAttribute("aria-label", "입찰종료");
+    select.innerHTML = `<option value="">입찰종료(전체)</option>`;
+
+    anchor.parentNode.insertBefore(select, anchor.nextSibling);
+    els.fBidResult = select;
+    return select;
+  }
+
+  function initSelectableFilterControls() {
+    // 기존 텍스트 입력 → 선택형(select)으로 업그레이드 (같은 id 유지)
+    els.fSido = upgradeInputToSelect("fSido", "시/도(전체)") || els.fSido;
+    els.fSigungu = upgradeInputToSelect("fSigungu", "시/군/구(전체)") || els.fSigungu;
+    els.fKeyword = upgradeInputToSelect("fKeyword", "물건명(전체)") || els.fKeyword;
+    els.fAssignee = upgradeInputToSelect("fAssignee", "담당자(전체)") || els.fAssignee;
+
+    ensureBidResultFilterControl();
+
+    // 시/도 선택 시 시군구 목록 재구성
+    els.fSido?.addEventListener("change", () => {
+      populateFilterSelectOptions({ preserveValues: true, only: ["sigungu"] });
+    });
+  }
+
+  function setSelectOptions(selectEl, values, placeholderText, selectedValue = "") {
+    if (!selectEl) return;
+    const current = safe(selectedValue ?? selectEl.value).trim();
+    const options = uniqSorted(values);
+
+    const frag = document.createDocumentFragment();
+    const firstOpt = document.createElement("option");
+    firstOpt.value = "";
+    firstOpt.textContent = placeholderText || "전체";
+    frag.appendChild(firstOpt);
+
+    options.forEach((v) => {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      frag.appendChild(opt);
+    });
+
+    selectEl.innerHTML = "";
+    selectEl.appendChild(frag);
+
+    if (current && options.includes(current)) {
+      selectEl.value = current;
+    } else {
+      selectEl.value = "";
+    }
+  }
+
+  function populateFilterSelectOptions({ preserveValues = true, only = null } = {}) {
+    const prev = {
+      sido: preserveValues ? safe(els.fSido?.value).trim() : "",
+      sigungu: preserveValues ? safe(els.fSigungu?.value).trim() : "",
+      keyword: preserveValues ? safe(els.fKeyword?.value).trim() : "",
+      assignee: preserveValues ? safe(els.fAssignee?.value).trim() : "",
+      bidResult: preserveValues ? safe(els.fBidResult?.value).trim() : "",
+    };
+
+    const should = (name) => !Array.isArray(only) || only.includes(name);
+
+    if (should("sido")) {
+      setSelectOptions(els.fSido, rawItems.map((it) => it.lctnSdnm), "시/도(전체)", prev.sido);
+    }
+
+    const selectedSido = safe(els.fSido?.value || prev.sido).trim();
+    const sigunguSource = selectedSido ? rawItems.filter((it) => safe(it.lctnSdnm).trim() === selectedSido) : rawItems;
+
+    if (should("sigungu")) {
+      setSelectOptions(els.fSigungu, sigunguSource.map((it) => it.lctnSggnm), "시/군/구(전체)", prev.sigungu);
+    }
+
+    if (should("keyword")) {
+      setSelectOptions(els.fKeyword, rawItems.map((it) => it.onbidCltrNm), "물건명(전체)", prev.keyword);
+    }
+
+    if (should("assignee")) {
+      const work = loadWork();
+      const assignees = Object.values(work)
+        .map((w) => w?.assignee)
+        .filter(Boolean);
+      setSelectOptions(els.fAssignee, assignees, "담당자(전체)", prev.assignee);
+    }
+
+    if (should("bidResult")) {
+      const bidResultValues = rawItems.map((it) => getBidEndFilterValue(it));
+      setSelectOptions(els.fBidResult, bidResultValues, "입찰종료(전체)", prev.bidResult);
+    }
   }
 
   function normalizeApiBase(input) {
@@ -221,6 +376,7 @@
       cptnMthodCd: safe(it.cptnMthodCd),
       cptnMthodNm: safe(it.cptnMthodNm),
       pbctStatNm: safe(it.pbctStatNm),
+      bidCloseFilterType: getBidEndFilterValue(it),
 
       prptDivNm: safe(it.prptDivNm),
       dspsMthodNm: safe(it.dspsMthodNm),
@@ -316,6 +472,7 @@
 
       localStorage.setItem(LS_CACHE, JSON.stringify({ ts: Date.now(), items: rawItems.map((x) => x._raw) }));
 
+      populateFilterSelectOptions({ preserveValues: true });
       applyFilter();
 
       if (rawItems.length === 0) {
@@ -346,6 +503,7 @@
     const endBefore = els.fEndBefore?.value?.trim() || "";
     const keyword = (els.fKeyword?.value || "").trim().toLowerCase();
     const assigneeFilter = (els.fAssignee?.value || "").trim();
+    const bidResultFilter = (els.fBidResult?.value || "").trim();
 
     filteredItems = rawItems.filter((it) => {
       if (sido && !it.lctnSdnm.includes(sido)) return false;
@@ -384,6 +542,11 @@
         if (!w?.assignee || w.assignee !== assigneeFilter) return false;
       }
 
+      if (bidResultFilter) {
+        const t = it.bidCloseFilterType || getBidEndFilterValue(it);
+        if (t !== bidResultFilter) return false;
+      }
+
       return true;
     });
 
@@ -391,7 +554,7 @@
   }
 
   function clearFilter() {
-    [els.fSido, els.fSigungu, els.fMinPrice, els.fMaxPrice, els.fMaxRatio, els.fMinFail, els.fEndBefore, els.fKeyword, els.fAssignee]
+    [els.fSido, els.fSigungu, els.fMinPrice, els.fMaxPrice, els.fMaxRatio, els.fMinFail, els.fEndBefore, els.fKeyword, els.fAssignee, els.fBidResult]
       .filter(Boolean)
       .forEach((el) => (el.value = ""));
     applyFilter();
@@ -413,7 +576,7 @@
     if (!els.tbody) return;
 
     if (!filteredItems.length) {
-      els.tbody.innerHTML = `<tr><td class="muted" colspan="12">조건에 맞는 물건이 없어.</td></tr>`;
+      els.tbody.innerHTML = `<tr><td class="muted" colspan="13">조건에 맞는 물건이 없어.</td></tr>`;
       return;
     }
 
@@ -552,6 +715,7 @@
       work2[key] = { assignee, status, notes, updatedAt: Date.now() };
       saveWork(work2);
 
+      populateFilterSelectOptions({ preserveValues: true, only: ["assignee"] });
       applyFilter();
       setStatus("저장 완료");
     });
@@ -601,6 +765,9 @@
   function init() {
     if (els.apiBase) els.apiBase.value = normalizeApiBase(loadApiBase());
 
+    initSelectableFilterControls();
+    populateFilterSelectOptions({ preserveValues: true });
+
     els.btnSync?.addEventListener("click", sync);
     els.btnExport?.addEventListener("click", exportExcel);
     els.btnApplyFilter?.addEventListener("click", applyFilter);
@@ -616,6 +783,7 @@
       const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
       if (cache?.items?.length) {
         rawItems = cache.items.map(normalize);
+        populateFilterSelectOptions({ preserveValues: true });
         applyFilter();
         setStatus(`캐시 로드: ${rawItems.length}건`);
       }
