@@ -20,6 +20,7 @@
   // ✅ 입찰방식(cptnMthodCd) 4종 전체 조회 (프록시/원본 API가 반복 파라미터를 허용하는 경우)
   // 값 형식이 다른 API(예: 01~04)를 쓰면 여기만 바꾸면 됨.
   const CPTN_METHOD_CODES_ALL = Object.freeze(["0001", "0002", "0003", "0004"]);
+  const FIXED_ITEM_NAME_KEYWORD = "근린생활시설";
 
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
@@ -139,6 +140,75 @@
     return result || method || "";
   }
 
+  function lockKeywordFilterControl() {
+    if (!els.fKeyword) return;
+    const fixed = FIXED_ITEM_NAME_KEYWORD;
+    if (els.fKeyword.tagName === "SELECT") {
+      els.fKeyword.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.value = fixed;
+      opt.textContent = fixed;
+      els.fKeyword.appendChild(opt);
+      els.fKeyword.value = fixed;
+      els.fKeyword.disabled = true;
+      els.fKeyword.title = `물건명 고정: ${fixed}`;
+    } else {
+      els.fKeyword.value = fixed;
+      els.fKeyword.readOnly = true;
+      els.fKeyword.title = `물건명 고정: ${fixed}`;
+    }
+  }
+
+  function applyWideLayoutPatch() {
+    const patchId = "onbid-wide-layout-patch";
+    if (!document.getElementById(patchId)) {
+      const style = document.createElement("style");
+      style.id = patchId;
+      style.textContent = `
+        /* 조회설정/후보리스트 가로폭 최대화 (기존 CSS 보완) */
+        body .container,
+        body .wrap,
+        body .page,
+        body .app,
+        body .layout,
+        body .content,
+        body .dashboard,
+        body .dashboard-wrap {
+          max-width: none !important;
+          width: calc(100vw - 24px) !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const widenAncestors = (anchor, depth = 7) => {
+      let node = anchor;
+      let count = 0;
+      while (node && count < depth) {
+        if (node instanceof HTMLElement) {
+          node.style.maxWidth = "none";
+          if (count > 0) node.style.width = "100%";
+        }
+        node = node.parentElement;
+        count += 1;
+      }
+    };
+
+    [els.apiBase, els.tbody].filter(Boolean).forEach((anchor) => widenAncestors(anchor));
+
+    const table = els.tbody?.closest?.("table");
+    if (table) {
+      table.style.width = "100%";
+      table.style.minWidth = "100%";
+    }
+    const tableWrap = table?.parentElement;
+    if (tableWrap) {
+      tableWrap.style.width = "100%";
+      tableWrap.style.maxWidth = "none";
+      tableWrap.style.overflowX = tableWrap.style.overflowX || "auto";
+    }
+  }
+
   function upgradeInputToSelect(id, placeholderText) {
     let el = document.getElementById(id);
     if (!el) return null;
@@ -195,10 +265,11 @@
     // 기존 텍스트 입력 → 선택형(select)으로 업그레이드 (같은 id 유지)
     els.fSido = upgradeInputToSelect("fSido", "시/도(전체)") || els.fSido;
     els.fSigungu = upgradeInputToSelect("fSigungu", "시/군/구(전체)") || els.fSigungu;
-    els.fKeyword = upgradeInputToSelect("fKeyword", "물건명(전체)") || els.fKeyword;
+    els.fKeyword = upgradeInputToSelect("fKeyword", "물건명(고정)") || els.fKeyword;
     els.fAssignee = upgradeInputToSelect("fAssignee", "담당자(전체)") || els.fAssignee;
 
     ensureBidResultFilterControl();
+    lockKeywordFilterControl();
 
     // 시/도 선택 시 시군구 목록 재구성
     els.fSido?.addEventListener("change", () => {
@@ -257,7 +328,7 @@
     }
 
     if (should("keyword")) {
-      setSelectOptions(els.fKeyword, rawItems.map((it) => it.onbidCltrNm), "물건명(전체)", prev.keyword);
+      lockKeywordFilterControl();
     }
 
     if (should("assignee")) {
@@ -403,7 +474,7 @@
     if (sido) o.lctnSdnm = sido;
     if (sigungu) o.lctnSggnm = sigungu;
 
-    const keyword = els.fKeyword?.value?.trim() || "";
+    const keyword = FIXED_ITEM_NAME_KEYWORD;
     if (keyword) o.onbidCltrNm = keyword;
 
     const endBefore = els.fEndBefore?.value?.trim() || "";
@@ -469,6 +540,7 @@
       }
 
       rawItems = collected.map(normalize);
+      lockKeywordFilterControl();
 
       localStorage.setItem(LS_CACHE, JSON.stringify({ ts: Date.now(), items: rawItems.map((x) => x._raw) }));
 
@@ -501,7 +573,7 @@
     const maxRatio = els.fMaxRatio?.value ? Number(els.fMaxRatio.value) : null;
     const minFail = els.fMinFail?.value ? Number(els.fMinFail.value) : null;
     const endBefore = els.fEndBefore?.value?.trim() || "";
-    const keyword = (els.fKeyword?.value || "").trim().toLowerCase();
+    const keyword = FIXED_ITEM_NAME_KEYWORD.trim().toLowerCase();
     const assigneeFilter = (els.fAssignee?.value || "").trim();
     const bidResultFilter = (els.fBidResult?.value || "").trim();
 
@@ -554,9 +626,10 @@
   }
 
   function clearFilter() {
-    [els.fSido, els.fSigungu, els.fMinPrice, els.fMaxPrice, els.fMaxRatio, els.fMinFail, els.fEndBefore, els.fKeyword, els.fAssignee, els.fBidResult]
+    [els.fSido, els.fSigungu, els.fMinPrice, els.fMaxPrice, els.fMaxRatio, els.fMinFail, els.fEndBefore, els.fAssignee, els.fBidResult]
       .filter(Boolean)
       .forEach((el) => (el.value = ""));
+    lockKeywordFilterControl();
     applyFilter();
   }
 
@@ -591,7 +664,7 @@
         const notesText = notesPreview ? escapeHtml(notesPreview) + (w.notes.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
 
         const onbidUrl = buildOnbidLink(it);
-        const keyLabel = `${escapeHtml(it.cltrMngNo || "")}${it.pbctCdtnNo ? `<span class="muted">/${escapeHtml(it.pbctCdtnNo)}</span>` : ""}`;
+        const keyLabel = `${escapeHtml(it.cltrMngNo || "")}`;
 
         return `
         <tr data-key="${escapeHtml(key)}">
@@ -678,7 +751,7 @@
           <div>입찰결과</div><div>${escapeHtml(it.pbctStatNm || "-")}</div>
           <div>입찰기간</div><div>${escapeHtml(it.cltrBidBgngDt)} ~ ${escapeHtml(it.cltrBidEndDt)}</div>
           <div>온비드</div><div>${onbidUrl ? `<a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">상세 바로가기</a>` : `<span class="muted">상세링크 불가</span>`}</div>
-          <div>키</div><div class="muted">${escapeHtml(key)}</div>
+          <div>키</div><div class="muted">${escapeHtml(it.cltrMngNo || "-")}</div>
         </div>
 
         <div style="margin-top:12px;" class="grid" style="grid-template-columns: 1fr 1fr;">
@@ -765,6 +838,7 @@
   function init() {
     if (els.apiBase) els.apiBase.value = normalizeApiBase(loadApiBase());
 
+    applyWideLayoutPatch();
     initSelectableFilterControls();
     populateFilterSelectOptions({ preserveValues: true });
 
@@ -783,6 +857,7 @@
       const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
       if (cache?.items?.length) {
         rawItems = cache.items.map(normalize);
+        lockKeywordFilterControl();
         populateFilterSelectOptions({ preserveValues: true });
         applyFilter();
         setStatus(`캐시 로드: ${rawItems.length}건`);
