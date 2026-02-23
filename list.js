@@ -21,6 +21,12 @@
   // 값 형식이 다른 API(예: 01~04)를 쓰면 여기만 바꾸면 됨.
   const CPTN_METHOD_CODES_ALL = Object.freeze(["0001", "0002", "0003", "0004"]);
   const FIXED_ITEM_NAME_KEYWORD = "근린생활시설";
+  const FIXED_QUERY_FILTERS = Object.freeze({
+    dspsMthodCd: "0001", // 처분방식코드: 매각
+    cltrUsgLclsCtgrNm: "부동산",
+    cltrUsgMclsCtgrNm: "상가용및업무용건물",
+    cltrUsgSclsCtgrNm: "근린생활시설",
+  });
 
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
@@ -45,6 +51,7 @@
     fKeyword: $("fKeyword"),
     fAssignee: $("fAssignee"),
     fBidResult: $("fBidResult"),
+    fPvctTrgtYn: $("fPvctTrgtYn"),
 
     btnSync: $("btnSync"),
     btnExport: $("btnExport"),
@@ -138,6 +145,13 @@
     if (/취소/.test(merged)) return "취소";
     if (/변경/.test(merged)) return "변경";
     return result || method || "";
+  }
+
+  function formatPvctTargetLabel(code) {
+    const v = String(code || "").trim().toUpperCase();
+    if (v === "Y") return "수의계약 가능";
+    if (v === "N") return "수의계약 불가";
+    return "-";
   }
 
   function lockKeywordFilterControl() {
@@ -261,6 +275,32 @@
     return select;
   }
 
+  function ensurePvctTargetFilterControl() {
+    let el = document.getElementById("fPvctTrgtYn");
+    if (el) {
+      els.fPvctTrgtYn = el;
+      return el;
+    }
+
+    const anchor = els.fBidResult || els.fAssignee || els.fKeyword || els.fEndBefore || null;
+    if (!anchor || !anchor.parentNode) return null;
+
+    const select = document.createElement("select");
+    select.id = "fPvctTrgtYn";
+    select.className = anchor.className || "";
+    select.title = "수의계약가능여부 필터";
+    select.setAttribute("aria-label", "수의계약가능여부");
+    select.innerHTML = `
+      <option value="">수의계약가능여부(전체)</option>
+      <option value="Y">수의계약 가능</option>
+      <option value="N">수의계약 불가</option>
+    `;
+
+    anchor.parentNode.insertBefore(select, anchor.nextSibling);
+    els.fPvctTrgtYn = select;
+    return select;
+  }
+
   function initSelectableFilterControls() {
     // 기존 텍스트 입력 → 선택형(select)으로 업그레이드 (같은 id 유지)
     els.fSido = upgradeInputToSelect("fSido", "시/도(전체)") || els.fSido;
@@ -269,6 +309,7 @@
     els.fAssignee = upgradeInputToSelect("fAssignee", "담당자(전체)") || els.fAssignee;
 
     ensureBidResultFilterControl();
+    ensurePvctTargetFilterControl();
     lockKeywordFilterControl();
 
     // 시/도 선택 시 시군구 목록 재구성
@@ -312,6 +353,7 @@
       keyword: preserveValues ? safe(els.fKeyword?.value).trim() : "",
       assignee: preserveValues ? safe(els.fAssignee?.value).trim() : "",
       bidResult: preserveValues ? safe(els.fBidResult?.value).trim() : "",
+      pvctTrgtYn: preserveValues ? safe(els.fPvctTrgtYn?.value).trim().toUpperCase() : "",
     };
 
     const should = (name) => !Array.isArray(only) || only.includes(name);
@@ -342,6 +384,35 @@
     if (should("bidResult")) {
       const bidResultValues = rawItems.map((it) => getBidEndFilterValue(it));
       setSelectOptions(els.fBidResult, bidResultValues, "입찰종료(전체)", prev.bidResult);
+    }
+
+    if (should("pvctTrgtYn") && els.fPvctTrgtYn) {
+      const hasY = rawItems.some((it) => String(it.pvctTrgtYn || "").trim().toUpperCase() === "Y");
+      const hasN = rawItems.some((it) => String(it.pvctTrgtYn || "").trim().toUpperCase() === "N");
+      const current = prev.pvctTrgtYn;
+      const frag = document.createDocumentFragment();
+
+      const optAll = document.createElement("option");
+      optAll.value = "";
+      optAll.textContent = "수의계약가능여부(전체)";
+      frag.appendChild(optAll);
+
+      if (hasY) {
+        const optY = document.createElement("option");
+        optY.value = "Y";
+        optY.textContent = "수의계약 가능";
+        frag.appendChild(optY);
+      }
+      if (hasN) {
+        const optN = document.createElement("option");
+        optN.value = "N";
+        optN.textContent = "수의계약 불가";
+        frag.appendChild(optN);
+      }
+
+      els.fPvctTrgtYn.innerHTML = "";
+      els.fPvctTrgtYn.appendChild(frag);
+      els.fPvctTrgtYn.value = (current && ["Y", "N"].includes(current)) ? current : "";
     }
   }
 
@@ -449,9 +520,17 @@
       pbctStatNm: safe(it.pbctStatNm),
       bidCloseFilterType: getBidEndFilterValue(it),
 
+      pvctTrgtYn: safe(it.pvctTrgtYn).toUpperCase(),
+      pvctTrgtLabel: formatPvctTargetLabel(it.pvctTrgtYn),
+
       prptDivNm: safe(it.prptDivNm),
+      dspsMthodCd: safe(it.dspsMthodCd),
       dspsMthodNm: safe(it.dspsMthodNm),
       bidDivNm: safe(it.bidDivNm),
+
+      cltrUsgLclsCtgrNm: safe(it.cltrUsgLclsCtgrNm),
+      cltrUsgMclsCtgrNm: safe(it.cltrUsgMclsCtgrNm),
+      cltrUsgSclsCtgrNm: safe(it.cltrUsgSclsCtgrNm),
 
       _raw: it,
     };
@@ -479,6 +558,8 @@
 
     const endBefore = els.fEndBefore?.value?.trim() || "";
     if (endBefore && endBefore.length >= 8) o.bidPrdYmdEnd = endBefore.slice(0, 8);
+
+    Object.assign(o, FIXED_QUERY_FILTERS);
 
     return o;
   }
@@ -576,6 +657,7 @@
     const keyword = FIXED_ITEM_NAME_KEYWORD.trim().toLowerCase();
     const assigneeFilter = (els.fAssignee?.value || "").trim();
     const bidResultFilter = (els.fBidResult?.value || "").trim();
+    const pvctTrgtFilter = (els.fPvctTrgtYn?.value || "").trim().toUpperCase();
 
     filteredItems = rawItems.filter((it) => {
       if (sido && !it.lctnSdnm.includes(sido)) return false;
@@ -619,6 +701,11 @@
         if (t !== bidResultFilter) return false;
       }
 
+      if (pvctTrgtFilter) {
+        const pv = String(it.pvctTrgtYn || "").trim().toUpperCase();
+        if (pv !== pvctTrgtFilter) return false;
+      }
+
       return true;
     });
 
@@ -626,7 +713,7 @@
   }
 
   function clearFilter() {
-    [els.fSido, els.fSigungu, els.fMinPrice, els.fMaxPrice, els.fMaxRatio, els.fMinFail, els.fEndBefore, els.fAssignee, els.fBidResult]
+    [els.fSido, els.fSigungu, els.fMinPrice, els.fMaxPrice, els.fMaxRatio, els.fMinFail, els.fEndBefore, els.fAssignee, els.fBidResult, els.fPvctTrgtYn]
       .filter(Boolean)
       .forEach((el) => (el.value = ""));
     lockKeywordFilterControl();
@@ -673,7 +760,7 @@
           <td>${notesText}</td>
           <td class="wrap-soft" title="${escapeHtml(it.onbidCltrNm)}">
             <div class="cell-title">${escapeHtml(it.onbidCltrNm)}</div>
-            <div class="cell-sub">${escapeHtml([it.prptDivNm, it.dspsMthodNm, it.bidDivNm].filter(Boolean).join(" · "))}</div>
+            <div class="cell-sub">${escapeHtml([it.prptDivNm, it.dspsMthodNm, it.bidDivNm, it.pvctTrgtLabel].filter(Boolean).join(" · "))}</div>
           </td>
           <td class="wrap-soft">${escapeHtml(addr) || `<span class="muted">-</span>`}</td>
           <td class="num">${fmtNum(it.apslEvlAmt)}</td>
@@ -749,6 +836,8 @@
           <div>유찰</div><div>${fmtNum(it.usbdNft ?? 0)}</div>
           <div>입찰방식</div><div>${escapeHtml(formatBidMethodDisplay(it))}</div>
           <div>입찰결과</div><div>${escapeHtml(it.pbctStatNm || "-")}</div>
+          <div>수의계약가능여부</div><div>${escapeHtml(it.pvctTrgtLabel || "-")}</div>
+          <div>재산유형</div><div>${escapeHtml([it.cltrUsgLclsCtgrNm, it.cltrUsgMclsCtgrNm, it.cltrUsgSclsCtgrNm].filter(Boolean).join(" > ")) || "-"}</div>
           <div>입찰기간</div><div>${escapeHtml(it.cltrBidBgngDt)} ~ ${escapeHtml(it.cltrBidEndDt)}</div>
           <div>온비드</div><div>${onbidUrl ? `<a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">상세 바로가기</a>` : `<span class="muted">상세링크 불가</span>`}</div>
           <div>키</div><div class="muted">${escapeHtml(it.cltrMngNo || "-")}</div>
@@ -822,6 +911,8 @@
         유찰: it.usbdNft ?? 0,
         입찰방식: formatBidMethodDisplay(it),
         입찰결과: it.pbctStatNm || "",
+        수의계약가능여부: it.pvctTrgtLabel || "",
+        재산유형: [it.cltrUsgLclsCtgrNm, it.cltrUsgMclsCtgrNm, it.cltrUsgSclsCtgrNm].filter(Boolean).join(" > "),
         입찰종료: it.cltrBidEndDt,
         담당자: w.assignee || "",
         진행상태: w.status || "미배정",
