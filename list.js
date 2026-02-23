@@ -155,6 +155,34 @@
     return result || method || "";
   }
 
+  function resolvePvctTrgtYn(raw) {
+    if (!raw || typeof raw !== "object") return "";
+
+    const directKeys = ["pvctTrgtYn", "PVCTTRGTYN", "pvctYn", "pvctTrgYn"];
+    for (const k of directKeys) {
+      if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+      const v = String(raw[k] ?? "").trim().toUpperCase();
+      if (v === "Y" || v === "N") return v;
+    }
+
+    const textCandidates = [
+      raw.pvctTrgtNm,
+      raw.pbctStatNm,
+      raw.pbctStat,
+      raw.cltrStatNm,
+      raw.bidStatNm,
+      raw.onbidCltrNm,
+      raw.prptDivNm,
+      raw.cptnMthodNm,
+    ].map((v) => String(v ?? "")).filter(Boolean);
+
+    const joined = textCandidates.join(" | ");
+    if (/수의\s*계약\s*(불가|불가능)/.test(joined)) return "N";
+    if (/수의\s*계약\s*가능/.test(joined)) return "Y";
+
+    return "";
+  }
+
   function formatPvctTargetLabel(code) {
     const v = String(code || "").trim().toUpperCase();
     if (v === "Y") return "수의계약 가능";
@@ -257,14 +285,79 @@
     hint.innerHTML = `<b>동기화 조건:</b> ${escapeHtml(SYNC_SCOPE_TEXT)}`;
   }
 
-  function makeTooltipText(label, note) {
-    return `${label}\n${String(note || "").replace(/\r?\n/g, " / ").trim()}`;
-  }
-
   function renderFeedbackCheck(note, label) {
     const raw = String(note || "").trim();
     if (!raw) return `<span class="fb-empty">-</span>`;
-    return `<span class="fb-check" title="${escapeHtml(makeTooltipText(label, raw))}" aria-label="${escapeHtml(label)} 입력됨"></span>`;
+    return `<button type="button" class="fb-check" data-note="${escapeHtml(raw)}" aria-label="${escapeHtml(label)} 입력됨"></button>`;
+  }
+
+  function ensureFeedbackPopup() {
+    let pop = document.getElementById("fbPopup");
+    if (pop) return pop;
+    pop = document.createElement("div");
+    pop.id = "fbPopup";
+    pop.className = "fb-popup hidden";
+    pop.innerHTML = `
+      <button type="button" class="fb-popup-close" aria-label="닫기">×</button>
+      <div class="fb-popup-body"></div>
+    `;
+    document.body.appendChild(pop);
+
+    const close = () => pop.classList.add("hidden");
+    pop.querySelector(".fb-popup-close")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") close();
+    });
+    document.addEventListener("click", (e) => {
+      if (pop.classList.contains("hidden")) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("#fbPopup")) return;
+      if (target.closest(".fb-check")) return;
+      close();
+    }, true);
+
+    return pop;
+  }
+
+  function showFeedbackPopup(anchorEl, text) {
+    const raw = String(text || "").trim();
+    if (!raw || !anchorEl) return;
+
+    const pop = ensureFeedbackPopup();
+    const body = pop.querySelector(".fb-popup-body");
+    if (body) body.textContent = raw; // 항목명 없이 입력 내용만 표시
+
+    pop.classList.remove("hidden");
+    pop.style.visibility = "hidden";
+    pop.style.left = "0px";
+    pop.style.top = "0px";
+
+    const r = anchorEl.getBoundingClientRect();
+    const gap = 8;
+    const maxW = Math.min(420, window.innerWidth - 24);
+    pop.style.maxWidth = `${maxW}px`;
+
+    const pr = pop.getBoundingClientRect();
+    let left = r.left + window.scrollX;
+    let top = r.bottom + window.scrollY + gap;
+
+    const maxLeft = window.scrollX + window.innerWidth - pr.width - 12;
+    if (left > maxLeft) left = Math.max(window.scrollX + 12, maxLeft);
+
+    const maxTop = window.scrollY + window.innerHeight - pr.height - 12;
+    if (top > maxTop) {
+      top = r.top + window.scrollY - pr.height - gap;
+    }
+    if (top < window.scrollY + 12) top = window.scrollY + 12;
+
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+    pop.style.visibility = "visible";
   }
 
 
@@ -318,7 +411,7 @@
           background: rgba(31, 48, 82, .65);
           color:#39d98a;
           font-weight:700;
-          cursor:help;
+          cursor:pointer;
           box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
         }
         .fb-check::before { content:"✔"; font-size:14px; line-height:1; }
@@ -332,6 +425,41 @@
           word-break: keep-all;
         }
         .sync-scope-hint b { color: #d7ecff; }
+        .fb-popup {
+          position: absolute;
+          z-index: 9999;
+          min-width: 180px;
+          max-width: min(420px, calc(100vw - 24px));
+          padding: 10px 12px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,.12);
+          background: rgba(7, 13, 28, .96);
+          color: #e8f2ff;
+          box-shadow: 0 14px 38px rgba(0,0,0,.35);
+        }
+        .fb-popup.hidden { display: none; }
+        .fb-popup-close {
+          position: absolute;
+          top: 6px;
+          right: 6px;
+          width: 24px;
+          height: 24px;
+          border-radius: 8px;
+          border: 1px solid rgba(255,255,255,.12);
+          background: rgba(255,255,255,.04);
+          color: #dcecff;
+          cursor: pointer;
+          line-height: 1;
+          font-size: 16px;
+        }
+        .fb-popup-body {
+          margin-top: 2px;
+          padding-right: 18px;
+          font-size: 12px;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -434,7 +562,7 @@
     select.innerHTML = `
       <option value="">수의계약가능여부(전체)</option>
       <option value="Y">수의계약 가능</option>
-      <option value="N">수의계약 불가</option>
+      <option value="N">수의계약 불가능</option>
     `;
 
     anchor.parentNode.insertBefore(select, anchor.nextSibling);
@@ -566,7 +694,7 @@
       if (hasN) {
         const optN = document.createElement("option");
         optN.value = "N";
-        optN.textContent = "수의계약 불가";
+        optN.textContent = "수의계약 불가능";
         frag.appendChild(optN);
       }
 
@@ -688,6 +816,7 @@
   function normalize(it) {
     const appraised = toInt(it.apslEvlAmt);
     const minBid = toInt(it.lowstBidPrcIndctCont);
+    const pvctTrgtYnResolved = resolvePvctTrgtYn(it);
 
     const ratio = (() => {
       if (it.apslPrcCtrsLowstBidRto !== undefined && it.apslPrcCtrsLowstBidRto !== null && it.apslPrcCtrsLowstBidRto !== "") {
@@ -726,8 +855,8 @@
       pbctStatNm: safe(it.pbctStatNm),
       bidCloseFilterType: getBidEndFilterValue(it),
 
-      pvctTrgtYn: safe(it.pvctTrgtYn).toUpperCase(),
-      pvctTrgtLabel: formatPvctTargetLabel(it.pvctTrgtYn),
+      pvctTrgtYn: pvctTrgtYnResolved,
+      pvctTrgtLabel: formatPvctTargetLabel(pvctTrgtYnResolved),
 
       prptDivNm: safe(it.prptDivNm),
       dspsMthodCd: safe(it.dspsMthodCd),
@@ -1040,6 +1169,15 @@
           ta.remove();
           setStatus(`복사됨: ${txt}`);
         }
+      });
+    });
+
+    [...els.tbody.querySelectorAll(".fb-check[data-note]")].forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const note = btn.getAttribute("data-note") || "";
+        showFeedbackPopup(btn, note);
       });
     });
 
