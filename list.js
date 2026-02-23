@@ -1,16 +1,17 @@
 (() => {
   "use strict";
 
+  /**
+   * ✅ 핵심 수정 (0건 로드 원인 대응)
+   * - DEFAULT_QUERY에서 불필요한 기본 필터(prptDivCd/dspsMthodCd/bidDivCd/cptnMthodCd)를 제거
+   *   → API가 “필터 미지정”일 때 가장 넓게 조회되도록 함
+   * - items가 0건이면 첫 페이지 응답의 키/구조를 statusText에 표시(조용히 실패 방지)
+   * - normalizeApiBase 슬래시 정리 정규식 안정화
+   */
+
   // ====== 기본 검색 파라미터 ======
-  // - cptnMthodCd: 0001 일반경쟁 / 0002 제한경쟁 / 0003 지명경쟁 / 0004 수의계약
   const DEFAULT_QUERY = {
     resultType: "json",
-    // 부동산유형/처분방식/입찰구분은 너가 기존에 쓰던 값 유지(없으면 이 기본값으로)
-    prptDivCd: "0007,0010,0005,0002,0003,0006,0008,0011",
-    dspsMthodCd: "0001",
-    bidDivCd: "0001",
-    // ✅ 전체 방식 기본(수의 포함)
-    cptnMthodCd: "0001,0002,0003,0004",
   };
 
   // ✅ 기본 API_BASE: 너의 Vercel 프록시
@@ -19,7 +20,6 @@
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
   const LS_WORK = "onbid_dash_work_v1";
-  // ✅ 캐시 포맷 꼬임 방지 (링크 필드 누락/구버전 혼재 방지)
   const LS_CACHE = "onbid_dash_cache_v3";
 
   // ====== UI elements ======
@@ -75,7 +75,6 @@
   };
 
   const safe = (v) => (v === null || v === undefined ? "" : String(v));
-
   const buildKey = (it) => `${safe(it.cltrMngNo)}|${safe(it.pbctCdtnNo)}`;
 
   const loadWork = () => {
@@ -85,7 +84,6 @@
       return {};
     }
   };
-
   const saveWork = (work) => localStorage.setItem(LS_WORK, JSON.stringify(work));
 
   const loadApiBase = () => localStorage.getItem(LS_API_BASE) || DEFAULT_API_BASE;
@@ -104,38 +102,31 @@
       .replaceAll("'", "&#039;");
   }
 
-  // ✅ 비율: 소수점 제거 + % 붙이기
   function formatPct(v) {
     const n = Number(v);
     if (!Number.isFinite(n)) return "-";
     return `${Math.round(n)}%`;
   }
 
-  // ✅ API_BASE 보정: (1) github pages가 들어오면 기본값으로, (2) vercel이면 /api 보정
   function normalizeApiBase(input) {
     let s = (input || "").trim();
     if (!s) s = DEFAULT_API_BASE;
 
-    // 공백/끝 슬래시 정리
     s = s.replace(/\s+/g, "").replace(/\/+$/, "");
 
-    // GitHub Pages 주소를 넣은 경우 방지 (pages는 API가 아님)
     if (s.includes("github.io")) {
       s = DEFAULT_API_BASE.replace(/\/+$/, "");
     }
 
-    // vercel 도메인인데 /api 없으면 붙여줌
     if (s.includes(".vercel.app") && !/\/api$/i.test(s) && !/\/api\//i.test(s)) {
       s = s + "/api";
     }
 
-    // 슬래시 중복 정리 (https:// 제외하고)
-    s = s.replace(/([^:]\/)\/+?/g, "$1");
-
+    // ✅ 안정적인 슬래시 중복 정리(https://는 보존)
+    s = s.replace(/([^:]\/)\/+/g, "$1");
     return s;
   }
 
-  // ✅ 온비드 상세 정식 URL
   function buildOnbidLink(item) {
     const cltrHstrNo = safe(item?.cltrHstrNo);
     const cltrNo = safe(item?.cltrNo);
@@ -144,7 +135,7 @@
     const pbctCdtnNo = safe(item?.pbctCdtnNo);
 
     const hasDetail = cltrHstrNo && cltrNo && plnmNo && pbctNo;
-    if (!hasDetail) return ""; // ✅ 링크 생성 불가
+    if (!hasDetail) return "";
 
     const params = new URLSearchParams();
     params.set("cltrHstrNo", cltrHstrNo);
@@ -162,13 +153,10 @@
     if (!payload) return [];
     const p = payload;
 
-    // 공공데이터 표준 wrapper
-    if (p.response?.header) {
-      const rc = p.response.header.resultCode;
-      if (rc && rc !== "00") {
-        const msg = p.response.header.resultMsg || "API Error";
-        throw new Error(`${rc} ${msg}`.trim());
-      }
+    // 공공데이터 표준 wrapper (response.header) 또는 (header)
+    const header = p.response?.header ?? p.header ?? null;
+    if (header?.resultCode && header.resultCode !== "00") {
+      throw new Error(`${header.resultCode} ${header.resultMsg || "API Error"}`.trim());
     }
 
     let body = p.response?.body ?? p.body ?? p;
@@ -183,17 +171,12 @@
     return Array.isArray(items) ? items : items ? [items] : [];
   }
 
-  // Normalize
   function normalize(it) {
     const appraised = toInt(it.apslEvlAmt);
     const minBid = toInt(it.lowstBidPrcIndctCont);
 
     const ratio = (() => {
-      if (
-        it.apslPrcCtrsLowstBidRto !== undefined &&
-        it.apslPrcCtrsLowstBidRto !== null &&
-        it.apslPrcCtrsLowstBidRto !== ""
-      ) {
+      if (it.apslPrcCtrsLowstBidRto !== undefined && it.apslPrcCtrsLowstBidRto !== null && it.apslPrcCtrsLowstBidRto !== "") {
         const x = Number(it.apslPrcCtrsLowstBidRto);
         return Number.isFinite(x) ? x : appraised && minBid ? (minBid / appraised) * 100 : null;
       }
@@ -204,13 +187,11 @@
       cltrMngNo: safe(it.cltrMngNo),
       pbctCdtnNo: safe(it.pbctCdtnNo),
 
-      // ✅ 상세 URL용
       cltrHstrNo: safe(it.cltrHstrNo),
       cltrNo: safe(it.cltrNo),
       plnmNo: safe(it.plnmNo),
       pbctNo: safe(it.pbctNo),
 
-      // 표기
       onbidCltrNm: safe(it.onbidCltrNm),
       rqstOrgNm: safe(it.rqstOrgNm),
       lctnSdnm: safe(it.lctnSdnm),
@@ -226,7 +207,6 @@
       cltrBidEndDt: safe(it.cltrBidEndDt),
       cltrBidBgngDt: safe(it.cltrBidBgngDt),
 
-      // ✅ 입찰방식/결과
       cptnMthodNm: safe(it.cptnMthodNm),
       pbctStatNm: safe(it.pbctStatNm),
 
@@ -269,10 +249,8 @@
     url.searchParams.set("pageNo", String(pageNo));
     url.searchParams.set("numOfRows", String(numOfRows));
 
-    // 기본값 적용
     Object.entries(DEFAULT_QUERY).forEach(([k, v]) => url.searchParams.set(k, v));
 
-    // UI 필터 적용
     const q = buildApiFiltersFromUI();
     Object.entries(q).forEach(([k, v]) => {
       if (v !== null && v !== undefined && String(v).trim() !== "") url.searchParams.set(k, String(v));
@@ -282,9 +260,7 @@
 
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      throw new Error(
-        `API error ${res.status} ${res.statusText}\nURL: ${url.toString()}\nBODY: ${t.slice(0, 500)}`
-      );
+      throw new Error(`API error ${res.status} ${res.statusText}\nURL: ${url.toString()}\nBODY: ${t.slice(0, 500)}`);
     }
 
     return res.json();
@@ -304,9 +280,13 @@
 
     try {
       const collected = [];
+      let firstPayload = null;
+
       for (let p = pageStart; p < pageStart + maxPages; p++) {
         setStatus(`조회 중... (page ${p})`);
         const payload = await fetchPage(apiBase, p, numOfRows);
+        if (!firstPayload) firstPayload = payload;
+
         const items = extractItems(payload);
         if (!items.length) break;
         collected.push(...items);
@@ -314,11 +294,17 @@
 
       rawItems = collected.map(normalize);
 
-      // ✅ 캐시 저장(v3)
       localStorage.setItem(LS_CACHE, JSON.stringify({ ts: Date.now(), items: rawItems.map((x) => x._raw) }));
 
       applyFilter();
-      setStatus(`완료: ${rawItems.length}건 로드`);
+
+      if (rawItems.length === 0) {
+        const topKeys = firstPayload ? Object.keys(firstPayload).slice(0, 10).join(", ") : "(no payload)";
+        const hint = firstPayload?.response ? "response wrapper" : firstPayload?.body ? "body wrapper" : "unknown";
+        setStatus(`완료: 0건 로드 (응답키: ${topKeys} / 형태: ${hint})`);
+      } else {
+        setStatus(`완료: ${rawItems.length}건 로드`);
+      }
     } catch (e) {
       console.error(e);
       setStatus(`오류: ${e.message || e}`);
@@ -327,7 +313,7 @@
     }
   }
 
-  // ====== Filtering ======
+  // ====== Filtering / Render / Editor / Export ======
   function applyFilter() {
     const work = loadWork();
 
@@ -391,7 +377,6 @@
     applyFilter();
   }
 
-  // ====== Render table ======
   function badgeForStatus(status) {
     const s = (status || "미배정").trim();
     if (s === "완료") return `<span class="badge ok">완료</span>`;
@@ -420,13 +405,10 @@
         const ratioText = formatPct(it.apslPrcCtrsLowstBidRto);
 
         const notesPreview = (w.notes || "").trim().slice(0, 24);
-        const notesText =
-          notesPreview ? escapeHtml(notesPreview) + (w.notes.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
+        const notesText = notesPreview ? escapeHtml(notesPreview) + (w.notes.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
 
         const onbidUrl = buildOnbidLink(it);
-        const keyLabel = `${escapeHtml(it.cltrMngNo || "")}${
-          it.pbctCdtnNo ? `<span class="muted">/${escapeHtml(it.pbctCdtnNo)}</span>` : ""
-        }`;
+        const keyLabel = `${escapeHtml(it.cltrMngNo || "")}${it.pbctCdtnNo ? `<span class="muted">/${escapeHtml(it.pbctCdtnNo)}</span>` : ""}`;
 
         return `
         <tr data-key="${escapeHtml(key)}">
@@ -457,7 +439,6 @@
       })
       .join("");
 
-    // ✅ 링크 없는 항목: 키 복사
     [...els.tbody.querySelectorAll("button.onbid-link.disabled")].forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
@@ -478,7 +459,6 @@
       });
     });
 
-    // row click -> editor (링크 클릭은 제외)
     [...els.tbody.querySelectorAll("tr[data-key]")].forEach((tr) => {
       tr.addEventListener("click", (e) => {
         const a = e.target?.closest?.("a");
@@ -490,7 +470,6 @@
     });
   }
 
-  // ====== Editor (기존 유지) ======
   function selectItem(key) {
     selectedKey = key;
     const it = filteredItems.find((x) => buildKey(x) === key) || rawItems.find((x) => buildKey(x) === key);
@@ -515,11 +494,7 @@
           <div>입찰방식</div><div>${escapeHtml(it.cptnMthodNm || "-")}</div>
           <div>입찰결과</div><div>${escapeHtml(it.pbctStatNm || "-")}</div>
           <div>입찰기간</div><div>${escapeHtml(it.cltrBidBgngDt)} ~ ${escapeHtml(it.cltrBidEndDt)}</div>
-          <div>온비드</div><div>${
-            onbidUrl
-              ? `<a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">상세 바로가기</a>`
-              : `<span class="muted">상세링크 불가</span>`
-          }</div>
+          <div>온비드</div><div>${onbidUrl ? `<a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">상세 바로가기</a>` : `<span class="muted">상세링크 불가</span>`}</div>
           <div>키</div><div class="muted">${escapeHtml(key)}</div>
         </div>
 
@@ -531,9 +506,7 @@
           <div class="field">
             <label>진행상태</label>
             <select id="edStatus">
-              ${["미배정", "검토중", "진행중", "완료", "보류"]
-                .map((s) => `<option value="${s}" ${w.status === s ? "selected" : ""}>${s}</option>`)
-                .join("")}
+              ${["미배정","검토중","진행중","완료","보류"].map((s) => `<option value="${s}" ${w.status===s?"selected":""}>${s}</option>`).join("")}
             </select>
           </div>
         </div>
@@ -564,7 +537,6 @@
     });
   }
 
-  // ====== Export (기존 유지: XLSX 있으면) ======
   function exportExcel() {
     if (!window.XLSX) {
       alert("XLSX 라이브러리가 없어. (index.html에서 xlsx CDN 로드 확인)");
@@ -606,7 +578,6 @@
     XLSX.writeFile(wb, `onbid_candidates_${Date.now()}.xlsx`);
   }
 
-  // ====== Init ======
   function init() {
     if (els.apiBase) els.apiBase.value = normalizeApiBase(loadApiBase());
 
@@ -621,7 +592,6 @@
       applyFilter();
     });
 
-    // ✅ 캐시 로드(v3)
     try {
       const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
       if (cache?.items?.length) {
