@@ -17,6 +17,10 @@
   // ✅ 기본 API_BASE: 너의 Vercel 프록시
   const DEFAULT_API_BASE = "https://knson.vercel.app/api";
 
+  // ✅ 입찰방식(cptnMthodCd) 4종 전체 조회 (프록시/원본 API가 반복 파라미터를 허용하는 경우)
+  // 값 형식이 다른 API(예: 01~04)를 쓰면 여기만 바꾸면 됨.
+  const CPTN_METHOD_CODES_ALL = Object.freeze(["0001", "0002", "0003", "0004"]);
+
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
   const LS_WORK = "onbid_dash_work_v1";
@@ -106,6 +110,13 @@
     const n = Number(v);
     if (!Number.isFinite(n)) return "-";
     return `${Math.round(n)}%`;
+  }
+
+  function formatBidMethodDisplay(it) {
+    const name = safe(it?.cptnMthodNm).trim();
+    const code = safe(it?.cptnMthodCd).trim();
+    if (name && code) return `${name} (${code})`;
+    return name || code || "-";
   }
 
   function normalizeApiBase(input) {
@@ -207,6 +218,7 @@
       cltrBidEndDt: safe(it.cltrBidEndDt),
       cltrBidBgngDt: safe(it.cltrBidBgngDt),
 
+      cptnMthodCd: safe(it.cptnMthodCd),
       cptnMthodNm: safe(it.cptnMthodNm),
       pbctStatNm: safe(it.pbctStatNm),
 
@@ -254,6 +266,14 @@
     const q = buildApiFiltersFromUI();
     Object.entries(q).forEach(([k, v]) => {
       if (v !== null && v !== undefined && String(v).trim() !== "") url.searchParams.set(k, String(v));
+    });
+
+    // ✅ 입찰방식 4종 모두 조회
+    // - 반복 파라미터 형식: ...&cptnMthodCd=0001&cptnMthodCd=0002...
+    // - 프록시/원본 API의 코드 형식이 01~04라면 상단 상수만 수정하면 됨
+    url.searchParams.delete("cptnMthodCd");
+    CPTN_METHOD_CODES_ALL.forEach((code) => {
+      if (code) url.searchParams.append("cptnMthodCd", String(code));
     });
 
     const res = await fetch(url.toString(), { method: "GET" });
@@ -424,7 +444,7 @@
           <td class="num">${it.lowstBidAmt !== null ? fmtNum(it.lowstBidAmt) : escapeHtml(it.lowstBidPrcIndctCont)}</td>
           <td class="num">${escapeHtml(ratioText)}</td>
           <td class="num">${fmtNum(it.usbdNft ?? 0)}</td>
-          <td class="num">${escapeHtml(it.cptnMthodNm || "-")}</td>
+          <td class="num">${escapeHtml(formatBidMethodDisplay(it))}</td>
           <td class="num">${escapeHtml(it.pbctStatNm || "-")}</td>
           <td>${escapeHtml(it.cltrBidEndDt || "-")}</td>
           <td class="wrap-soft">
@@ -491,7 +511,7 @@
           <div>최저가</div><div>${it.lowstBidAmt !== null ? fmtNum(it.lowstBidAmt) : escapeHtml(it.lowstBidPrcIndctCont)}</div>
           <div>비율(%)</div><div>${escapeHtml(ratioText) || "-"}</div>
           <div>유찰</div><div>${fmtNum(it.usbdNft ?? 0)}</div>
-          <div>입찰방식</div><div>${escapeHtml(it.cptnMthodNm || "-")}</div>
+          <div>입찰방식</div><div>${escapeHtml(formatBidMethodDisplay(it))}</div>
           <div>입찰결과</div><div>${escapeHtml(it.pbctStatNm || "-")}</div>
           <div>입찰기간</div><div>${escapeHtml(it.cltrBidBgngDt)} ~ ${escapeHtml(it.cltrBidEndDt)}</div>
           <div>온비드</div><div>${onbidUrl ? `<a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">상세 바로가기</a>` : `<span class="muted">상세링크 불가</span>`}</div>
@@ -563,7 +583,7 @@
         최저가: it.lowstBidAmt ?? it.lowstBidPrcIndctCont,
         비율: formatPct(it.apslPrcCtrsLowstBidRto),
         유찰: it.usbdNft ?? 0,
-        입찰방식: it.cptnMthodNm || "",
+        입찰방식: formatBidMethodDisplay(it),
         입찰결과: it.pbctStatNm || "",
         입찰종료: it.cltrBidEndDt,
         담당자: w.assignee || "",
