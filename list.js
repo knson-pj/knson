@@ -457,33 +457,54 @@
   }
 
   // ====== API 응답 파싱 ======
+  function tryParseJsonLike(v) {
+    if (typeof v !== "string") return v;
+    const t = v.trim();
+    if (!t) return v;
+    if (!(t.startsWith("{") || t.startsWith("["))) return v;
+    try {
+      return JSON.parse(t);
+    } catch {
+      return v;
+    }
+  }
+
   function extractItems(payload) {
     if (!payload) return [];
-    // 프록시가 { result: ... } / { data: ... } 형태로 한 번 감싸는 경우 대응
-    let p = payload;
-    if (p && typeof p === "object") {
-      if (p.result && typeof p.result === "object") p = p.result;
-      else if (p.data && typeof p.data === "object") p = p.data;
+
+    let p = tryParseJsonLike(payload);
+
+    // 프록시가 { result: ... } / { data: ... } 형태로 여러 번 감싸는 경우 대응
+    for (let i = 0; i < 4 && p && typeof p === "object"; i++) {
+      const next = p.result ?? p.data ?? null;
+      if (next === null || next === undefined) break;
+      const parsedNext = tryParseJsonLike(next);
+      if (parsedNext === p) break;
+      // header/response/body가 이미 있으면 wrapper로 간주하지 않음
+      if (p.response || p.body || p.header) break;
+      p = parsedNext;
     }
 
+    p = tryParseJsonLike(p);
+
     // 공공데이터 표준 wrapper (response.header) 또는 (header)
-    const header = p.response?.header ?? p.header ?? null;
+    const header = p?.response?.header ?? p?.header ?? null;
     if (header?.resultCode && header.resultCode !== "00") {
       throw new Error(`${header.resultCode} ${header.resultMsg || "API Error"}`.trim());
     }
 
-    let body = p.response?.body ?? p.body ?? p;
+    let body = p?.response?.body ?? p?.body ?? p;
+    body = tryParseJsonLike(body);
 
     // body 자체가 다시 wrapper인 경우 추가 대응
-    if (body && typeof body === "object") {
-      if (body.result && typeof body.result === "object") body = body.result;
-      else if (body.data && typeof body.data === "object") body = body.data;
-    }
-
-    if (typeof body === "string") {
-      try {
-        body = JSON.parse(body);
-      } catch {}
+    for (let i = 0; i < 4 && body && typeof body === "object"; i++) {
+      const next = body.result ?? body.data ?? null;
+      if (next === null || next === undefined) break;
+      const parsedNext = tryParseJsonLike(next);
+      if (parsedNext === body) break;
+      // items/list/item가 있으면 더 벗기지 않음
+      if (body.items || body.item || body.list) break;
+      body = parsedNext;
     }
 
     const items =
@@ -495,6 +516,10 @@
       body?.result?.items ??
       body?.data?.items?.item ??
       body?.data?.items ??
+      p?.result?.items?.item ??
+      p?.result?.items ??
+      p?.data?.items?.item ??
+      p?.data?.items ??
       null;
 
     return Array.isArray(items) ? items : items ? [items] : [];
@@ -587,33 +612,42 @@
   }
 
   async function fetchPage(apiBase, pageNo, numOfRows) {
-    const url = new URL(`${apiBase.replace(/\/+$/, "")}/onbid/rlst-list`);
-    url.searchParams.set("pageNo", String(pageNo));
-    url.searchParams.set("numOfRows", String(numOfRows));
+    const buildUrlForCode = (code) => {
+      const url = new URL(`${apiBase.replace(/\/+$/, "")}/onbid/rlst-list`);
+      url.searchParams.set("pageNo", String(pageNo));
+      url.searchParams.set("numOfRows", String(numOfRows));
 
-    Object.entries(DEFAULT_QUERY).forEach(([k, v]) => url.searchParams.set(k, v));
+      Object.entries(DEFAULT_QUERY).forEach(([k, v]) => url.searchParams.set(k, v));
 
-    const q = buildApiFiltersFromUI();
-    Object.entries(q).forEach(([k, v]) => {
-      if (v !== null && v !== undefined && String(v).trim() !== "") url.searchParams.set(k, String(v));
-    });
+      const q = buildApiFiltersFromUI();
+      Object.entries(q).forEach(([k, v]) => {
+        if (v !== null && v !== undefined && String(v).trim() !== "") url.searchParams.set(k, String(v));
+      });
 
-    // ✅ 입찰방식 4종 모두 조회
-    // - 반복 파라미터 형식: ...&cptnMthodCd=0001&cptnMthodCd=0002...
-    // - 프록시/원본 API의 코드 형식이 01~04라면 상단 상수만 수정하면 됨
-    url.searchParams.delete("cptnMthodCd");
-    CPTN_METHOD_CODES_ALL.forEach((code) => {
-      if (code) url.searchParams.append("cptnMthodCd", String(code));
-    });
+      url.searchParams.delete("cptnMthodCd");
+      if (code) url.searchParams.set("cptnMthodCd", String(code));
+      return url;
+    };
 
-    const res = await fetch(url.toString(), { method: "GET" });
+    const fetchJson = async (url) => {
+      const res = await fetch(url.toString(), { method: "GET" });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(`API error ${res.status} ${res.statusText}\nURL: ${url.toString()}\nBODY: ${t.slice(0, 500)}`);
+      }
+      return res.json();
+    };
 
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error(`API error ${res.status} ${res.statusText}\nURL: ${url.toString()}\nBODY: ${t.slice(0, 500)}`);
+    // 일부 프록시/원본 API는 반복 파라미터 OR 처리를 지원하지 않아 마지막 값만 적용될 수 있음.
+    // 안전하게 코드별로 개별 호출 후 병합한다.
+    const payloads = [];
+    for (const code of CPTN_METHOD_CODES_ALL) {
+      if (!code) continue;
+      const url = buildUrlForCode(code);
+      const payload = await fetchJson(url);
+      payloads.push(payload);
     }
-
-    return res.json();
+    return payloads;
   }
 
   async function sync() {
@@ -634,10 +668,28 @@
 
       for (let p = pageStart; p < pageStart + maxPages; p++) {
         setStatus(`조회 중... (page ${p})`);
-        const payload = await fetchPage(apiBase, p, numOfRows);
-        if (!firstPayload) firstPayload = payload;
+        const payloadBatch = await fetchPage(apiBase, p, numOfRows);
+        const payloads = Array.isArray(payloadBatch) ? payloadBatch : [payloadBatch];
+        if (!firstPayload) firstPayload = payloads[0] || payloadBatch;
 
-        const items = extractItems(payload);
+        const pageItems = [];
+        payloads.forEach((pl) => {
+          try {
+            pageItems.push(...extractItems(pl));
+          } catch (e) {
+            console.warn("extractItems failed for one payload", e);
+          }
+        });
+
+        // 코드별 병합 시 중복 제거 (물건관리번호+공매조건번호 기준)
+        const seenPage = new Set();
+        const items = pageItems.filter((it) => {
+          const k = `${safe(it?.cltrMngNo)}|${safe(it?.pbctCdtnNo)}`;
+          if (seenPage.has(k)) return false;
+          seenPage.add(k);
+          return true;
+        });
+
         if (!items.length) break;
         collected.push(...items);
       }
