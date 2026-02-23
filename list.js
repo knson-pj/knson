@@ -28,6 +28,14 @@
     cltrUsgSclsCtgrNm: "근린생활시설",
   });
 
+  const SYNC_SCOPE = Object.freeze({
+    regionPrefixes: ["서울", "경기", "인천"],
+    maxRatio: 50,
+    pvctAllowed: ["Y", "N"],
+  });
+  const SYNC_SCOPE_TEXT = "서울, 경기, 인천 + 근린생활시설 + 수의계약가능 Y/N + 비율 50% 이하 건만 동기화";
+
+
   // ====== localStorage keys ======
   const LS_API_BASE = "onbid_dash_api_base_v1";
   const LS_WORK = "onbid_dash_work_v1";
@@ -206,6 +214,59 @@
     return `${s.toFixed(2)}㎡ (${(py ?? 0).toFixed(2)} py)`;
   }
 
+  function isInSyncRegion(sido) {
+    const v = safe(sido).trim();
+    if (!v) return false;
+    return SYNC_SCOPE.regionPrefixes.some((p) => v.startsWith(p));
+  }
+
+  function isAllowedPvct(v) {
+    const x = String(v || "").trim().toUpperCase();
+    return SYNC_SCOPE.pvctAllowed.includes(x);
+  }
+
+  function matchesSyncScope(it) {
+    if (!it) return false;
+    if (!isInSyncRegion(it.lctnSdnm)) return false;
+    const ratio = Number(it.apslPrcCtrsLowstBidRto);
+    if (!Number.isFinite(ratio) || ratio > SYNC_SCOPE.maxRatio) return false;
+    if (!isAllowedPvct(it.pvctTrgtYn)) return false;
+
+    // 기본 고정 조건(방어적 재검증)
+    if (safe(it.dspsMthodCd) && safe(it.dspsMthodCd) !== FIXED_QUERY_FILTERS.dspsMthodCd) return false;
+    const l = safe(it.cltrUsgLclsCtgrNm).trim();
+    const m = safe(it.cltrUsgMclsCtgrNm).trim();
+    const scls = safe(it.cltrUsgSclsCtgrNm).trim();
+    if (l && l !== FIXED_QUERY_FILTERS.cltrUsgLclsCtgrNm) return false;
+    if (m && m !== FIXED_QUERY_FILTERS.cltrUsgMclsCtgrNm) return false;
+    if (scls && scls !== FIXED_QUERY_FILTERS.cltrUsgSclsCtgrNm) return false;
+
+    return true;
+  }
+
+  function ensureSyncScopeHint() {
+    const anchor = els.statusText;
+    if (!anchor || !anchor.parentElement) return;
+    let hint = document.getElementById("syncScopeHint");
+    if (!hint) {
+      hint = document.createElement("div");
+      hint.id = "syncScopeHint";
+      hint.className = "sync-scope-hint";
+      anchor.parentElement.appendChild(hint);
+    }
+    hint.innerHTML = `<b>동기화 조건:</b> ${escapeHtml(SYNC_SCOPE_TEXT)}`;
+  }
+
+  function makeTooltipText(label, note) {
+    return `${label}\n${String(note || "").replace(/\r?\n/g, " / ").trim()}`;
+  }
+
+  function renderFeedbackCheck(note, label) {
+    const raw = String(note || "").trim();
+    if (!raw) return `<span class="fb-empty">-</span>`;
+    return `<span class="fb-check" title="${escapeHtml(makeTooltipText(label, raw))}" aria-label="${escapeHtml(label)} 입력됨"></span>`;
+  }
+
 
   function lockKeywordFilterControl() {
     if (!els.fKeyword) return;
@@ -244,6 +305,33 @@
           max-width: none !important;
           width: calc(100vw - 24px) !important;
         }
+        /* 후보리스트 체크표시(권리분석/현장조사) */
+        .fb-check {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:28px;
+          height:28px;
+          padding:0 8px;
+          border-radius:8px;
+          border:1px solid rgba(255,255,255,.08);
+          background: rgba(31, 48, 82, .65);
+          color:#39d98a;
+          font-weight:700;
+          cursor:help;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+        }
+        .fb-check::before { content:"✔"; font-size:14px; line-height:1; }
+        .fb-empty { color: rgba(255,255,255,.55); }
+        .sync-scope-hint {
+          margin-top: 6px;
+          font-size: 12px;
+          line-height: 1.4;
+          color: rgba(190, 215, 255, .9);
+          opacity: .95;
+          word-break: keep-all;
+        }
+        .sync-scope-hint b { color: #d7ecff; }
       `;
       document.head.appendChild(style);
     }
@@ -733,7 +821,7 @@
     const pageStart = Number(els.pageNo?.value || 1);
     const maxPages = Number(els.maxPages?.value || 3);
 
-    setStatus("조회 중...");
+    setStatus(`조회 중... (${SYNC_SCOPE_TEXT})`);
     if (els.btnSync) els.btnSync.disabled = true;
 
     try {
@@ -768,7 +856,8 @@
         collected.push(...items);
       }
 
-      rawItems = collected.map(normalize);
+      const normalizedAll = collected.map(normalize);
+      rawItems = normalizedAll.filter(matchesSyncScope);
       lockKeywordFilterControl();
 
       localStorage.setItem(LS_CACHE, JSON.stringify({ ts: Date.now(), items: rawItems.map((x) => x._raw) }));
@@ -779,9 +868,9 @@
       if (rawItems.length === 0) {
         const topKeys = firstPayload ? Object.keys(firstPayload).slice(0, 10).join(", ") : "(no payload)";
         const hint = firstPayload?.response ? "response wrapper" : firstPayload?.body ? "body wrapper" : firstPayload?.result ? "result wrapper" : "unknown";
-        setStatus(`완료: 0건 로드 (응답키: ${topKeys} / 형태: ${hint})`);
+        setStatus(`완료: 0건 로드 (동기화조건 적용: ${SYNC_SCOPE_TEXT}) (응답키: ${topKeys} / 형태: ${hint})`);
       } else {
-        setStatus(`완료: ${rawItems.length}건 로드`);
+        setStatus(`완료: ${rawItems.length}건 로드 (동기화조건 적용: ${SYNC_SCOPE_TEXT})`);
       }
     } catch (e) {
       console.error(e);
@@ -884,7 +973,7 @@
     if (!els.tbody) return;
 
     if (!filteredItems.length) {
-      els.tbody.innerHTML = `<tr><td class="muted" colspan="15">조건에 맞는 물건이 없어.</td></tr>`;
+      els.tbody.innerHTML = `<tr><td class="muted" colspan="16">조건에 맞는 물건이 없어.</td></tr>`;
       return;
     }
 
@@ -897,10 +986,8 @@
 
         const rightsNotesRaw = (w.rightsNotes ?? w.notes ?? "").trim();
         const siteNotesRaw = (w.siteNotes ?? "").trim();
-        const rightsPreview = rightsNotesRaw.slice(0, 24);
-        const sitePreview = siteNotesRaw.slice(0, 24);
-        const rightsText = rightsPreview ? escapeHtml(rightsPreview) + (rightsNotesRaw.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
-        const siteText = sitePreview ? escapeHtml(sitePreview) + (siteNotesRaw.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
+        const rightsText = renderFeedbackCheck(rightsNotesRaw, "권리분석");
+        const siteText = renderFeedbackCheck(siteNotesRaw, "현장조사");
 
         const onbidUrl = buildOnbidLink(it);
         const keyLabel = `${escapeHtml(it.cltrMngNo || "")}`;
@@ -1090,6 +1177,7 @@
     applyWideLayoutPatch();
     patchCandidateTableHeader();
     initSelectableFilterControls();
+    ensureSyncScopeHint();
     populateFilterSelectOptions({ preserveValues: true });
 
     els.btnSync?.addEventListener("click", sync);
@@ -1106,7 +1194,7 @@
     try {
       const cache = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
       if (cache?.items?.length) {
-        rawItems = cache.items.map(normalize);
+        rawItems = cache.items.map(normalize).filter(matchesSyncScope);
         lockKeywordFilterControl();
         populateFilterSelectOptions({ preserveValues: true });
         applyFilter();
