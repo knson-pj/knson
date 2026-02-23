@@ -154,6 +154,59 @@
     return "-";
   }
 
+  function toFloat(v) {
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    const s = String(v).replace(/,/g, "").trim();
+    if (!s) return null;
+    const x = Number(s);
+    return Number.isFinite(x) ? x : null;
+  }
+
+  function findAreaFieldValue(rawObj) {
+    if (!rawObj || typeof rawObj !== "object") return null;
+
+    const candidates = [
+      "bldArea", "buldArea", "bldAr", "buldAr", "bldngArea", "buildingArea",
+      "bldSqms", "bldSqm", "bldM2", "buldSqm", "buldM2", "bldTotArea",
+      "totBldArea", "archArea", "bldnAr", "bldMetr", "bldAtmcAr",
+      "bildArea", "건물면적", "건물면적(㎡)"
+    ];
+
+    for (const k of candidates) {
+      if (Object.prototype.hasOwnProperty.call(rawObj, k)) {
+        const n = toFloat(rawObj[k]);
+        if (n !== null) return n;
+      }
+    }
+
+    // 키 이름 패턴으로 한 번 더 탐색 (Onbid/프록시마다 필드명이 달라질 수 있음)
+    for (const [k, v] of Object.entries(rawObj)) {
+      if (v === null || v === undefined || v === "") continue;
+      const key = String(k);
+      if (/(bld|build|buld|건물)/i.test(key) && /(ar|area|sqm|m2|면적)/i.test(key)) {
+        const n = toFloat(v);
+        if (n !== null) return n;
+      }
+    }
+
+    return null;
+  }
+
+  function sqmToPy(sqm) {
+    const n = toFloat(sqm);
+    if (n === null) return null;
+    return n / 3.305785;
+  }
+
+  function formatAreaCell(sqm) {
+    const s = toFloat(sqm);
+    if (s === null) return "-";
+    const py = sqmToPy(s);
+    return `${s.toFixed(2)}㎡ (${(py ?? 0).toFixed(2)} py)`;
+  }
+
+
   function lockKeywordFilterControl() {
     if (!els.fKeyword) return;
     const fixed = FIXED_ITEM_NAME_KEYWORD;
@@ -299,6 +352,25 @@
     anchor.parentNode.insertBefore(select, anchor.nextSibling);
     els.fPvctTrgtYn = select;
     return select;
+  }
+
+
+  function patchCandidateTableHeader() {
+    const table = els.tbody?.closest?.("table");
+    const tr = table?.querySelector?.("thead tr");
+    if (!tr) return;
+
+    const desired = [
+      "담당", "상태", "권리분석", "현장조사", "물건명", "소재지", "감정가", "최저가", "비율(%)",
+      "건물면적", "유찰", "입찰방식", "입찰결과", "입찰종료", "키(온비드)"
+    ];
+
+    const current = [...tr.children].map((th) => (th.textContent || "").replace(/\s+/g, ""));
+    const desiredCmp = desired.map((s) => s.replace(/\s+/g, ""));
+    const same = current.length === desiredCmp.length && current.every((v, i) => v === desiredCmp[i]);
+    if (same) return;
+
+    tr.innerHTML = desired.map((txt) => `<th>${txt}</th>`).join("");
   }
 
   function initSelectableFilterControls() {
@@ -577,6 +649,8 @@
       cltrUsgLclsCtgrNm: safe(it.cltrUsgLclsCtgrNm),
       cltrUsgMclsCtgrNm: safe(it.cltrUsgMclsCtgrNm),
       cltrUsgSclsCtgrNm: safe(it.cltrUsgSclsCtgrNm),
+      bldAreaSqm: findAreaFieldValue(it),
+      bldAreaPy: sqmToPy(findAreaFieldValue(it)),
 
       _raw: it,
     };
@@ -810,7 +884,7 @@
     if (!els.tbody) return;
 
     if (!filteredItems.length) {
-      els.tbody.innerHTML = `<tr><td class="muted" colspan="13">조건에 맞는 물건이 없어.</td></tr>`;
+      els.tbody.innerHTML = `<tr><td class="muted" colspan="15">조건에 맞는 물건이 없어.</td></tr>`;
       return;
     }
 
@@ -821,8 +895,12 @@
         const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
         const ratioText = formatPct(it.apslPrcCtrsLowstBidRto);
 
-        const notesPreview = (w.notes || "").trim().slice(0, 24);
-        const notesText = notesPreview ? escapeHtml(notesPreview) + (w.notes.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
+        const rightsNotesRaw = (w.rightsNotes ?? w.notes ?? "").trim();
+        const siteNotesRaw = (w.siteNotes ?? "").trim();
+        const rightsPreview = rightsNotesRaw.slice(0, 24);
+        const sitePreview = siteNotesRaw.slice(0, 24);
+        const rightsText = rightsPreview ? escapeHtml(rightsPreview) + (rightsNotesRaw.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
+        const siteText = sitePreview ? escapeHtml(sitePreview) + (siteNotesRaw.length > 24 ? "…" : "") : `<span class="muted">-</span>`;
 
         const onbidUrl = buildOnbidLink(it);
         const keyLabel = `${escapeHtml(it.cltrMngNo || "")}`;
@@ -831,7 +909,8 @@
         <tr data-key="${escapeHtml(key)}">
           <td>${escapeHtml(w.assignee || "") || `<span class="muted">-</span>`}</td>
           <td>${badgeForStatus(w.status || "미배정")}</td>
-          <td>${notesText}</td>
+          <td>${rightsText}</td>
+          <td>${siteText}</td>
           <td class="wrap-soft" title="${escapeHtml(it.onbidCltrNm)}">
             <div class="cell-title">${escapeHtml(it.onbidCltrNm)}</div>
             <div class="cell-sub">${escapeHtml([it.prptDivNm, it.dspsMthodNm, it.bidDivNm, it.pvctTrgtLabel].filter(Boolean).join(" · "))}</div>
@@ -840,6 +919,7 @@
           <td class="num">${fmtNum(it.apslEvlAmt)}</td>
           <td class="num">${it.lowstBidAmt !== null ? fmtNum(it.lowstBidAmt) : escapeHtml(it.lowstBidPrcIndctCont)}</td>
           <td class="num">${escapeHtml(ratioText)}</td>
+          <td class="num">${escapeHtml(formatAreaCell(it.bldAreaSqm))}</td>
           <td class="num">${fmtNum(it.usbdNft ?? 0)}</td>
           <td class="num">${escapeHtml(formatBidMethodDisplay(it))}</td>
           <td class="num">${escapeHtml(it.pbctStatNm || "-")}</td>
@@ -893,7 +973,7 @@
     if (!it || !els.editor) return;
 
     const work = loadWork();
-    const w = work[key] || { assignee: "", status: "미배정", notes: "" };
+    const w = work[key] || { assignee: "", status: "미배정", rightsNotes: "", siteNotes: "", notes: "" };
     const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
     const ratioText = formatPct(it.apslPrcCtrsLowstBidRto);
     const onbidUrl = buildOnbidLink(it);
@@ -907,6 +987,7 @@
           <div>감정가</div><div>${fmtNum(it.apslEvlAmt) || "-"}</div>
           <div>최저가</div><div>${it.lowstBidAmt !== null ? fmtNum(it.lowstBidAmt) : escapeHtml(it.lowstBidPrcIndctCont)}</div>
           <div>비율(%)</div><div>${escapeHtml(ratioText) || "-"}</div>
+          <div>건물면적</div><div>${escapeHtml(formatAreaCell(it.bldAreaSqm))}</div>
           <div>유찰</div><div>${fmtNum(it.usbdNft ?? 0)}</div>
           <div>입찰방식</div><div>${escapeHtml(formatBidMethodDisplay(it))}</div>
           <div>입찰결과</div><div>${escapeHtml(it.pbctStatNm || "-")}</div>
@@ -936,8 +1017,13 @@
       </div>
 
       <div class="panel">
-        <h3>권리분석/현장실사 피드백</h3>
-        <textarea id="edNotes">${escapeHtml(w.notes || "")}</textarea>
+        <h3>권리분석 피드백</h3>
+        <textarea id="edRightsNotes">${escapeHtml(w.rightsNotes ?? w.notes ?? "")}</textarea>
+      </div>
+
+      <div class="panel">
+        <h3>현장조사 피드백</h3>
+        <textarea id="edSiteNotes">${escapeHtml(w.siteNotes || "")}</textarea>
       </div>
     `;
 
@@ -945,10 +1031,12 @@
     btnSave?.addEventListener("click", () => {
       const assignee = document.getElementById("edAssignee")?.value?.trim() || "";
       const status = document.getElementById("edStatus")?.value || "미배정";
-      const notes = document.getElementById("edNotes")?.value || "";
+      const rightsNotes = document.getElementById("edRightsNotes")?.value || "";
+      const siteNotes = document.getElementById("edSiteNotes")?.value || "";
 
       const work2 = loadWork();
-      work2[key] = { assignee, status, notes, updatedAt: Date.now() };
+      // notes는 하위호환용(기존 피드백 컬럼/구버전 데이터 마이그레이션 대비)
+      work2[key] = { assignee, status, rightsNotes, siteNotes, notes: rightsNotes, updatedAt: Date.now() };
       saveWork(work2);
 
       populateFilterSelectOptions({ preserveValues: true, only: ["assignee"] });
@@ -968,13 +1056,7 @@
       const w = work[key] || {};
       const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
       return {
-        key,
-        cltrMngNo: it.cltrMngNo,
-        pbctCdtnNo: it.pbctCdtnNo,
-        cltrHstrNo: it.cltrHstrNo,
-        cltrNo: it.cltrNo,
-        plnmNo: it.plnmNo,
-        pbctNo: it.pbctNo,
+        "키(온비드)": it.cltrMngNo,
         onbidUrl: buildOnbidLink(it),
 
         물건명: it.onbidCltrNm,
@@ -982,6 +1064,7 @@
         감정가: it.apslEvlAmt ?? "",
         최저가: it.lowstBidAmt ?? it.lowstBidPrcIndctCont,
         비율: formatPct(it.apslPrcCtrsLowstBidRto),
+        건물면적: formatAreaCell(it.bldAreaSqm),
         유찰: it.usbdNft ?? 0,
         입찰방식: formatBidMethodDisplay(it),
         입찰결과: it.pbctStatNm || "",
@@ -990,7 +1073,8 @@
         입찰종료: it.cltrBidEndDt,
         담당자: w.assignee || "",
         진행상태: w.status || "미배정",
-        피드백: w.notes || "",
+        권리분석피드백: w.rightsNotes ?? w.notes ?? "",
+        현장조사피드백: w.siteNotes || "",
       };
     });
 
@@ -1004,6 +1088,7 @@
     if (els.apiBase) els.apiBase.value = normalizeApiBase(loadApiBase());
 
     applyWideLayoutPatch();
+    patchCandidateTableHeader();
     initSelectableFilterControls();
     populateFilterSelectOptions({ preserveValues: true });
 
