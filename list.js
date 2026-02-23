@@ -158,7 +158,11 @@
   function resolvePvctTrgtYn(raw) {
     if (!raw || typeof raw !== "object") return "";
 
-    const directKeys = ["pvctTrgtYn", "PVCTTRGTYN", "pvctYn", "pvctTrgYn"];
+    const directKeys = [
+      "pvctTrgtYn", "PVCTTRGTYN", "pvctYn", "pvctTrgYn",
+      "prvtCtrtTrgtYn", "prvtCtrtYn", "privateContractTargetYn",
+      "suiCtrtPsblYn", "suuiCtrtPsblYn"
+    ];
     for (const k of directKeys) {
       if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
       const v = String(raw[k] ?? "").trim().toUpperCase();
@@ -170,13 +174,33 @@
       raw.pbctStatNm,
       raw.pbctStat,
       raw.cltrStatNm,
+      raw.cltrSttsNm,
+      raw.cltrSttusNm,
+      raw.cltrStat,
+      raw.cltrStts,
       raw.bidStatNm,
       raw.onbidCltrNm,
       raw.prptDivNm,
       raw.cptnMthodNm,
+      raw.goodStatNm,
+      raw.statusNm,
+      raw.statNm,
     ].map((v) => String(v ?? "")).filter(Boolean);
 
-    const joined = textCandidates.join(" | ");
+    let joined = textCandidates.join(" | ");
+
+    // 응답 스키마가 다를 때를 대비해 전체 문자열 필드를 한 번 더 훑음
+    if (!joined || !/수의\s*계약/.test(joined)) {
+      try {
+        const allStrings = Object.values(raw)
+          .filter((v) => v !== null && v !== undefined)
+          .map((v) => (typeof v === "string" || typeof v === "number" ? String(v) : ""))
+          .filter(Boolean)
+          .join(" | ");
+        if (allStrings) joined = `${joined} | ${allStrings}`.trim();
+      } catch {}
+    }
+
     if (/수의\s*계약\s*(불가|불가능)/.test(joined)) return "N";
     if (/수의\s*계약\s*가능/.test(joined)) return "Y";
 
@@ -258,7 +282,9 @@
     if (!isInSyncRegion(it.lctnSdnm)) return false;
     const ratio = Number(it.apslPrcCtrsLowstBidRto);
     if (!Number.isFinite(ratio) || ratio > SYNC_SCOPE.maxRatio) return false;
-    if (!isAllowedPvct(it.pvctTrgtYn)) return false;
+    // pvctTrgtYn는 응답 스키마/필드명 차이로 누락될 수 있어 동기화 단계에서는 너무 엄격히 제외하지 않음.
+    // 단, 값이 식별되면 Y/N만 허용.
+    if (it.pvctTrgtYn && !isAllowedPvct(it.pvctTrgtYn)) return false;
 
     // 기본 고정 조건(방어적 재검증)
     if (safe(it.dspsMthodCd) && safe(it.dspsMthodCd) !== FIXED_QUERY_FILTERS.dspsMthodCd) return false;
@@ -548,6 +574,20 @@
     let el = document.getElementById("fPvctTrgtYn");
     if (el) {
       els.fPvctTrgtYn = el;
+      try {
+        // 기존 HTML에 이미 select가 있으면 문구를 강제로 최신화
+        const opts = [...el.options || []];
+        let hasAll = false, hasY = false, hasN = false;
+        opts.forEach((opt) => {
+          const v = String(opt.value || "").trim().toUpperCase();
+          if (!v) { opt.textContent = "수의계약가능여부(전체)"; hasAll = true; return; }
+          if (v === "Y") { opt.textContent = "수의계약 가능"; hasY = true; return; }
+          if (v === "N") { opt.textContent = "수의계약 불가능"; hasN = true; return; }
+        });
+        if (!hasAll) { const o = document.createElement("option"); o.value = ""; o.textContent = "수의계약가능여부(전체)"; el.insertBefore(o, el.firstChild); }
+        if (!hasY) { const o = document.createElement("option"); o.value = "Y"; o.textContent = "수의계약 가능"; el.appendChild(o); }
+        if (!hasN) { const o = document.createElement("option"); o.value = "N"; o.textContent = "수의계약 불가능"; el.appendChild(o); }
+      } catch {}
       return el;
     }
 
@@ -675,8 +715,6 @@
     }
 
     if (should("pvctTrgtYn") && els.fPvctTrgtYn) {
-      const hasY = rawItems.some((it) => String(it.pvctTrgtYn || "").trim().toUpperCase() === "Y");
-      const hasN = rawItems.some((it) => String(it.pvctTrgtYn || "").trim().toUpperCase() === "N");
       const current = prev.pvctTrgtYn;
       const frag = document.createDocumentFragment();
 
@@ -685,18 +723,15 @@
       optAll.textContent = "수의계약가능여부(전체)";
       frag.appendChild(optAll);
 
-      if (hasY) {
-        const optY = document.createElement("option");
-        optY.value = "Y";
-        optY.textContent = "수의계약 가능";
-        frag.appendChild(optY);
-      }
-      if (hasN) {
-        const optN = document.createElement("option");
-        optN.value = "N";
-        optN.textContent = "수의계약 불가능";
-        frag.appendChild(optN);
-      }
+      const optY = document.createElement("option");
+      optY.value = "Y";
+      optY.textContent = "수의계약 가능";
+      frag.appendChild(optY);
+
+      const optN = document.createElement("option");
+      optN.value = "N";
+      optN.textContent = "수의계약 불가능";
+      frag.appendChild(optN);
 
       els.fPvctTrgtYn.innerHTML = "";
       els.fPvctTrgtYn.appendChild(frag);
@@ -820,8 +855,8 @@
 
     const ratio = (() => {
       if (it.apslPrcCtrsLowstBidRto !== undefined && it.apslPrcCtrsLowstBidRto !== null && it.apslPrcCtrsLowstBidRto !== "") {
-        const x = Number(it.apslPrcCtrsLowstBidRto);
-        return Number.isFinite(x) ? x : appraised && minBid ? (minBid / appraised) * 100 : null;
+        const x = toFloat(String(it.apslPrcCtrsLowstBidRto).replace(/%/g, ""));
+        return x !== null ? x : appraised && minBid ? (minBid / appraised) * 100 : null;
       }
       return appraised && minBid ? (minBid / appraised) * 100 : null;
     })();
