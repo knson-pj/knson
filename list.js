@@ -441,6 +441,16 @@
           box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
         }
         .fb-check::before { content:"✔"; font-size:14px; line-height:1; }
+        .onbid-link {
+          background: transparent !important;
+          color: #9ec5ff !important;
+          text-decoration: underline;
+          border: 0 !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+        }
+        a.onbid-link { display: inline-block; }
+        button.onbid-link { cursor: pointer; font: inherit; }
         .fb-empty { color: rgba(255,255,255,.55); }
         .sync-scope-hint {
           margin-top: 6px;
@@ -575,7 +585,7 @@
     try {
       [...(el.options || [])].forEach((opt) => {
         const v = String(opt.value || "").trim().toUpperCase();
-        if (!v) opt.textContent = "수의계약가능여부(전체)";
+        if (!v) opt.textContent = "수의계약 가능여부(전체)";
         else if (v === "Y") opt.textContent = "수의계약 가능";
         else if (v === "N") opt.textContent = "수의계약 불가능";
       });
@@ -613,7 +623,7 @@
     select.title = "수의계약가능여부 필터";
     select.setAttribute("aria-label", "수의계약가능여부");
     select.innerHTML = `
-      <option value="">수의계약가능여부(전체)</option>
+      <option value="">수의계약 가능여부(전체)</option>
       <option value="Y">수의계약 가능</option>
       <option value="N">수의계약 불가능</option>
     `;
@@ -632,7 +642,7 @@
 
     const desired = [
       "담당", "상태", "권리분석", "현장조사", "물건명", "소재지", "감정가", "최저가", "비율(%)",
-      "건물면적", "유찰", "입찰방식", "입찰결과", "입찰종료", "키(온비드)"
+      "건물면적", "유찰", "입찰방식", "입찰결과", "입찰종료일", "물건번호"
     ];
 
     const current = [...tr.children].map((th) => (th.textContent || "").replace(/\s+/g, ""));
@@ -734,7 +744,7 @@
 
       const optAll = document.createElement("option");
       optAll.value = "";
-      optAll.textContent = "수의계약가능여부(전체)";
+      optAll.textContent = "수의계약 가능여부(전체)";
       frag.appendChild(optAll);
 
       const optY = document.createElement("option");
@@ -1008,17 +1018,22 @@
 
     const numOfRows = Number(els.numOfRows?.value || 50);
     const pageStart = Number(els.pageNo?.value || 1);
-    const maxPages = Number(els.maxPages?.value || 3);
+    const maxPages = Number.POSITIVE_INFINITY; // 전체 동기화: 동기화 조건에 맞는 건을 끝까지 수집
 
-    setStatus(`조회 중... (${SYNC_SCOPE_TEXT})`);
+    setStatus(`조회 중... (${SYNC_SCOPE_TEXT}) · 전체 페이지 자동수집`);
     if (els.btnSync) els.btnSync.disabled = true;
 
     try {
       const collected = [];
       let firstPayload = null;
+      const HARD_PAGE_SAFETY_CAP = 500;
 
       for (let p = pageStart; p < pageStart + maxPages; p++) {
-        setStatus(`조회 중... (page ${p})`);
+        if ((p - pageStart) >= HARD_PAGE_SAFETY_CAP) {
+          console.warn("sync safety cap reached", { HARD_PAGE_SAFETY_CAP });
+          break;
+        }
+        setStatus(`조회 중... (page ${p}, 전체 자동수집)`);
         const payloadBatch = await fetchPage(apiBase, p, numOfRows);
         const payloads = Array.isArray(payloadBatch) ? payloadBatch : [payloadBatch];
         if (!firstPayload) firstPayload = payloads[0] || payloadBatch;
@@ -1280,7 +1295,7 @@
           <div>재산유형</div><div>${escapeHtml([it.cltrUsgLclsCtgrNm, it.cltrUsgMclsCtgrNm, it.cltrUsgSclsCtgrNm].filter(Boolean).join(" > ")) || "-"}</div>
           <div>입찰기간</div><div>${escapeHtml(it.cltrBidBgngDt)} ~ ${escapeHtml(it.cltrBidEndDt)}</div>
           <div>온비드</div><div>${onbidUrl ? `<a class="onbid-link" href="${onbidUrl}" target="_blank" rel="noopener noreferrer">상세 바로가기</a>` : `<span class="muted">상세링크 불가</span>`}</div>
-          <div>키</div><div class="muted">${escapeHtml(it.cltrMngNo || "-")}</div>
+          <div>물건번호</div><div class="muted">${escapeHtml(it.cltrMngNo || "-")}</div>
         </div>
 
         <div style="margin-top:12px;" class="grid" style="grid-template-columns: 1fr 1fr;">
@@ -1341,7 +1356,7 @@
       const w = work[key] || {};
       const addr = [it.lctnSdnm, it.lctnSggnm, it.lctnEmdNm].filter(Boolean).join(" ");
       return {
-        "키(온비드)": it.cltrMngNo,
+        "물건번호": it.cltrMngNo,
         onbidUrl: buildOnbidLink(it),
 
         물건명: it.onbidCltrNm,
@@ -1355,7 +1370,7 @@
         입찰결과: it.pbctStatNm || "",
         수의계약가능여부: it.pvctTrgtLabel || "",
         재산유형: [it.cltrUsgLclsCtgrNm, it.cltrUsgMclsCtgrNm, it.cltrUsgSclsCtgrNm].filter(Boolean).join(" > "),
-        입찰종료: it.cltrBidEndDt,
+        입찰종료일: it.cltrBidEndDt,
         담당자: w.assignee || "",
         진행상태: w.status || "미배정",
         권리분석피드백: w.rightsNotes ?? w.notes ?? "",
