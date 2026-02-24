@@ -528,6 +528,155 @@
     }
   }
 
+
+  function findLikelyFieldBlock(el) {
+    if (!(el instanceof Element)) return null;
+    let node = el;
+    while (node && node !== document.body) {
+      const labels = node.querySelectorAll ? node.querySelectorAll("label") : [];
+      const controls = node.querySelectorAll ? node.querySelectorAll("input,select,textarea") : [];
+      if (labels.length >= 1 && labels.length <= 3 && controls.length >= 1 && controls.length <= 4 && node.contains(el)) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return el.parentElement || null;
+  }
+
+  function relabelByTextContains(fromText, toText) {
+    const labels = [...document.querySelectorAll("label")];
+    labels.forEach((lb) => {
+      const t = (lb.textContent || "").trim();
+      if (t.includes(fromText)) lb.textContent = t.replace(fromText, toText);
+    });
+  }
+
+  function hideFieldBlockByEl(el) {
+    const block = findLikelyFieldBlock(el);
+    if (!block) return null;
+    block.style.display = "none";
+    return block;
+  }
+
+  function buildCandidateFilterDock() {
+    const table = els.tbody?.closest?.("table");
+    if (!table) return null;
+    const tableWrap = table.parentElement || table;
+    let dock = document.getElementById("candidateFilterDock");
+    if (!dock) {
+      dock = document.createElement("div");
+      dock.id = "candidateFilterDock";
+      dock.className = "candidate-filter-dock";
+      dock.innerHTML = `
+        <div class="candidate-filter-grid"></div>
+        <div class="candidate-filter-actions"></div>
+      `;
+      tableWrap.parentNode?.insertBefore(dock, tableWrap);
+    }
+    return dock;
+  }
+
+  function moveNodeIfPresent(node, target) {
+    if (!(node instanceof Element) || !(target instanceof Element)) return false;
+    target.appendChild(node);
+    return true;
+  }
+
+  function patchFilterAndSyncLayout() {
+    // 1) 동기화(조회) 고정값화 + 기존 페이지 관련 필드 숨김
+    if (els.numOfRows) {
+      els.numOfRows.value = "50";
+      hideFieldBlockByEl(els.numOfRows);
+      els.numOfRows.disabled = true;
+    }
+    if (els.pageNo) {
+      els.pageNo.value = "1";
+      hideFieldBlockByEl(els.pageNo);
+      els.pageNo.disabled = true;
+    }
+    if (els.maxPages) {
+      hideFieldBlockByEl(els.maxPages);
+      els.maxPages.disabled = true;
+    }
+
+    // 2) 후보리스트 필터에서 제거할 항목 숨김
+    hideFieldBlockByEl(els.fMinPrice);
+    hideFieldBlockByEl(els.fMaxPrice);
+    hideFieldBlockByEl(els.fBidResult);
+    hideFieldBlockByEl(els.fEndBefore);
+
+    // 라벨 문구 정리 (요청: HHmm 제거)
+    relabelByTextContains("YYYYMMDDHHmm", "YYYY/MMDD");
+    relabelByTextContains("YYYY/MMDDHHmm", "YYYY/MMDD");
+
+    // 3) 남길 필터를 후보리스트 제목과 테이블 사이로 이동
+    const dock = buildCandidateFilterDock();
+    if (!dock) return;
+    const grid = dock.querySelector(".candidate-filter-grid");
+    const actions = dock.querySelector(".candidate-filter-actions");
+    if (!grid || !actions) return;
+
+    const keepControls = [
+      els.fSido,
+      els.fSigungu,
+      els.fMaxRatio,
+      els.fMinFail,
+      els.fKeyword,
+      els.fAssignee,
+      els.fPvctTrgtYn,
+    ].filter(Boolean);
+
+    const moved = new Set();
+    keepControls.forEach((ctl) => {
+      const block = findLikelyFieldBlock(ctl);
+      if (!block || moved.has(block)) return;
+      moved.add(block);
+      grid.appendChild(block);
+    });
+
+    // 필터 버튼 이동 (원래 조회 설정 카드 하단에 섞여 있던 것 분리)
+    [els.btnApplyFilter, els.btnClearFilter].forEach((btn) => {
+      if (btn && btn.parentElement !== actions) {
+        actions.appendChild(btn);
+      }
+    });
+
+    // 후보리스트 카운트/필터 간격 안정화
+    if (!dock.dataset.patched) {
+      dock.dataset.patched = "1";
+      const styleId = "candidate-filter-dock-style";
+      if (!document.getElementById(styleId)) {
+        const st = document.createElement("style");
+        st.id = styleId;
+        st.textContent = `
+          .candidate-filter-dock{
+            margin: 10px 12px 12px;
+            padding: 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,.08);
+            background: rgba(255,255,255,.02);
+          }
+          .candidate-filter-dock .candidate-filter-grid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap:10px 12px;
+            align-items:end;
+          }
+          .candidate-filter-dock .candidate-filter-actions{
+            display:flex;
+            gap:8px;
+            margin-top:10px;
+            flex-wrap:wrap;
+          }
+          .candidate-filter-dock .candidate-filter-grid > *{
+            min-width:0;
+          }
+        `;
+        document.head.appendChild(st);
+      }
+    }
+  }
+
   function upgradeInputToSelect(id, placeholderText) {
     let el = document.getElementById(id);
     if (!el) return null;
@@ -1016,8 +1165,8 @@
     if (els.apiBase) els.apiBase.value = apiBase;
     saveApiBase(apiBase);
 
-    const numOfRows = Number(els.numOfRows?.value || 50);
-    const pageStart = Number(els.pageNo?.value || 1);
+    const numOfRows = 50; // 고정: 동기화용 내부 설정
+    const pageStart = 1;   // 고정: 첫 페이지부터 전체 자동수집
     const maxPages = Number.POSITIVE_INFINITY; // 전체 동기화: 동기화 조건에 맞는 건을 끝까지 수집
 
     setStatus(`조회 중... (${SYNC_SCOPE_TEXT}) · 전체 페이지 자동수집`);
@@ -1391,6 +1540,7 @@
     patchCandidateTableHeader();
     initSelectableFilterControls();
     ensureSyncScopeHint();
+    patchFilterAndSyncLayout();
     populateFilterSelectOptions({ preserveValues: true });
 
     els.btnSync?.addEventListener("click", sync);
