@@ -602,7 +602,24 @@
     // 2) 후보리스트 필터에서 제거할 항목 숨김
     hideFieldBlockByEl(els.fMinPrice);
     hideFieldBlockByEl(els.fMaxPrice);
-    hideFieldBlockByEl(els.fBidResult);
+
+    // fBidResult는 fAssignee/fPvctTrgtYn와 동일 필드 블록(세로 스택)으로 생성되는 경우가 있어
+    // 블록 전체를 숨기면 담당자/수의계약가능여부까지 같이 사라질 수 있음.
+    {
+      const bidBlock = findLikelyFieldBlock(els.fBidResult);
+      const assigneeBlock = findLikelyFieldBlock(els.fAssignee);
+      const pvctBlock = findLikelyFieldBlock(els.fPvctTrgtYn);
+      const sharedWithKept = !!(bidBlock && (bidBlock === assigneeBlock || bidBlock === pvctBlock));
+      if (sharedWithKept) {
+        if (els.fBidResult) {
+          els.fBidResult.style.display = "none";
+          els.fBidResult.disabled = true;
+        }
+      } else {
+        hideFieldBlockByEl(els.fBidResult);
+      }
+    }
+
     hideFieldBlockByEl(els.fEndBefore);
 
     // 라벨 문구 정리 (요청: HHmm 제거)
