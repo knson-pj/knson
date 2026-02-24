@@ -33,7 +33,7 @@
     maxRatio: 50,
     pvctAllowed: ["Y", "N"],
   });
-  const SYNC_SCOPE_TEXT = "서울, 경기, 인천 + 근린생활시설 + 수의계약가능 Y/N + 비율 50% 이하 건만 동기화";
+  const SYNC_SCOPE_TEXT = "서울, 경기, 인천 + 근린생활시설 + 수의계약 가능/불가능 + 비율 50% 이하 건만 동기화";
 
 
   // ====== localStorage keys ======
@@ -570,23 +570,36 @@
     return select;
   }
 
+  function normalizePvctFilterOptionLabels(el) {
+    if (!el) return;
+    try {
+      [...(el.options || [])].forEach((opt) => {
+        const v = String(opt.value || "").trim().toUpperCase();
+        if (!v) opt.textContent = "수의계약가능여부(전체)";
+        else if (v === "Y") opt.textContent = "수의계약 가능";
+        else if (v === "N") opt.textContent = "수의계약 불가능";
+      });
+    } catch {}
+  }
+
   function ensurePvctTargetFilterControl() {
     let el = document.getElementById("fPvctTrgtYn");
     if (el) {
       els.fPvctTrgtYn = el;
       try {
-        // 기존 HTML에 이미 select가 있으면 문구를 강제로 최신화
+        // 기존 HTML에 이미 select가 있으면 문구/옵션을 강제로 최신화
         const opts = [...el.options || []];
         let hasAll = false, hasY = false, hasN = false;
         opts.forEach((opt) => {
           const v = String(opt.value || "").trim().toUpperCase();
-          if (!v) { opt.textContent = "수의계약가능여부(전체)"; hasAll = true; return; }
-          if (v === "Y") { opt.textContent = "수의계약 가능"; hasY = true; return; }
-          if (v === "N") { opt.textContent = "수의계약 불가능"; hasN = true; return; }
+          if (!v) { hasAll = true; return; }
+          if (v === "Y") { hasY = true; return; }
+          if (v === "N") { hasN = true; return; }
         });
-        if (!hasAll) { const o = document.createElement("option"); o.value = ""; o.textContent = "수의계약가능여부(전체)"; el.insertBefore(o, el.firstChild); }
-        if (!hasY) { const o = document.createElement("option"); o.value = "Y"; o.textContent = "수의계약 가능"; el.appendChild(o); }
-        if (!hasN) { const o = document.createElement("option"); o.value = "N"; o.textContent = "수의계약 불가능"; el.appendChild(o); }
+        if (!hasAll) { const o = document.createElement("option"); o.value = ""; el.insertBefore(o, el.firstChild); }
+        if (!hasY) { const o = document.createElement("option"); o.value = "Y"; el.appendChild(o); }
+        if (!hasN) { const o = document.createElement("option"); o.value = "N"; el.appendChild(o); }
+        normalizePvctFilterOptionLabels(el);
       } catch {}
       return el;
     }
@@ -607,6 +620,7 @@
 
     anchor.parentNode.insertBefore(select, anchor.nextSibling);
     els.fPvctTrgtYn = select;
+    normalizePvctFilterOptionLabels(select);
     return select;
   }
 
@@ -735,6 +749,7 @@
 
       els.fPvctTrgtYn.innerHTML = "";
       els.fPvctTrgtYn.appendChild(frag);
+      normalizePvctFilterOptionLabels(els.fPvctTrgtYn);
       els.fPvctTrgtYn.value = (current && ["Y", "N"].includes(current)) ? current : "";
     }
   }
@@ -938,7 +953,7 @@
   }
 
   async function fetchPage(apiBase, pageNo, numOfRows) {
-    const buildUrlForCode = (code) => {
+    const buildUrlForCode = (code, pvctYn) => {
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/onbid/rlst-list`);
       url.searchParams.set("pageNo", String(pageNo));
       url.searchParams.set("numOfRows", String(numOfRows));
@@ -952,11 +967,14 @@
 
       url.searchParams.delete("cptnMthodCd");
       if (code) url.searchParams.set("cptnMthodCd", String(code));
+      url.searchParams.delete("pvctTrgtYn");
+      if (pvctYn) url.searchParams.set("pvctTrgtYn", String(pvctYn));
+      url.searchParams.set("_ts", String(Date.now()));
       return url;
     };
 
     const fetchJson = async (url) => {
-      const res = await fetch(url.toString(), { method: "GET" });
+      const res = await fetch(url.toString(), { method: "GET", cache: "no-store" });
       if (!res.ok) {
         const t = await res.text().catch(() => "");
         throw new Error(`API error ${res.status} ${res.statusText}\nURL: ${url.toString()}\nBODY: ${t.slice(0, 500)}`);
@@ -967,11 +985,18 @@
     // 일부 프록시/원본 API는 반복 파라미터 OR 처리를 지원하지 않아 마지막 값만 적용될 수 있음.
     // 안전하게 코드별로 개별 호출 후 병합한다.
     const payloads = [];
+    const pvctPairs = ["Y", "N"];
     for (const code of CPTN_METHOD_CODES_ALL) {
       if (!code) continue;
-      const url = buildUrlForCode(code);
-      const payload = await fetchJson(url);
-      payloads.push(payload);
+      for (const pvctYn of pvctPairs) {
+        const url = buildUrlForCode(code, pvctYn);
+        try {
+          const payload = await fetchJson(url);
+          payloads.push(payload);
+        } catch (e) {
+          console.warn("fetchPage subset failed", { code, pvctYn, error: e?.message || e });
+        }
+      }
     }
     return payloads;
   }
