@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -7,364 +7,161 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div id="app">
-    <header class="app-header">
-      <div class="brand-wrap">
-        <h1 class="brand">부동산 물건 관리 시스템</h1>
-        <p class="subtitle">경매 · 공매 · 일반 물건 통합 관리</p>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div>
+          <h1>부동산 물건 관리 시스템</h1>
+          <p>경매 · 공매 · 일반 물건 통합 조회</p>
+        </div>
       </div>
 
-      <div class="header-actions">
-        <div id="authStatus" class="auth-status">로그인 필요</div>
+      <div class="topbar-actions">
+        <button id="btnGoRegister" class="btn btn-secondary">일반물건 등록</button>
         <button id="btnOpenLogin" class="btn btn-primary">로그인</button>
-        <button id="btnLogout" class="btn btn-outline hidden">로그아웃</button>
+        <button id="btnLogout" class="btn btn-ghost hidden">로그아웃</button>
       </div>
     </header>
 
-    <nav class="top-nav">
-      <button class="nav-btn active" data-view="front">통합 물건 조회</button>
-      <button class="nav-btn" data-view="general-register">일반물건 등록</button>
-      <button class="nav-btn admin-only hidden" data-view="admin">관리자</button>
-    </nav>
-
-    <!-- 공통 알림 -->
-    <section id="globalMessage" class="global-message hidden"></section>
-
-    <!-- =========================
-         VIEW: 통합 물건 조회
-    ========================== -->
-    <main id="view-front" class="view active">
-      <section class="panel">
-        <div class="panel-header">
-          <h2>통합 물건 조회</h2>
-          <p class="muted">
-            관리자: 전체 조회 / 담당자: 배정 지역 기준 담당 물건만 조회
-          </p>
+    <main class="main-wrap">
+      <!-- 사용자 상태 -->
+      <section class="panel user-panel">
+        <div class="panel-title-row">
+          <h2>접속 정보</h2>
+          <span id="userRoleBadge" class="badge badge-muted">비로그인</span>
         </div>
-
-        <div class="toolbar grid-4">
-          <div class="field">
-            <label for="filterSource">구분</label>
-            <select id="filterSource">
-              <option value="all">전체</option>
-              <option value="auction">경매</option>
-              <option value="public">공매</option>
-              <option value="general">일반</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="filterStatus">상태</label>
-            <select id="filterStatus">
-              <option value="all">전체</option>
-              <option value="active">진행중</option>
-              <option value="hold">보류</option>
-              <option value="done">종결</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="filterRegion">지역 검색</label>
-            <input id="filterRegion" type="text" placeholder="예: 강남구, 역삼동" />
-          </div>
-
-          <div class="field">
-            <label for="filterKeyword">키워드</label>
-            <input id="filterKeyword" type="text" placeholder="주소/제목/메모 검색" />
-          </div>
-        </div>
-
-        <div class="toolbar-actions">
-          <button id="btnRefreshList" class="btn btn-outline">새로고침</button>
-          <span id="frontCount" class="badge">0건</span>
-        </div>
-
-        <div class="table-wrap">
-          <table class="table" id="frontTable">
-            <thead>
-              <tr>
-                <th>구분</th>
-                <th>상태</th>
-                <th>제목</th>
-                <th>주소</th>
-                <th>구/동</th>
-                <th>담당자</th>
-                <th>가격</th>
-                <th>등록일</th>
-              </tr>
-            </thead>
-            <tbody id="frontTableBody">
-              <tr><td colspan="8" class="empty">로그인 후 조회할 수 있습니다.</td></tr>
-            </tbody>
-          </table>
+        <div id="userSummary" class="user-summary">
+          <div class="muted">로그인하면 관리자/담당자 권한에 따라 조회 범위가 적용됩니다.</div>
         </div>
       </section>
-    </main>
 
-    <!-- =========================
-         VIEW: 일반물건 등록
-    ========================== -->
-    <main id="view-general-register" class="view">
-      <section class="panel">
-        <div class="panel-header">
-          <h2>일반물건 등록</h2>
-          <p class="muted">담당자/관리자가 일반 중개 물건을 등록합니다. (주소 중복 자동 차단)</p>
-        </div>
-
-        <form id="generalPropertyForm" class="form-grid">
-          <div class="field">
-            <label for="gpTitle">물건명 / 제목 *</label>
-            <input id="gpTitle" name="title" type="text" required />
+      <!-- 리스트 화면 -->
+      <section id="viewList" class="view-section">
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>물건 조회</h2>
+            <div class="chip-row">
+              <span id="countAll" class="chip">전체 0</span>
+              <span id="countAuction" class="chip">경매 0</span>
+              <span id="countGongmae" class="chip">공매 0</span>
+              <span id="countGeneral" class="chip">일반 0</span>
+            </div>
           </div>
 
-          <div class="field field-span-2">
-            <label for="gpAddress">주소 *</label>
-            <input id="gpAddress" name="address" type="text" placeholder="예: 서울특별시 강남구 역삼동 123-4" required />
-          </div>
+          <div class="toolbar">
+            <div class="tabs" id="sourceTabs">
+              <button class="tab is-active" data-source="all">전체</button>
+              <button class="tab" data-source="auction">경매</button>
+              <button class="tab" data-source="gongmae">공매</button>
+              <button class="tab" data-source="general">일반</button>
+            </div>
 
-          <div class="field">
-            <label for="gpStatus">상태</label>
-            <select id="gpStatus" name="status">
-              <option value="active">진행중</option>
-              <option value="hold">보류</option>
-              <option value="done">종결</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="gpPrice">가격(원)</label>
-            <input id="gpPrice" name="price" type="number" min="0" step="10000" placeholder="0" />
-          </div>
-
-          <div class="field field-span-2">
-            <label for="gpMemo">메모</label>
-            <textarea id="gpMemo" name="memo" rows="4" placeholder="비고, 연락처, 진행 메모 등"></textarea>
-          </div>
-
-          <div class="field">
-            <label for="gpRegionGu">구(선택)</label>
-            <input id="gpRegionGu" name="regionGu" type="text" placeholder="예: 강남구" />
-          </div>
-
-          <div class="field">
-            <label for="gpRegionDong">동(선택)</label>
-            <input id="gpRegionDong" name="regionDong" type="text" placeholder="예: 역삼동" />
-          </div>
-
-          <div class="actions field-span-2">
-            <button type="submit" class="btn btn-primary">일반물건 등록</button>
-            <button type="reset" class="btn btn-outline">초기화</button>
-          </div>
-        </form>
-
-        <div id="generalRegisterResult" class="inline-result muted"></div>
-      </section>
-    </main>
-
-    <!-- =========================
-         VIEW: 관리자
-    ========================== -->
-    <main id="view-admin" class="view">
-      <section class="panel">
-        <div class="panel-header">
-          <h2>관리자 페이지</h2>
-          <p class="muted">CSV 업로드, 중복 방지, 계정/지역 배정 관리</p>
-        </div>
-
-        <div class="admin-grid">
-          <!-- CSV 업로드 -->
-          <section class="card">
-            <h3>1) 경매·공매 CSV 업로드</h3>
-
-            <div class="field">
-              <label for="csvType">업로드 유형</label>
-              <select id="csvType">
-                <option value="auction">경매</option>
-                <option value="public">공매</option>
+            <div class="filters">
+              <input id="searchKeyword" type="text" class="input" placeholder="주소 / 담당자 / 지역 검색" />
+              <select id="filterStatus" class="select">
+                <option value="">상태 전체</option>
+                <option value="active">진행중</option>
+                <option value="hold">보류</option>
+                <option value="closed">종결</option>
+                <option value="review">검토중</option>
               </select>
+              <button id="btnRefresh" class="btn btn-secondary">새로고침</button>
             </div>
+          </div>
+        </section>
 
-            <div class="field">
-              <label for="csvFile">CSV 파일</label>
-              <input id="csvFile" type="file" accept=".csv,text/csv" />
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>물건 목록</h2>
+            <div id="listMeta" class="muted">불러오는 중...</div>
+          </div>
+          <div id="propertyList" class="property-grid"></div>
+          <div id="emptyState" class="empty-state hidden">
+            표시할 물건이 없습니다.
+          </div>
+        </section>
+      </section>
+
+      <!-- 일반물건 등록 화면 -->
+      <section id="viewRegister" class="view-section hidden">
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>일반물건 등록</h2>
+            <button id="btnBackToList" class="btn btn-ghost">목록으로</button>
+          </div>
+          <p class="muted form-desc">
+            제3자(부동산 소유자, 부동산중개인)가 사용할 수 있는 등록 페이지입니다.
+          </p>
+
+          <form id="generalListingForm" class="form-grid">
+            <label class="field">
+              <span>물건 주소 *</span>
+              <input name="address" class="input" type="text" required placeholder="예: 서울시 강남구 역삼동 ..." />
+            </label>
+
+            <label class="field">
+              <span>매각가(원) *</span>
+              <input name="salePrice" class="input" type="number" min="0" step="10000" required placeholder="예: 580000000" />
+            </label>
+
+            <label class="field">
+              <span>등록자 *</span>
+              <input name="registrantName" class="input" type="text" required placeholder="성함 또는 상호" />
+            </label>
+
+            <label class="field">
+              <span>전화번호 *</span>
+              <input name="phone" class="input" type="tel" required placeholder="010-0000-0000" />
+            </label>
+
+            <label class="field field-full">
+              <span>비고 (선택)</span>
+              <textarea name="memo" class="textarea" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
+            </label>
+
+            <div class="form-actions field-full">
+              <button type="submit" class="btn btn-primary">등록 요청하기</button>
             </div>
+          </form>
+        </section>
+      </section>
 
-            <p class="muted small">
-              권장 컬럼 예시: 제목, 주소, 상태, 가격, 구, 동, 메모<br/>
-              (컬럼명 자동 매핑 시도: title/제목, address/주소, status/상태, price/가격/감정가 등)
-            </p>
-
-            <div class="actions">
-              <button id="btnCsvPreview" class="btn btn-outline">미리보기</button>
-              <button id="btnCsvImport" class="btn btn-primary">업로드 반영</button>
-            </div>
-
-            <div id="csvPreviewBox" class="preview-box"></div>
-            <div id="csvImportResult" class="inline-result muted"></div>
-          </section>
-
-          <!-- 계정 관리 -->
-          <section class="card">
-            <h3>2) 담당자 계정 관리</h3>
-
-            <form id="userCreateForm" class="form-grid compact">
-              <div class="field">
-                <label for="userName">이름 *</label>
-                <input id="userName" type="text" required />
-              </div>
-              <div class="field">
-                <label for="userPassword">PASS-WORD *</label>
-                <input id="userPassword" type="password" required />
-              </div>
-              <div class="field">
-                <label for="userRole">권한</label>
-                <select id="userRole">
-                  <option value="staff">담당자</option>
-                  <option value="admin">관리자</option>
-                </select>
-              </div>
-              <div class="actions field-span-2">
-                <button type="submit" class="btn btn-primary">계정 추가</button>
-              </div>
-            </form>
-
-            <div class="table-wrap small-table">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>이름</th>
-                    <th>권한</th>
-                    <th>배정 지역</th>
-                    <th>작업</th>
-                  </tr>
-                </thead>
-                <tbody id="userTableBody">
-                  <tr><td colspan="4" class="empty">계정 없음</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <!-- 지역 배정 -->
-          <section class="card card-span-2">
-            <h3>3) 담당자 지역 배정 / 자동 그룹핑</h3>
-
-            <div class="grid-4">
-              <div class="field">
-                <label for="assignUserSelect">대상 담당자</label>
-                <select id="assignUserSelect"></select>
-              </div>
-
-              <div class="field">
-                <label for="assignUnit">배정 단위</label>
-                <select id="assignUnit">
-                  <option value="gu">구 단위</option>
-                  <option value="dong">동 단위</option>
-                </select>
-              </div>
-
-              <div class="field">
-                <label for="autoStaffCount">담당자 수(X)</label>
-                <input id="autoStaffCount" type="number" min="1" step="1" value="3" />
-              </div>
-
-              <div class="field">
-                <label for="regionSourceMode">지역 소스</label>
-                <select id="regionSourceMode">
-                  <option value="properties">등록 물건에서 추출</option>
-                  <option value="manual">수동 입력 목록 사용</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="split-box">
-              <div>
-                <label class="block-label">지역 후보 목록 (복수 선택)</label>
-                <select id="regionPool" multiple size="10"></select>
-                <div class="row-actions">
-                  <button id="btnLoadRegionPool" class="btn btn-outline" type="button">지역 후보 새로고침</button>
-                </div>
-              </div>
-
-              <div>
-                <label class="block-label">수동 지역 입력 (줄바꿈 구분)</label>
-                <textarea id="manualRegions" rows="10" placeholder="예:
-강남구
-서초구
-송파구
-강남구 역삼동
-강남구 대치동"></textarea>
-              </div>
-            </div>
-
-            <div class="actions">
-              <button id="btnAssignSelectedRegions" class="btn btn-outline" type="button">선택 지역 수동 배정 저장</button>
-              <button id="btnAutoGroup" class="btn btn-primary" type="button">X명 기준 자동 그룹핑</button>
-              <button id="btnApplyAutoGroup" class="btn btn-success" type="button">자동 그룹핑 결과 적용</button>
-            </div>
-
-            <div id="autoGroupResult" class="auto-group-result"></div>
-          </section>
-
-          <!-- 관리자 물건 전체 현황 -->
-          <section class="card card-span-2">
-            <h3>4) 전체 물건 현황 / 중복 체크 상태</h3>
-            <div class="toolbar-actions">
-              <button id="btnAdminReload" class="btn btn-outline">새로고침</button>
-              <span id="adminStats" class="badge">-</span>
-            </div>
-
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>구분</th>
-                    <th>제목</th>
-                    <th>주소</th>
-                    <th>정규화주소</th>
-                    <th>구/동</th>
-                    <th>담당자</th>
-                    <th>중복위험</th>
-                  </tr>
-                </thead>
-                <tbody id="adminPropertyTableBody">
-                  <tr><td colspan="7" class="empty">데이터 없음</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+      <!-- 등록 완료 화면 -->
+      <section id="viewThanks" class="view-section hidden">
+        <section class="panel thanks-panel">
+          <div class="thanks-icon">✓</div>
+          <h2>등록이 접수되었습니다</h2>
+          <p>검토후 연락드리겠습니다.</p>
+          <button id="btnThanksToHome" class="btn btn-primary">메인으로 이동</button>
+        </section>
       </section>
     </main>
   </div>
 
   <!-- 로그인 모달 -->
   <div id="loginModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" id="loginBackdrop"></div>
-    <div class="modal-panel">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-card">
       <div class="modal-header">
-        <h2>로그인</h2>
+        <h3>로그인</h3>
         <button id="btnCloseLogin" class="icon-btn" aria-label="닫기">✕</button>
       </div>
 
-      <form id="loginForm" class="form-grid compact">
-        <div class="field field-span-2">
-          <label for="loginName">이름</label>
-          <input id="loginName" type="text" required placeholder="예: admin" />
-        </div>
-        <div class="field field-span-2">
-          <label for="loginPassword">PASS-WORD</label>
-          <input id="loginPassword" type="password" required placeholder="비밀번호" />
-        </div>
-        <div class="actions field-span-2">
-          <button type="submit" class="btn btn-primary">로그인</button>
+      <form id="loginForm" class="modal-body">
+        <label class="field">
+          <span>이름</span>
+          <input name="name" class="input" type="text" required />
+        </label>
+        <label class="field">
+          <span>비밀번호</span>
+          <input name="password" class="input" type="password" required />
+        </label>
+        <button type="submit" class="btn btn-primary w-full">로그인</button>
+        <div class="muted small">
+          관리자/담당자 계정은 관리자페이지에서 생성됩니다.
         </div>
       </form>
-
-      <p class="muted small">
-        (개발용 mock 기본 계정) admin / admin123
-      </p>
-      <div id="loginError" class="error-text"></div>
     </div>
   </div>
 
