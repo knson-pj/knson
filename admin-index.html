@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>부동산 물건 관리 시스템 - 관리자</title>
+  <link rel="stylesheet" href="./admin-styles.css" />
+</head>
+<body>
+  <div id="adminApp">
+    <header class="app-header">
+      <div class="brand-wrap">
+        <h1 class="brand">관리자 페이지</h1>
+        <p class="subtitle">CSV 업로드 · 중복 방지 · 계정/지역 배정 · 전체 현황</p>
+      </div>
+
+      <div class="header-actions">
+        <div id="authStatus" class="auth-status">로그인 필요</div>
+        <button id="btnOpenLogin" class="btn btn-primary">로그인</button>
+        <button id="btnLogout" class="btn btn-outline hidden">로그아웃</button>
+      </div>
+    </header>
+
+    <section id="globalMessage" class="global-message hidden"></section>
+
+    <main class="main">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>관리 기능</h2>
+          <p class="muted">관리자만 접근할 수 있습니다.</p>
+        </div>
+
+        <div class="admin-grid">
+          <!-- CSV 업로드 -->
+          <section class="card">
+            <h3>1) 경매·공매 CSV 업로드</h3>
+
+            <div class="field">
+              <label for="csvType">업로드 유형</label>
+              <select id="csvType">
+                <option value="auction">경매</option>
+                <option value="public">공매</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="csvFile">CSV 파일</label>
+              <input id="csvFile" type="file" accept=".csv,text/csv" />
+            </div>
+
+            <p class="muted small">
+              권장 컬럼: 제목, 주소, 상태, 가격, 구, 동, 메모<br/>
+              자동 매핑: title/제목, address/주소, status/상태, price/가격/감정가/최저가…
+            </p>
+
+            <div class="actions">
+              <button id="btnCsvPreview" class="btn btn-outline" type="button">미리보기</button>
+              <button id="btnCsvImport" class="btn btn-primary" type="button">업로드 반영</button>
+            </div>
+
+            <div id="csvPreviewBox" class="preview-box"></div>
+            <div id="csvImportResult" class="inline-result muted"></div>
+          </section>
+
+          <!-- 계정 관리 -->
+          <section class="card">
+            <h3>2) 담당자 계정 관리</h3>
+
+            <form id="userCreateForm" class="form-grid compact">
+              <div class="field">
+                <label for="userName">이름 *</label>
+                <input id="userName" type="text" required />
+              </div>
+              <div class="field">
+                <label for="userPassword">PASS-WORD *</label>
+                <input id="userPassword" type="password" required />
+              </div>
+              <div class="field">
+                <label for="userRole">권한</label>
+                <select id="userRole">
+                  <option value="staff">담당자</option>
+                  <option value="admin">관리자</option>
+                </select>
+              </div>
+              <div class="actions field-span-2">
+                <button type="submit" class="btn btn-primary">계정 추가</button>
+              </div>
+            </form>
+
+            <div class="table-wrap small-table">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>권한</th>
+                    <th>배정 지역</th>
+                    <th>작업</th>
+                  </tr>
+                </thead>
+                <tbody id="userTableBody">
+                  <tr><td colspan="4" class="empty">계정 없음</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- 지역 배정/자동 그룹핑 -->
+          <section class="card card-span-2">
+            <h3>3) 담당자 지역 배정 / 자동 그룹핑</h3>
+
+            <div class="grid-4">
+              <div class="field">
+                <label for="assignUserSelect">대상 담당자</label>
+                <select id="assignUserSelect"></select>
+              </div>
+
+              <div class="field">
+                <label for="assignUnit">배정 단위</label>
+                <select id="assignUnit">
+                  <option value="gu">구 단위</option>
+                  <option value="dong">동 단위</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="autoStaffCount">담당자 수(X)</label>
+                <input id="autoStaffCount" type="number" min="1" step="1" value="3" />
+              </div>
+
+              <div class="field">
+                <label for="regionSourceMode">지역 소스</label>
+                <select id="regionSourceMode">
+                  <option value="properties">등록 물건에서 추출</option>
+                  <option value="manual">수동 입력 목록 사용</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="split-box">
+              <div>
+                <label class="block-label">지역 후보 목록 (복수 선택)</label>
+                <select id="regionPool" multiple size="10"></select>
+                <div class="row-actions">
+                  <button id="btnLoadRegionPool" class="btn btn-outline" type="button">지역 후보 새로고침</button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block-label">수동 지역 입력 (줄바꿈 구분)</label>
+                <textarea id="manualRegions" rows="10" placeholder="예:
+강남구
+서초구
+송파구
+강남구 역삼동
+강남구 대치동"></textarea>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="btnAssignSelectedRegions" class="btn btn-outline" type="button">선택 지역 배정 저장</button>
+              <button id="btnAutoGroup" class="btn btn-primary" type="button">X명 기준 자동 그룹핑</button>
+              <button id="btnApplyAutoGroup" class="btn btn-success" type="button">자동 그룹핑 결과 적용</button>
+            </div>
+
+            <div id="autoGroupResult" class="auto-group-result"></div>
+          </section>
+
+          <!-- 전체 물건 현황 -->
+          <section class="card card-span-2">
+            <h3>4) 전체 물건 현황 / 중복 체크</h3>
+
+            <div class="toolbar-actions">
+              <button id="btnAdminReload" class="btn btn-outline" type="button">새로고침</button>
+              <span id="adminStats" class="badge">-</span>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>구분</th>
+                    <th>제목</th>
+                    <th>주소</th>
+                    <th>정규화주소</th>
+                    <th>구/동</th>
+                    <th>담당자</th>
+                    <th>중복위험</th>
+                  </tr>
+                </thead>
+                <tbody id="adminPropertyTableBody">
+                  <tr><td colspan="7" class="empty">데이터 없음</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 로그인 모달 -->
+  <div id="loginModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" id="loginBackdrop"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>관리자 로그인</h2>
+        <button id="btnCloseLogin" class="icon-btn" aria-label="닫기">✕</button>
+      </div>
+
+      <form id="loginForm" class="form-grid compact">
+        <div class="field field-span-2">
+          <label for="loginName">이름</label>
+          <input id="loginName" type="text" required placeholder="예: admin" />
+        </div>
+        <div class="field field-span-2">
+          <label for="loginPassword">PASS-WORD</label>
+          <input id="loginPassword" type="password" required placeholder="비밀번호" />
+        </div>
+        <div class="actions field-span-2">
+          <button type="submit" class="btn btn-primary">로그인</button>
+        </div>
+      </form>
+
+      <p class="muted small">(개발용 mock 기본) admin / admin123</p>
+      <div id="loginError" class="error-text"></div>
+    </div>
+  </div>
+
+  <script src="./admin-app.js"></script>
+</body>
+</html>
