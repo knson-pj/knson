@@ -1,904 +1,1294 @@
-(function () {
+(() => {
   "use strict";
 
-  const CONFIG = {
-    API_BASE: "https://knson.vercel.app/api",
-    ENABLE_MOCK_FALLBACK: true,
-    LS_KEYS: {
-      DB: "knson_property_mgmt_mock_db_v1",
-      SESSION: "knson_property_mgmt_mock_session_v1",
-    },
-  };
+  const API_BASE = "https://knson.vercel.app/api";
+  const SESSION_KEY = "knson_bms_admin_session_v1";
 
   const state = {
-    currentUser: null,
+    session: loadSession(),
+    activeTab: "properties",
     properties: [],
-    users: [],
+    staff: [],
+    offices: [],
+    propertyFilters: {
+      source: "",
+      status: "",
+      keyword: "",
+    },
     csvPreviewRows: [],
-    autoGroupDraft: null,
+    officeCsvPreviewRows: [],
+    lastGroupSuggestion: null,
   };
 
-  const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const els = {};
+  const phoneSaveTimers = new Map();
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+  document.addEventListener("DOMContentLoaded", init);
+
+  function init() {
+    cacheEls();
+    bindEvents();
+    renderSessionUI();
+    ensureLoginThenLoad();
   }
 
-  function show(elOrSel) {
-    const el = typeof elOrSel === "string" ? $(elOrSel) : elOrSel;
-    if (el) el.classList.remove("hidden");
-  }
-  function hide(elOrSel) {
-    const el = typeof elOrSel === "string" ? $(elOrSel) : elOrSel;
-    if (el) el.classList.add("hidden");
-  }
-
-  function normalizeWhitespace(s) {
-    return String(s || "").replace(/\s+/g, " ").trim();
-  }
-
-  function normalizeAddress(raw) {
-    const s = normalizeWhitespace(raw)
-      .replace(/[.,]/g, "")
-      .replace(/\b(대한민국|한국)\b/g, "")
-      .replace(/특별시/g, "시")
-      .replace(/광역시/g, "시")
-      .replace(/\s*-\s*/g, "-")
-      .toLowerCase();
-    return s;
-  }
-
-  function parseGuDongFromAddress(address) {
-    const text = normalizeWhitespace(address);
-    const tokens = text.split(" ");
-    let regionGu = "";
-    let regionDong = "";
-    for (const tk of tokens) {
-      if (!regionGu && /구$/.test(tk)) regionGu = tk;
-      if (!regionDong && /(동|읍|면|리)$/.test(tk)) regionDong = tk;
-    }
-    return { regionGu, regionDong };
-  }
-
-  function regionKey(unit, gu, dong) {
-    if (unit === "dong") return normalizeWhitespace(`${gu || ""} ${dong || ""}`).trim();
-    return normalizeWhitespace(gu || "");
-  }
-
-  function uid(prefix = "id") {
-    return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
-  }
-
-  function flashMessage(type, text, timeout = 2500) {
-    const box = $("#globalMessage");
-    box.className = `global-message ${type}`;
-    box.textContent = text;
-    show(box);
-    if (timeout > 0) {
-      window.clearTimeout(flashMessage._t);
-      flashMessage._t = window.setTimeout(() => hide(box), timeout);
-    }
-  }
-
-  function formatDate(value) {
-    if (!value) return "-";
-    try {
-      const d = new Date(value);
-      if (Number.isNaN(d.getTime())) return String(value);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    } catch {
-      return String(value);
-    }
-  }
-
-  function formatNumber(value) {
-    const n = Number(value || 0);
-    if (!Number.isFinite(n)) return "-";
-    return n.toLocaleString("ko-KR");
-  }
-
-  function isAdmin() {
-    return state.currentUser?.role === "admin";
-  }
-
-  /* =======================
-   * CSV parser
-   ======================= */
-  function parseCSV(text) {
-    const rows = [];
-    let row = [];
-    let cur = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      const next = text[i + 1];
-
-      if (ch === '"') {
-        if (inQuotes && next === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-        continue;
-      }
-      if (ch === "," && !inQuotes) {
-        row.push(cur); cur = ""; continue;
-      }
-      if ((ch === "\n" || ch === "\r") && !inQuotes) {
-        if (ch === "\r" && next === "\n") i++;
-        row.push(cur); cur = "";
-        if (row.some(v => String(v).trim() !== "")) rows.push(row);
-        row = [];
-        continue;
-      }
-      cur += ch;
-    }
-    if (cur.length > 0 || row.length > 0) {
-      row.push(cur);
-      if (row.some(v => String(v).trim() !== "")) rows.push(row);
-    }
-    if (!rows.length) return { headers: [], records: [] };
-
-    const headers = rows[0].map(h => normalizeWhitespace(h));
-    const records = rows.slice(1).map(cols => {
-      const rec = {};
-      headers.forEach((h, idx) => (rec[h] = normalizeWhitespace(cols[idx] ?? "")));
-      return rec;
-    });
-    return { headers, records };
-  }
-
-  function mapCsvRecordToProperty(record, sourceType) {
-    const keyAliases = {
-      title: ["title", "제목", "물건명", "건명", "사건명"],
-      address: ["address", "주소", "소재지", "물건주소"],
-      status: ["status", "상태", "진행상태"],
-      price: ["price", "가격", "감정가", "최저가", "매각가"],
-      regionGu: ["regionGu", "구", "시군구", "구역(구)"],
-      regionDong: ["regionDong", "동", "읍면동", "구역(동)"],
-      memo: ["memo", "메모", "비고", "특이사항"],
-    };
-
-    const pick = (aliases) => {
-      for (const a of aliases) {
-        if (record[a] != null && record[a] !== "") return record[a];
-        const foundKey = Object.keys(record).find(k => k.toLowerCase() === a.toLowerCase());
-        if (foundKey && record[foundKey] !== "") return record[foundKey];
-      }
-      return "";
-    };
-
-    const title = pick(keyAliases.title) || `${sourceType === "auction" ? "경매" : "공매"} 물건`;
-    const address = pick(keyAliases.address);
-    const priceRaw = pick(keyAliases.price);
-    const price = Number(String(priceRaw).replace(/[^\d.-]/g, "")) || 0;
-
-    let status = (pick(keyAliases.status) || "active").toLowerCase();
-    if (["진행", "진행중", "active"].includes(status)) status = "active";
-    else if (["보류", "hold"].includes(status)) status = "hold";
-    else if (["종결", "완료", "done"].includes(status)) status = "done";
-    else status = "active";
-
-    let regionGu = pick(keyAliases.regionGu);
-    let regionDong = pick(keyAliases.regionDong);
-    if (!regionGu || !regionDong) {
-      const parsed = parseGuDongFromAddress(address);
-      regionGu = regionGu || parsed.regionGu;
-      regionDong = regionDong || parsed.regionDong;
-    }
-
-    return { title, address, status, price, regionGu, regionDong, memo: pick(keyAliases.memo), source: sourceType };
-  }
-
-  /* =======================
-   * API layer + mock fallback
-   ======================= */
-  const Api = {
-    async request(path, options = {}) {
-      const url = `${CONFIG.API_BASE}${path}`;
-      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-      const merged = { ...options, headers };
-      if (merged.body && typeof merged.body !== "string") merged.body = JSON.stringify(merged.body);
-
-      const res = await fetch(url, merged);
-      const ct = res.headers.get("content-type") || "";
-      const data = ct.includes("application/json") ? await res.json() : await res.text();
-      if (!res.ok) throw new Error((data && data.message) || `API Error ${res.status}`);
-      return data;
-    },
-    async safe(callServer, callMock) {
-      try { return await callServer(); }
-      catch (e) {
-        if (!CONFIG.ENABLE_MOCK_FALLBACK) throw e;
-        console.warn("[API fallback -> mock]", e.message);
-        return await callMock();
-      }
-    },
-    auth: {
-      login: (name, password) =>
-        Api.safe(() => Api.request("/auth/login", { method: "POST", body: { name, password } }), () => MockApi.auth.login(name, password)),
-      logout: () =>
-        Api.safe(() => Api.request("/auth/logout", { method: "POST" }), () => MockApi.auth.logout()),
-      me: () =>
-        Api.safe(() => Api.request("/auth/me"), () => MockApi.auth.me()),
-    },
-    properties: {
-      list: () =>
-        Api.safe(() => Api.request("/properties"), () => MockApi.properties.list()),
-      importCsvRows: (source, rows) =>
-        Api.safe(() => Api.request("/properties/import-csv", { method: "POST", body: { source, rows } }), () => MockApi.properties.importCsvRows(source, rows)),
-    },
-    users: {
-      list: () =>
-        Api.safe(() => Api.request("/users"), () => MockApi.users.list()),
-      create: (payload) =>
-        Api.safe(() => Api.request("/users", { method: "POST", body: payload }), () => MockApi.users.create(payload)),
-      updateAssignments: (userId, assignedRegions) =>
-        Api.safe(() => Api.request(`/users/${encodeURIComponent(userId)}/assignments`, { method: "PATCH", body: { assignedRegions } }), () => MockApi.users.updateAssignments(userId, assignedRegions)),
-    },
-  };
-
-  const MockApi = {
-    _readDb() {
-      const raw = localStorage.getItem(CONFIG.LS_KEYS.DB);
-      if (raw) { try { return JSON.parse(raw); } catch {} }
-      const seed = {
-        users: [
-          { id: "u_admin", name: "admin", password: "admin123", role: "admin", assignedRegions: [] },
-          { id: "u_staff_1", name: "홍길동", password: "1111", role: "staff", assignedRegions: [{ unit: "gu", name: "강남구" }] },
-        ],
-        properties: [
-          {
-            id: uid("p"),
-            source: "auction",
-            title: "역삼동 아파트 경매",
-            address: "서울특별시 강남구 역삼동 123-4",
-            addressNorm: normalizeAddress("서울특별시 강남구 역삼동 123-4"),
-            regionGu: "강남구",
-            regionDong: "역삼동",
-            status: "active",
-            price: 950000000,
-            memo: "",
-            assigneeId: null,
-            assigneeName: "",
-            createdBy: "seed",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      };
-      localStorage.setItem(CONFIG.LS_KEYS.DB, JSON.stringify(seed));
-      return seed;
-    },
-    _writeDb(db) { localStorage.setItem(CONFIG.LS_KEYS.DB, JSON.stringify(db)); },
-    _readSession() {
-      const raw = localStorage.getItem(CONFIG.LS_KEYS.SESSION);
-      if (!raw) return null;
-      try { return JSON.parse(raw); } catch { return null; }
-    },
-    _writeSession(session) {
-      if (!session) localStorage.removeItem(CONFIG.LS_KEYS.SESSION);
-      else localStorage.setItem(CONFIG.LS_KEYS.SESSION, JSON.stringify(session));
-    },
-    _withLatency(data, ms = 120) {
-      return new Promise((resolve) => setTimeout(() => resolve(data), ms));
-    },
-    auth: {
-      async login(name, password) {
-        const db = MockApi._readDb();
-        const user = db.users.find((u) => u.name === String(name).trim() && u.password === String(password));
-        if (!user) throw new Error("이름 또는 비밀번호가 올바르지 않습니다.");
-        MockApi._writeSession({ userId: user.id });
-        return MockApi._withLatency({ user: sanitizeUser(user) });
-      },
-      async logout() { MockApi._writeSession(null); return MockApi._withLatency({ ok: true }); },
-      async me() {
-        const db = MockApi._readDb();
-        const session = MockApi._readSession();
-        if (!session) return MockApi._withLatency({ user: null });
-        const user = db.users.find((u) => u.id === session.userId);
-        return MockApi._withLatency({ user: user ? sanitizeUser(user) : null });
-      },
-    },
-    properties: {
-      async list() {
-        const db = MockApi._readDb();
-        return MockApi._withLatency({ items: db.properties.map((p) => ({ ...p })) });
-      },
-      async importCsvRows(source, rows) {
-        const db = MockApi._readDb();
-        const session = MockApi._readSession();
-        const currentUser = session ? db.users.find((u) => u.id === session.userId) : null;
-        if (!currentUser || currentUser.role !== "admin") throw new Error("관리자 권한이 필요합니다.");
-
-        let created = 0, duplicates = 0;
-        const errors = [];
-
-        rows.forEach((r, idx) => {
-          try {
-            const address = normalizeWhitespace(r.address);
-            if (!address) { errors.push({ row: idx + 1, message: "주소 누락" }); return; }
-            const addressNorm = normalizeAddress(address);
-            if (db.properties.find((p) => p.addressNorm === addressNorm)) { duplicates++; return; }
-
-            let regionGu = normalizeWhitespace(r.regionGu || "");
-            let regionDong = normalizeWhitespace(r.regionDong || "");
-            if (!regionGu || !regionDong) {
-              const parsed = parseGuDongFromAddress(address);
-              regionGu = regionGu || parsed.regionGu;
-              regionDong = regionDong || parsed.regionDong;
-            }
-
-            db.properties.unshift({
-              id: uid("p"),
-              source,
-              title: normalizeWhitespace(r.title || (source === "auction" ? "경매 물건" : "공매 물건")),
-              address,
-              addressNorm,
-              regionGu,
-              regionDong,
-              status: r.status || "active",
-              price: Number(r.price || 0) || 0,
-              memo: normalizeWhitespace(r.memo || ""),
-              assigneeId: null,
-              assigneeName: "",
-              createdBy: currentUser.id,
-              createdAt: new Date().toISOString(),
-            });
-            created++;
-          } catch (e) {
-            errors.push({ row: idx + 1, message: e.message || "알 수 없는 오류" });
-          }
-        });
-
-        MockApi._writeDb(db);
-        return MockApi._withLatency({ ok: true, created, duplicates, errors });
-      },
-    },
-    users: {
-      async list() {
-        const db = MockApi._readDb();
-        return MockApi._withLatency({ items: db.users.map(sanitizeUser) });
-      },
-      async create(payload) {
-        const db = MockApi._readDb();
-        const exists = db.users.find((u) => u.name === normalizeWhitespace(payload.name));
-        if (exists) throw new Error("동일 이름 계정이 이미 존재합니다.");
-
-        const user = {
-          id: uid("u"),
-          name: normalizeWhitespace(payload.name),
-          password: String(payload.password || ""),
-          role: payload.role === "admin" ? "admin" : "staff",
-          assignedRegions: [],
-        };
-        db.users.push(user);
-        MockApi._writeDb(db);
-        return MockApi._withLatency({ ok: true, item: sanitizeUser(user) });
-      },
-      async updateAssignments(userId, assignedRegions) {
-        const db = MockApi._readDb();
-        const user = db.users.find((u) => u.id === userId);
-        if (!user) throw new Error("사용자를 찾을 수 없습니다.");
-        user.assignedRegions = Array.isArray(assignedRegions)
-          ? assignedRegions
-              .filter((r) => r && r.unit && r.name)
-              .map((r) => ({ unit: r.unit === "dong" ? "dong" : "gu", name: normalizeWhitespace(r.name) }))
-          : [];
-        MockApi._writeDb(db);
-        return MockApi._withLatency({ ok: true, item: sanitizeUser(user) });
-      },
-    },
-  };
-
-  function sanitizeUser(user) {
-    if (!user) return null;
-    const { password, ...safe } = user;
-    return { ...safe };
-  }
-
-  /* =======================
-   * UI helpers
-   ======================= */
-  function renderAuth() {
-    const authStatus = $("#authStatus");
-    const btnLogout = $("#btnLogout");
-    const btnLogin = $("#btnOpenLogin");
-
-    if (!state.currentUser) {
-      authStatus.textContent = "로그인 필요";
-      hide(btnLogout);
-      show(btnLogin);
-      return;
-    }
-
-    authStatus.textContent = `${state.currentUser.name} (${state.currentUser.role === "admin" ? "관리자" : "담당자"})`;
-    show(btnLogout);
-    hide(btnLogin);
-
-    if (!isAdmin()) {
-      flashMessage("error", "관리자만 접근할 수 있습니다.");
-    }
-  }
-
-  function sourceBadgeHtml(source) {
-    const label = source === "auction" ? "경매" : source === "public" ? "공매" : "일반";
-    const cls = source === "auction" ? "source-auction" : source === "public" ? "source-public" : "source-general";
-    return `<span class="source-badge ${cls}">${label}</span>`;
-  }
-
-  function unique(arr) {
-    return [...new Set(arr)];
-  }
-
-  function getSelectedOptions(selectEl) {
-    return Array.from(selectEl.selectedOptions || []).map(o => o.value);
-  }
-
-  function renderCsvPreview(headers, mappedRows) {
-    const box = $("#csvPreviewBox");
-    if (!mappedRows.length) {
-      box.innerHTML = `<div class="muted">미리보기 데이터가 없습니다.</div>`;
-      return;
-    }
-    const preview = mappedRows.slice(0, 5);
-    box.innerHTML = `
-      <div class="muted small" style="margin-bottom:6px;">원본헤더: ${escapeHtml(headers.join(", "))}</div>
-      <table>
-        <thead>
-          <tr>
-            <th>title</th><th>address</th><th>status</th><th>price</th><th>regionGu</th><th>regionDong</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${preview.map(r => `
-            <tr>
-              <td>${escapeHtml(r.title || "")}</td>
-              <td>${escapeHtml(r.address || "")}</td>
-              <td>${escapeHtml(r.status || "")}</td>
-              <td>${escapeHtml(String(r.price || ""))}</td>
-              <td>${escapeHtml(r.regionGu || "")}</td>
-              <td>${escapeHtml(r.regionDong || "")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-      <div class="muted small" style="margin-top:6px;">총 ${mappedRows.length}행 (미리보기 5행)</div>
-    `;
-  }
-
-  function renderUserTable() {
-    const tbody = $("#userTableBody");
-    const users = state.users || [];
-    if (!users.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="empty">계정 없음</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = users.map((u) => {
-      const chips = (u.assignedRegions || []).length
-        ? `<div class="chips">${u.assignedRegions.map(r => `<span class="chip">${escapeHtml(r.unit)}:${escapeHtml(r.name)}</span>`).join("")}</div>`
-        : `<span class="muted">없음</span>`;
-
-      return `
-        <tr>
-          <td>${escapeHtml(u.name)}</td>
-          <td>${u.role === "admin" ? "관리자" : "담당자"}</td>
-          <td>${chips}</td>
-          <td>
-            <button class="btn btn-outline" data-action="select-user" data-user-id="${escapeHtml(u.id)}" type="button">배정대상 선택</button>
-          </td>
-        </tr>
-      `;
-    }).join("");
-
-    const select = $("#assignUserSelect");
-    const staff = users.filter(u => u.role === "staff");
-    select.innerHTML = staff.map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)}</option>`).join("")
-      || `<option value="">(담당자 없음)</option>`;
-  }
-
-  function renderAdminPropertyTable() {
-    const tbody = $("#adminPropertyTableBody");
-    const items = [...(state.properties || [])];
-
-    if (!items.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty">데이터 없음</td></tr>`;
-      $("#adminStats").textContent = "0건";
-      return;
-    }
-
-    const dupCountMap = {};
-    items.forEach(p => { dupCountMap[p.addressNorm] = (dupCountMap[p.addressNorm] || 0) + 1; });
-
-    tbody.innerHTML = items.map((p) => {
-      const dup = dupCountMap[p.addressNorm] > 1;
-      return `
-        <tr>
-          <td>${sourceBadgeHtml(p.source)}</td>
-          <td>${escapeHtml(p.title || "-")}</td>
-          <td>${escapeHtml(p.address || "-")}</td>
-          <td class="code">${escapeHtml(p.addressNorm || "-")}</td>
-          <td>${escapeHtml(p.regionGu || "-")} / ${escapeHtml(p.regionDong || "-")}</td>
-          <td>${escapeHtml(p.assigneeName || "-")}</td>
-          <td>${dup ? `<span class="chip warn">중복의심(${dupCountMap[p.addressNorm]})</span>` : `<span class="chip ok">정상</span>`}</td>
-        </tr>
-      `;
-    }).join("");
-
-    const bySource = items.reduce((acc, p) => {
-      acc[p.source] = (acc[p.source] || 0) + 1;
-      return acc;
-    }, {});
-    $("#adminStats").textContent = `전체 ${items.length} · 경매 ${bySource.auction || 0} · 공매 ${bySource.public || 0} · 일반 ${bySource.general || 0}`;
-  }
-
-  function renderRegionPool() {
-    const unit = $("#assignUnit").value;
-    const mode = $("#regionSourceMode").value;
-    const pool = $("#regionPool");
-
-    let values = [];
-    if (mode === "manual") {
-      values = ($("#manualRegions").value || "")
-        .split(/\n+/)
-        .map(v => normalizeWhitespace(v))
-        .filter(Boolean);
-    } else {
-      if (unit === "gu") values = unique(state.properties.map(p => normalizeWhitespace(p.regionGu)).filter(Boolean));
-      else values = unique(state.properties.map(p => regionKey("dong", p.regionGu, p.regionDong)).filter(Boolean));
-    }
-
-    values = values.sort((a, b) => a.localeCompare(b, "ko"));
-    pool.innerHTML = values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
-  }
-
-  /* =======================
-   * Auto grouping (휴리스틱)
-   ======================= */
-  const SEOUL_GU_ORDER_HINT = [
-    "은평구", "서대문구", "마포구", "종로구", "중구", "용산구",
-    "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구", "노원구",
-    "강서구", "양천구", "구로구", "금천구", "영등포구", "동작구", "관악구",
-    "서초구", "강남구", "송파구", "강동구"
-  ];
-
-  function sortRegionsWithHeuristic(regions, unit) {
-    if (unit === "gu") {
-      const orderMap = new Map(SEOUL_GU_ORDER_HINT.map((g, i) => [g, i]));
-      return [...regions].sort((a, b) => {
-        const ai = orderMap.has(a) ? orderMap.get(a) : 999;
-        const bi = orderMap.has(b) ? orderMap.get(b) : 999;
-        if (ai !== bi) return ai - bi;
-        return a.localeCompare(b, "ko");
-      });
-    }
-    return [...regions].sort((a, b) => {
-      const [agu = "", adong = ""] = a.split(" ");
-      const [bgu = "", bdong = ""] = b.split(" ");
-      if (agu !== bgu) {
-        const guSorted = sortRegionsWithHeuristic([agu, bgu], "gu");
-        return guSorted[0] === agu ? -1 : 1;
-      }
-      return adong.localeCompare(bdong, "ko");
-    });
-  }
-
-  function chunkContiguous(arr, chunkCount) {
-    if (chunkCount <= 0) return [];
-    const result = Array.from({ length: chunkCount }, () => []);
-    const n = arr.length;
-    const base = Math.floor(n / chunkCount);
-    const rem = n % chunkCount;
-    let cursor = 0;
-
-    for (let i = 0; i < chunkCount; i++) {
-      const size = base + (i < rem ? 1 : 0);
-      result[i] = arr.slice(cursor, cursor + size);
-      cursor += size;
-    }
-    return result.filter(g => g.length > 0);
-  }
-
-  function expandGuToDongs(selectedGuList, properties) {
-    const map = new Map();
-    properties.forEach(p => {
-      const gu = normalizeWhitespace(p.regionGu);
-      const dong = normalizeWhitespace(p.regionDong);
-      if (!gu || !dong) return;
-      if (selectedGuList.length && !selectedGuList.includes(gu)) return;
-      map.set(`${gu} ${dong}`.trim(), true);
-    });
-    return [...map.keys()];
-  }
-
-  function buildAutoGroups({ staffCount, unit, selectedRegions }) {
-    const staffUsers = state.users.filter(u => u.role === "staff");
-    if (!staffUsers.length) throw new Error("담당자 계정이 없습니다.");
-    if (!staffCount || staffCount < 1) throw new Error("담당자 수(X)는 1 이상이어야 합니다.");
-
-    let effectiveUnit = unit;
-    let pool = [...selectedRegions];
-
-    if (unit === "gu" && staffCount > pool.length) {
-      effectiveUnit = "dong";
-      pool = expandGuToDongs(pool, state.properties);
-      if (!pool.length) throw new Error("동 단위로 재편성할 데이터가 없습니다. 등록 물건에 동 정보가 필요합니다.");
-    }
-
-    const sorted = sortRegionsWithHeuristic(pool, effectiveUnit);
-    const groups = chunkContiguous(sorted, Math.min(staffCount, sorted.length));
-
-    return groups.map((regions, idx) => {
-      const user = staffUsers[idx] || null;
-      return {
-        userId: user?.id || "",
-        userName: user?.name || "(미배정)",
-        regions: regions.map(name => ({ unit: effectiveUnit, name })),
-      };
-    });
-  }
-
-  function renderAutoGroupDraft() {
-    const box = $("#autoGroupResult");
-    const draft = state.autoGroupDraft;
-    if (!draft || !draft.length) {
-      box.innerHTML = `<div class="muted">자동 그룹핑 결과가 없습니다.</div>`;
-      return;
-    }
-    box.innerHTML = draft.map((g, idx) => `
-      <div class="group-card">
-        <h4>그룹 ${idx + 1} · ${escapeHtml(g.userName || "(미배정)")}</h4>
-        <div class="chips">
-          ${g.regions.map(r => `<span class="chip">${escapeHtml(r.unit)}:${escapeHtml(r.name)}</span>`).join("") || `<span class="muted">지역 없음</span>`}
-        </div>
-      </div>
-    `).join("");
-  }
-
-  /* =======================
-   * Loaders
-   ======================= */
-  async function loadMe() {
-    const res = await Api.auth.me();
-    state.currentUser = res.user || null;
-    renderAuth();
-    if (state.currentUser && !isAdmin()) {
-      flashMessage("error", "관리자만 접근할 수 있습니다.");
-    }
-  }
-
-  async function loadProperties() {
-    const res = await Api.properties.list();
-    state.properties = Array.isArray(res.items) ? res.items : [];
-    renderAdminPropertyTable();
-    renderRegionPool();
-  }
-
-  async function loadUsers() {
-    const res = await Api.users.list();
-    state.users = Array.isArray(res.items) ? res.items : [];
-    renderUserTable();
-  }
-
-  async function reloadAll() {
-    await loadMe();
-    if (!isAdmin()) return;
-    await Promise.all([loadUsers(), loadProperties()]);
-  }
-
-  /* =======================
-   * Events
-   ======================= */
-  function openLoginModal() {
-    show("#loginModal");
-    $("#loginModal").setAttribute("aria-hidden", "false");
-    $("#loginError").textContent = "";
-    setTimeout(() => $("#loginName")?.focus(), 10);
-  }
-  function closeLoginModal() {
-    hide("#loginModal");
-    $("#loginModal").setAttribute("aria-hidden", "true");
-  }
-
-  async function readFileText(file) {
-    return new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(String(fr.result || ""));
-      fr.onerror = () => reject(new Error("파일 읽기 실패"));
-      fr.readAsText(file, "utf-8");
+  function cacheEls() {
+    Object.assign(els, {
+      // top
+      adminUserBadge: $("#adminUserBadge"),
+      btnAdminLoginOpen: $("#btnAdminLoginOpen"),
+      btnAdminLogout: $("#btnAdminLogout"),
+
+      // login modal
+      adminLoginModal: $("#adminLoginModal"),
+      btnAdminLoginClose: $("#btnAdminLoginClose"),
+      adminLoginForm: $("#adminLoginForm"),
+
+      // tabs
+      adminTabs: $("#adminTabs"),
+
+      // summary
+      sumTotal: $("#sumTotal"),
+      sumAuction: $("#sumAuction"),
+      sumGongmae: $("#sumGongmae"),
+      sumGeneral: $("#sumGeneral"),
+      sumAgents: $("#sumAgents"),
+      sumOffices: $("#sumOffices"),
+
+      // panels
+      tabProperties: $("#tab-properties"),
+      tabCsv: $("#tab-csv"),
+      tabStaff: $("#tab-staff"),
+      tabRegions: $("#tab-regions"),
+      tabOffices: $("#tab-offices"),
+
+      // properties table
+      btnReloadProperties: $("#btnReloadProperties"),
+      propSourceFilter: $("#propSourceFilter"),
+      propStatusFilter: $("#propStatusFilter"),
+      propKeyword: $("#propKeyword"),
+      propertiesTableBody: $("#propertiesTable tbody"),
+      propertiesEmpty: $("#propertiesEmpty"),
+
+      // CSV import
+      csvImportSource: $("#csvImportSource"),
+      csvFileInput: $("#csvFileInput"),
+      btnCsvPreview: $("#btnCsvPreview"),
+      btnCsvUpload: $("#btnCsvUpload"),
+      csvPreviewTableBody: $("#csvPreviewTable tbody"),
+      csvPreviewEmpty: $("#csvPreviewEmpty"),
+      csvResultBox: $("#csvResultBox"),
+
+      // staff
+      staffForm: $("#staffForm"),
+      btnStaffReset: $("#btnStaffReset"),
+      staffTableBody: $("#staffTable tbody"),
+      staffEmpty: $("#staffEmpty"),
+
+      // regions
+      agentCountInput: $("#agentCountInput"),
+      regionUnitMode: $("#regionUnitMode"),
+      btnSuggestGrouping: $("#btnSuggestGrouping"),
+      btnSaveAssignments: $("#btnSaveAssignments"),
+      groupSuggestBox: $("#groupSuggestBox"),
+      assignmentTableBody: $("#assignmentTable tbody"),
+      assignmentEmpty: $("#assignmentEmpty"),
+
+      // offices
+      officeCsvFileInput: $("#officeCsvFileInput"),
+      btnOfficeCsvPreview: $("#btnOfficeCsvPreview"),
+      btnOfficeCsvUpload: $("#btnOfficeCsvUpload"),
+      btnReloadOffices: $("#btnReloadOffices"),
+      officeResultBox: $("#officeResultBox"),
+      officePreviewTableBody: $("#officePreviewTable tbody"),
+      officePreviewEmpty: $("#officePreviewEmpty"),
+      officeTableBody: $("#officeTable tbody"),
+      officeEmpty: $("#officeEmpty"),
     });
   }
 
   function bindEvents() {
-    $("#btnOpenLogin").addEventListener("click", openLoginModal);
-    $("#btnCloseLogin").addEventListener("click", closeLoginModal);
-    $("#loginBackdrop").addEventListener("click", closeLoginModal);
+    // login modal
+    els.btnAdminLoginOpen.addEventListener("click", openLoginModal);
+    els.btnAdminLoginClose.addEventListener("click", closeLoginModal);
+    els.adminLoginModal.addEventListener("click", (e) => {
+      if (e.target?.dataset?.close === "true") closeLoginModal();
+    });
+    els.adminLoginForm.addEventListener("submit", onSubmitAdminLogin);
+    els.btnAdminLogout.addEventListener("click", logout);
 
-    $("#btnLogout").addEventListener("click", async () => {
-      try {
-        await Api.auth.logout();
-        state.currentUser = null;
-        renderAuth();
-        flashMessage("success", "로그아웃되었습니다.");
-      } catch (e) {
-        flashMessage("error", e.message || "로그아웃 오류");
-      }
+    // tabs
+    els.adminTabs.addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab");
+      if (!btn) return;
+      setActiveTab(btn.dataset.tab);
     });
 
-    $("#loginForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const name = $("#loginName").value.trim();
-      const password = $("#loginPassword").value;
-
-      try {
-        const res = await Api.auth.login(name, password);
-        state.currentUser = res.user;
-        renderAuth();
-        closeLoginModal();
-        if (!isAdmin()) {
-          flashMessage("error", "관리자만 접근할 수 있습니다.");
-          return;
-        }
-        await Promise.all([loadUsers(), loadProperties()]);
-        flashMessage("success", "관리자 로그인 완료");
-      } catch (err) {
-        $("#loginError").textContent = err.message || "로그인 실패";
-      }
+    // properties
+    els.btnReloadProperties.addEventListener("click", loadAllCoreData);
+    els.propSourceFilter.addEventListener("change", () => {
+      state.propertyFilters.source = els.propSourceFilter.value;
+      renderPropertiesTable();
     });
-
-    // CSV preview
-    $("#btnCsvPreview").addEventListener("click", async () => {
-      if (!isAdmin()) return flashMessage("error", "관리자만 가능");
-      const file = $("#csvFile").files?.[0];
-      const source = $("#csvType").value;
-      if (!file) return flashMessage("error", "CSV 파일을 선택해 주세요.");
-
-      try {
-        const text = await readFileText(file);
-        const parsed = parseCSV(text);
-        const mappedRows = parsed.records.map(r => mapCsvRecordToProperty(r, source));
-        state.csvPreviewRows = mappedRows;
-        renderCsvPreview(parsed.headers, mappedRows);
-        $("#csvImportResult").textContent = `미리보기 완료: ${mappedRows.length}행`;
-      } catch (e) {
-        flashMessage("error", e.message || "CSV 미리보기 실패");
-      }
+    els.propStatusFilter.addEventListener("change", () => {
+      state.propertyFilters.status = els.propStatusFilter.value;
+      renderPropertiesTable();
     });
+    els.propKeyword.addEventListener("input", debounce(() => {
+      state.propertyFilters.keyword = els.propKeyword.value.trim().toLowerCase();
+      renderPropertiesTable();
+    }, 120));
 
     // CSV import
-    $("#btnCsvImport").addEventListener("click", async () => {
-      if (!isAdmin()) return flashMessage("error", "관리자만 가능");
-      if (!state.csvPreviewRows.length) return flashMessage("error", "먼저 CSV 미리보기를 실행해 주세요.");
+    els.btnCsvPreview.addEventListener("click", handleCsvPreview);
+    els.btnCsvUpload.addEventListener("click", handleCsvUpload);
 
-      try {
-        const source = $("#csvType").value;
-        const res = await Api.properties.importCsvRows(source, state.csvPreviewRows);
-        $("#csvImportResult").textContent =
-          `업로드 완료 · 생성 ${res.created || 0} / 중복 ${res.duplicates || 0} / 오류 ${(res.errors || []).length}`;
-        await loadProperties();
-        renderRegionPool();
-        flashMessage("success", "CSV 업로드 반영 완료");
-      } catch (e) {
-        flashMessage("error", e.message || "CSV 업로드 실패");
-      }
+    // staff
+    els.staffForm.addEventListener("submit", handleSaveStaff);
+    els.btnStaffReset.addEventListener("click", resetStaffForm);
+
+    // regions
+    els.btnSuggestGrouping.addEventListener("click", handleSuggestGrouping);
+    els.btnSaveAssignments.addEventListener("click", handleSaveAssignments);
+
+    // offices
+    els.btnOfficeCsvPreview.addEventListener("click", handleOfficeCsvPreview);
+    els.btnOfficeCsvUpload.addEventListener("click", handleOfficeCsvUpload);
+    els.btnReloadOffices.addEventListener("click", loadOffices);
+  }
+
+  async function ensureLoginThenLoad() {
+    const user = state.session?.user;
+    if (!user || user.role !== "admin") {
+      openLoginModal();
+      return;
+    }
+    await loadAllCoreData();
+  }
+
+  function setActiveTab(tab) {
+    state.activeTab = tab;
+
+    [...els.adminTabs.querySelectorAll(".tab")].forEach((el) => {
+      el.classList.toggle("is-active", el.dataset.tab === tab);
     });
 
-    // account create
-    $("#userCreateForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (!isAdmin()) return flashMessage("error", "관리자만 가능");
-
-      const payload = {
-        name: $("#userName").value.trim(),
-        password: $("#userPassword").value,
-        role: $("#userRole").value,
-      };
-      if (!payload.name || !payload.password) return flashMessage("error", "이름/비밀번호는 필수입니다.");
-
-      try {
-        await Api.users.create(payload);
-        e.target.reset();
-        await loadUsers();
-        flashMessage("success", "계정이 추가되었습니다.");
-      } catch (err) {
-        flashMessage("error", err.message || "계정 추가 실패");
-      }
-    });
-
-    $("#userTableBody").addEventListener("click", (e) => {
-      const btn = e.target.closest('button[data-action="select-user"]');
-      if (!btn) return;
-      $("#assignUserSelect").value = btn.dataset.userId;
-      flashMessage("info", "배정 대상 담당자를 선택했습니다.", 1200);
-    });
-
-    $("#btnAdminReload").addEventListener("click", async () => {
-      if (!isAdmin()) return flashMessage("error", "관리자만 가능");
-      await Promise.all([loadUsers(), loadProperties()]);
-      flashMessage("info", "새로고침 완료", 1200);
-    });
-
-    $("#assignUnit").addEventListener("change", renderRegionPool);
-    $("#regionSourceMode").addEventListener("change", renderRegionPool);
-
-    $("#btnLoadRegionPool").addEventListener("click", () => {
-      renderRegionPool();
-      flashMessage("info", "지역 후보를 갱신했습니다.", 1200);
-    });
-
-    $("#btnAssignSelectedRegions").addEventListener("click", async () => {
-      if (!isAdmin()) return flashMessage("error", "관리자만 가능");
-      const userId = $("#assignUserSelect").value;
-      const unit = $("#assignUnit").value;
-      const selected = getSelectedOptions($("#regionPool"));
-      if (!userId) return flashMessage("error", "담당자를 선택해 주세요.");
-      if (!selected.length) return flashMessage("error", "배정할 지역을 선택해 주세요.");
-
-      const assignedRegions = selected.map(name => ({ unit, name }));
-      try {
-        await Api.users.updateAssignments(userId, assignedRegions);
-        await loadUsers();
-        flashMessage("success", "배정을 저장했습니다.");
-      } catch (e) {
-        flashMessage("error", e.message || "배정 저장 실패");
-      }
-    });
-
-    $("#btnAutoGroup").addEventListener("click", () => {
-      if (!isAdmin()) return flashMessage("error", "관리자만 가능");
-      try {
-        const staffCount = Number($("#autoStaffCount").value || 0);
-        const unit = $("#assignUnit").value;
-
-        let selectedRegions = getSelectedOptions($("#regionPool"));
-        if (!selectedRegions.length) {
-          selectedRegions = Array.from($("#regionPool").options).map(o => o.value);
-        }
-        if (!selectedRegions.length) throw new Error("지역 후보가 없습니다.");
-
-        state.autoGroupDraft = buildAutoGroups({ staffCount, unit, selectedRegions });
-        renderAutoGroupDraft();
-        flashMessage("success", "자동 그룹핑 초안을 생성했습니다.");
-      } catch (e) {
-        flashMessage("error", e.message || "자동 그룹핑 실패");
-      }
-    });
-
-    $("#btnApplyAutoGroup").addEventListener("click", async () => {
-      if (!isAdmin()) return flashMessage("error", "관리자만 가능");
-      const draft = state.autoGroupDraft;
-      if (!draft || !draft.length) return flashMessage("error", "먼저 자동 그룹핑을 실행해 주세요.");
-
-      try {
-        for (const g of draft) {
-          if (!g.userId) continue;
-          await Api.users.updateAssignments(g.userId, g.regions);
-        }
-        await loadUsers();
-        flashMessage("success", "자동 그룹핑 결과를 적용했습니다.");
-      } catch (e) {
-        flashMessage("error", e.message || "적용 실패");
-      }
+    const map = {
+      properties: els.tabProperties,
+      csv: els.tabCsv,
+      staff: els.tabStaff,
+      regions: els.tabRegions,
+      offices: els.tabOffices,
+    };
+    Object.entries(map).forEach(([key, panel]) => {
+      panel.classList.toggle("hidden", key !== tab);
     });
   }
 
-  async function init() {
-    bindEvents();
-    try {
-      await reloadAll();
-    } catch (e) {
-      console.error(e);
-      flashMessage("error", e.message || "초기 로딩 실패");
+  function renderSessionUI() {
+    const user = state.session?.user;
+    const isAdmin = !!user && user.role === "admin";
+
+    els.btnAdminLoginOpen.classList.toggle("hidden", isAdmin);
+    els.btnAdminLogout.classList.toggle("hidden", !isAdmin);
+
+    if (isAdmin) {
+      els.adminUserBadge.textContent = `관리자: ${user.name}`;
+      els.adminUserBadge.className = "badge badge-admin";
+    } else {
+      els.adminUserBadge.textContent = "비로그인";
+      els.adminUserBadge.className = "badge badge-muted";
     }
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  function openLoginModal() {
+    els.adminLoginModal.classList.remove("hidden");
+    els.adminLoginModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeLoginModal() {
+    els.adminLoginModal.classList.add("hidden");
+    els.adminLoginModal.setAttribute("aria-hidden", "true");
+    els.adminLoginForm.reset();
+  }
+
+  async function onSubmitAdminLogin(e) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const name = String(fd.get("name") || "").trim();
+    const password = String(fd.get("password") || "");
+    if (!name || !password) return alert("이름/비밀번호를 입력해 주세요.");
+
+    try {
+      setFormBusy(e.currentTarget, true);
+      const res = await api("/auth/login", {
+        method: "POST",
+        body: { name, password },
+      });
+
+      if (res?.user?.role !== "admin") {
+        throw new Error("관리자 권한 계정만 접속 가능합니다.");
+      }
+
+      state.session = { token: res.token, user: res.user };
+      saveSession(state.session);
+      renderSessionUI();
+      closeLoginModal();
+      await loadAllCoreData();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "로그인 실패");
+    } finally {
+      setFormBusy(e.currentTarget, false);
+    }
+  }
+
+  function logout() {
+    state.session = null;
+    saveSession(null);
+    renderSessionUI();
+    state.properties = [];
+    state.staff = [];
+    state.offices = [];
+    renderAll();
+    openLoginModal();
+  }
+
+  async function loadAllCoreData() {
+    try {
+      await Promise.all([
+        loadProperties(),
+        loadStaff(),
+        loadOffices(),
+      ]);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "데이터 로드 실패");
+    }
+  }
+
+  async function loadProperties() {
+    const res = await api("/admin/properties?scope=all", { auth: true });
+    state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
+    renderPropertiesTable();
+    renderSummary();
+  }
+
+  async function loadStaff() {
+    const res = await api("/admin/staff", { auth: true });
+    state.staff = Array.isArray(res?.items) ? res.items.map(normalizeStaff) : [];
+    renderStaffTable();
+    renderAssignmentTable();
+    renderSummary();
+  }
+
+  async function loadOffices() {
+    const res = await api("/admin/realtor-offices", { auth: true });
+    state.offices = Array.isArray(res?.items) ? res.items.map(normalizeOffice) : [];
+    renderOfficesTable();
+    renderSummary();
+  }
+
+  function normalizeProperty(item) {
+    return {
+      id: item.id || "",
+      source: item.source || "general",
+      address: item.address || "",
+      normalizedAddress: item.normalizedAddress || normalizeAddress(item.address || ""),
+      salePrice: Number(item.salePrice || 0),
+      status: item.status || "review",
+      assignedAgentId: item.assignedAgentId || null,
+      assignedAgentName: item.assignedAgentName || "",
+      regionGu: item.regionGu || "",
+      regionDong: item.regionDong || "",
+      duplicateFlag: !!item.duplicateFlag,
+      createdAt: item.createdAt || "",
+      memo: item.memo || "",
+    };
+  }
+
+  function normalizeStaff(item) {
+    return {
+      id: item.id || "",
+      name: item.name || "",
+      role: item.role || "agent",
+      assignedRegions: Array.isArray(item.assignedRegions) ? item.assignedRegions : [],
+      createdAt: item.createdAt || "",
+    };
+  }
+
+  function normalizeOffice(item) {
+    return {
+      id: item.id || "",
+      officeName: item.officeName || "",
+      branchName: item.branchName || "",
+      address: item.address || "",
+      regionGu: item.regionGu || "",
+      regionDong: item.regionDong || "",
+      managerName: item.managerName || "",
+      phone: item.phone || "",
+      memo: item.memo || "",
+    };
+  }
+
+  // ---------------------------
+  // Summary / Render
+  // ---------------------------
+  function renderAll() {
+    renderPropertiesTable();
+    renderStaffTable();
+    renderAssignmentTable();
+    renderOfficesTable();
+    renderSummary();
+  }
+
+  function renderSummary() {
+    const props = state.properties;
+    const staff = state.staff;
+    const offices = state.offices;
+
+    els.sumTotal.textContent = String(props.length);
+    els.sumAuction.textContent = String(props.filter(p => p.source === "auction").length);
+    els.sumGongmae.textContent = String(props.filter(p => p.source === "gongmae").length);
+    els.sumGeneral.textContent = String(props.filter(p => p.source === "general").length);
+    els.sumAgents.textContent = String(staff.filter(s => s.role === "agent").length);
+    els.sumOffices.textContent = String(offices.length);
+  }
+
+  function getFilteredProperties() {
+    const f = state.propertyFilters;
+    return state.properties.filter((p) => {
+      if (f.source && p.source !== f.source) return false;
+      if (f.status && p.status !== f.status) return false;
+      if (f.keyword) {
+        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong].join(" ").toLowerCase();
+        if (!hay.includes(f.keyword)) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderPropertiesTable() {
+    const rows = getFilteredProperties();
+    els.propertiesTableBody.innerHTML = "";
+
+    if (!rows.length) {
+      els.propertiesEmpty.classList.remove("hidden");
+      return;
+    }
+    els.propertiesEmpty.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+    for (const p of rows) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(sourceLabel(p.source))}</td>
+        <td>${escapeHtml(p.address)}</td>
+        <td>${formatMoneyKRW(p.salePrice)}</td>
+        <td>${escapeHtml(statusLabel(p.status))}</td>
+        <td>${escapeHtml(p.assignedAgentName || "미배정")}</td>
+        <td>${escapeHtml([p.regionGu, p.regionDong].filter(Boolean).join(" / ") || "-")}</td>
+        <td>${p.duplicateFlag ? '<span class="cell-badge danger">중복</span>' : '<span class="cell-badge ok">정상</span>'}</td>
+        <td>${escapeHtml(formatDate(p.createdAt))}</td>
+      `;
+      frag.appendChild(tr);
+    }
+    els.propertiesTableBody.appendChild(frag);
+  }
+
+  function renderStaffTable() {
+    els.staffTableBody.innerHTML = "";
+
+    if (!state.staff.length) {
+      els.staffEmpty.classList.remove("hidden");
+      return;
+    }
+    els.staffEmpty.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+
+    state.staff.forEach((s) => {
+      const tr = document.createElement("tr");
+      const roleLabel = s.role === "admin" ? "관리자" : "담당자";
+      tr.innerHTML = `
+        <td>${escapeHtml(s.name)}</td>
+        <td>${escapeHtml(roleLabel)}</td>
+        <td>${s.assignedRegions.length}</td>
+        <td>${escapeHtml(formatDate(s.createdAt))}</td>
+        <td>
+          <div class="action-row">
+            <button class="btn btn-secondary btn-sm" data-act="edit" data-id="${escapeAttr(s.id)}">수정</button>
+            <button class="btn btn-ghost btn-sm" data-act="delete" data-id="${escapeAttr(s.id)}">삭제</button>
+          </div>
+        </td>
+      `;
+      frag.appendChild(tr);
+    });
+
+    els.staffTableBody.appendChild(frag);
+
+    els.staffTableBody.querySelectorAll("button[data-act]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const id = e.currentTarget.dataset.id;
+        const act = e.currentTarget.dataset.act;
+        const row = state.staff.find((s) => s.id === id);
+        if (!row) return;
+
+        if (act === "edit") {
+          fillStaffForm(row);
+          setActiveTab("staff");
+        } else if (act === "delete") {
+          if (!confirm(`담당자 '${row.name}' 계정을 삭제할까요?`)) return;
+          try {
+            await api(`/admin/staff/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+              auth: true,
+            });
+            await loadStaff();
+          } catch (err) {
+            console.error(err);
+            alert(err.message || "삭제 실패");
+          }
+        }
+      });
+    });
+  }
+
+  function renderAssignmentTable() {
+    els.assignmentTableBody.innerHTML = "";
+
+    const agents = state.staff.filter((s) => s.role === "agent");
+    if (!agents.length) {
+      els.assignmentEmpty.classList.remove("hidden");
+      return;
+    }
+    els.assignmentEmpty.classList.add("hidden");
+
+    const regionOptions = getRegionOptionsFromProperties();
+
+    const frag = document.createDocumentFragment();
+    agents.forEach((a) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(a.name)}</td>
+        <td>담당자</td>
+        <td>
+          <select class="assignment-select" data-agent-id="${escapeAttr(a.id)}" multiple></select>
+        </td>
+      `;
+      frag.appendChild(tr);
+    });
+
+    els.assignmentTableBody.appendChild(frag);
+
+    els.assignmentTableBody.querySelectorAll(".assignment-select").forEach((sel) => {
+      const agentId = sel.dataset.agentId;
+      const agent = agents.find((a) => a.id === agentId);
+      if (!agent) return;
+
+      regionOptions.forEach((r) => {
+        const opt = document.createElement("option");
+        opt.value = r;
+        opt.textContent = r;
+        opt.selected = agent.assignedRegions.includes(r);
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  function renderOfficesTable() {
+    els.officeTableBody.innerHTML = "";
+
+    if (!state.offices.length) {
+      els.officeEmpty.classList.remove("hidden");
+      return;
+    }
+    els.officeEmpty.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+
+    state.offices.forEach((o) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(o.officeName)}</td>
+        <td>${escapeHtml(o.branchName || "-")}</td>
+        <td>${escapeHtml(o.address)}</td>
+        <td>${escapeHtml([o.regionGu, o.regionDong].filter(Boolean).join(" / ") || "-")}</td>
+        <td>${escapeHtml(o.managerName || "-")}</td>
+        <td>
+          <input class="inline-input office-phone-input" data-id="${escapeAttr(o.id)}" type="text" value="${escapeAttr(formatPhoneDisplay(o.phone))}" placeholder="01012345678" />
+          <div class="muted small" data-save-msg="${escapeAttr(o.id)}"></div>
+        </td>
+        <td>${escapeHtml(o.memo || "-")}</td>
+      `;
+      frag.appendChild(tr);
+    });
+
+    els.officeTableBody.appendChild(frag);
+
+    els.officeTableBody.querySelectorAll(".office-phone-input").forEach((input) => {
+      input.addEventListener("input", () => {
+        scheduleOfficePhoneSave(input.dataset.id, input.value);
+      });
+      input.addEventListener("blur", () => {
+        flushOfficePhoneSave(input.dataset.id, input.value);
+      });
+    });
+  }
+
+  // ---------------------------
+  // Staff CRUD
+  // ---------------------------
+  function fillStaffForm(staff) {
+    els.staffForm.elements.id.value = staff.id || "";
+    els.staffForm.elements.name.value = staff.name || "";
+    els.staffForm.elements.role.value = staff.role || "agent";
+    els.staffForm.elements.password.value = "";
+  }
+
+  function resetStaffForm() {
+    els.staffForm.reset();
+    els.staffForm.elements.id.value = "";
+    els.staffForm.elements.role.value = "agent";
+  }
+
+  async function handleSaveStaff(e) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const id = String(fd.get("id") || "").trim();
+    const payload = {
+      name: String(fd.get("name") || "").trim(),
+      role: String(fd.get("role") || "agent"),
+      password: String(fd.get("password") || ""),
+    };
+
+    if (!payload.name) return alert("이름을 입력해 주세요.");
+    if (!id && !payload.password) return alert("신규 계정은 비밀번호가 필요합니다.");
+
+    try {
+      setFormBusy(e.currentTarget, true);
+      if (id) {
+        await api(`/admin/staff/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          auth: true,
+          body: payload,
+        });
+      } else {
+        await api("/admin/staff", {
+          method: "POST",
+          auth: true,
+          body: payload,
+        });
+      }
+      resetStaffForm();
+      await loadStaff();
+      alert("저장되었습니다.");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "저장 실패");
+    } finally {
+      setFormBusy(e.currentTarget, false);
+    }
+  }
+
+  // ---------------------------
+  // CSV Import (Properties)
+  // ---------------------------
+  async function handleCsvPreview() {
+    try {
+      const file = els.csvFileInput.files?.[0];
+      if (!file) return alert("CSV 파일을 선택해 주세요.");
+      const text = await file.text();
+      const rows = parseCsv(text);
+      state.csvPreviewRows = rows.map(mapPropertyCsvRow).filter(Boolean);
+
+      renderCsvPreviewTable();
+      showResultBox(els.csvResultBox, `미리보기 완료: ${state.csvPreviewRows.length}행`);
+    } catch (err) {
+      console.error(err);
+      showResultBox(els.csvResultBox, `미리보기 실패: ${err.message}`, true);
+    }
+  }
+
+  function renderCsvPreviewTable() {
+    els.csvPreviewTableBody.innerHTML = "";
+    if (!state.csvPreviewRows.length) {
+      els.csvPreviewEmpty.classList.remove("hidden");
+      return;
+    }
+    els.csvPreviewEmpty.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+    state.csvPreviewRows.slice(0, 200).forEach((r, idx) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(r.address)}</td>
+        <td>${formatMoneyKRW(r.salePrice)}</td>
+        <td>${escapeHtml(statusLabel(r.status))}</td>
+        <td>${escapeHtml(r.regionGu || "-")}</td>
+        <td>${escapeHtml(r.regionDong || "-")}</td>
+      `;
+      frag.appendChild(tr);
+    });
+    els.csvPreviewTableBody.appendChild(frag);
+  }
+
+  async function handleCsvUpload() {
+    try {
+      const file = els.csvFileInput.files?.[0];
+      if (!file) return alert("CSV 파일을 선택해 주세요.");
+      const source = els.csvImportSource.value;
+      const csvText = await file.text();
+
+      const res = await api("/admin/import/properties-csv", {
+        method: "POST",
+        auth: true,
+        body: {
+          source,        // auction | gongmae
+          csvText,
+          dedupeKey: "address",
+        },
+      });
+
+      const summary = [
+        `업로드 완료`,
+        `삽입: ${res?.inserted ?? 0}건`,
+        `중복 스킵: ${res?.duplicates ?? 0}건`,
+        `오류: ${res?.errors ?? 0}건`,
+      ].join(" / ");
+
+      showResultBox(els.csvResultBox, summary);
+      await loadProperties();
+    } catch (err) {
+      console.error(err);
+      showResultBox(els.csvResultBox, `업로드 실패: ${err.message}`, true);
+    }
+  }
+
+  function mapPropertyCsvRow(row) {
+    const pick = (...keys) => {
+      for (const k of keys) {
+        if (row[k] != null && String(row[k]).trim() !== "") return String(row[k]).trim();
+      }
+      return "";
+    };
+
+    const address = pick("address", "주소");
+    if (!address) return null;
+
+    const salePrice = Number(
+      pick("sale_price", "매각가", "매각가(원)", "매각가격").replace(/[^\d.-]/g, "")
+    ) || 0;
+
+    const statusRaw = pick("status", "상태").toLowerCase();
+    const status = normalizeStatus(statusRaw);
+
+    const regionGu = pick("region_gu", "구") || extractGuDong(address).gu || "";
+    const regionDong = pick("region_dong", "동") || extractGuDong(address).dong || "";
+
+    return {
+      address,
+      salePrice,
+      status,
+      regionGu,
+      regionDong,
+    };
+  }
+
+  // ---------------------------
+  // Region Assignments
+  // ---------------------------
+  function getRegionOptionsFromProperties() {
+    const set = new Set();
+    for (const p of state.properties) {
+      if (p.regionGu) set.add(p.regionGu);
+      if (p.regionDong) set.add(p.regionDong);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
+  }
+
+  async function handleSuggestGrouping() {
+    const agents = state.staff.filter((s) => s.role === "agent");
+    if (!agents.length) return alert("담당자 계정을 먼저 등록해 주세요.");
+
+    const requestedCount = Math.max(1, Number(els.agentCountInput.value || 1));
+    const unitMode = els.regionUnitMode.value; // auto|gu|dong
+
+    const grouped = buildAutoRegionGrouping(state.properties, requestedCount, unitMode);
+    state.lastGroupSuggestion = grouped;
+
+    renderGroupSuggestion(grouped, agents);
+  }
+
+  function renderGroupSuggestion(grouped, agents) {
+    els.groupSuggestBox.innerHTML = "";
+    if (!grouped || !grouped.groups?.length) {
+      els.groupSuggestBox.innerHTML = `<div class="muted">그룹 제안 결과가 없습니다.</div>`;
+      return;
+    }
+
+    const info = document.createElement("div");
+    info.className = "hint-box";
+    info.innerHTML = `
+      <div><strong>제안 기준:</strong> ${escapeHtml(grouped.unitLabel)} / 총 지역 ${grouped.totalRegions}개 / 그룹 ${grouped.groups.length}개</div>
+      <div class="muted small">※ 제안 결과는 아래 [배정 저장] 전에 테이블에서 수정 가능합니다.</div>
+    `;
+    els.groupSuggestBox.appendChild(info);
+
+    const frag = document.createDocumentFragment();
+    grouped.groups.forEach((g, idx) => {
+      const card = document.createElement("div");
+      card.className = "group-card";
+      const agentName = agents[idx]?.name || `미지정 그룹 ${idx + 1}`;
+      card.innerHTML = `
+        <h4>그룹 ${idx + 1} (${escapeHtml(agentName)})</h4>
+        <div class="group-chip-wrap">
+          ${g.regions.map(r => `<span class="group-chip">${escapeHtml(r)}</span>`).join("")}
+        </div>
+      `;
+      frag.appendChild(card);
+    });
+    els.groupSuggestBox.appendChild(frag);
+
+    // 실제 배정 테이블 반영(담당자 순서 기준)
+    const selects = [...els.assignmentTableBody.querySelectorAll(".assignment-select")];
+    selects.forEach((sel, idx) => {
+      const regions = grouped.groups[idx]?.regions || [];
+      [...sel.options].forEach((opt) => {
+        opt.selected = regions.includes(opt.value);
+      });
+    });
+  }
+
+  async function handleSaveAssignments() {
+    const agents = state.staff.filter((s) => s.role === "agent");
+    if (!agents.length) return alert("담당자 계정이 없습니다.");
+
+    const rows = [...els.assignmentTableBody.querySelectorAll(".assignment-select")].map((sel) => {
+      const agentId = sel.dataset.agentId;
+      const assignedRegions = [...sel.selectedOptions].map((o) => o.value);
+      return { agentId, assignedRegions };
+    });
+
+    try {
+      await api("/admin/region-assignments", {
+        method: "POST",
+        auth: true,
+        body: { assignments: rows },
+      });
+
+      await loadStaff();
+      alert("담당자 지역 배정이 저장되었습니다.");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "배정 저장 실패");
+    }
+  }
+
+  /**
+   * 자동 그룹핑 휴리스틱 (초기 버전)
+   * - 주소 기반으로 구/동 추출된 값을 사용
+   * - auto 모드에서 X > 구개수 이면 동 단위로 전환
+   * - 같은 구 우선 배치 + (가능하면) 인접 구 함께 배치
+   */
+  function buildAutoRegionGrouping(properties, agentCount, unitMode) {
+    const valid = properties.filter((p) => p.address);
+    const regionsByGu = new Map(); // gu => Set(dong)
+    for (const p of valid) {
+      const { gu, dong } = extractGuDong(p.address);
+      const rg = p.regionGu || gu;
+      const rd = p.regionDong || dong;
+      if (!rg) continue;
+      if (!regionsByGu.has(rg)) regionsByGu.set(rg, new Set());
+      if (rd) regionsByGu.get(rg).add(rd);
+    }
+
+    const guList = [...regionsByGu.keys()].sort((a, b) => a.localeCompare(b, "ko"));
+    const guCount = guList.length;
+
+    let mode = unitMode;
+    if (unitMode === "auto") {
+      mode = agentCount > guCount ? "dong" : "gu";
+    }
+
+    let regionUnits = [];
+    if (mode === "gu") {
+      regionUnits = guList.map((gu) => ({ key: gu, gu, weight: regionsByGu.get(gu)?.size || 1 }));
+    } else {
+      for (const gu of guList) {
+        const dongs = [...(regionsByGu.get(gu) || [])];
+        if (!dongs.length) {
+          regionUnits.push({ key: gu, gu, weight: 1 });
+          continue;
+        }
+        dongs.sort((a, b) => a.localeCompare(b, "ko")).forEach((dong) => {
+          regionUnits.push({ key: dong, gu, weight: 1 });
+        });
+      }
+    }
+
+    // 그룹 초기화
+    const groups = Array.from({ length: Math.max(1, agentCount) }, (_, i) => ({
+      idx: i,
+      regions: [],
+      guSet: new Set(),
+      totalWeight: 0,
+    }));
+
+    // gu 모드일 때 인접 구 기반 ordering(간단)
+    if (mode === "gu") {
+      regionUnits = sortGuUnitsByAdjacency(regionUnits);
+    } else {
+      // dong 모드: 같은 구끼리 붙게 정렬
+      regionUnits.sort((a, b) => {
+        if (a.gu !== b.gu) return a.gu.localeCompare(b.gu, "ko");
+        return a.key.localeCompare(b.key, "ko");
+      });
+    }
+
+    // 균등 분배 (가중치 기준 가장 작은 그룹에 할당)
+    for (const unit of regionUnits) {
+      const target = groups
+        .slice()
+        .sort((g1, g2) => {
+          if (g1.totalWeight !== g2.totalWeight) return g1.totalWeight - g2.totalWeight;
+          // 같은 구 이어붙이기 선호
+          const p1 = g1.guSet.has(unit.gu) ? -1 : 0;
+          const p2 = g2.guSet.has(unit.gu) ? -1 : 0;
+          if (p1 !== p2) return p1 - p2;
+          return g1.idx - g2.idx;
+        })[0];
+
+      target.regions.push(unit.key);
+      target.totalWeight += unit.weight || 1;
+      if (unit.gu) target.guSet.add(unit.gu);
+    }
+
+    return {
+      unit: mode,
+      unitLabel: mode === "gu" ? "구 단위" : "동 단위",
+      totalRegions: regionUnits.length,
+      groups: groups.map((g) => ({
+        regions: g.regions.sort((a, b) => a.localeCompare(b, "ko")),
+        totalWeight: g.totalWeight,
+      })),
+    };
+  }
+
+  // 서울 기준 일부 인접맵(초기 내장, 필요시 서버/설정으로 확장 권장)
+  const GU_ADJ = {
+    "강남구": ["서초구", "송파구", "강동구", "성동구"],
+    "서초구": ["강남구", "동작구", "관악구", "용산구", "송파구"],
+    "송파구": ["강남구", "강동구", "광진구", "성동구", "서초구"],
+    "강동구": ["송파구", "강남구", "광진구"],
+    "마포구": ["서대문구", "은평구", "용산구", "영등포구"],
+    "서대문구": ["은평구", "마포구", "종로구", "중구"],
+    "영등포구": ["동작구", "구로구", "양천구", "마포구", "용산구"],
+    "구로구": ["금천구", "양천구", "영등포구"],
+    "양천구": ["강서구", "구로구", "영등포구"],
+    "관악구": ["동작구", "서초구", "금천구"],
+    "동작구": ["용산구", "영등포구", "관악구", "서초구"],
+    "용산구": ["중구", "마포구", "서초구", "동작구", "성동구"],
+    "성동구": ["광진구", "동대문구", "중구", "용산구", "강남구", "송파구"],
+    "광진구": ["성동구", "동대문구", "중랑구", "강동구", "송파구"],
+    "노원구": ["도봉구", "중랑구", "성북구"],
+    "도봉구": ["노원구", "강북구"],
+    "강북구": ["도봉구", "성북구", "종로구"],
+    "성북구": ["강북구", "종로구", "동대문구", "중랑구", "노원구"],
+    "종로구": ["중구", "서대문구", "성북구", "강북구", "은평구"],
+    "중구": ["종로구", "용산구", "성동구", "동대문구", "서대문구"],
+    "동대문구": ["중랑구", "성북구", "성동구", "중구", "광진구"],
+    "중랑구": ["노원구", "동대문구", "광진구", "성북구"],
+    "은평구": ["서대문구", "종로구", "마포구", "강북구"],
+    "강서구": ["양천구"],
+    "금천구": ["관악구", "구로구"],
+  };
+
+  function sortGuUnitsByAdjacency(units) {
+    const left = units.slice();
+    if (!left.length) return left;
+
+    const result = [];
+    // 시작점: weight 큰 구부터
+    left.sort((a, b) => (b.weight || 1) - (a.weight || 1));
+    result.push(left.shift());
+
+    while (left.length) {
+      const last = result[result.length - 1];
+      const adj = GU_ADJ[last.gu] || [];
+      let idx = left.findIndex((u) => adj.includes(u.gu));
+      if (idx < 0) idx = 0;
+      result.push(left.splice(idx, 1)[0]);
+    }
+
+    return result;
+  }
+
+  // ---------------------------
+  // Offices CSV / Autosave
+  // ---------------------------
+  async function handleOfficeCsvPreview() {
+    try {
+      const file = els.officeCsvFileInput.files?.[0];
+      if (!file) return alert("CSV 파일을 선택해 주세요.");
+      const text = await file.text();
+      const rows = parseCsv(text);
+      state.officeCsvPreviewRows = rows.map(mapOfficeCsvRow).filter(Boolean);
+      renderOfficeCsvPreviewTable();
+      showResultBox(els.officeResultBox, `미리보기 완료: ${state.officeCsvPreviewRows.length}행`);
+    } catch (err) {
+      console.error(err);
+      showResultBox(els.officeResultBox, `미리보기 실패: ${err.message}`, true);
+    }
+  }
+
+  function renderOfficeCsvPreviewTable() {
+    els.officePreviewTableBody.innerHTML = "";
+    if (!state.officeCsvPreviewRows.length) {
+      els.officePreviewEmpty.classList.remove("hidden");
+      return;
+    }
+    els.officePreviewEmpty.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+    state.officeCsvPreviewRows.slice(0, 200).forEach((r, idx) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(r.officeName)}</td>
+        <td>${escapeHtml(r.address)}</td>
+        <td>${escapeHtml(r.regionGu || "-")}</td>
+        <td>${escapeHtml(r.regionDong || "-")}</td>
+        <td>${escapeHtml(r.managerName || "-")}</td>
+      `;
+      frag.appendChild(tr);
+    });
+    els.officePreviewTableBody.appendChild(frag);
+  }
+
+  async function handleOfficeCsvUpload() {
+    try {
+      const file = els.officeCsvFileInput.files?.[0];
+      if (!file) return alert("CSV 파일을 선택해 주세요.");
+      const csvText = await file.text();
+
+      const res = await api("/admin/import/realtor-offices-csv", {
+        method: "POST",
+        auth: true,
+        body: { csvText },
+      });
+
+      const summary = [
+        `업로드 완료`,
+        `삽입: ${res?.inserted ?? 0}건`,
+        `갱신: ${res?.updated ?? 0}건`,
+        `오류: ${res?.errors ?? 0}건`,
+      ].join(" / ");
+
+      showResultBox(els.officeResultBox, summary);
+      await loadOffices();
+    } catch (err) {
+      console.error(err);
+      showResultBox(els.officeResultBox, `업로드 실패: ${err.message}`, true);
+    }
+  }
+
+  function mapOfficeCsvRow(row) {
+    const pick = (...keys) => {
+      for (const k of keys) {
+        if (row[k] != null && String(row[k]).trim() !== "") return String(row[k]).trim();
+      }
+      return "";
+    };
+
+    const officeName = pick("office_name", "사무소명", "중개사무소명");
+    const address = pick("address", "주소");
+    if (!officeName || !address) return null;
+
+    const x = extractGuDong(address);
+
+    return {
+      officeName,
+      branchName: pick("branch_name", "지점명"),
+      address,
+      regionGu: pick("region_gu", "구") || x.gu || "",
+      regionDong: pick("region_dong", "동") || x.dong || "",
+      managerName: pick("manager_name", "담당자"),
+      phone: pick("phone", "핸드폰", "휴대폰", "전화번호"),
+      memo: pick("memo", "비고"),
+    };
+  }
+
+  function scheduleOfficePhoneSave(id, rawValue) {
+    const key = String(id);
+    clearTimeout(phoneSaveTimers.get(key));
+    setSaveMsg(id, "저장 대기...");
+    const t = setTimeout(() => flushOfficePhoneSave(id, rawValue), 700);
+    phoneSaveTimers.set(key, t);
+  }
+
+  async function flushOfficePhoneSave(id, rawValue) {
+    const key = String(id);
+    clearTimeout(phoneSaveTimers.get(key));
+
+    const phone = normalizePhone(rawValue);
+    setSaveMsg(id, "저장 중...");
+
+    try {
+      await api(`/admin/realtor-offices/${encodeURIComponent(id)}/phone`, {
+        method: "PATCH",
+        auth: true,
+        body: { phone },
+      });
+
+      const row = state.offices.find((o) => o.id === id);
+      if (row) row.phone = phone;
+      setSaveMsg(id, "저장됨");
+    } catch (err) {
+      console.error(err);
+      setSaveMsg(id, "저장 실패");
+    }
+  }
+
+  function setSaveMsg(id, msg) {
+    const el = document.querySelector(`[data-save-msg="${CSS.escape(String(id))}"]`);
+    if (el) el.textContent = msg;
+  }
+
+  // ---------------------------
+  // CSV Parser (simple, quotes support)
+  // ---------------------------
+  function parseCsv(text) {
+    const rows = [];
+    let i = 0;
+    let field = "";
+    let row = [];
+    let inQuotes = false;
+
+    const pushField = () => {
+      row.push(field);
+      field = "";
+    };
+    const pushRow = () => {
+      if (row.length === 1 && row[0] === "" && rows.length === 0) {
+        row = [];
+        return;
+      }
+      rows.push(row);
+      row = [];
+    };
+
+    while (i < text.length) {
+      const ch = text[i];
+
+      if (inQuotes) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') {
+            field += '"';
+            i += 2;
+            continue;
+          } else {
+            inQuotes = false;
+            i++;
+            continue;
+          }
+        } else {
+          field += ch;
+          i++;
+          continue;
+        }
+      } else {
+        if (ch === '"') {
+          inQuotes = true;
+          i++;
+          continue;
+        }
+        if (ch === ",") {
+          pushField();
+          i++;
+          continue;
+        }
+        if (ch === "\n") {
+          pushField();
+          pushRow();
+          i++;
+          continue;
+        }
+        if (ch === "\r") {
+          i++;
+          continue;
+        }
+        field += ch;
+        i++;
+      }
+    }
+
+    pushField();
+    if (row.length) pushRow();
+
+    if (!rows.length) return [];
+    const headers = rows[0].map((h) => String(h || "").trim());
+    return rows.slice(1)
+      .filter(r => r.some(v => String(v || "").trim() !== ""))
+      .map((r) => {
+        const obj = {};
+        headers.forEach((h, idx) => { obj[h] = r[idx] ?? ""; });
+        return obj;
+      });
+  }
+
+  // ---------------------------
+  // API
+  // ---------------------------
+  async function api(path, options = {}) {
+    const method = options.method || "GET";
+    const headers = { "Content-Type": "application/json" };
+
+    if (options.auth) {
+      const token = state.session?.token;
+      if (!token) throw new Error("로그인이 필요합니다.");
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: method === "GET" ? undefined : JSON.stringify(options.body || {}),
+    });
+
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+    if (!res.ok) {
+      throw new Error(data?.message || `API 오류 (${res.status})`);
+    }
+    return data;
+  }
+
+  // ---------------------------
+  // Utils
+  // ---------------------------
+  function normalizeAddress(v) {
+    return String(v || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[(),]/g, "")
+      .trim();
+  }
+
+  function extractGuDong(address) {
+    const text = String(address || "").replace(/\s+/g, " ").trim();
+
+    // 예: 서울특별시 강남구 역삼동 / 서울 강남구 역삼동 / 강남구 역삼동
+    const guMatch = text.match(/([가-힣]+구)\b/);
+    const dongMatch = text.match(/([가-힣0-9]+동)\b/);
+
+    return {
+      gu: guMatch ? guMatch[1] : "",
+      dong: dongMatch ? dongMatch[1] : "",
+    };
+  }
+
+  function normalizeStatus(v) {
+    const s = String(v || "").trim().toLowerCase();
+    if (["active", "진행", "진행중", "진행중인"].includes(s)) return "active";
+    if (["hold", "보류"].includes(s)) return "hold";
+    if (["closed", "종결", "완료"].includes(s)) return "closed";
+    if (["review", "검토", "검토중"].includes(s)) return "review";
+    return "review";
+  }
+
+  function sourceLabel(v) {
+    if (v === "auction") return "경매";
+    if (v === "gongmae") return "공매";
+    return "일반";
+  }
+
+  function statusLabel(v) {
+    if (v === "active") return "진행중";
+    if (v === "hold") return "보류";
+    if (v === "closed") return "종결";
+    if (v === "review") return "검토중";
+    return v || "-";
+  }
+
+  function formatMoneyKRW(n) {
+    const num = Number(n || 0);
+    if (!Number.isFinite(num)) return "-";
+    return `${num.toLocaleString("ko-KR")}원`;
+  }
+
+  function formatDate(v) {
+    if (!v) return "-";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "-";
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  function normalizePhone(v) {
+    return String(v || "").replace(/[^\d]/g, "");
+  }
+
+  function formatPhoneDisplay(v) {
+    const n = normalizePhone(v);
+    if (n.length === 11) return `${n.slice(0,3)}-${n.slice(3,7)}-${n.slice(7)}`;
+    if (n.length === 10) return `${n.slice(0,3)}-${n.slice(3,6)}-${n.slice(6)}`;
+    return n;
+  }
+
+  function showResultBox(el, text, isError = false) {
+    el.classList.remove("hidden");
+    el.style.borderColor = isError ? "rgba(255,109,109,.28)" : "#2b3a4c";
+    el.textContent = text;
+  }
+
+  function setFormBusy(form, busy) {
+    [...form.querySelectorAll("button, input, select, textarea")].forEach((el) => {
+      el.disabled = !!busy;
+    });
+  }
+
+  function debounce(fn, wait = 150) {
+    let t = null;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
+  }
+
+  function escapeHtml(v) {
+    return String(v ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function escapeAttr(v) {
+    return escapeHtml(v).replaceAll("`", "&#96;");
+  }
+
+  function $(sel) {
+    return document.querySelector(sel);
+  }
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveSession(v) {
+    if (!v) {
+      localStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(v));
+  }
 })();
