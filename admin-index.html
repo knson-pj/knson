@@ -1,228 +1,348 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>부동산 물건 관리 시스템 - 관리자</title>
+  <title>부동산 물건 관리 시스템 | 관리자</title>
   <link rel="stylesheet" href="./admin-styles.css" />
 </head>
 <body>
-  <div id="adminApp">
-    <header class="app-header">
-      <div class="brand-wrap">
-        <h1 class="brand">관리자 페이지</h1>
-        <p class="subtitle">CSV 업로드 · 중복 방지 · 계정/지역 배정 · 전체 현황</p>
+  <div class="admin-shell">
+    <header class="admin-topbar">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div>
+          <h1>관리자 페이지</h1>
+          <p>물건 · 담당자 · 지역배정 · 중개사무소 관리</p>
+        </div>
       </div>
 
-      <div class="header-actions">
-        <div id="authStatus" class="auth-status">로그인 필요</div>
-        <button id="btnOpenLogin" class="btn btn-primary">로그인</button>
-        <button id="btnLogout" class="btn btn-outline hidden">로그아웃</button>
+      <div class="top-actions">
+        <span id="adminUserBadge" class="badge badge-muted">비로그인</span>
+        <button id="btnAdminLoginOpen" class="btn btn-primary">관리자 로그인</button>
+        <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
       </div>
     </header>
 
-    <section id="globalMessage" class="global-message hidden"></section>
+    <main class="admin-main">
+      <!-- 대시보드 요약 -->
+      <section class="panel summary-panel">
+        <div class="summary-grid">
+          <div class="summary-card"><span>전체 물건</span><strong id="sumTotal">0</strong></div>
+          <div class="summary-card"><span>경매</span><strong id="sumAuction">0</strong></div>
+          <div class="summary-card"><span>공매</span><strong id="sumGongmae">0</strong></div>
+          <div class="summary-card"><span>일반</span><strong id="sumGeneral">0</strong></div>
+          <div class="summary-card"><span>담당자 수</span><strong id="sumAgents">0</strong></div>
+          <div class="summary-card"><span>중개사무소 수</span><strong id="sumOffices">0</strong></div>
+        </div>
+      </section>
 
-    <main class="main">
+      <!-- 탭 -->
       <section class="panel">
-        <div class="panel-header">
-          <h2>관리 기능</h2>
-          <p class="muted">관리자만 접근할 수 있습니다.</p>
+        <div class="tabs" id="adminTabs">
+          <button class="tab is-active" data-tab="properties">물건 관리</button>
+          <button class="tab" data-tab="csv">CSV 업로드</button>
+          <button class="tab" data-tab="staff">담당자 관리</button>
+          <button class="tab" data-tab="regions">담당자 지역 배정</button>
+          <button class="tab" data-tab="offices">중개사무소 정보</button>
+        </div>
+      </section>
+
+      <!-- 물건 관리 -->
+      <section id="tab-properties" class="panel tab-panel">
+        <div class="panel-title-row">
+          <h2>물건 리스팅</h2>
+          <button id="btnReloadProperties" class="btn btn-secondary">새로고침</button>
         </div>
 
-        <div class="admin-grid">
-          <!-- CSV 업로드 -->
-          <section class="card">
-            <h3>1) 경매·공매 CSV 업로드</h3>
+        <div class="toolbar">
+          <select id="propSourceFilter" class="select">
+            <option value="">전체 소스</option>
+            <option value="auction">경매</option>
+            <option value="gongmae">공매</option>
+            <option value="general">일반</option>
+          </select>
 
-            <div class="field">
-              <label for="csvType">업로드 유형</label>
-              <select id="csvType">
-                <option value="auction">경매</option>
-                <option value="public">공매</option>
+          <select id="propStatusFilter" class="select">
+            <option value="">전체 상태</option>
+            <option value="active">진행중</option>
+            <option value="hold">보류</option>
+            <option value="closed">종결</option>
+            <option value="review">검토중</option>
+          </select>
+
+          <input id="propKeyword" class="input" type="text" placeholder="주소 / 담당자 검색" />
+        </div>
+
+        <div class="table-wrap">
+          <table class="table" id="propertiesTable">
+            <thead>
+              <tr>
+                <th>소스</th>
+                <th>주소</th>
+                <th>매각가</th>
+                <th>상태</th>
+                <th>담당자</th>
+                <th>지역(구/동)</th>
+                <th>중복</th>
+                <th>등록일</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="propertiesEmpty" class="empty hidden">표시할 물건이 없습니다.</div>
+        </div>
+      </section>
+
+      <!-- CSV 업로드 -->
+      <section id="tab-csv" class="panel tab-panel hidden">
+        <div class="panel-title-row">
+          <h2>경매 / 공매 CSV 업로드</h2>
+        </div>
+
+        <div class="sub-card">
+          <div class="field-row">
+            <label class="field">
+              <span>업로드 대상</span>
+              <select id="csvImportSource" class="select">
+                <option value="auction">경매 CSV</option>
+                <option value="gongmae">공매 CSV</option>
               </select>
+            </label>
+
+            <label class="field">
+              <span>CSV 파일</span>
+              <input id="csvFileInput" class="input" type="file" accept=".csv,text/csv" />
+            </label>
+          </div>
+
+          <div class="hint-box">
+            <div class="hint-title">CSV 샘플 컬럼 (권장)</div>
+            <code>address,sale_price,appraisal_price,status,region_gu,region_dong,case_no,memo</code>
+            <div class="muted small">
+              한글 헤더(주소, 매각가, 감정가, 상태, 구, 동, 사건번호, 비고)도 허용하도록 매핑 처리됨.
             </div>
+          </div>
 
-            <div class="field">
-              <label for="csvFile">CSV 파일</label>
-              <input id="csvFile" type="file" accept=".csv,text/csv" />
+          <div class="btn-row">
+            <button id="btnCsvPreview" class="btn btn-secondary">미리보기</button>
+            <button id="btnCsvUpload" class="btn btn-primary">서버 업로드</button>
+          </div>
+
+          <div id="csvResultBox" class="result-box hidden"></div>
+
+          <div class="table-wrap slim">
+            <table class="table" id="csvPreviewTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>주소</th>
+                  <th>매각가</th>
+                  <th>상태</th>
+                  <th>구</th>
+                  <th>동</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div id="csvPreviewEmpty" class="empty">미리보기 데이터가 없습니다.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 담당자 관리 -->
+      <section id="tab-staff" class="panel tab-panel hidden">
+        <div class="panel-title-row">
+          <h2>담당자 어카운트 관리</h2>
+        </div>
+
+        <div class="sub-card">
+          <form id="staffForm" class="staff-form">
+            <input type="hidden" name="id" />
+            <label class="field">
+              <span>이름 *</span>
+              <input name="name" class="input" type="text" required />
+            </label>
+            <label class="field">
+              <span>비밀번호 *</span>
+              <input name="password" class="input" type="password" placeholder="신규/재설정 시 입력" />
+            </label>
+            <label class="field">
+              <span>권한</span>
+              <select name="role" class="select">
+                <option value="agent">담당자</option>
+                <option value="admin">관리자</option>
+              </select>
+            </label>
+
+            <div class="btn-row">
+              <button type="submit" class="btn btn-primary">저장</button>
+              <button type="button" id="btnStaffReset" class="btn btn-ghost">초기화</button>
             </div>
+          </form>
+        </div>
 
-            <p class="muted small">
-              권장 컬럼: 제목, 주소, 상태, 가격, 구, 동, 메모<br/>
-              자동 매핑: title/제목, address/주소, status/상태, price/가격/감정가/최저가…
-            </p>
+        <div class="table-wrap">
+          <table class="table" id="staffTable">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>권한</th>
+                <th>담당지역 수</th>
+                <th>생성일</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="staffEmpty" class="empty hidden">담당자가 없습니다.</div>
+        </div>
+      </section>
 
-            <div class="actions">
-              <button id="btnCsvPreview" class="btn btn-outline" type="button">미리보기</button>
-              <button id="btnCsvImport" class="btn btn-primary" type="button">업로드 반영</button>
+      <!-- 담당자 지역 배정 -->
+      <section id="tab-regions" class="panel tab-panel hidden">
+        <div class="panel-title-row">
+          <h2>담당자 지역 배정</h2>
+        </div>
+
+        <div class="sub-card">
+          <div class="field-row">
+            <label class="field">
+              <span>담당자 수(X명)</span>
+              <input id="agentCountInput" class="input" type="number" min="1" step="1" value="1" />
+            </label>
+
+            <label class="field">
+              <span>기준 단위</span>
+              <select id="regionUnitMode" class="select">
+                <option value="auto">자동 (구 수 초과 시 동 단위 재편성)</option>
+                <option value="gu">구 단위 고정</option>
+                <option value="dong">동 단위 고정</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="btn-row">
+            <button id="btnSuggestGrouping" class="btn btn-secondary">자동 그룹핑 제안</button>
+            <button id="btnSaveAssignments" class="btn btn-primary">배정 저장</button>
+          </div>
+
+          <div class="hint-box">
+            <div class="hint-title">자동 그룹핑 로직(초기 버전)</div>
+            <ul>
+              <li>물건 주소에서 <strong>구/동</strong> 추출</li>
+              <li>X명이 구 개수보다 많으면 <strong>동 단위</strong>로 자동 전환</li>
+              <li>같은 구 우선, 인접 구는 인접맵(초기 내장) 기준으로 묶는 휴리스틱 적용</li>
+            </ul>
+          </div>
+
+          <div id="groupSuggestBox" class="group-suggest-box"></div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table" id="assignmentTable">
+            <thead>
+              <tr>
+                <th>담당자</th>
+                <th>권한</th>
+                <th>배정 지역(복수선택 저장)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="assignmentEmpty" class="empty hidden">담당자 계정을 먼저 등록해 주세요.</div>
+        </div>
+      </section>
+
+      <!-- 중개사무소 정보 -->
+      <section id="tab-offices" class="panel tab-panel hidden">
+        <div class="panel-title-row">
+          <h2>중개사무소 정보</h2>
+        </div>
+
+        <div class="sub-card">
+          <div class="field-row">
+            <label class="field">
+              <span>기본정보 CSV 업로드</span>
+              <input id="officeCsvFileInput" class="input" type="file" accept=".csv,text/csv" />
+            </label>
+          </div>
+
+          <div class="hint-box">
+            <div class="hint-title">CSV 샘플 컬럼 (권장)</div>
+            <code>office_name,branch_name,address,region_gu,region_dong,manager_name,phone,memo</code>
+            <div class="muted small">
+              핸드폰번호는 아래 표에서 수정하면 자동 저장됩니다(서버 PATCH).
             </div>
+          </div>
 
-            <div id="csvPreviewBox" class="preview-box"></div>
-            <div id="csvImportResult" class="inline-result muted"></div>
-          </section>
+          <div class="btn-row">
+            <button id="btnOfficeCsvPreview" class="btn btn-secondary">미리보기</button>
+            <button id="btnOfficeCsvUpload" class="btn btn-primary">서버 업로드</button>
+            <button id="btnReloadOffices" class="btn btn-ghost">목록 새로고침</button>
+          </div>
 
-          <!-- 계정 관리 -->
-          <section class="card">
-            <h3>2) 담당자 계정 관리</h3>
+          <div id="officeResultBox" class="result-box hidden"></div>
 
-            <form id="userCreateForm" class="form-grid compact">
-              <div class="field">
-                <label for="userName">이름 *</label>
-                <input id="userName" type="text" required />
-              </div>
-              <div class="field">
-                <label for="userPassword">PASS-WORD *</label>
-                <input id="userPassword" type="password" required />
-              </div>
-              <div class="field">
-                <label for="userRole">권한</label>
-                <select id="userRole">
-                  <option value="staff">담당자</option>
-                  <option value="admin">관리자</option>
-                </select>
-              </div>
-              <div class="actions field-span-2">
-                <button type="submit" class="btn btn-primary">계정 추가</button>
-              </div>
-            </form>
+          <div class="table-wrap slim">
+            <table class="table" id="officePreviewTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>사무소명</th>
+                  <th>주소</th>
+                  <th>구</th>
+                  <th>동</th>
+                  <th>담당자</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div id="officePreviewEmpty" class="empty">미리보기 데이터가 없습니다.</div>
+          </div>
+        </div>
 
-            <div class="table-wrap small-table">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>이름</th>
-                    <th>권한</th>
-                    <th>배정 지역</th>
-                    <th>작업</th>
-                  </tr>
-                </thead>
-                <tbody id="userTableBody">
-                  <tr><td colspan="4" class="empty">계정 없음</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <!-- 지역 배정/자동 그룹핑 -->
-          <section class="card card-span-2">
-            <h3>3) 담당자 지역 배정 / 자동 그룹핑</h3>
-
-            <div class="grid-4">
-              <div class="field">
-                <label for="assignUserSelect">대상 담당자</label>
-                <select id="assignUserSelect"></select>
-              </div>
-
-              <div class="field">
-                <label for="assignUnit">배정 단위</label>
-                <select id="assignUnit">
-                  <option value="gu">구 단위</option>
-                  <option value="dong">동 단위</option>
-                </select>
-              </div>
-
-              <div class="field">
-                <label for="autoStaffCount">담당자 수(X)</label>
-                <input id="autoStaffCount" type="number" min="1" step="1" value="3" />
-              </div>
-
-              <div class="field">
-                <label for="regionSourceMode">지역 소스</label>
-                <select id="regionSourceMode">
-                  <option value="properties">등록 물건에서 추출</option>
-                  <option value="manual">수동 입력 목록 사용</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="split-box">
-              <div>
-                <label class="block-label">지역 후보 목록 (복수 선택)</label>
-                <select id="regionPool" multiple size="10"></select>
-                <div class="row-actions">
-                  <button id="btnLoadRegionPool" class="btn btn-outline" type="button">지역 후보 새로고침</button>
-                </div>
-              </div>
-
-              <div>
-                <label class="block-label">수동 지역 입력 (줄바꿈 구분)</label>
-                <textarea id="manualRegions" rows="10" placeholder="예:
-강남구
-서초구
-송파구
-강남구 역삼동
-강남구 대치동"></textarea>
-              </div>
-            </div>
-
-            <div class="actions">
-              <button id="btnAssignSelectedRegions" class="btn btn-outline" type="button">선택 지역 배정 저장</button>
-              <button id="btnAutoGroup" class="btn btn-primary" type="button">X명 기준 자동 그룹핑</button>
-              <button id="btnApplyAutoGroup" class="btn btn-success" type="button">자동 그룹핑 결과 적용</button>
-            </div>
-
-            <div id="autoGroupResult" class="auto-group-result"></div>
-          </section>
-
-          <!-- 전체 물건 현황 -->
-          <section class="card card-span-2">
-            <h3>4) 전체 물건 현황 / 중복 체크</h3>
-
-            <div class="toolbar-actions">
-              <button id="btnAdminReload" class="btn btn-outline" type="button">새로고침</button>
-              <span id="adminStats" class="badge">-</span>
-            </div>
-
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>구분</th>
-                    <th>제목</th>
-                    <th>주소</th>
-                    <th>정규화주소</th>
-                    <th>구/동</th>
-                    <th>담당자</th>
-                    <th>중복위험</th>
-                  </tr>
-                </thead>
-                <tbody id="adminPropertyTableBody">
-                  <tr><td colspan="7" class="empty">데이터 없음</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+        <div class="table-wrap">
+          <table class="table" id="officeTable">
+            <thead>
+              <tr>
+                <th>사무소명</th>
+                <th>지점명</th>
+                <th>주소</th>
+                <th>구/동</th>
+                <th>담당자</th>
+                <th>핸드폰번호 (자동저장)</th>
+                <th>메모</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="officeEmpty" class="empty hidden">중개사무소 정보가 없습니다.</div>
         </div>
       </section>
     </main>
   </div>
 
-  <!-- 로그인 모달 -->
-  <div id="loginModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" id="loginBackdrop"></div>
-    <div class="modal-panel">
+  <!-- 관리자 로그인 모달 -->
+  <div id="adminLoginModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-card">
       <div class="modal-header">
-        <h2>관리자 로그인</h2>
-        <button id="btnCloseLogin" class="icon-btn" aria-label="닫기">✕</button>
+        <h3>관리자 로그인</h3>
+        <button id="btnAdminLoginClose" class="icon-btn" aria-label="닫기">✕</button>
       </div>
-
-      <form id="loginForm" class="form-grid compact">
-        <div class="field field-span-2">
-          <label for="loginName">이름</label>
-          <input id="loginName" type="text" required placeholder="예: admin" />
-        </div>
-        <div class="field field-span-2">
-          <label for="loginPassword">PASS-WORD</label>
-          <input id="loginPassword" type="password" required placeholder="비밀번호" />
-        </div>
-        <div class="actions field-span-2">
-          <button type="submit" class="btn btn-primary">로그인</button>
-        </div>
+      <form id="adminLoginForm" class="modal-body">
+        <label class="field">
+          <span>이름</span>
+          <input name="name" class="input" type="text" required />
+        </label>
+        <label class="field">
+          <span>비밀번호</span>
+          <input name="password" class="input" type="password" required />
+        </label>
+        <button type="submit" class="btn btn-primary w-full">로그인</button>
+        <div class="muted small">관리자 권한 계정만 접속 가능합니다.</div>
       </form>
-
-      <p class="muted small">(개발용 mock 기본) admin / admin123</p>
-      <div id="loginError" class="error-text"></div>
     </div>
   </div>
 
