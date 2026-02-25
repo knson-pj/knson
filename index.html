@@ -1,166 +1,373 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>온비드 부동산 공매 - 매입 후보 대시보드(내부)</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>부동산 물건 관리 시스템</title>
   <link rel="stylesheet" href="./styles.css" />
-
-  <!-- Excel Export (SheetJS) -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo">ONBID</div>
-      <div class="title">
-        <div class="h1">매입 후보 대시보드</div>
-        <div class="sub">후보 수집 → 필터링 → 담당자 배정 → 권리분석/현장실사 피드백</div>
-      </div>
-    </div>
-
-    <div class="actions">
-      <button id="btnSync" class="btn primary">동기화(조회)</button>
-      <button id="btnExport" class="btn">엑셀로 내보내기</button>
-      <button id="btnResetLocal" class="btn danger">로컬 기록 초기화</button>
-    </div>
-  </header>
-
-  <main class="container">
-    <!-- Settings / Filters -->
-    <section class="card">
-      <div class="card-head">
-        <h2>조회 설정</h2>
-        <div class="hint">* data.go.kr는 프록시(Vercel) 경유 권장(키 보호/CORS). API_BASE에 Vercel 주소를 넣어줘.</div>
+  <div id="app">
+    <header class="app-header">
+      <div class="brand-wrap">
+        <h1 class="brand">부동산 물건 관리 시스템</h1>
+        <p class="subtitle">경매 · 공매 · 일반 물건 통합 관리</p>
       </div>
 
-      <div class="grid">
-        <div class="field">
-          <label>API_BASE (Vercel 프록시)</label>
-          <input id="apiBase" type="text" placeholder="예: https://knson.vercel.app/api" />
-          <div class="help">현재 값은 브라우저에 저장돼(다음 접속에도 유지).</div>
+      <div class="header-actions">
+        <div id="authStatus" class="auth-status">로그인 필요</div>
+        <button id="btnOpenLogin" class="btn btn-primary">로그인</button>
+        <button id="btnLogout" class="btn btn-outline hidden">로그아웃</button>
+      </div>
+    </header>
+
+    <nav class="top-nav">
+      <button class="nav-btn active" data-view="front">통합 물건 조회</button>
+      <button class="nav-btn" data-view="general-register">일반물건 등록</button>
+      <button class="nav-btn admin-only hidden" data-view="admin">관리자</button>
+    </nav>
+
+    <!-- 공통 알림 -->
+    <section id="globalMessage" class="global-message hidden"></section>
+
+    <!-- =========================
+         VIEW: 통합 물건 조회
+    ========================== -->
+    <main id="view-front" class="view active">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>통합 물건 조회</h2>
+          <p class="muted">
+            관리자: 전체 조회 / 담당자: 배정 지역 기준 담당 물건만 조회
+          </p>
         </div>
 
-        <div class="field">
-          <label>페이지당 건수</label>
-          <input id="numOfRows" type="number" min="1" max="200" value="50" />
-        </div>
+        <div class="toolbar grid-4">
+          <div class="field">
+            <label for="filterSource">구분</label>
+            <select id="filterSource">
+              <option value="all">전체</option>
+              <option value="auction">경매</option>
+              <option value="public">공매</option>
+              <option value="general">일반</option>
+            </select>
+          </div>
 
-        <div class="field">
-          <label>페이지(시작)</label>
-          <input id="pageNo" type="number" min="1" value="1" />
-        </div>
+          <div class="field">
+            <label for="filterStatus">상태</label>
+            <select id="filterStatus">
+              <option value="all">전체</option>
+              <option value="active">진행중</option>
+              <option value="hold">보류</option>
+              <option value="done">종결</option>
+            </select>
+          </div>
 
-        <div class="field">
-          <label>최대 페이지</label>
-          <input id="maxPages" type="number" min="1" max="50" value="3" />
-        </div>
+          <div class="field">
+            <label for="filterRegion">지역 검색</label>
+            <input id="filterRegion" type="text" placeholder="예: 강남구, 역삼동" />
+          </div>
 
-        <div class="field">
-          <label>시/도</label>
-          <input id="fSido" type="text" placeholder="예: 서울특별시 / 경기도" />
-        </div>
-
-        <div class="field">
-          <label>시/군/구</label>
-          <input id="fSigungu" type="text" placeholder="예: 송파구 / 고양시 일산동구" />
-        </div>
-
-        <div class="field">
-          <label>최저가 범위(원)</label>
-          <div class="row">
-            <input id="fMinPrice" type="number" min="0" placeholder="최소" />
-            <span class="sep">~</span>
-            <input id="fMaxPrice" type="number" min="0" placeholder="최대" />
+          <div class="field">
+            <label for="filterKeyword">키워드</label>
+            <input id="filterKeyword" type="text" placeholder="주소/제목/메모 검색" />
           </div>
         </div>
 
-        <div class="field">
-          <label>감정가 대비 최저가(%) 최대</label>
-          <input id="fMaxRatio" type="number" min="0" max="100" step="0.1" placeholder="예: 20 (20% 이하)" />
+        <div class="toolbar-actions">
+          <button id="btnRefreshList" class="btn btn-outline">새로고침</button>
+          <span id="frontCount" class="badge">0건</span>
         </div>
 
-        <div class="field">
-          <label>유찰횟수(최소)</label>
-          <input id="fMinFail" type="number" min="0" placeholder="예: 2" />
+        <div class="table-wrap">
+          <table class="table" id="frontTable">
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>상태</th>
+                <th>제목</th>
+                <th>주소</th>
+                <th>구/동</th>
+                <th>담당자</th>
+                <th>가격</th>
+                <th>등록일</th>
+              </tr>
+            </thead>
+            <tbody id="frontTableBody">
+              <tr><td colspan="8" class="empty">로그인 후 조회할 수 있습니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- =========================
+         VIEW: 일반물건 등록
+    ========================== -->
+    <main id="view-general-register" class="view">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>일반물건 등록</h2>
+          <p class="muted">담당자/관리자가 일반 중개 물건을 등록합니다. (주소 중복 자동 차단)</p>
         </div>
 
-        <div class="field">
-          <label>입찰 종료일(YYYYMMDDHHmm) 이전</label>
-          <input id="fEndBefore" type="text" placeholder="예: 202605312359" />
+        <form id="generalPropertyForm" class="form-grid">
+          <div class="field">
+            <label for="gpTitle">물건명 / 제목 *</label>
+            <input id="gpTitle" name="title" type="text" required />
+          </div>
+
+          <div class="field field-span-2">
+            <label for="gpAddress">주소 *</label>
+            <input id="gpAddress" name="address" type="text" placeholder="예: 서울특별시 강남구 역삼동 123-4" required />
+          </div>
+
+          <div class="field">
+            <label for="gpStatus">상태</label>
+            <select id="gpStatus" name="status">
+              <option value="active">진행중</option>
+              <option value="hold">보류</option>
+              <option value="done">종결</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="gpPrice">가격(원)</label>
+            <input id="gpPrice" name="price" type="number" min="0" step="10000" placeholder="0" />
+          </div>
+
+          <div class="field field-span-2">
+            <label for="gpMemo">메모</label>
+            <textarea id="gpMemo" name="memo" rows="4" placeholder="비고, 연락처, 진행 메모 등"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="gpRegionGu">구(선택)</label>
+            <input id="gpRegionGu" name="regionGu" type="text" placeholder="예: 강남구" />
+          </div>
+
+          <div class="field">
+            <label for="gpRegionDong">동(선택)</label>
+            <input id="gpRegionDong" name="regionDong" type="text" placeholder="예: 역삼동" />
+          </div>
+
+          <div class="actions field-span-2">
+            <button type="submit" class="btn btn-primary">일반물건 등록</button>
+            <button type="reset" class="btn btn-outline">초기화</button>
+          </div>
+        </form>
+
+        <div id="generalRegisterResult" class="inline-result muted"></div>
+      </section>
+    </main>
+
+    <!-- =========================
+         VIEW: 관리자
+    ========================== -->
+    <main id="view-admin" class="view">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>관리자 페이지</h2>
+          <p class="muted">CSV 업로드, 중복 방지, 계정/지역 배정 관리</p>
         </div>
 
-        <div class="field">
-          <label>검색(물건명)</label>
-          <input id="fKeyword" type="text" placeholder="예: 아파트 / 창고 / 대지" />
+        <div class="admin-grid">
+          <!-- CSV 업로드 -->
+          <section class="card">
+            <h3>1) 경매·공매 CSV 업로드</h3>
+
+            <div class="field">
+              <label for="csvType">업로드 유형</label>
+              <select id="csvType">
+                <option value="auction">경매</option>
+                <option value="public">공매</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="csvFile">CSV 파일</label>
+              <input id="csvFile" type="file" accept=".csv,text/csv" />
+            </div>
+
+            <p class="muted small">
+              권장 컬럼 예시: 제목, 주소, 상태, 가격, 구, 동, 메모<br/>
+              (컬럼명 자동 매핑 시도: title/제목, address/주소, status/상태, price/가격/감정가 등)
+            </p>
+
+            <div class="actions">
+              <button id="btnCsvPreview" class="btn btn-outline">미리보기</button>
+              <button id="btnCsvImport" class="btn btn-primary">업로드 반영</button>
+            </div>
+
+            <div id="csvPreviewBox" class="preview-box"></div>
+            <div id="csvImportResult" class="inline-result muted"></div>
+          </section>
+
+          <!-- 계정 관리 -->
+          <section class="card">
+            <h3>2) 담당자 계정 관리</h3>
+
+            <form id="userCreateForm" class="form-grid compact">
+              <div class="field">
+                <label for="userName">이름 *</label>
+                <input id="userName" type="text" required />
+              </div>
+              <div class="field">
+                <label for="userPassword">PASS-WORD *</label>
+                <input id="userPassword" type="password" required />
+              </div>
+              <div class="field">
+                <label for="userRole">권한</label>
+                <select id="userRole">
+                  <option value="staff">담당자</option>
+                  <option value="admin">관리자</option>
+                </select>
+              </div>
+              <div class="actions field-span-2">
+                <button type="submit" class="btn btn-primary">계정 추가</button>
+              </div>
+            </form>
+
+            <div class="table-wrap small-table">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>권한</th>
+                    <th>배정 지역</th>
+                    <th>작업</th>
+                  </tr>
+                </thead>
+                <tbody id="userTableBody">
+                  <tr><td colspan="4" class="empty">계정 없음</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- 지역 배정 -->
+          <section class="card card-span-2">
+            <h3>3) 담당자 지역 배정 / 자동 그룹핑</h3>
+
+            <div class="grid-4">
+              <div class="field">
+                <label for="assignUserSelect">대상 담당자</label>
+                <select id="assignUserSelect"></select>
+              </div>
+
+              <div class="field">
+                <label for="assignUnit">배정 단위</label>
+                <select id="assignUnit">
+                  <option value="gu">구 단위</option>
+                  <option value="dong">동 단위</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="autoStaffCount">담당자 수(X)</label>
+                <input id="autoStaffCount" type="number" min="1" step="1" value="3" />
+              </div>
+
+              <div class="field">
+                <label for="regionSourceMode">지역 소스</label>
+                <select id="regionSourceMode">
+                  <option value="properties">등록 물건에서 추출</option>
+                  <option value="manual">수동 입력 목록 사용</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="split-box">
+              <div>
+                <label class="block-label">지역 후보 목록 (복수 선택)</label>
+                <select id="regionPool" multiple size="10"></select>
+                <div class="row-actions">
+                  <button id="btnLoadRegionPool" class="btn btn-outline" type="button">지역 후보 새로고침</button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block-label">수동 지역 입력 (줄바꿈 구분)</label>
+                <textarea id="manualRegions" rows="10" placeholder="예:
+강남구
+서초구
+송파구
+강남구 역삼동
+강남구 대치동"></textarea>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="btnAssignSelectedRegions" class="btn btn-outline" type="button">선택 지역 수동 배정 저장</button>
+              <button id="btnAutoGroup" class="btn btn-primary" type="button">X명 기준 자동 그룹핑</button>
+              <button id="btnApplyAutoGroup" class="btn btn-success" type="button">자동 그룹핑 결과 적용</button>
+            </div>
+
+            <div id="autoGroupResult" class="auto-group-result"></div>
+          </section>
+
+          <!-- 관리자 물건 전체 현황 -->
+          <section class="card card-span-2">
+            <h3>4) 전체 물건 현황 / 중복 체크 상태</h3>
+            <div class="toolbar-actions">
+              <button id="btnAdminReload" class="btn btn-outline">새로고침</button>
+              <span id="adminStats" class="badge">-</span>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>구분</th>
+                    <th>제목</th>
+                    <th>주소</th>
+                    <th>정규화주소</th>
+                    <th>구/동</th>
+                    <th>담당자</th>
+                    <th>중복위험</th>
+                  </tr>
+                </thead>
+                <tbody id="adminPropertyTableBody">
+                  <tr><td colspan="7" class="empty">데이터 없음</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
+      </section>
+    </main>
+  </div>
 
-        <div class="field">
-          <label>담당자(필터)</label>
-          <input id="fAssignee" type="text" placeholder="예: 홍길동" />
+  <!-- 로그인 모달 -->
+  <div id="loginModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" id="loginBackdrop"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>로그인</h2>
+        <button id="btnCloseLogin" class="icon-btn" aria-label="닫기">✕</button>
+      </div>
+
+      <form id="loginForm" class="form-grid compact">
+        <div class="field field-span-2">
+          <label for="loginName">이름</label>
+          <input id="loginName" type="text" required placeholder="예: admin" />
         </div>
-      </div>
-
-      <div class="bar">
-        <div class="bar-left">
-          <button id="btnApplyFilter" class="btn">필터 적용</button>
-          <button id="btnClearFilter" class="btn ghost">필터 초기화</button>
+        <div class="field field-span-2">
+          <label for="loginPassword">PASS-WORD</label>
+          <input id="loginPassword" type="password" required placeholder="비밀번호" />
         </div>
-        <div class="status" id="statusText">대기 중</div>
-      </div>
-    </section>
+        <div class="actions field-span-2">
+          <button type="submit" class="btn btn-primary">로그인</button>
+        </div>
+      </form>
 
-    <!-- Result Table -->
-    <section class="card">
-      <div class="card-head">
-        <h2>후보 리스트</h2>
-        <div class="pill" id="countPill">0건</div>
-      </div>
+      <p class="muted small">
+        (개발용 mock 기본 계정) admin / admin123
+      </p>
+      <div id="loginError" class="error-text"></div>
+    </div>
+  </div>
 
-      <div class="table-wrap">
-        <table class="table" id="tbl">
-          <thead>
-            <tr>
-              <th>담당</th>
-              <th>상태</th>
-              <th>피드백</th>
-              <th>물건명</th>
-              <th>소재지</th>
-              <th class="num">감정가</th>
-              <th class="num">최저가</th>
-              <th class="num">비율(%)</th>
-              <th class="num">유찰</th>
-              <th>입찰종료</th>
-              <th>키(온비드)</th>
-            </tr>
-          </thead>
-          <tbody id="tbody">
-            <tr><td class="muted" colspan="11">동기화(조회) 후 목록이 표시돼.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Editor -->
-    <section class="card">
-      <div class="card-head">
-        <h2>선택 물건 작업</h2>
-        <div class="hint">담당자 배정 + 진행상태 + 권리분석/현장실사 결과를 남겨</div>
-      </div>
-
-      <div class="editor" id="editor">
-        <div class="muted">테이블에서 한 행을 클릭하면 여기에서 편집할 수 있어.</div>
-      </div>
-    </section>
-
-    <footer class="footer">
-      <div class="muted">
-        내부용 MVP. 배정/피드백은 현재 <b>localStorage</b>에 저장(서버 저장은 다음 단계에서 붙이면 됨).
-      </div>
-    </footer>
-  </main>
-
-  <script src="./list.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
-
