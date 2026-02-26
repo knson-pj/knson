@@ -18,7 +18,7 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
-    // 로그인 없이 진입 불가 정책
+    // 로그인 세션 없으면 로그인 페이지로
     if (!state.session?.token || !state.session?.user) {
       redirectToLogin();
       return;
@@ -26,48 +26,48 @@
 
     cacheElements();
     bindEvents();
+    bindAutoLogoutOnLeave();
+
     renderSessionUI();
     loadProperties();
   }
 
   function cacheElements() {
     Object.assign(els, {
-      // buttons
-      btnGoRegister: $("#btnGoRegister"),
+      btnPublicRegister: $("#btnPublicRegister"),
       btnLogout: $("#btnLogout"),
       btnRefresh: $("#btnRefresh"),
 
-      // list
       sourceTabs: $("#sourceTabs"),
       searchKeyword: $("#searchKeyword"),
       filterStatus: $("#filterStatus"),
+
       propertyList: $("#propertyList"),
       emptyState: $("#emptyState"),
       listMeta: $("#listMeta"),
 
-      // counters
       countAll: $("#countAll"),
       countAuction: $("#countAuction"),
       countGongmae: $("#countGongmae"),
       countGeneral: $("#countGeneral"),
 
-      // user
       userSummary: $("#userSummary"),
       userRoleBadge: $("#userRoleBadge"),
     });
   }
 
   function bindEvents() {
-    els.btnGoRegister.addEventListener("click", () => {
-      location.href = "./general-register.html";
-    });
+    els.btnRefresh.addEventListener("click", loadProperties);
 
     els.btnLogout.addEventListener("click", () => {
-      saveSession(null);
-      redirectToLogin();
+      clearSession();
+      redirectToLogin(true);
     });
 
-    els.btnRefresh.addEventListener("click", loadProperties);
+    // 메인에서 "누구나 매물 등록"은 새 탭(메인 세션 유지)
+    els.btnPublicRegister.addEventListener("click", () => {
+      window.open("./general-register.html", "_blank", "noopener");
+    });
 
     els.sourceTabs.addEventListener("click", (e) => {
       const btn = e.target.closest(".tab");
@@ -92,21 +92,17 @@
     });
   }
 
-  function redirectToLogin() {
-    const next = encodeURIComponent("./index.html");
-    location.replace(`./login.html?next=${next}`);
+  function bindAutoLogoutOnLeave() {
+    // "로그인 이후 페이지를 나가면 자동 로그아웃" 요구사항
+    // (새로고침/탭닫기/다른 페이지 이동 포함)
+    window.addEventListener("pagehide", clearSession);
+    window.addEventListener("beforeunload", clearSession);
   }
 
   function renderSessionUI() {
-    const user = state.session?.user;
-    if (!user) {
-      els.userRoleBadge.textContent = "-";
-      els.userRoleBadge.className = "badge badge-muted";
-      els.userSummary.innerHTML = `<div class="muted">로그인이 필요합니다.</div>`;
-      return;
-    }
-
+    const user = state.session.user;
     const isAdmin = user.role === "admin";
+
     els.userRoleBadge.textContent = isAdmin ? "관리자" : "담당자";
     els.userRoleBadge.className = `badge ${isAdmin ? "badge-admin" : "badge-agent"}`;
 
@@ -148,19 +144,19 @@
       renderList();
     } catch (err) {
       console.error(err);
+
+      // 인증 만료/실패면 로그인 페이지로
+      if (String(err?.message || "").includes("401") || String(err?.message || "").includes("로그인")) {
+        clearSession();
+        redirectToLogin(true);
+        return;
+      }
+
       state.properties = [];
       updateCounters();
       renderList();
       els.listMeta.textContent = "불러오기 실패";
-
-      // 인증 실패 시 로그인 페이지로
-      if (String(err?.message || "").includes("401") || err?.status === 401) {
-        saveSession(null);
-        redirectToLogin();
-        return;
-      }
-
-      notify(err.message || "물건 목록 조회에 실패했습니다.");
+      alert(err.message || "물건 목록 조회에 실패했습니다.");
     } finally {
       state.loading = false;
     }
@@ -246,8 +242,7 @@
     const list = getFilteredProperties();
     els.propertyList.innerHTML = "";
 
-    if (!list.length) els.emptyState.classList.remove("hidden");
-    else els.emptyState.classList.add("hidden");
+    els.emptyState.classList.toggle("hidden", list.length > 0);
 
     const frag = document.createDocumentFragment();
     list.forEach((p) => frag.appendChild(renderCard(p)));
@@ -262,9 +257,7 @@
 
     const sourceLabel = sourceToLabel(p.source);
     const sourceClass =
-      p.source === "auction" ? "source-auction" :
-      p.source === "gongmae" ? "source-gongmae" :
-      "source-general";
+      p.source === "auction" ? "source-auction" : p.source === "gongmae" ? "source-gongmae" : "source-general";
 
     card.innerHTML = `
       <div class="card-top">
@@ -294,16 +287,15 @@
     return card;
   }
 
-  // --- API ---
+  // --- API (GET preflight 최소화) ---
   async function api(path, options = {}) {
     const method = (options.method || "GET").toUpperCase();
-    const auth = !!options.auth;
-
     const headers = { Accept: "application/json" };
+
     const hasBody = !["GET", "HEAD"].includes(method);
     if (hasBody) headers["Content-Type"] = "application/json";
 
-    if (auth && state.session?.token) {
+    if (options.auth && state.session?.token) {
       headers.Authorization = `Bearer ${state.session.token}`;
     }
 
@@ -320,13 +312,15 @@
 
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw: text };
+    }
 
     if (!res.ok) {
       const message = data?.message || `API 오류 (${res.status})`;
-      const err = new Error(message);
-      err.status = res.status;
-      throw err;
+      throw new Error(message);
     }
 
     return data;
@@ -341,11 +335,16 @@
 
   function statusToLabel(status) {
     switch (status) {
-      case "active": return "진행중";
-      case "hold": return "보류";
-      case "closed": return "종결";
-      case "review": return "검토중";
-      default: return status || "-";
+      case "active":
+        return "진행중";
+      case "hold":
+        return "보류";
+      case "closed":
+        return "종결";
+      case "review":
+        return "검토중";
+      default:
+        return status || "-";
     }
   }
 
@@ -359,7 +358,9 @@
     if (!v) return "-";
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return "-";
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d
+      .getDate())
+      .padStart(2, "0")}`;
   }
 
   function escapeHtml(v) {
@@ -369,10 +370,6 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
-  }
-
-  function notify(msg) {
-    window.alert(msg);
   }
 
   function debounce(fn, wait = 200) {
@@ -396,11 +393,16 @@
     }
   }
 
-  function saveSession(session) {
-    if (!session) {
+  function clearSession() {
+    try {
       localStorage.removeItem(SESSION_KEY);
-      return;
-    }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    } catch {}
+    state.session = null;
+  }
+
+  function redirectToLogin(replace = false) {
+    const url = `./login.html?next=${encodeURIComponent("./index.html")}`;
+    if (replace) location.replace(url);
+    else location.href = url;
   }
 })();
