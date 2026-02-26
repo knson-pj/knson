@@ -364,30 +364,6 @@
     return card;
   }
 
-    try {
-      setFormBusy(e.currentTarget, true);
-      const res = await api("/public-listings", {
-        method: "POST",
-        body: payload,
-      });
-
-      // 서버가 중복 여부를 알려주면 처리
-      if (res?.duplicate) {
-        notify("동일 주소 물건이 이미 접수되어 있습니다. 검토 후 연락드리겠습니다.");
-      }
-
-      e.currentTarget.reset();
-      location.hash = "#thanks";
-      // 목록 다시 로드 (관리자/담당자 화면에서 즉시 확인 가능)
-      loadProperties();
-    } catch (err) {
-      console.error(err);
-      notify(err.message || "등록 요청에 실패했습니다.");
-    } finally {
-      setFormBusy(e.currentTarget, false);
-    }
-  }
-
   // --- API ---
   async function api(path, options = {}) {
     const method = options.method || "GET";
