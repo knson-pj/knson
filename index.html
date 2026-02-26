@@ -3,80 +3,122 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>부동산 물건 관리 시스템</title>
+  <title>부동산 매입 관리 시스템</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-dot"></div>
-        <div>
-          <h1>부동산 물건 관리 시스템</h1>
-          <p>경매 · 공매 · 일반 물건 통합 조회</p>
-        </div>
+  <header class="main-header">
+    <div class="header-left">
+      <img class="main-logo" src="./image/logo-main.png" alt="logo" />
+    </div>
+
+    <div class="header-right">
+      <a class="admin-link" href="./admin-index.html">관리자 페이지</a>
+      <button id="btnLogout" class="btn-logout" type="button">로그아웃</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="stats">
+      <div id="statTotalCard" class="stat-card stat-total" role="button" tabindex="0" aria-label="전체 보기">
+        <div id="statTotal" class="stat-value">0</div>
+        <div class="stat-label">누적</div>
       </div>
 
-      <div class="topbar-actions">
-        <button id="btnPublicRegister" class="btn btn-secondary">누구나 매물 등록</button>
-        <button id="btnLogout" class="btn btn-ghost">로그아웃</button>
+      <div id="statAuctionCard" class="stat-card stat-auction" role="button" tabindex="0" aria-label="경매 보기">
+        <div class="stat-title">경매</div>
+        <div id="statAuction" class="stat-subvalue">0</div>
       </div>
-    </header>
 
-    <main class="main-wrap">
-      <!-- 사용자 상태 -->
-      <section class="panel user-panel">
-        <div class="panel-title-row">
-          <h2>접속 정보</h2>
-          <span id="userRoleBadge" class="badge badge-muted">-</span>
+      <div id="statGongmaeCard" class="stat-card stat-gongmae" role="button" tabindex="0" aria-label="공매 보기">
+        <div class="stat-title">공매</div>
+        <div id="statGongmae" class="stat-subvalue">0</div>
+      </div>
+
+      <div id="statGeneralCard" class="stat-card stat-general" role="button" tabindex="0" aria-label="일반 보기">
+        <div class="stat-title">일반</div>
+        <div id="statGeneral" class="stat-subvalue">0</div>
+      </div>
+    </section>
+
+    <section class="viewbar">
+      <div class="view-tabs" role="tablist" aria-label="보기 전환">
+        <button id="tabText" class="view-tab is-active" role="tab" aria-selected="true" type="button">텍스트</button>
+        <button id="tabMap" class="view-tab" role="tab" aria-selected="false" type="button">지도</button>
+      </div>
+
+      <button id="btnFilter" class="filter-btn" type="button" aria-label="필터">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 5h16l-6.8 7.7v5.2l-2.4 1.2v-6.4L4 5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </section>
+
+    <section id="textView" class="table-section">
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th class="col-kind">구분</th>
+              <th>소재지</th>
+              <th class="col-type">종류</th>
+              <th class="col-floor">층수</th>
+              <th class="col-area">전용면적<br/>(평)</th>
+              <th class="col-money">감정가<br/>(매각가)</th>
+              <th class="col-money">현재가격</th>
+              <th class="col-rate">비율</th>
+              <th class="col-date">입찰일</th>
+              <th class="col-date">등록일</th>
+              <th class="col-agent">담당자</th>
+              <th class="col-check">관리<br/>분석</th>
+              <th class="col-check">현장<br/>실사</th>
+              <th class="col-opinion">의견</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+
+      <div id="emptyState" class="empty hidden">표시할 물건이 없습니다.</div>
+    </section>
+
+    <section id="mapView" class="map-section hidden" aria-label="지도 보기">
+      <div class="map-placeholder">
+        <div class="map-title">지도 보기</div>
+        <div class="map-desc">현재는 텍스트 보기만 제공됩니다.</div>
+      </div>
+    </section>
+
+    <!-- Filter Panel (minimal, hidden by default) -->
+    <aside id="filterPanel" class="filter-panel hidden" aria-hidden="true">
+      <div class="filter-head">
+        <div class="filter-title">필터</div>
+        <button id="btnFilterClose" class="filter-close" type="button" aria-label="닫기">✕</button>
+      </div>
+
+      <div class="filter-body">
+        <label class="filter-field">
+          <span>검색</span>
+          <input id="searchKeyword" class="filter-input" type="text" placeholder="주소 / 담당자 / 지역" />
+        </label>
+
+        <label class="filter-field">
+          <span>상태</span>
+          <select id="filterStatus" class="filter-select">
+            <option value="">상태 전체</option>
+            <option value="active">진행중</option>
+            <option value="hold">보류</option>
+            <option value="closed">종결</option>
+            <option value="review">검토중</option>
+          </select>
+        </label>
+
+        <div class="filter-actions">
+          <button id="btnRefresh" class="filter-apply" type="button">새로고침</button>
         </div>
-        <div id="userSummary" class="user-summary"></div>
-      </section>
-
-      <!-- 리스트 화면 -->
-      <section class="panel">
-        <div class="panel-title-row">
-          <h2>물건 조회</h2>
-          <div class="chip-row">
-            <span id="countAll" class="chip">전체 0</span>
-            <span id="countAuction" class="chip">경매 0</span>
-            <span id="countGongmae" class="chip">공매 0</span>
-            <span id="countGeneral" class="chip">일반 0</span>
-          </div>
-        </div>
-
-        <div class="toolbar">
-          <div class="tabs" id="sourceTabs">
-            <button class="tab is-active" data-source="all">전체</button>
-            <button class="tab" data-source="auction">경매</button>
-            <button class="tab" data-source="gongmae">공매</button>
-            <button class="tab" data-source="general">일반</button>
-          </div>
-
-          <div class="filters">
-            <input id="searchKeyword" type="text" class="input" placeholder="주소 / 담당자 / 지역 검색" />
-            <select id="filterStatus" class="select">
-              <option value="">상태 전체</option>
-              <option value="active">진행중</option>
-              <option value="hold">보류</option>
-              <option value="closed">종결</option>
-              <option value="review">검토중</option>
-            </select>
-            <button id="btnRefresh" class="btn btn-secondary">새로고침</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title-row">
-          <h2>물건 목록</h2>
-          <div id="listMeta" class="muted">불러오는 중...</div>
-        </div>
-        <div id="propertyList" class="property-grid"></div>
-        <div id="emptyState" class="empty-state hidden">표시할 물건이 없습니다.</div>
-      </section>
-    </main>
-  </div>
+      </div>
+    </aside>
+  </main>
 
   <script src="./app.js"></script>
 </body>
