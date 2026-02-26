@@ -1,5 +1,4 @@
 :root {
-  /* 요청: 주황색 배경 변경 */
   --orange: #ff7323;
   --brown: #6a3b2c;
   --input: rgba(240,240,240,.96);
@@ -50,7 +49,7 @@ body {
   height: 100%;
   padding: clamp(20px, 4vw, 44px);
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
 }
 
 .title {
@@ -71,10 +70,10 @@ body {
 
 .character {
   position: relative;
-  /* 요청: login.png 현재 크기 대비 약 40% 축소(= 60% 수준) */
-  width: min(480px, 92%);
-  max-width: 520px;
-  transform: translateX(70px);
+  /* login.png 크기: 현재 기준에서 더 작게(시각적으로 -40% 느낌) */
+  width: min(420px, 86%);
+  max-width: 460px;
+  transform: translateX(60px);
   pointer-events: none;
 }
 
@@ -85,30 +84,38 @@ body {
 }
 
 /*
-  분홍 보드 영역에 맞춰 폼을 절대배치
-  - 좌표는 login.png 기준(현재 제공 이미지)에서 보드 상단 입력 영역에 맞춤
+  ✅ 핵심: 분홍 보드(네모) 영역에 '정중앙' 정렬
+  - login-card를 보드 영역 크기(가로/세로)로 잡고
+  - 내부 form을 flex 중앙정렬 + 약간 위로 올려 "LOGIN" 텍스트 아래에 자연스럽게 위치
 */
 .login-card {
   position: absolute;
-  /* 보드(분홍) 좌상단 기준으로 잡아 넣기 */
-  left: 52.5%;
-  top: 46.5%;
+  left: 50%;
+  top: 68%;
   transform: translate(-50%, -50%);
 
-  /* 보드 폭에 맞게 */
-  width: 58%;
-  max-width: 320px;
+  width: 76%;
+  height: 46%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
   background: transparent;
   border: 0;
-  border-radius: 0;
-  box-shadow: none;
   padding: 0;
   z-index: 2;
+
   pointer-events: auto; /* 입력 가능 */
 }
 
-.form { display: grid; gap: 12px; }
+.form {
+  width: 78%;
+  max-width: 320px;
+  display: grid;
+  gap: 12px;
+  transform: translateY(-8%);
+}
 
 .field input {
   width: 100%;
@@ -160,13 +167,6 @@ body {
   color: #3b1f16;
 }
 
-.footnote {
-  margin-top: 16px;
-  text-align: center;
-  color: rgba(255,255,255,.92);
-  font-size: 12px;
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -185,26 +185,37 @@ body {
 
   .character {
     transform: translateX(40px);
-    width: min(440px, 96%);
-    max-width: 480px;
+    width: min(400px, 92%);
+    max-width: 440px;
   }
 
   .login-card {
-    left: 52.5%;
-    top: 48%;
-    width: 62%;
+    top: 69%;
+    width: 80%;
+    height: 48%;
+  }
+
+  .form {
+    width: 82%;
+    transform: translateY(-7%);
   }
 }
 
 @media (max-width: 520px) {
   .character {
     transform: translateX(0);
-    width: min(420px, 98%);
+    width: min(380px, 96%);
+    max-width: 400px;
   }
 
   .login-card {
-    left: 51.5%;
-    top: 49%;
-    width: 70%;
+    top: 70.5%;
+    width: 86%;
+    height: 50%;
+  }
+
+  .form {
+    width: 86%;
+    transform: translateY(-6%);
   }
 }
