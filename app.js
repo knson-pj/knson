@@ -1,17 +1,25 @@
 (() => {
   "use strict";
 
+  // ---- Config ----
   const API_BASE = "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
   const GEO_CACHE_KEY = "knson_geo_cache_v1";
 
+  // ---- State ----
   const state = {
     session: loadSession(),
     items: [],
-    view: "table",
+    view: "text", // text | map
+    source: "all", // all | auction | gongmae | general
+    keyword: "",
+    status: "",
+
+    // kakao
+    kakaoReady: null,
     map: null,
-    markers: [],
     geocoder: null,
+    markers: [],
     geoCache: loadGeoCache(),
   };
 
@@ -21,97 +29,200 @@
 
   function init() {
     cacheEls();
-    bindEvents();
 
-    // 로그인 없으면 로그인 페이지로
+    // 로그인 없으면 즉시 로그인 페이지
     if (!state.session?.token || !state.session?.user) {
-      location.replace(`./login.html?next=${encodeURIComponent('./index.html')}`);
+      redirectToLogin(true);
       return;
     }
 
-    // 관리자 링크
-    if (state.session.user.role === "admin") {
-      els.adminLink.classList.remove("hidden");
+    // admin link: admin만 노출
+    const isAdmin = isAdminUser(state.session.user);
+    if (els.adminLink) {
+      els.adminLink.style.display = isAdmin ? "inline-flex" : "none";
     }
 
+    bindEvents();
     loadProperties();
   }
 
   function cacheEls() {
-    Object.assign(els, {
-      btnLogout: document.getElementById("btnLogout"),
-      adminLink: document.getElementById("adminLink"),
-      viewTabs: document.getElementById("viewTabs"),
-      tableView: document.getElementById("tableView"),
-      mapView: document.getElementById("mapView"),
-      tbody: document.querySelector("#propTable tbody"),
-      emptyState: document.getElementById("emptyState"),
+    els.btnLogout = document.getElementById("btnLogout");
+    els.adminLink = document.querySelector(".admin-link");
 
-      kpiTotal: document.getElementById("kpiTotal"),
-      kpiAuction: document.getElementById("kpiAuction"),
-      kpiGongmae: document.getElementById("kpiGongmae"),
-      kpiGeneral: document.getElementById("kpiGeneral"),
+    // KPI
+    els.statTotal = document.getElementById("statTotal");
+    els.statAuction = document.getElementById("statAuction");
+    els.statGongmae = document.getElementById("statGongmae");
+    els.statGeneral = document.getElementById("statGeneral");
 
-      mapEl: document.getElementById("kakaoMap"),
-      mapHint: document.getElementById("mapHint"),
-    });
+    els.statTotalCard = document.getElementById("statTotalCard");
+    els.statAuctionCard = document.getElementById("statAuctionCard");
+    els.statGongmaeCard = document.getElementById("statGongmaeCard");
+    els.statGeneralCard = document.getElementById("statGeneralCard");
+
+    // Views
+    els.tabText = document.getElementById("tabText");
+    els.tabMap = document.getElementById("tabMap");
+    els.textView = document.getElementById("textView");
+    els.mapView = document.getElementById("mapView");
+
+    // Table
+    els.tableWrap = document.querySelector(".table-wrap");
+    els.tableBody = document.getElementById("tableBody");
+    els.emptyState = document.getElementById("emptyState");
+
+    // Filters
+    els.btnFilter = document.getElementById("btnFilter");
+    els.filterPanel = document.getElementById("filterPanel");
+    els.btnFilterClose = document.getElementById("btnFilterClose");
+    els.searchKeyword = document.getElementById("searchKeyword");
+    els.filterStatus = document.getElementById("filterStatus");
+    els.btnRefresh = document.getElementById("btnRefresh");
   }
 
   function bindEvents() {
-    els.btnLogout.addEventListener("click", () => {
-      saveSession(null);
-      location.replace("./login.html");
-    });
+    // 방어: DOM 구조가 바뀌어도 에러 안 나게
+    if (els.btnLogout) {
+      els.btnLogout.addEventListener("click", () => {
+        clearSession();
+        redirectToLogin(true);
+      });
+    }
 
-    els.viewTabs.addEventListener("click", async (e) => {
-      const btn = e.target.closest(".view-tab");
-      if (!btn) return;
-      const view = btn.dataset.view;
-      if (!view) return;
-      setView(view);
+    // KPI 카드 클릭 → 소스 필터
+    const bindCard = (el, source) => {
+      if (!el) return;
+      el.addEventListener("click", () => {
+        state.source = source;
+        renderKPIs();
+        renderTable();
+        if (state.view === "map") renderKakaoMarkers();
+      });
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          el.click();
+        }
+      });
+    };
 
-      if (view === "map") {
+    bindCard(els.statTotalCard, "all");
+    bindCard(els.statAuctionCard, "auction");
+    bindCard(els.statGongmaeCard, "gongmae");
+    bindCard(els.statGeneralCard, "general");
+
+    // 탭
+    if (els.tabText) {
+      els.tabText.addEventListener("click", () => setView("text"));
+    }
+    if (els.tabMap) {
+      els.tabMap.addEventListener("click", async () => {
+        setView("map");
         await ensureKakaoMap();
         await renderKakaoMarkers();
-      }
-    });
+      });
+    }
+
+    // 필터 패널
+    if (els.btnFilter && els.filterPanel) {
+      els.btnFilter.addEventListener("click", () => openFilter());
+    }
+    if (els.btnFilterClose && els.filterPanel) {
+      els.btnFilterClose.addEventListener("click", () => closeFilter());
+    }
+
+    if (els.searchKeyword) {
+      els.searchKeyword.addEventListener(
+        "input",
+        debounce((e) => {
+          state.keyword = String(e.target.value || "").trim();
+          renderKPIs();
+          renderTable();
+        }, 120)
+      );
+    }
+
+    if (els.filterStatus) {
+      els.filterStatus.addEventListener("change", (e) => {
+        state.status = String(e.target.value || "");
+        renderKPIs();
+        renderTable();
+      });
+    }
+
+    if (els.btnRefresh) {
+      els.btnRefresh.addEventListener("click", () => loadProperties());
+    }
+
+    // map view에서 창 크기 바뀌면 리레이아웃
+    window.addEventListener(
+      "resize",
+      debounce(() => {
+        if (state.view === "map" && state.map && window.kakao?.maps) {
+          state.map.relayout();
+        }
+      }, 150)
+    );
   }
 
   function setView(view) {
     state.view = view;
-    [...els.viewTabs.querySelectorAll(".view-tab")].forEach((b) => {
-      b.classList.toggle("is-active", b.dataset.view === view);
-    });
+    if (els.tabText) {
+      els.tabText.classList.toggle("is-active", view === "text");
+      els.tabText.setAttribute("aria-selected", view === "text" ? "true" : "false");
+    }
+    if (els.tabMap) {
+      els.tabMap.classList.toggle("is-active", view === "map");
+      els.tabMap.setAttribute("aria-selected", view === "map" ? "true" : "false");
+    }
 
-    els.tableView.classList.toggle("hidden", view !== "table");
-    els.mapView.classList.toggle("hidden", view !== "map");
+    if (els.textView) els.textView.classList.toggle("hidden", view !== "text");
+    if (els.mapView) els.mapView.classList.toggle("hidden", view !== "map");
   }
 
+  function openFilter() {
+    if (!els.filterPanel) return;
+    els.filterPanel.classList.remove("hidden");
+    els.filterPanel.setAttribute("aria-hidden", "false");
+    if (els.searchKeyword) els.searchKeyword.focus();
+  }
+
+  function closeFilter() {
+    if (!els.filterPanel) return;
+    els.filterPanel.classList.add("hidden");
+    els.filterPanel.setAttribute("aria-hidden", "true");
+  }
+
+  // ---- Data ----
   async function loadProperties() {
     try {
-      const scope = state.session.user.role === "admin" ? "all" : "mine";
+      const role = state.session?.user?.role;
+      const scope = isAdminUser(state.session.user) ? "all" : "mine";
       const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
       state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
 
       renderKPIs();
       renderTable();
 
-      // 지도뷰가 이미 켜져있으면 마커
       if (state.view === "map") {
         await ensureKakaoMap();
         await renderKakaoMarkers();
       }
+
+      // 필터 패널 닫기(선택)
+      closeFilter();
     } catch (err) {
       console.error(err);
-      alert(err?.message || "목록을 불러오지 못했습니다.");
       state.items = [];
       renderKPIs();
       renderTable();
+      // 네트워크 오류는 alert로 충분
+      alert(err?.message || "목록을 불러오지 못했습니다.");
     }
   }
 
   function normalizeItem(p) {
-    // 백엔드 응답이 달라도 최대한 수용
     const source = p.source || p.category || "general"; // auction | gongmae | general
     const address = p.address || p.location || "";
 
@@ -119,232 +230,310 @@
       id: p.id || "",
       source,
       address,
+      // 테이블
       type: p.type || p.propertyType || p.kind || "-",
       floor: p.floor || p.floorText || "-",
-      areaPy: toAreaPy(p.areaPy ?? p.area ?? p.area_m2),
+      areaPyeong: toAreaPy(p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
       appraisalPrice: toNumber(p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price),
       currentPrice: toNumber(p.currentPrice ?? p.current_price),
       bidDate: p.bidDate || p.bid_date || "-",
       createdAt: p.createdAt || p.created_at || "",
-      agent: p.assignedAgentName || p.agentName || p.manager || "-",
+      assignedAgentName: p.assignedAgentName || p.agentName || p.manager || "-",
       analysisDone: !!(p.analysisDone ?? p.analysis_done),
-      siteVisit: !!(p.siteVisit ?? p.site_visit),
+      fieldDone: !!(p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done),
       memo: p.memo || p.comment || "",
+      status: p.status || "", // optional
+      regionGu: p.regionGu || "",
+      regionDong: p.regionDong || "",
     };
   }
 
-  function renderKPIs() {
-    const total = state.items.length;
-    const auction = state.items.filter(i => i.source === "auction").length;
-    const gongmae = state.items.filter(i => i.source === "gongmae").length;
-    const general = state.items.filter(i => i.source === "general").length;
+  // ---- Render ----
+  function getFilteredRows() {
+    let list = state.items.slice();
 
-    els.kpiTotal.textContent = String(total);
-    els.kpiAuction.textContent = String(auction);
-    els.kpiGongmae.textContent = String(gongmae);
-    els.kpiGeneral.textContent = String(general);
+    if (state.source !== "all") {
+      list = list.filter((p) => p.source === state.source);
+    }
+
+    if (state.status) {
+      list = list.filter((p) => String(p.status || "") === state.status);
+    }
+
+    if (state.keyword) {
+      const q = state.keyword.toLowerCase();
+      list = list.filter((p) => {
+        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong, p.type]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    // 최신등록 우선
+    return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  function renderKPIs() {
+    // KPI는 전체(필터 전) 기준으로 유지
+    const all = state.items;
+
+    if (els.statTotal) els.statTotal.textContent = String(all.length);
+    if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => p.source === "auction").length);
+    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => p.source === "gongmae").length);
+    if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => p.source === "general").length);
+
+    // 선택 상태 시각화
+    const setActive = (card, on) => {
+      if (!card) return;
+      card.classList.toggle("is-selected", on);
+    };
+
+    setActive(els.statTotalCard, state.source === "all");
+    setActive(els.statAuctionCard, state.source === "auction");
+    setActive(els.statGongmaeCard, state.source === "gongmae");
+    setActive(els.statGeneralCard, state.source === "general");
   }
 
   function renderTable() {
-    els.tbody.innerHTML = "";
-    if (!state.items.length) {
-      els.emptyState.classList.remove("hidden");
+    if (!els.tableBody) return;
+
+    const rows = getFilteredRows();
+    els.tableBody.innerHTML = "";
+
+    if (!rows.length) {
+      // 요구사항: 빈 데이터 의미없이 보여주지 않기
+      if (els.tableWrap) els.tableWrap.classList.add("hidden");
+      if (els.emptyState) {
+        els.emptyState.classList.remove("hidden");
+        els.emptyState.textContent = "등록된 물건이 없습니다.";
+      }
       return;
     }
-    els.emptyState.classList.add("hidden");
+
+    if (els.tableWrap) els.tableWrap.classList.remove("hidden");
+    if (els.emptyState) els.emptyState.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
-
-    for (const it of state.items) {
-      const tr = document.createElement("tr");
-      const catLabel = sourceLabel(it.source);
-      const catClass = it.source === "auction" ? "cat-auction" : it.source === "gongmae" ? "cat-gongmae" : "cat-general";
-      const place = formatPlace(it.address);
-
-      const appraisal = it.appraisalPrice ? formatMoneyEok(it.appraisalPrice) : "-";
-      const current = it.currentPrice ? formatMoneyEok(it.currentPrice) : "-";
-      const ratio = (it.appraisalPrice && it.currentPrice)
-        ? `${((it.currentPrice / it.appraisalPrice) * 100).toFixed(2)} %`
-        : "-";
-
-      tr.innerHTML = `
-        <td class="td-cat ${catClass}">${escapeHtml(catLabel)}</td>
-        <td>${escapeHtml(place)}</td>
-        <td>${escapeHtml(it.type)}</td>
-        <td>${escapeHtml(String(it.floor))}</td>
-        <td>${it.areaPy ? escapeHtml(String(it.areaPy)) : "-"}</td>
-        <td>${escapeHtml(appraisal)}</td>
-        <td>${escapeHtml(current)}</td>
-        <td>${escapeHtml(ratio)}</td>
-        <td>${escapeHtml(String(it.bidDate || "-"))}</td>
-        <td>${escapeHtml(formatDate(it.createdAt))}</td>
-        <td>${escapeHtml(it.agent)}</td>
-        <td>${it.analysisDone ? '<span class="td-ok">✓</span>' : '-'}</td>
-        <td>${it.siteVisit ? '<span class="td-ok">✓</span>' : '-'}</td>
-        <td>${it.memo ? '<button class="btn-view" data-act="memo">보기</button>' : '-'}</td>
-      `;
-
-      tr.addEventListener("click", async (e) => {
-        const memoBtn = e.target?.closest?.("button[data-act='memo']");
-        if (memoBtn) {
-          e.stopPropagation();
-          alert(it.memo);
-          return;
-        }
-
-        // 지도뷰에서 클릭하면 해당 주소로 이동
-        if (state.view === "map") {
-          await ensureKakaoMap();
-          const pos = await geocodeCached(it.address);
-          if (pos && state.map) {
-            state.map.setCenter(new kakao.maps.LatLng(pos.lat, pos.lng));
-            state.map.setLevel(4);
-          }
-        }
-      });
-
-      frag.appendChild(tr);
-    }
-
-    els.tbody.appendChild(frag);
+    for (const p of rows) frag.appendChild(renderRow(p));
+    els.tableBody.appendChild(frag);
   }
 
-  // -----------------------------
-  // Kakao Map
-  // -----------------------------
+  function renderRow(p) {
+    const tr = document.createElement("tr");
+
+    const kindClass = p.source === "auction" ? "kind-auction" : p.source === "gongmae" ? "kind-gongmae" : "kind-general";
+    const kindLabel = p.source === "auction" ? "경매" : p.source === "gongmae" ? "공매" : "일반";
+
+    const locText = formatLocation(p);
+    const appraisal = p.appraisalPrice ? formatMoneyEok(p.appraisalPrice) : "-";
+    const current = p.currentPrice ? formatMoneyEok(p.currentPrice) : "-";
+    const rate = calcRate(p.appraisalPrice, p.currentPrice);
+
+    tr.innerHTML = `
+      <td class="kind-chip ${kindClass}">${escapeHtml(kindLabel)}</td>
+      <td>${escapeHtml(locText || "-")}</td>
+      <td>${escapeHtml(p.type || "-")}</td>
+      <td>${escapeHtml(String(p.floor || "-"))}</td>
+      <td>${p.areaPyeong ? escapeHtml(String(p.areaPyeong)) : "-"}</td>
+      <td>${escapeHtml(appraisal)}</td>
+      <td>${escapeHtml(current)}</td>
+      <td>${escapeHtml(rate)}</td>
+      <td>${escapeHtml(formatShortDate(p.bidDate) || "-")}</td>
+      <td>${escapeHtml(formatShortDate(p.createdAt) || "-")}</td>
+      <td>${escapeHtml(p.assignedAgentName || "-")}</td>
+      <td>${p.analysisDone ? '<span class="check">✓</span>' : "-"}</td>
+      <td>${p.fieldDone ? '<span class="check">✓</span>' : "-"}</td>
+      <td>${p.memo ? `<button class="btn-view" type="button">보기</button>` : "-"}</td>
+    `;
+
+    const btn = tr.querySelector(".btn-view");
+    if (btn) {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        alert(p.memo);
+      });
+    }
+
+    return tr;
+  }
+
+  function formatLocation(p) {
+    // 화면 샘플처럼: 구/동 있으면 "서울 / 미아동" 형태를 우선
+    if (p.regionGu || p.regionDong) {
+      const left = p.regionGu || "";
+      const right = p.regionDong || "";
+      const mid = left && right ? " / " : "";
+      return `${left}${mid}${right}`.trim();
+    }
+    return p.address || "";
+  }
+
+  function calcRate(appraisal, current) {
+    const a = Number(appraisal || 0);
+    const c = Number(current || 0);
+    if (!Number.isFinite(a) || !Number.isFinite(c) || a <= 0 || c <= 0) return "-";
+    return `${((c / a) * 100).toFixed(2)} %`;
+  }
+
+  // ---- Kakao Map ----
+  function ensureMapDom() {
+    if (!els.mapView) return { mapEl: null, hintEl: null };
+
+    let mapEl = document.getElementById("kakaoMap");
+    let hintEl = document.getElementById("mapHint");
+
+    // 기존 placeholder 제거하고 실제 컨테이너 삽입
+    if (!mapEl) {
+      els.mapView.innerHTML = `
+        <div class="map-wrap">
+          <div id="mapHint" class="map-hint hidden"></div>
+          <div id="kakaoMap" class="kakao-map"></div>
+        </div>
+      `;
+      mapEl = document.getElementById("kakaoMap");
+      hintEl = document.getElementById("mapHint");
+    }
+
+    return { mapEl, hintEl };
+  }
 
   async function ensureKakaoMap() {
-    if (state.map && state.geocoder) return;
+    const { mapEl, hintEl } = ensureMapDom();
+    if (!mapEl) return;
 
-    const appKey = getKakaoAppKey();
-    if (!appKey) {
-      showMapHint("카카오맵 앱키가 필요합니다. index.html의 &lt;meta name='kakao-app-key' content='...'/&gt; 에 JS 키를 입력해 주세요.");
+    const key = getKakaoKey();
+    if (!key) {
+      if (hintEl) {
+        hintEl.classList.remove("hidden");
+        hintEl.textContent = "카카오 JavaScript 키가 필요합니다. index.html의 <meta name=\"kakao-app-key\">에 키를 넣어주세요.";
+      }
       return;
     }
 
-    await loadKakaoSdk(appKey);
+    if (!state.kakaoReady) {
+      state.kakaoReady = loadKakaoSdk(key);
+    }
 
-    // eslint-disable-next-line no-undef
-    const center = new kakao.maps.LatLng(37.5665, 126.9780);
-    state.map = new kakao.maps.Map(els.mapEl, {
+    await state.kakaoReady;
+
+    // 이미 생성돼 있으면 종료
+    if (state.map && state.geocoder) return;
+
+    const center = new kakao.maps.LatLng(37.5665, 126.9780); // Seoul
+    state.map = new kakao.maps.Map(mapEl, {
       center,
-      level: 7,
+      level: 6,
     });
 
     state.geocoder = new kakao.maps.services.Geocoder();
-    hideMapHint();
   }
 
   async function renderKakaoMarkers() {
-    if (!state.map || !state.geocoder) return;
+    if (state.view !== "map") return;
+    if (!state.map || !state.geocoder || !window.kakao?.maps) return;
 
-    // 기존 마커 제거
-    state.markers.forEach(m => m.setMap(null));
+    // clear markers
+    for (const m of state.markers) m.setMap(null);
     state.markers = [];
 
-    const list = state.items.slice(0, 80); // 너무 많으면 느려서 상한
+    const rows = getFilteredRows();
+    const valid = rows.filter((r) => (r.address || "").trim().length > 0);
+    if (!valid.length) return;
 
-    for (const it of list) {
+    let firstPos = null;
+
+    for (const it of valid.slice(0, 200)) {
       const pos = await geocodeCached(it.address);
       if (!pos) continue;
 
+      if (!firstPos) firstPos = pos;
+
       const marker = new kakao.maps.Marker({
-        map: state.map,
         position: new kakao.maps.LatLng(pos.lat, pos.lng),
+        map: state.map,
       });
 
       state.markers.push(marker);
-
-      // 약간 쉬어주기(레이트리밋/부하)
-      await sleep(120);
     }
 
-    // 첫 마커로 센터 이동
-    if (state.markers.length) {
-      const first = state.markers[0].getPosition();
-      state.map.setCenter(first);
-      state.map.setLevel(6);
+    if (firstPos) {
+      state.map.setCenter(new kakao.maps.LatLng(firstPos.lat, firstPos.lng));
     }
+  }
+
+  function getKakaoKey() {
+    const meta = document.querySelector('meta[name="kakao-app-key"]');
+    const key = meta?.getAttribute("content")?.trim();
+    return key || "";
+  }
+
+  function loadKakaoSdk(appKey) {
+    return new Promise((resolve, reject) => {
+      // 이미 로드됨
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve());
+        return;
+      }
+
+      const s = document.createElement("script");
+      s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false&libraries=services`;
+      s.async = true;
+      s.onload = () => {
+        if (!window.kakao?.maps?.load) {
+          reject(new Error("Kakao SDK 로드 실패"));
+          return;
+        }
+        window.kakao.maps.load(() => resolve());
+      };
+      s.onerror = () => reject(new Error("Kakao SDK 네트워크 오류"));
+      document.head.appendChild(s);
+    });
   }
 
   async function geocodeCached(address) {
     const a = String(address || "").trim();
-    if (!a || !state.geocoder) return null;
+    if (!a) return null;
 
-    const key = normalizeAddress(a);
+    const key = normalizeAddressKey(a);
     const cached = state.geoCache[key];
-    if (cached && typeof cached.lat === "number" && typeof cached.lng === "number") {
+    if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lng)) {
       return cached;
     }
 
-    const res = await geocode(a);
-    if (!res) return null;
-
-    state.geoCache[key] = res;
-    saveGeoCache(state.geoCache);
-    return res;
+    const pos = await geocodeAddress(a);
+    if (pos) {
+      state.geoCache[key] = pos;
+      saveGeoCache(state.geoCache);
+    }
+    return pos;
   }
 
-  function geocode(address) {
+  function geocodeAddress(address) {
     return new Promise((resolve) => {
+      if (!state.geocoder) return resolve(null);
       state.geocoder.addressSearch(address, (result, status) => {
-        if (status !== kakao.maps.services.Status.OK || !result?.length) {
-          resolve(null);
-          return;
-        }
-        const r = result[0];
+        if (status !== kakao.maps.services.Status.OK) return resolve(null);
+        const r = result?.[0];
+        if (!r) return resolve(null);
         resolve({ lat: Number(r.y), lng: Number(r.x) });
       });
     });
   }
 
-  function loadKakaoSdk(appKey) {
-    return new Promise((resolve, reject) => {
-      if (window.kakao?.maps) {
-        resolve();
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false&libraries=services`;
-      script.async = true;
-      script.onload = () => {
-        kakao.maps.load(() => resolve());
-      };
-      script.onerror = () => reject(new Error("카카오맵 SDK 로드 실패"));
-      document.head.appendChild(script);
-    });
+  function normalizeAddressKey(v) {
+    return String(v || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[(),]/g, "")
+      .trim();
   }
 
-  function getKakaoAppKey() {
-    // 1) meta 우선
-    const meta = document.querySelector("meta[name='kakao-app-key']");
-    const fromMeta = meta?.getAttribute("content")?.trim();
-    if (fromMeta) return fromMeta;
-
-    // 2) 전역 변수 지원
-    const fromWin = (window.KAKAO_MAP_APP_KEY || "").trim();
-    return fromWin || "";
-  }
-
-  function showMapHint(htmlText) {
-    els.mapHint.innerHTML = htmlText;
-    els.mapHint.classList.remove("hidden");
-  }
-
-  function hideMapHint() {
-    els.mapHint.classList.add("hidden");
-    els.mapHint.textContent = "";
-  }
-
-  // -----------------------------
-  // API
-  // -----------------------------
-
+  // ---- API (GET preflight 최소화) ----
   async function api(path, options = {}) {
     const method = (options.method || "GET").toUpperCase();
-
     const headers = { Accept: "application/json" };
+
     const hasBody = !["GET", "HEAD"].includes(method);
     if (hasBody) headers["Content-Type"] = "application/json";
 
@@ -365,18 +554,80 @@
 
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw: text };
+    }
 
     if (!res.ok) {
-      throw new Error(data?.message || `API 오류 (${res.status})`);
+      const message = data?.message || `API 오류 (${res.status})`;
+      throw new Error(message);
     }
 
     return data;
   }
 
-  // -----------------------------
-  // Utils
-  // -----------------------------
+  // ---- Utils ----
+  function isAdminUser(user) {
+    const r = String(user?.role || "").toLowerCase();
+    return r === "admin" || r === "관리자";
+  }
+
+  function toNumber(v) {
+    const n = Number(String(v ?? "").replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function toAreaPy(v) {
+    if (v == null || v === "") return "";
+    const n = Number(String(v).replace(/[^0-9.-]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return "";
+
+    // m2면 평으로 변환(대략)
+    if (n > 200) {
+      const py = n / 3.3058;
+      return Math.round(py);
+    }
+
+    return Math.round(n);
+  }
+
+  function formatMoneyEok(n) {
+    const num = Number(n || 0);
+    if (!Number.isFinite(num) || num <= 0) return "-";
+    // 단순: 1억=100,000,000
+    const eok = num / 100000000;
+    const fixed = eok >= 10 ? eok.toFixed(2) : eok.toFixed(2);
+    return `${fixed.replace(/\.00$/, "")} 억원`;
+  }
+
+  function formatShortDate(v) {
+    if (!v) return "";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    const yy = String(d.getFullYear()).slice(2);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+  }
+
+  function escapeHtml(v) {
+    return String(v ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function debounce(fn, wait = 200) {
+    let t = null;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
+  }
 
   function loadSession() {
     try {
@@ -387,86 +638,17 @@
     }
   }
 
-  function saveSession(session) {
+  function clearSession() {
     try {
-      if (!session) localStorage.removeItem(SESSION_KEY);
-      else localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      localStorage.removeItem(SESSION_KEY);
     } catch {}
+    state.session = null;
   }
 
-  function sourceLabel(s) {
-    if (s === "auction") return "경매";
-    if (s === "gongmae") return "공매";
-    return "일반";
-  }
-
-  function formatPlace(address) {
-    const a = String(address || "").trim();
-    if (!a) return "-";
-
-    const city = a.match(/(서울|인천|경기|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)/)?.[1];
-    const dong = a.match(/([가-힣0-9]+동)\b/)?.[1];
-    const gu = a.match(/([가-힣]+구)\b/)?.[1];
-
-    const left = city || (a.split(" ")[0] || "-");
-    const right = dong || gu || (a.split(" ")[1] || "-");
-    return `${left} / ${right}`;
-  }
-
-  function toNumber(v) {
-    const n = Number(String(v ?? "").replace(/[^0-9.-]/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function toAreaPy(v) {
-    if (v == null || v === "") return "";
-    const n = toNumber(v);
-    if (!n) return "";
-
-    // m2로 들어오면 평 변환 (대략)
-    if (n > 200) {
-      return (n / 3.3058).toFixed(0);
-    }
-    return String(n);
-  }
-
-  function formatMoneyEok(won) {
-    const n = toNumber(won);
-    if (!n) return "-";
-    const eok = n / 100000000;
-    // 1억 미만은 만원 단위로
-    if (eok < 1) {
-      return `${Math.round(n / 10000).toLocaleString("ko-KR")} 만원`;
-    }
-    return `${stripZeros(eok.toFixed(2))} 억원`;
-  }
-
-  function stripZeros(s) {
-    return String(s).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
-  }
-
-  function formatDate(v) {
-    if (!v) return "-";
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return "-";
-    return `${String(d.getFullYear()).slice(2)}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  function normalizeAddress(v) {
-    return String(v || "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .replace(/[(),]/g, "")
-      .trim();
-  }
-
-  function escapeHtml(v) {
-    return String(v ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
+  function redirectToLogin(replace = false) {
+    const url = `./login.html?next=${encodeURIComponent("./index.html")}`;
+    if (replace) location.replace(url);
+    else location.href = url;
   }
 
   function loadGeoCache() {
@@ -482,9 +664,5 @@
     try {
       localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(cache || {}));
     } catch {}
-  }
-
-  function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
   }
 })();
