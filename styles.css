@@ -28,18 +28,24 @@ body{
 .page{
   max-width:1320px;
   margin:0 auto;
-  padding:22px 18px 40px;
+  padding:18px 18px 40px;
 }
 
 /* Topbar */
 .topbar{
+  width:100%;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+
+.topbar-inner{
+  max-width:1320px;
+  margin:0 auto;
   height:84px;
   display:flex;
   align-items:center;
   justify-content:space-between;
   padding:0 18px;
-  background:#fff;
-  border-bottom:1px solid var(--line);
 }
 
 .logo{height:36px; width:auto; display:block;}
