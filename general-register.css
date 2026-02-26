@@ -1,0 +1,207 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #141b22;
+  --panel-2: #11171f;
+  --line: #233041;
+  --text: #e7edf5;
+  --muted: #95a4b8;
+  --primary: #53a6ff;
+  --primary-2: #2d7fe0;
+  --success: #2ac77a;
+  --warning: #f3b25f;
+  --danger: #ff6d6d;
+  --chip: #1a2431;
+  --shadow: 0 12px 28px rgba(0,0,0,.35);
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: linear-gradient(180deg, #090c11 0%, #0c121a 100%);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  line-height: 1.45;
+}
+
+.hidden { display: none !important; }
+
+.app-shell {
+  min-height: 100vh;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: rgba(20,27,34,.8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #7dc0ff, var(--primary-2));
+  box-shadow: 0 0 20px rgba(83,166,255,.45);
+}
+.brand h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+.brand p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.main-wrap {
+  display: grid;
+  gap: 14px;
+}
+
+.panel {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.panel-title-row h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.btn {
+  border: 1px solid #2c3a4d;
+  color: var(--text);
+  background: #182230;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--primary), var(--primary-2));
+  border-color: rgba(83,166,255,.45);
+  color: white;
+}
+.btn-secondary { background: #182230; }
+.btn-ghost {
+  background: transparent;
+  border-color: #2a3647;
+}
+
+.input, .textarea {
+  width: 100%;
+  background: #0f151d;
+  border: 1px solid #2a3647;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+}
+.input:focus, .textarea:focus {
+  border-color: rgba(83,166,255,.55);
+  box-shadow: 0 0 0 3px rgba(83,166,255,.1);
+}
+.textarea { resize: vertical; }
+
+.form-desc { margin-top: 6px; }
+
+.form-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.field { display: grid; gap: 6px; }
+.field > span { font-size: 13px; color: #c8d4e3; }
+.field-full { grid-column: 1 / -1; }
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hint-box {
+  border: 1px dashed #2b394b;
+  border-radius: 12px;
+  padding: 12px;
+  background: #0f141c;
+  color: var(--muted);
+}
+
+.thanks-panel {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 10px;
+}
+.thanks-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(42,199,122,.14);
+  color: #7fe7b0;
+  font-weight: 900;
+  border: 1px solid rgba(42,199,122,.25);
+}
+.thanks-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .app-shell { padding: 12px; }
+  .topbar { flex-direction: column; align-items: stretch; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-actions { justify-content: stretch; }
+  .form-actions .btn { width: 100%; }
+}

@@ -20,7 +20,6 @@
   function init() {
     cacheElements();
     bindEvents();
-    syncRoute();
     renderSessionUI();
     loadProperties();
   }
@@ -32,19 +31,14 @@
       btnOpenLogin: $("#btnOpenLogin"),
       btnCloseLogin: $("#btnCloseLogin"),
       btnLogout: $("#btnLogout"),
-      btnBackToList: $("#btnBackToList"),
-      btnThanksToHome: $("#btnThanksToHome"),
       btnRefresh: $("#btnRefresh"),
 
       // views
       viewList: $("#viewList"),
-      viewRegister: $("#viewRegister"),
-      viewThanks: $("#viewThanks"),
 
       // forms
       loginModal: $("#loginModal"),
       loginForm: $("#loginForm"),
-      generalListingForm: $("#generalListingForm"),
 
       // list
       sourceTabs: $("#sourceTabs"),
@@ -67,16 +61,10 @@
   }
 
   function bindEvents() {
-    window.addEventListener("hashchange", syncRoute);
 
     els.btnGoRegister.addEventListener("click", () => {
-      location.hash = "#register";
-    });
-    els.btnBackToList.addEventListener("click", () => {
-      location.hash = "#list";
-    });
-    els.btnThanksToHome.addEventListener("click", () => {
-      location.hash = "#list";
+      // 별도 등록 페이지로 이동
+      window.location.href = "./general-register.html";
     });
 
     els.btnOpenLogin.addEventListener("click", openLoginModal);
@@ -87,7 +75,6 @@
     });
 
     els.loginForm.addEventListener("submit", onSubmitLogin);
-    els.generalListingForm.addEventListener("submit", onSubmitGeneralListing);
 
     els.btnLogout.addEventListener("click", logout);
     els.btnRefresh.addEventListener("click", loadProperties);
@@ -110,15 +97,6 @@
       state.status = e.target.value || "";
       renderList();
     });
-  }
-
-  function syncRoute() {
-    const hash = (location.hash || "#list").replace("#", "");
-    const view = ["list", "register", "thanks"].includes(hash) ? hash : "list";
-
-    els.viewList.classList.toggle("hidden", view !== "list");
-    els.viewRegister.classList.toggle("hidden", view !== "register");
-    els.viewThanks.classList.toggle("hidden", view !== "thanks");
   }
 
   function openLoginModal() {
@@ -385,23 +363,6 @@
 
     return card;
   }
-
-  async function onSubmitGeneralListing(e) {
-    e.preventDefault();
-
-    const fd = new FormData(e.currentTarget);
-    const payload = {
-      source: "general",
-      address: String(fd.get("address") || "").trim(),
-      salePrice: Number(fd.get("salePrice") || 0),
-      registrantName: String(fd.get("registrantName") || "").trim(),
-      phone: normalizePhone(String(fd.get("phone") || "")),
-      memo: String(fd.get("memo") || "").trim(),
-    };
-
-    if (!payload.address || !payload.salePrice || !payload.registrantName || !payload.phone) {
-      return notify("필수 항목을 모두 입력해 주세요.");
-    }
 
     try {
       setFormBusy(e.currentTarget, true);

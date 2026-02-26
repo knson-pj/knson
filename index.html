@@ -83,59 +83,6 @@
         </section>
       </section>
 
-      <!-- 일반물건 등록 화면 -->
-      <section id="viewRegister" class="view-section hidden">
-        <section class="panel">
-          <div class="panel-title-row">
-            <h2>일반물건 등록</h2>
-            <button id="btnBackToList" class="btn btn-ghost">목록으로</button>
-          </div>
-          <p class="muted form-desc">
-            제3자(부동산 소유자, 부동산중개인)가 사용할 수 있는 등록 페이지입니다.
-          </p>
-
-          <form id="generalListingForm" class="form-grid">
-            <label class="field">
-              <span>물건 주소 *</span>
-              <input name="address" class="input" type="text" required placeholder="예: 서울시 강남구 역삼동 ..." />
-            </label>
-
-            <label class="field">
-              <span>매각가(원) *</span>
-              <input name="salePrice" class="input" type="number" min="0" step="10000" required placeholder="예: 580000000" />
-            </label>
-
-            <label class="field">
-              <span>등록자 *</span>
-              <input name="registrantName" class="input" type="text" required placeholder="성함 또는 상호" />
-            </label>
-
-            <label class="field">
-              <span>전화번호 *</span>
-              <input name="phone" class="input" type="tel" required placeholder="010-0000-0000" />
-            </label>
-
-            <label class="field field-full">
-              <span>비고 (선택)</span>
-              <textarea name="memo" class="textarea" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
-            </label>
-
-            <div class="form-actions field-full">
-              <button type="submit" class="btn btn-primary">등록 요청하기</button>
-            </div>
-          </form>
-        </section>
-      </section>
-
-      <!-- 등록 완료 화면 -->
-      <section id="viewThanks" class="view-section hidden">
-        <section class="panel thanks-panel">
-          <div class="thanks-icon">✓</div>
-          <h2>등록이 접수되었습니다</h2>
-          <p>검토후 연락드리겠습니다.</p>
-          <button id="btnThanksToHome" class="btn btn-primary">메인으로 이동</button>
-        </section>
-      </section>
     </main>
   </div>
 
