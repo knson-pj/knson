@@ -3,6 +3,9 @@
   --brown:#6a3b2c;
   --input-bg:rgba(255,255,255,.86);
 
+  /* login.png(오른쪽 일러스트) 표시 크기: 현재 대비 40% 축소(=60% 크기) */
+  --hero-max-w: 432px; /* 기존 720px → 432px */
+
   /* login.png 내 분홍 보드(안쪽 입력/버튼이 들어갈 영역) 좌표(%) */
   --board-x: 50%;
   --board-y: 61.5%;
@@ -79,7 +82,7 @@ body{
 
 .hero-wrap{
   position:relative;
-  width: min(720px, 100%);
+  width: min(var(--hero-max-w), 100%);
 }
 .hero-img{
   width:100%;
@@ -175,7 +178,10 @@ body{
   .title{font-size:36px;}
   .right{padding:16px;}
   .stage{width:min(720px, 96vw);}
-  .hero-wrap{width:min(640px, 100%);}
+
+  /* 동일 비율로 축소 (기존 640px → 384px) */
+  :root{ --hero-max-w: 384px; }
+
   /* 모바일에서는 오버레이가 너무 작아지지 않게 살짝 확대 */
   :root{
     --board-w: 50%;
