@@ -3,13 +3,16 @@
 
   const API_BASE = "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
+  const GEO_CACHE_KEY = "knson_geo_cache_v1";
 
   const state = {
-    source: "all",          // all | auction | gongmae | general
-    properties: [],
     session: loadSession(),
-    keyword: "",
-    status: "",
+    items: [],
+    view: "table",
+    map: null,
+    markers: [],
+    geocoder: null,
+    geoCache: loadGeoCache(),
   };
 
   const els = {};
@@ -17,305 +20,331 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
-    // 로그인 세션 없으면 로그인 페이지로
+    cacheEls();
+    bindEvents();
+
+    // 로그인 없으면 로그인 페이지로
     if (!state.session?.token || !state.session?.user) {
-      redirectToLogin();
+      location.replace(`./login.html?next=${encodeURIComponent('./index.html')}`);
       return;
     }
 
-    cacheElements();
-    bindEvents();
-    bindAutoLogoutOnLeave();
+    // 관리자 링크
+    if (state.session.user.role === "admin") {
+      els.adminLink.classList.remove("hidden");
+    }
 
-    // initial load
     loadProperties();
   }
 
-  function cacheElements() {
+  function cacheEls() {
     Object.assign(els, {
-      btnLogout: $("#btnLogout"),
-      btnFilter: $("#btnFilter"),
-      btnFilterClose: $("#btnFilterClose"),
-      filterPanel: $("#filterPanel"),
+      btnLogout: document.getElementById("btnLogout"),
+      adminLink: document.getElementById("adminLink"),
+      viewTabs: document.getElementById("viewTabs"),
+      tableView: document.getElementById("tableView"),
+      mapView: document.getElementById("mapView"),
+      tbody: document.querySelector("#propTable tbody"),
+      emptyState: document.getElementById("emptyState"),
 
-      tabText: $("#tabText"),
-      tabMap: $("#tabMap"),
-      textView: $("#textView"),
-      mapView: $("#mapView"),
+      kpiTotal: document.getElementById("kpiTotal"),
+      kpiAuction: document.getElementById("kpiAuction"),
+      kpiGongmae: document.getElementById("kpiGongmae"),
+      kpiGeneral: document.getElementById("kpiGeneral"),
 
-      statTotal: $("#statTotal"),
-      statAuction: $("#statAuction"),
-      statGongmae: $("#statGongmae"),
-      statGeneral: $("#statGeneral"),
-
-      statTotalCard: $("#statTotalCard"),
-      statAuctionCard: $("#statAuctionCard"),
-      statGongmaeCard: $("#statGongmaeCard"),
-      statGeneralCard: $("#statGeneralCard"),
-
-      searchKeyword: $("#searchKeyword"),
-      filterStatus: $("#filterStatus"),
-      btnRefresh: $("#btnRefresh"),
-
-      tableBody: $("#tableBody"),
-      emptyState: $("#emptyState"),
+      mapEl: document.getElementById("kakaoMap"),
+      mapHint: document.getElementById("mapHint"),
     });
   }
 
   function bindEvents() {
-    // logout
     els.btnLogout.addEventListener("click", () => {
-      clearSession();
-      redirectToLogin(true);
+      saveSession(null);
+      location.replace("./login.html");
     });
 
-    // view switch
-    els.tabText.addEventListener("click", () => setView("text"));
-    els.tabMap.addEventListener("click", () => setView("map"));
+    els.viewTabs.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".view-tab");
+      if (!btn) return;
+      const view = btn.dataset.view;
+      if (!view) return;
+      setView(view);
 
-    // filter panel
-    els.btnFilter.addEventListener("click", () => openFilter(true));
-    els.btnFilterClose.addEventListener("click", () => openFilter(false));
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") openFilter(false);
+      if (view === "map") {
+        await ensureKakaoMap();
+        await renderKakaoMarkers();
+      }
     });
-
-    // stats click => source filter
-    const bindCard = (el, source) => {
-      el.addEventListener("click", () => {
-        state.source = source;
-        loadProperties();
-      });
-      el.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          state.source = source;
-          loadProperties();
-        }
-      });
-    };
-    bindCard(els.statTotalCard, "all");
-    bindCard(els.statAuctionCard, "auction");
-    bindCard(els.statGongmaeCard, "gongmae");
-    bindCard(els.statGeneralCard, "general");
-
-    // filters
-    els.searchKeyword.addEventListener("input", debounce((e) => {
-      state.keyword = (e.target.value || "").trim();
-      render();
-    }, 120));
-
-    els.filterStatus.addEventListener("change", (e) => {
-      state.status = e.target.value || "";
-      render();
-    });
-
-    els.btnRefresh.addEventListener("click", () => loadProperties());
   }
 
   function setView(view) {
-    const isText = view === "text";
-    els.tabText.classList.toggle("is-active", isText);
-    els.tabMap.classList.toggle("is-active", !isText);
-    els.tabText.setAttribute("aria-selected", isText ? "true" : "false");
-    els.tabMap.setAttribute("aria-selected", !isText ? "true" : "false");
+    state.view = view;
+    [...els.viewTabs.querySelectorAll(".view-tab")].forEach((b) => {
+      b.classList.toggle("is-active", b.dataset.view === view);
+    });
 
-    els.textView.classList.toggle("hidden", !isText);
-    els.mapView.classList.toggle("hidden", isText);
-  }
-
-  function openFilter(open) {
-    els.filterPanel.classList.toggle("hidden", !open);
-    els.filterPanel.setAttribute("aria-hidden", open ? "false" : "true");
-  }
-
-  function bindAutoLogoutOnLeave() {
-    // 요구사항: 로그인 이후 페이지를 나가면 자동 로그아웃
-    window.addEventListener("pagehide", clearSession);
-    window.addEventListener("beforeunload", clearSession);
+    els.tableView.classList.toggle("hidden", view !== "table");
+    els.mapView.classList.toggle("hidden", view !== "map");
   }
 
   async function loadProperties() {
     try {
-      const role = state.session?.user?.role || "guest";
-      const params = new URLSearchParams();
+      const scope = state.session.user.role === "admin" ? "all" : "mine";
+      const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
+      state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
 
-      if (role === "agent") params.set("scope", "mine");
-      if (role === "admin") params.set("scope", "all");
+      renderKPIs();
+      renderTable();
 
-      if (state.source && state.source !== "all") params.set("source", state.source);
-
-      const query = params.toString() ? `?${params.toString()}` : "";
-      const res = await api(`/properties${query}`, { method: "GET", auth: true });
-      const items = Array.isArray(res?.items) ? res.items : [];
-      state.properties = items.map(normalizeProperty);
-
-      updateStats();
-      render();
+      // 지도뷰가 이미 켜져있으면 마커
+      if (state.view === "map") {
+        await ensureKakaoMap();
+        await renderKakaoMarkers();
+      }
     } catch (err) {
       console.error(err);
-      // 인증 문제면 로그인으로
-      const msg = String(err?.message || "");
-      if (msg.includes("401") || msg.includes("로그인")) {
-        clearSession();
-        redirectToLogin(true);
-        return;
-      }
-      alert(err.message || "물건 목록 조회에 실패했습니다.");
-      state.properties = [];
-      updateStats();
-      render();
+      alert(err?.message || "목록을 불러오지 못했습니다.");
+      state.items = [];
+      renderKPIs();
+      renderTable();
     }
   }
 
-  function normalizeProperty(item) {
-    // 서버에 더 많은 컬럼이 있으면 그대로 활용할 수 있도록 방어적으로 매핑
+  function normalizeItem(p) {
+    // 백엔드 응답이 달라도 최대한 수용
+    const source = p.source || p.category || "general"; // auction | gongmae | general
+    const address = p.address || p.location || "";
+
     return {
-      id: item.id ?? "",
-      source: item.source ?? "general",
-      address: item.address ?? "",
-      salePrice: num(item.salePrice),
-      status: item.status || "review",
-      assignedAgentName: item.assignedAgentName || "",
-      regionGu: item.regionGu || "",
-      regionDong: item.regionDong || "",
-      createdAt: item.createdAt || "",
-      // optional extended fields
-      type: item.type || item.propertyType || "",
-      floor: item.floor || item.floorText || "",
-      areaPyeong: item.areaPyeong || item.area || "",
-      appraisalPrice: num(item.appraisalPrice) || null,
-      currentPrice: num(item.currentPrice) || null,
-      bidDate: item.bidDate || "",
-      regDate: item.regDate || "",
-      analysisDone: !!item.analysisDone,
-      fieldDone: !!item.fieldDone,
-      memo: item.memo || "",
+      id: p.id || "",
+      source,
+      address,
+      type: p.type || p.propertyType || p.kind || "-",
+      floor: p.floor || p.floorText || "-",
+      areaPy: toAreaPy(p.areaPy ?? p.area ?? p.area_m2),
+      appraisalPrice: toNumber(p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price),
+      currentPrice: toNumber(p.currentPrice ?? p.current_price),
+      bidDate: p.bidDate || p.bid_date || "-",
+      createdAt: p.createdAt || p.created_at || "",
+      agent: p.assignedAgentName || p.agentName || p.manager || "-",
+      analysisDone: !!(p.analysisDone ?? p.analysis_done),
+      siteVisit: !!(p.siteVisit ?? p.site_visit),
+      memo: p.memo || p.comment || "",
     };
   }
 
-  function updateStats() {
-    const all = state.properties;
-    els.statTotal.textContent = String(all.length);
-    els.statAuction.textContent = String(all.filter(p => p.source === "auction").length);
-    els.statGongmae.textContent = String(all.filter(p => p.source === "gongmae").length);
-    els.statGeneral.textContent = String(all.filter(p => p.source === "general").length);
+  function renderKPIs() {
+    const total = state.items.length;
+    const auction = state.items.filter(i => i.source === "auction").length;
+    const gongmae = state.items.filter(i => i.source === "gongmae").length;
+    const general = state.items.filter(i => i.source === "general").length;
+
+    els.kpiTotal.textContent = String(total);
+    els.kpiAuction.textContent = String(auction);
+    els.kpiGongmae.textContent = String(gongmae);
+    els.kpiGeneral.textContent = String(general);
   }
 
-  function render() {
-    const rows = getFilteredRows();
-    els.tableBody.innerHTML = "";
-
-    els.emptyState.classList.toggle("hidden", rows.length > 0);
+  function renderTable() {
+    els.tbody.innerHTML = "";
+    if (!state.items.length) {
+      els.emptyState.classList.remove("hidden");
+      return;
+    }
+    els.emptyState.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
-    for (const p of rows) frag.appendChild(renderRow(p));
-    els.tableBody.appendChild(frag);
-  }
 
-  function getFilteredRows() {
-    let list = state.properties.slice();
+    for (const it of state.items) {
+      const tr = document.createElement("tr");
+      const catLabel = sourceLabel(it.source);
+      const catClass = it.source === "auction" ? "cat-auction" : it.source === "gongmae" ? "cat-gongmae" : "cat-general";
+      const place = formatPlace(it.address);
 
-    if (state.status) list = list.filter(p => p.status === state.status);
+      const appraisal = it.appraisalPrice ? formatMoneyEok(it.appraisalPrice) : "-";
+      const current = it.currentPrice ? formatMoneyEok(it.currentPrice) : "-";
+      const ratio = (it.appraisalPrice && it.currentPrice)
+        ? `${((it.currentPrice / it.appraisalPrice) * 100).toFixed(2)} %`
+        : "-";
 
-    if (state.keyword) {
-      const q = state.keyword.toLowerCase();
-      list = list.filter(p => {
-        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong, p.type].join(" ").toLowerCase();
-        return hay.includes(q);
+      tr.innerHTML = `
+        <td class="td-cat ${catClass}">${escapeHtml(catLabel)}</td>
+        <td>${escapeHtml(place)}</td>
+        <td>${escapeHtml(it.type)}</td>
+        <td>${escapeHtml(String(it.floor))}</td>
+        <td>${it.areaPy ? escapeHtml(String(it.areaPy)) : "-"}</td>
+        <td>${escapeHtml(appraisal)}</td>
+        <td>${escapeHtml(current)}</td>
+        <td>${escapeHtml(ratio)}</td>
+        <td>${escapeHtml(String(it.bidDate || "-"))}</td>
+        <td>${escapeHtml(formatDate(it.createdAt))}</td>
+        <td>${escapeHtml(it.agent)}</td>
+        <td>${it.analysisDone ? '<span class="td-ok">✓</span>' : '-'}</td>
+        <td>${it.siteVisit ? '<span class="td-ok">✓</span>' : '-'}</td>
+        <td>${it.memo ? '<button class="btn-view" data-act="memo">보기</button>' : '-'}</td>
+      `;
+
+      tr.addEventListener("click", async (e) => {
+        const memoBtn = e.target?.closest?.("button[data-act='memo']");
+        if (memoBtn) {
+          e.stopPropagation();
+          alert(it.memo);
+          return;
+        }
+
+        // 지도뷰에서 클릭하면 해당 주소로 이동
+        if (state.view === "map") {
+          await ensureKakaoMap();
+          const pos = await geocodeCached(it.address);
+          if (pos && state.map) {
+            state.map.setCenter(new kakao.maps.LatLng(pos.lat, pos.lng));
+            state.map.setLevel(4);
+          }
+        }
       });
+
+      frag.appendChild(tr);
     }
 
-    // createdAt desc
-    return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    els.tbody.appendChild(frag);
   }
 
-  function renderRow(p) {
-    const tr = document.createElement("tr");
+  // -----------------------------
+  // Kakao Map
+  // -----------------------------
 
-    const kindClass = p.source === "auction" ? "kind-auction" : p.source === "gongmae" ? "kind-gongmae" : "kind-general";
-    const kindLabel = p.source === "auction" ? "경매" : p.source === "gongmae" ? "공매" : "일반";
+  async function ensureKakaoMap() {
+    if (state.map && state.geocoder) return;
 
-    const locText = formatLocation(p);
+    const appKey = getKakaoAppKey();
+    if (!appKey) {
+      showMapHint("카카오맵 앱키가 필요합니다. index.html의 &lt;meta name='kakao-app-key' content='...'/&gt; 에 JS 키를 입력해 주세요.");
+      return;
+    }
 
-    const mapBtn = document.createElement("button");
-    mapBtn.className = "loc-pin";
-    mapBtn.type = "button";
-    mapBtn.title = "지도에서 보기";
-    mapBtn.innerHTML = `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12 22s7-6.1 7-13a7 7 0 1 0-14 0c0 6.9 7 13 7 13z" fill="currentColor"/>
-        <circle cx="12" cy="9" r="2.5" fill="#fff"/>
-      </svg>
-    `;
-    mapBtn.addEventListener("click", () => {
-      const q = encodeURIComponent(p.address || locText || "");
-      window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank", "noopener");
+    await loadKakaoSdk(appKey);
+
+    // eslint-disable-next-line no-undef
+    const center = new kakao.maps.LatLng(37.5665, 126.9780);
+    state.map = new kakao.maps.Map(els.mapEl, {
+      center,
+      level: 7,
     });
 
-    const typeWrap = document.createElement("div");
-    typeWrap.className = "locline";
-    typeWrap.appendChild(mapBtn);
-    const typeText = document.createElement("div");
-    typeText.textContent = p.type || "-";
-    typeWrap.appendChild(typeText);
+    state.geocoder = new kakao.maps.services.Geocoder();
+    hideMapHint();
+  }
 
-    const appraisal = p.appraisalPrice ?? (p.salePrice || null);
-    const current = p.currentPrice ?? null;
+  async function renderKakaoMarkers() {
+    if (!state.map || !state.geocoder) return;
 
-    tr.innerHTML = `
-      <td class="${kindClass} kind-chip">${kindLabel}</td>
-      <td>${escapeHtml(locText || "-")}</td>
-      <td class="col-type-cell"></td>
-      <td>${escapeHtml(p.floor || "-")}</td>
-      <td>${escapeHtml(p.areaPyeong ? String(p.areaPyeong) : "-")}</td>
-      <td>${appraisal ? escapeHtml(formatMoneyKRW(appraisal)) : "-"}</td>
-      <td>${current ? escapeHtml(formatMoneyKRW(current)) : "-"}</td>
-      <td>${escapeHtml(calcRate(appraisal, current))}</td>
-      <td>${escapeHtml(formatShortDate(p.bidDate) || "-")}</td>
-      <td>${escapeHtml(formatShortDate(p.regDate || p.createdAt) || "-")}</td>
-      <td>${escapeHtml(p.assignedAgentName || "-")}</td>
-      <td>${p.analysisDone ? '<span class="check">✓</span>' : '-'}</td>
-      <td>${p.fieldDone ? '<span class="check">✓</span>' : '-'}</td>
-      <td>${p.memo ? `<a class="op-link" href="#" data-id="${escapeAttr(p.id)}">보기</a>` : '-'}</td>
-    `;
+    // 기존 마커 제거
+    state.markers.forEach(m => m.setMap(null));
+    state.markers = [];
 
-    // inject typeWrap into 3rd cell
-    tr.querySelector(".col-type-cell").appendChild(typeWrap);
+    const list = state.items.slice(0, 80); // 너무 많으면 느려서 상한
 
-    // memo viewer
-    const link = tr.querySelector("a.op-link");
-    if (link) {
-      link.addEventListener("click", (e) => {
-        e.preventDefault();
-        alert(p.memo);
+    for (const it of list) {
+      const pos = await geocodeCached(it.address);
+      if (!pos) continue;
+
+      const marker = new kakao.maps.Marker({
+        map: state.map,
+        position: new kakao.maps.LatLng(pos.lat, pos.lng),
       });
+
+      state.markers.push(marker);
+
+      // 약간 쉬어주기(레이트리밋/부하)
+      await sleep(120);
     }
 
-    return tr;
-  }
-
-  function formatLocation(p) {
-    if (p.regionGu || p.regionDong) {
-      const left = p.regionGu || "";
-      const right = p.regionDong || "";
-      const mid = left && right ? " / " : "";
-      return `${left}${mid}${right}`.trim();
+    // 첫 마커로 센터 이동
+    if (state.markers.length) {
+      const first = state.markers[0].getPosition();
+      state.map.setCenter(first);
+      state.map.setLevel(6);
     }
-    return p.address || "";
   }
 
-  function calcRate(appraisal, current) {
-    if (!appraisal || !current || !isFinite(appraisal) || !isFinite(current) || appraisal <= 0) return "-";
-    const r = (current / appraisal) * 100;
-    return `${r.toFixed(2)} %`;
+  async function geocodeCached(address) {
+    const a = String(address || "").trim();
+    if (!a || !state.geocoder) return null;
+
+    const key = normalizeAddress(a);
+    const cached = state.geoCache[key];
+    if (cached && typeof cached.lat === "number" && typeof cached.lng === "number") {
+      return cached;
+    }
+
+    const res = await geocode(a);
+    if (!res) return null;
+
+    state.geoCache[key] = res;
+    saveGeoCache(state.geoCache);
+    return res;
   }
 
-  // --- API (GET preflight 최소화) ---
+  function geocode(address) {
+    return new Promise((resolve) => {
+      state.geocoder.addressSearch(address, (result, status) => {
+        if (status !== kakao.maps.services.Status.OK || !result?.length) {
+          resolve(null);
+          return;
+        }
+        const r = result[0];
+        resolve({ lat: Number(r.y), lng: Number(r.x) });
+      });
+    });
+  }
+
+  function loadKakaoSdk(appKey) {
+    return new Promise((resolve, reject) => {
+      if (window.kakao?.maps) {
+        resolve();
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false&libraries=services`;
+      script.async = true;
+      script.onload = () => {
+        kakao.maps.load(() => resolve());
+      };
+      script.onerror = () => reject(new Error("카카오맵 SDK 로드 실패"));
+      document.head.appendChild(script);
+    });
+  }
+
+  function getKakaoAppKey() {
+    // 1) meta 우선
+    const meta = document.querySelector("meta[name='kakao-app-key']");
+    const fromMeta = meta?.getAttribute("content")?.trim();
+    if (fromMeta) return fromMeta;
+
+    // 2) 전역 변수 지원
+    const fromWin = (window.KAKAO_MAP_APP_KEY || "").trim();
+    return fromWin || "";
+  }
+
+  function showMapHint(htmlText) {
+    els.mapHint.innerHTML = htmlText;
+    els.mapHint.classList.remove("hidden");
+  }
+
+  function hideMapHint() {
+    els.mapHint.classList.add("hidden");
+    els.mapHint.textContent = "";
+  }
+
+  // -----------------------------
+  // API
+  // -----------------------------
+
   async function api(path, options = {}) {
     const method = (options.method || "GET").toUpperCase();
-    const headers = { Accept: "application/json" };
 
+    const headers = { Accept: "application/json" };
     const hasBody = !["GET", "HEAD"].includes(method);
     if (hasBody) headers["Content-Type"] = "application/json";
 
@@ -336,65 +365,18 @@
 
     const text = await res.text();
     let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = { raw: text };
-    }
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
 
     if (!res.ok) {
-      const message = data?.message || `API 오류 (${res.status})`;
-      throw new Error(message);
+      throw new Error(data?.message || `API 오류 (${res.status})`);
     }
 
     return data;
   }
 
-  // --- Utilities ---
-  function num(v) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function formatMoneyKRW(n) {
-    const num = Number(n || 0);
-    if (!Number.isFinite(num)) return "-";
-    return `${num.toLocaleString("ko-KR")}원`;
-  }
-
-  function formatShortDate(v) {
-    if (!v) return "";
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return String(v);
-    const yy = String(d.getFullYear()).slice(2);
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yy}-${mm}-${dd}`;
-  }
-
-  function escapeHtml(v) {
-    return String(v ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-  function escapeAttr(v) {
-    return escapeHtml(v).replaceAll("`", "&#96;");
-  }
-
-  function debounce(fn, wait = 200) {
-    let t = null;
-    return (...args) => {
-      clearTimeout(t);
-      t = setTimeout(() => fn(...args), wait);
-    };
-  }
-
-  function $(sel) {
-    return document.querySelector(sel);
-  }
+  // -----------------------------
+  // Utils
+  // -----------------------------
 
   function loadSession() {
     try {
@@ -405,14 +387,104 @@
     }
   }
 
-  function clearSession() {
-    try { localStorage.removeItem(SESSION_KEY); } catch {}
-    state.session = null;
+  function saveSession(session) {
+    try {
+      if (!session) localStorage.removeItem(SESSION_KEY);
+      else localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    } catch {}
   }
 
-  function redirectToLogin(replace = false) {
-    const url = `./login.html?next=${encodeURIComponent("./index.html")}`;
-    if (replace) location.replace(url);
-    else location.href = url;
+  function sourceLabel(s) {
+    if (s === "auction") return "경매";
+    if (s === "gongmae") return "공매";
+    return "일반";
+  }
+
+  function formatPlace(address) {
+    const a = String(address || "").trim();
+    if (!a) return "-";
+
+    const city = a.match(/(서울|인천|경기|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)/)?.[1];
+    const dong = a.match(/([가-힣0-9]+동)\b/)?.[1];
+    const gu = a.match(/([가-힣]+구)\b/)?.[1];
+
+    const left = city || (a.split(" ")[0] || "-");
+    const right = dong || gu || (a.split(" ")[1] || "-");
+    return `${left} / ${right}`;
+  }
+
+  function toNumber(v) {
+    const n = Number(String(v ?? "").replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function toAreaPy(v) {
+    if (v == null || v === "") return "";
+    const n = toNumber(v);
+    if (!n) return "";
+
+    // m2로 들어오면 평 변환 (대략)
+    if (n > 200) {
+      return (n / 3.3058).toFixed(0);
+    }
+    return String(n);
+  }
+
+  function formatMoneyEok(won) {
+    const n = toNumber(won);
+    if (!n) return "-";
+    const eok = n / 100000000;
+    // 1억 미만은 만원 단위로
+    if (eok < 1) {
+      return `${Math.round(n / 10000).toLocaleString("ko-KR")} 만원`;
+    }
+    return `${stripZeros(eok.toFixed(2))} 억원`;
+  }
+
+  function stripZeros(s) {
+    return String(s).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+
+  function formatDate(v) {
+    if (!v) return "-";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "-";
+    return `${String(d.getFullYear()).slice(2)}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function normalizeAddress(v) {
+    return String(v || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[(),]/g, "")
+      .trim();
+  }
+
+  function escapeHtml(v) {
+    return String(v ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function loadGeoCache() {
+    try {
+      const raw = localStorage.getItem(GEO_CACHE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveGeoCache(cache) {
+    try {
+      localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(cache || {}));
+    } catch {}
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
   }
 })();

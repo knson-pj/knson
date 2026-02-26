@@ -5,120 +5,92 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>부동산 매입 관리 시스템</title>
   <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Kakao Maps: 아래 content에 발급받은 앱키(JS 키)를 입력하세요 -->
+  <meta name="kakao-app-key" content="" />
 </head>
 <body>
-  <header class="main-header">
-    <div class="header-left">
-      <img class="main-logo" src="./image/logo-main.png" alt="logo" />
-    </div>
-
-    <div class="header-right">
-      <a class="admin-link" href="./admin-index.html">관리자 페이지</a>
-      <button id="btnLogout" class="btn-logout" type="button">로그아웃</button>
-    </div>
-  </header>
-
-  <main class="main">
-    <section class="stats">
-      <div id="statTotalCard" class="stat-card stat-total" role="button" tabindex="0" aria-label="전체 보기">
-        <div id="statTotal" class="stat-value">0</div>
-        <div class="stat-label">누적</div>
+  <div class="page">
+    <header class="topbar">
+      <div class="topbar-left">
+        <img class="logo" src="./image/logo-main.png" alt="logo" />
       </div>
-
-      <div id="statAuctionCard" class="stat-card stat-auction" role="button" tabindex="0" aria-label="경매 보기">
-        <div class="stat-title">경매</div>
-        <div id="statAuction" class="stat-subvalue">0</div>
+      <div class="topbar-right">
+        <a id="adminLink" class="admin-link hidden" href="./admin-index.html">관리자 페이지</a>
+        <button id="btnLogout" class="btn-logout" type="button">로그아웃</button>
       </div>
+    </header>
 
-      <div id="statGongmaeCard" class="stat-card stat-gongmae" role="button" tabindex="0" aria-label="공매 보기">
-        <div class="stat-title">공매</div>
-        <div id="statGongmae" class="stat-subvalue">0</div>
-      </div>
-
-      <div id="statGeneralCard" class="stat-card stat-general" role="button" tabindex="0" aria-label="일반 보기">
-        <div class="stat-title">일반</div>
-        <div id="statGeneral" class="stat-subvalue">0</div>
-      </div>
-    </section>
-
-    <section class="viewbar">
-      <div class="view-tabs" role="tablist" aria-label="보기 전환">
-        <button id="tabText" class="view-tab is-active" role="tab" aria-selected="true" type="button">텍스트</button>
-        <button id="tabMap" class="view-tab" role="tab" aria-selected="false" type="button">지도</button>
-      </div>
-
-      <button id="btnFilter" class="filter-btn" type="button" aria-label="필터">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M4 5h16l-6.8 7.7v5.2l-2.4 1.2v-6.4L4 5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-        </svg>
-      </button>
-    </section>
-
-    <section id="textView" class="table-section">
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th class="col-kind">구분</th>
-              <th>소재지</th>
-              <th class="col-type">종류</th>
-              <th class="col-floor">층수</th>
-              <th class="col-area">전용면적<br/>(평)</th>
-              <th class="col-money">감정가<br/>(매각가)</th>
-              <th class="col-money">현재가격</th>
-              <th class="col-rate">비율</th>
-              <th class="col-date">입찰일</th>
-              <th class="col-date">등록일</th>
-              <th class="col-agent">담당자</th>
-              <th class="col-check">관리<br/>분석</th>
-              <th class="col-check">현장<br/>실사</th>
-              <th class="col-opinion">의견</th>
-            </tr>
-          </thead>
-          <tbody id="tableBody"></tbody>
-        </table>
-      </div>
-
-      <div id="emptyState" class="empty hidden">표시할 물건이 없습니다.</div>
-    </section>
-
-    <section id="mapView" class="map-section hidden" aria-label="지도 보기">
-      <div class="map-placeholder">
-        <div class="map-title">지도 보기</div>
-        <div class="map-desc">현재는 텍스트 보기만 제공됩니다.</div>
-      </div>
-    </section>
-
-    <!-- Filter Panel (minimal, hidden by default) -->
-    <aside id="filterPanel" class="filter-panel hidden" aria-hidden="true">
-      <div class="filter-head">
-        <div class="filter-title">필터</div>
-        <button id="btnFilterClose" class="filter-close" type="button" aria-label="닫기">✕</button>
-      </div>
-
-      <div class="filter-body">
-        <label class="filter-field">
-          <span>검색</span>
-          <input id="searchKeyword" class="filter-input" type="text" placeholder="주소 / 담당자 / 지역" />
-        </label>
-
-        <label class="filter-field">
-          <span>상태</span>
-          <select id="filterStatus" class="filter-select">
-            <option value="">상태 전체</option>
-            <option value="active">진행중</option>
-            <option value="hold">보류</option>
-            <option value="closed">종결</option>
-            <option value="review">검토중</option>
-          </select>
-        </label>
-
-        <div class="filter-actions">
-          <button id="btnRefresh" class="filter-apply" type="button">새로고침</button>
+    <main class="content">
+      <section class="kpi-row" aria-label="요약">
+        <div class="kpi kpi-total">
+          <div id="kpiTotal" class="kpi-total-value">0</div>
+          <div class="kpi-total-label">누적</div>
         </div>
-      </div>
-    </aside>
-  </main>
+        <div class="kpi kpi-auction">
+          <div class="kpi-mini-title">경매</div>
+          <div id="kpiAuction" class="kpi-mini-value">0</div>
+        </div>
+        <div class="kpi kpi-gongmae">
+          <div class="kpi-mini-title">공매</div>
+          <div id="kpiGongmae" class="kpi-mini-value">0</div>
+        </div>
+        <div class="kpi kpi-general">
+          <div class="kpi-mini-title">일반</div>
+          <div id="kpiGeneral" class="kpi-mini-value">0</div>
+        </div>
+      </section>
+
+      <section class="list-wrap" aria-label="물건 리스트">
+        <div class="list-top">
+          <div class="view-tabs" id="viewTabs">
+            <button class="view-tab is-active" data-view="table" type="button">텍스트</button>
+            <button class="view-tab" data-view="map" type="button">지도</button>
+          </div>
+
+          <button id="btnFilter" class="filter-btn" type="button" title="필터">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" stroke="#111" stroke-width="2" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <div id="tableView" class="view-panel">
+          <div class="table-wrap">
+            <table class="tbl" id="propTable">
+              <thead>
+                <tr>
+                  <th>구분</th>
+                  <th>소재지</th>
+                  <th>종류</th>
+                  <th>층수</th>
+                  <th>전용면적(평)</th>
+                  <th>감정가(매각가)</th>
+                  <th>현재가격</th>
+                  <th>비율</th>
+                  <th>입찰일</th>
+                  <th>등록일</th>
+                  <th>담당자</th>
+                  <th>관리<br/>분석</th>
+                  <th>현장<br/>실사</th>
+                  <th>의견</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="emptyState" class="empty hidden">표시할 물건이 없습니다.</div>
+        </div>
+
+        <div id="mapView" class="view-panel hidden">
+          <div class="map-wrap">
+            <div id="kakaoMap" class="map"></div>
+            <div id="mapHint" class="map-hint hidden"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script src="./app.js"></script>
 </body>
