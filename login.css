@@ -14,7 +14,7 @@
 
   /* 보드 안에서 폼 미세조정 */
   /* 요청: 좌측 5mm, 아래 8mm 추가 이동 */
-  --board-nudge-x: calc(0px - 5mm);
+  --board-nudge-x: calc(0px - 3mm);
   --board-nudge-y: calc(6px + 10mm);
 }
 
