@@ -21,6 +21,12 @@
     cacheElements();
     bindEvents();
     renderSessionUI();
+
+    // 첫 접속 시(비로그인) 로그인 창을 먼저 노출
+    if (!(state.session && state.session.user)) {
+      openLoginModal();
+    }
+
     loadProperties();
   }
 
@@ -28,6 +34,7 @@
     Object.assign(els, {
       // buttons
       btnGoRegister: $("#btnGoRegister"),
+      btnPublicRegister: $("#btnPublicRegister"),
       btnOpenLogin: $("#btnOpenLogin"),
       btnCloseLogin: $("#btnCloseLogin"),
       btnLogout: $("#btnLogout"),
@@ -67,7 +74,14 @@
       window.location.href = "./general-register.html";
     });
 
-    els.btnOpenLogin.addEventListener("click", openLoginModal);
+    
+    // 로그인 모달 내 "누구나 매물 등록" 버튼
+    if (els.btnPublicRegister) {
+      els.btnPublicRegister.addEventListener("click", () => {
+        window.location.href = "./general-register.html";
+      });
+    }
+els.btnOpenLogin.addEventListener("click", openLoginModal);
     els.btnCloseLogin.addEventListener("click", closeLoginModal);
     els.loginModal.addEventListener("click", (e) => {
       const close = e.target && e.target.dataset && e.target.dataset.close === "true";
@@ -102,6 +116,10 @@
   function openLoginModal() {
     els.loginModal.classList.remove("hidden");
     els.loginModal.setAttribute("aria-hidden", "false");
+    try {
+      const nameInput = els.loginForm?.querySelector('input[name="name"]');
+      if (nameInput) nameInput.focus();
+    } catch {}
   }
 
   function closeLoginModal() {
