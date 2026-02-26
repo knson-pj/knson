@@ -1,9 +1,8 @@
 :root {
-  --orange: #ff7a1a;
+  /* 요청: 주황색 배경 변경 */
+  --orange: #ff7323;
   --brown: #6a3b2c;
-  --card: #f6d3d3;
-  --input: #f0f0f0;
-  --shadow: 0 18px 40px rgba(0,0,0,.22);
+  --input: rgba(240,240,240,.96);
 }
 
 * { box-sizing: border-box; }
@@ -30,7 +29,6 @@ body {
 
 .brand-wrap {
   display: grid;
-  gap: 12px;
   place-items: center;
   transform: translateY(-8px);
 }
@@ -40,21 +38,6 @@ body {
   width: min(320px, 70vw);
   height: auto;
   display: block;
-}
-
-.logo-text { text-align: center; }
-.logo-text .ko {
-  font-weight: 900;
-  font-size: 20px;
-  letter-spacing: -0.02em;
-  color: #111;
-}
-.logo-text .en {
-  margin-top: 2px;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  color: #444;
 }
 
 .right {
@@ -88,13 +71,11 @@ body {
 
 .character {
   position: relative;
-  /* 이미지(사람+보드) 크기: 기존 대비 약 40% 축소(=60% 수준) */
-  width: min(620px, 105%);
-  max-width: 680px;
-  transform: translateX(110px);
-  opacity: 1;
+  /* 요청: login.png 현재 크기 대비 약 40% 축소(= 60% 수준) */
+  width: min(480px, 92%);
+  max-width: 520px;
+  transform: translateX(70px);
   pointer-events: none;
-  z-index: 1;
 }
 
 .char-img {
@@ -104,36 +85,36 @@ body {
 }
 
 /*
-  login.png(분홍 보드) 위에 실제 입력폼을 얹는 방식
-  - 보드 안쪽에 들어가도록 left/top만 조정
+  분홍 보드 영역에 맞춰 폼을 절대배치
+  - 좌표는 login.png 기준(현재 제공 이미지)에서 보드 상단 입력 영역에 맞춤
 */
 .login-card {
   position: absolute;
-  left: 56%;
-  top: 56%;
+  /* 보드(분홍) 좌상단 기준으로 잡아 넣기 */
+  left: 52.5%;
+  top: 46.5%;
   transform: translate(-50%, -50%);
-  width: min(320px, 78vw);
+
+  /* 보드 폭에 맞게 */
+  width: 58%;
+  max-width: 320px;
+
   background: transparent;
   border: 0;
   border-radius: 0;
   box-shadow: none;
   padding: 0;
   z-index: 2;
+  pointer-events: auto; /* 입력 가능 */
 }
 
-/* 이미지 내 LOGIN 텍스트와 중복될 수 있어 숨김 */
-.card-title { display: none; }
-
-.form {
-  display: grid;
-  gap: 12px;
-}
+.form { display: grid; gap: 12px; }
 
 .field input {
   width: 100%;
   border: 1px solid rgba(0,0,0,.04);
   outline: none;
-  background: rgba(240,240,240,.96);
+  background: var(--input);
   padding: 11px 14px;
   border-radius: 6px;
   font-size: 15px;
@@ -203,24 +184,27 @@ body {
   .left { display: none; }
 
   .character {
-    transform: translateX(70px);
-    width: min(560px, 112%);
-    max-width: 620px;
-  }
-
-  .login-card { left: 53%; top: 58%; }
-}
-
-@media (max-width: 520px) {
-  /* 모바일에서는 이미지가 작아져도 입력이 가능해야 해서 이미지 유지 + 오버레이 위치만 보정 */
-  .character {
-    transform: translateX(0);
-    width: min(520px, 120%);
+    transform: translateX(40px);
+    width: min(440px, 96%);
+    max-width: 480px;
   }
 
   .login-card {
-    left: 50%;
-    top: 62%;
-    width: min(300px, 86vw);
+    left: 52.5%;
+    top: 48%;
+    width: 62%;
+  }
+}
+
+@media (max-width: 520px) {
+  .character {
+    transform: translateX(0);
+    width: min(420px, 98%);
+  }
+
+  .login-card {
+    left: 51.5%;
+    top: 49%;
+    width: 70%;
   }
 }
