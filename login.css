@@ -30,12 +30,17 @@ body {
 
 .brand-wrap {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   place-items: center;
   transform: translateY(-8px);
 }
 
 .logo { filter: drop-shadow(0 6px 10px rgba(0,0,0,.08)); }
+.logo-img {
+  width: min(320px, 70vw);
+  height: auto;
+  display: block;
+}
 
 .logo-text {
   text-align: center;
@@ -84,14 +89,18 @@ body {
 
 .character {
   position: absolute;
-  width: min(520px, 92%);
-  max-width: 520px;
-  transform: translateX(140px);
-  opacity: 0.98;
+  width: min(900px, 130%);
+  max-width: 980px;
+  transform: translateX(170px);
+  opacity: 1;
   pointer-events: none;
 }
 
-.char-svg { width: 100%; height: auto; }
+.char-img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
 
 .login-card {
   width: min(360px, 86vw);
@@ -188,7 +197,7 @@ body {
 @media (max-width: 980px) {
   .split { grid-template-columns: 1fr; }
   .left { display: none; }
-  .character { transform: translateX(110px); }
+  .character { transform: translateX(120px); width: min(900px, 160%); }
 }
 
 @media (max-width: 520px) {
