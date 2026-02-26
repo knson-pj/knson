@@ -13,8 +13,9 @@
   --board-h: 36%;
 
   /* 보드 안에서 폼 미세조정 */
-  --board-nudge-x: 0px;
-  --board-nudge-y: 6px;
+  /* 요청: 좌측 5mm, 아래 8mm 추가 이동 */
+  --board-nudge-x: calc(0px - 5mm);
+  --board-nudge-y: calc(6px + 8mm);
 }
 
 *{box-sizing:border-box;}
