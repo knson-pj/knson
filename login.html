@@ -9,48 +9,45 @@
 <body>
   <main class="login-page" role="main">
     <section class="split">
+      <!-- LEFT: 로고만 (텍스트 제거) -->
       <div class="left" aria-label="브랜드 영역">
         <div class="brand-wrap">
-          <div class="logo" aria-label="HMK홀딩스 그룹 로고">
-            <img class="logo-img" src="./image/logo.png" alt="HMK홀딩스 그룹" onerror="this.style.display='none'" />
-          </div>
-          <div class="logo-text">
-            <div class="ko">HMK홀딩스 그룹</div>
-            <div class="en">HMK HOLDINGS GROUP</div>
+          <div class="logo" aria-label="HMK 로고">
+            <img class="logo-img" src="./image/logo.png" alt="HMK" />
           </div>
         </div>
       </div>
 
+      <!-- RIGHT: 로그인 -->
       <div class="right" aria-label="로그인 영역">
         <div class="right-inner">
           <h1 class="title">부동산 통합 관리 시스템</h1>
 
           <div class="stage" aria-label="로그인 일러스트 및 폼">
             <div class="character" aria-hidden="true">
-              <img class="char-img" src="./image/login.png" alt="" onerror="this.style.display='none'" />
+              <img class="char-img" src="./image/login.png" alt="" />
+
+              <!-- login.png(분홍 보드) 위에 실제 입력폼을 얹음 -->
+              <section class="login-card" aria-label="로그인 카드">
+                <form id="loginForm" class="form" autocomplete="on">
+                  <label class="field">
+                    <span class="sr-only">Username</span>
+                    <input name="name" type="text" inputmode="text" placeholder="Username" required />
+                  </label>
+
+                  <label class="field">
+                    <span class="sr-only">Password</span>
+                    <input name="password" type="password" placeholder="Password" required />
+                  </label>
+
+                  <button id="btnLogin" type="submit" class="btn-primary">SIGN IN</button>
+
+                  <button id="btnPublicRegister" type="button" class="btn-secondary">누구나 매물 등록</button>
+
+                  <div id="loginMsg" class="msg" role="status" aria-live="polite"></div>
+                </form>
+              </section>
             </div>
-
-            <section class="login-card" aria-label="로그인 카드">
-              <div class="card-title">LOGIN</div>
-
-              <form id="loginForm" class="form" autocomplete="on">
-                <label class="field">
-                  <span class="sr-only">Username</span>
-                  <input name="name" type="text" inputmode="text" placeholder="Username" required />
-                </label>
-
-                <label class="field">
-                  <span class="sr-only">Password</span>
-                  <input name="password" type="password" placeholder="Password" required />
-                </label>
-
-                <button id="btnLogin" type="submit" class="btn-primary">SIGN IN</button>
-
-                <button id="btnPublicRegister" type="button" class="btn-secondary">누구나 매물 등록</button>
-
-                <div id="loginMsg" class="msg" role="status" aria-live="polite"></div>
-              </form>
-            </section>
           </div>
 
           <div class="footnote">※ 관리자/담당자 계정은 관리자페이지에서 생성됩니다.</div>
