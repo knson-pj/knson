@@ -30,6 +30,9 @@
   function init() {
     cacheEls();
 
+    // 내부 페이지 이동(관리자페이지 등) 시에는 자동 로그아웃을 스킵하기 위한 플래그
+    try { sessionStorage.removeItem("knson_nav_keep_session"); } catch {}
+
     // 로그인 없으면 즉시 로그인 페이지
     if (!state.session?.token || !state.session?.user) {
       redirectToLogin(true);
@@ -87,6 +90,13 @@
       els.btnLogout.addEventListener("click", () => {
         clearSession();
         redirectToLogin(true);
+      });
+    }
+
+    // 관리자페이지로 이동할 때는 '페이지 떠나면 자동 로그아웃' 규칙에서 예외 처리
+    if (els.adminLink) {
+      els.adminLink.addEventListener("click", () => {
+        try { sessionStorage.setItem("knson_nav_keep_session", "1"); } catch {}
       });
     }
 
@@ -164,6 +174,14 @@
         }
       }, 150)
     );
+
+    // 요구사항: 로그인 이후 페이지를 나가면 자동 로그아웃
+    // 단, 관리자페이지로 이동 같은 '내부 이동'은 예외 처리(위 플래그)
+    window.addEventListener("pagehide", () => {
+      let keep = false;
+      try { keep = sessionStorage.getItem("knson_nav_keep_session") === "1"; } catch {}
+      if (!keep) clearSession();
+    });
   }
 
   function setView(view) {
