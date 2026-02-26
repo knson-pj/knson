@@ -3,81 +3,74 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>일반물건 등록 | 부동산 물건 관리 시스템</title>
+  <title>누구나 매물 등록 | 부동산 통합 관리 시스템</title>
   <link rel="stylesheet" href="./general-register.css" />
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-dot"></div>
-        <div>
-          <h1>일반물건 등록</h1>
-          <p>검토 후 연락드리겠습니다.</p>
-        </div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="dot"></div>
+      <div>
+        <div class="brand-title">누구나 매물 등록</div>
+        <div class="brand-sub">주소·매각가·등록자·전화번호를 입력해 주세요.</div>
       </div>
+    </div>
 
-      <div class="topbar-actions">
-        <a class="btn btn-ghost" href="./index.html">메인으로</a>
+    <nav class="actions">
+      <a class="btn btn-ghost" href="./login.html">로그인으로</a>
+      <a class="btn btn-secondary" href="./index.html">메인으로</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="viewForm" class="card">
+      <h1 class="h1">매물 정보 입력</h1>
+      <p class="muted">제3자(부동산 소유자/중개인)가 등록하는 페이지입니다. 등록 후 <strong>검토 후 연락드리겠습니다.</strong></p>
+
+      <form id="generalForm" class="form">
+        <label class="field">
+          <span>물건 주소 *</span>
+          <input name="address" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
+        </label>
+
+        <label class="field">
+          <span>매각가(원) *</span>
+          <input name="salePrice" type="number" min="0" step="10000" required placeholder="예: 580000000" />
+        </label>
+
+        <label class="field">
+          <span>등록자 *</span>
+          <input name="registrantName" type="text" required placeholder="성함 또는 상호" />
+        </label>
+
+        <label class="field">
+          <span>전화번호 *</span>
+          <input name="phone" type="tel" required placeholder="010-0000-0000" />
+        </label>
+
+        <label class="field full">
+          <span>비고 (선택)</span>
+          <textarea name="memo" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
+        </label>
+
+        <div class="row full">
+          <button id="btnSubmit" type="submit" class="btn btn-primary">등록 요청하기</button>
+        </div>
+
+        <div id="msg" class="msg" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <section id="viewDone" class="card done hidden">
+      <div class="check">✓</div>
+      <h2>등록이 접수되었습니다</h2>
+      <p>검토후 연락드리겠습니다.</p>
+      <div class="row">
+        <a class="btn btn-primary" href="./login.html">로그인</a>
+        <a class="btn btn-secondary" href="./index.html">메인</a>
       </div>
-    </header>
-
-    <main class="main-wrap">
-      <section id="viewForm" class="panel">
-        <div class="panel-title-row">
-          <h2>등록 정보 입력</h2>
-          <div class="muted small">* 표시는 필수 입력입니다.</div>
-        </div>
-
-        <p class="muted form-desc">
-          제3자(부동산 소유자, 부동산중개인)가 사용할 수 있는 등록 페이지입니다.
-        </p>
-
-        <form id="generalListingForm" class="form-grid" novalidate>
-          <label class="field">
-            <span>물건 주소 *</span>
-            <input name="address" class="input" type="text" required placeholder="예: 서울시 강남구 역삼동 ..." autocomplete="street-address" />
-          </label>
-
-          <label class="field">
-            <span>매각가(원) *</span>
-            <input name="salePrice" class="input" type="number" min="0" step="10000" required placeholder="예: 580000000" inputmode="numeric" />
-          </label>
-
-          <label class="field">
-            <span>등록자 *</span>
-            <input name="registrantName" class="input" type="text" required placeholder="성함 또는 상호" autocomplete="name" />
-          </label>
-
-          <label class="field">
-            <span>전화번호 *</span>
-            <input name="phone" class="input" type="tel" required placeholder="010-0000-0000" autocomplete="tel" inputmode="tel" />
-          </label>
-
-          <label class="field field-full">
-            <span>비고 (선택)</span>
-            <textarea name="memo" class="textarea" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
-          </label>
-
-          <div class="form-actions field-full">
-            <button id="btnSubmit" type="submit" class="btn btn-primary">등록 요청하기</button>
-          </div>
-
-          <div id="formHint" class="hint-box field-full hidden"></div>
-        </form>
-      </section>
-
-      <section id="viewThanks" class="panel thanks-panel hidden">
-        <div class="thanks-icon">✓</div>
-        <h2>등록이 접수되었습니다</h2>
-        <p class="muted">검토후 연락드리겠습니다.</p>
-        <div class="thanks-actions">
-          <a class="btn btn-primary" href="./index.html">메인으로 이동</a>
-          <button id="btnNew" class="btn btn-secondary" type="button">새로 등록하기</button>
-        </div>
-      </section>
-    </main>
-  </div>
+    </section>
+  </main>
 
   <script src="./general-register.js"></script>
 </body>

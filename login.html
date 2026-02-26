@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>부동산 통합 관리 시스템 | 로그인</title>
+  <link rel="stylesheet" href="./login.css" />
+</head>
+<body>
+  <main class="login-page" role="main">
+    <section class="split">
+      <div class="left" aria-label="브랜드 영역">
+        <div class="brand-wrap">
+          <!-- 로고는 필요 시 실제 이미지로 교체 가능: <img src="./assets/logo.png" alt="HMK홀딩스 그룹" /> -->
+          <div class="logo" aria-hidden="true">
+            <svg viewBox="0 0 220 80" width="220" height="80">
+              <g fill="#f26f1d">
+                <path d="M20 60 V20 h12 v40z" />
+                <path d="M40 60 V20 h12 v40z" />
+                <path d="M60 60 V20 h12 v40z" />
+                <path d="M88 60 V20 h12 v40z" />
+                <path d="M100 40 h30 v10 h-30z" />
+                <path d="M140 60 V20 h12 v40z" />
+              </g>
+              <text x="160" y="40" fill="#111" font-family="system-ui, -apple-system, Segoe UI, Roboto" font-size="18" font-weight="800">HMK</text>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <div class="ko">HMK홀딩스 그룹</div>
+            <div class="en">HMK HOLDINGS GROUP</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right" aria-label="로그인 영역">
+        <div class="right-inner">
+          <h1 class="title">부동산 통합 관리 시스템</h1>
+
+          <div class="stage" aria-label="로그인 일러스트 및 폼">
+            <div class="character" aria-hidden="true">
+              <!-- 단순 일러스트 (외부 이미지 없이 유지) -->
+              <svg viewBox="0 0 520 420" width="520" height="420" class="char-svg">
+                <!-- 헤드 -->
+                <circle cx="310" cy="120" r="52" fill="#ffd6c9" stroke="#6a3b2c" stroke-width="4"/>
+                <!-- 머리카락 -->
+                <path d="M260 120c10-48 55-72 105-54 20 8 32 25 35 48-24-20-55-26-82-18-22 6-43 16-58 24z" fill="#c7905d" stroke="#6a3b2c" stroke-width="4" stroke-linejoin="round"/>
+                <!-- 눈/입 -->
+                <circle cx="292" cy="120" r="5" fill="#6a3b2c"/>
+                <circle cx="330" cy="120" r="5" fill="#6a3b2c"/>
+                <path d="M296 145c18 18 40 18 58 0" fill="none" stroke="#6a3b2c" stroke-width="5" stroke-linecap="round"/>
+                <!-- 몸통 -->
+                <path d="M250 210c18-36 102-36 120 0v55H250z" fill="#ffffff" stroke="#6a3b2c" stroke-width="4"/>
+                <!-- 팔 -->
+                <path d="M242 230c-32 20-55 55-60 92" fill="none" stroke="#6a3b2c" stroke-width="8" stroke-linecap="round"/>
+                <path d="M382 230c32 20 55 55 60 92" fill="none" stroke="#6a3b2c" stroke-width="8" stroke-linecap="round"/>
+                <!-- 손 -->
+                <circle cx="178" cy="322" r="16" fill="#ffd6c9" stroke="#6a3b2c" stroke-width="4"/>
+                <circle cx="446" cy="322" r="16" fill="#ffd6c9" stroke="#6a3b2c" stroke-width="4"/>
+              </svg>
+            </div>
+
+            <section class="login-card" aria-label="로그인 카드">
+              <div class="card-title">LOGIN</div>
+
+              <form id="loginForm" class="form" autocomplete="on">
+                <label class="field">
+                  <span class="sr-only">Username</span>
+                  <input name="name" type="text" inputmode="text" placeholder="Username" required />
+                </label>
+
+                <label class="field">
+                  <span class="sr-only">Password</span>
+                  <input name="password" type="password" placeholder="Password" required />
+                </label>
+
+                <button id="btnLogin" type="submit" class="btn-primary">SIGN IN</button>
+
+                <button id="btnPublicRegister" type="button" class="btn-secondary">누구나 매물 등록</button>
+
+                <div id="loginMsg" class="msg" role="status" aria-live="polite"></div>
+              </form>
+            </section>
+          </div>
+
+          <div class="footnote">※ 관리자/담당자 계정은 관리자페이지에서 생성됩니다.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./login.js"></script>
+</body>
+</html>

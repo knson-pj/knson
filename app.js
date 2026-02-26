@@ -18,15 +18,15 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
+    // 로그인 없이 진입 불가 정책
+    if (!state.session?.token || !state.session?.user) {
+      redirectToLogin();
+      return;
+    }
+
     cacheElements();
     bindEvents();
     renderSessionUI();
-
-    // 첫 접속 시(비로그인) 로그인 창을 먼저 노출
-    if (!(state.session && state.session.user)) {
-      openLoginModal();
-    }
-
     loadProperties();
   }
 
@@ -34,18 +34,8 @@
     Object.assign(els, {
       // buttons
       btnGoRegister: $("#btnGoRegister"),
-      btnPublicRegister: $("#btnPublicRegister"),
-      btnOpenLogin: $("#btnOpenLogin"),
-      btnCloseLogin: $("#btnCloseLogin"),
       btnLogout: $("#btnLogout"),
       btnRefresh: $("#btnRefresh"),
-
-      // views
-      viewList: $("#viewList"),
-
-      // forms
-      loginModal: $("#loginModal"),
-      loginForm: $("#loginForm"),
 
       // list
       sourceTabs: $("#sourceTabs"),
@@ -68,29 +58,15 @@
   }
 
   function bindEvents() {
-
     els.btnGoRegister.addEventListener("click", () => {
-      // 별도 등록 페이지로 이동
-      window.location.href = "./general-register.html";
+      location.href = "./general-register.html";
     });
 
-    
-    // 로그인 모달 내 "누구나 매물 등록" 버튼
-    if (els.btnPublicRegister) {
-      els.btnPublicRegister.addEventListener("click", () => {
-        window.location.href = "./general-register.html";
-      });
-    }
-els.btnOpenLogin.addEventListener("click", openLoginModal);
-    els.btnCloseLogin.addEventListener("click", closeLoginModal);
-    els.loginModal.addEventListener("click", (e) => {
-      const close = e.target && e.target.dataset && e.target.dataset.close === "true";
-      if (close) closeLoginModal();
+    els.btnLogout.addEventListener("click", () => {
+      saveSession(null);
+      redirectToLogin();
     });
 
-    els.loginForm.addEventListener("submit", onSubmitLogin);
-
-    els.btnLogout.addEventListener("click", logout);
     els.btnRefresh.addEventListener("click", loadProperties);
 
     els.sourceTabs.addEventListener("click", (e) => {
@@ -102,10 +78,13 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
       renderList();
     });
 
-    els.searchKeyword.addEventListener("input", debounce((e) => {
-      state.keyword = (e.target.value || "").trim();
-      renderList();
-    }, 120));
+    els.searchKeyword.addEventListener(
+      "input",
+      debounce((e) => {
+        state.keyword = (e.target.value || "").trim();
+        renderList();
+      }, 120)
+    );
 
     els.filterStatus.addEventListener("change", (e) => {
       state.status = e.target.value || "";
@@ -113,81 +92,20 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
     });
   }
 
-  function openLoginModal() {
-    els.loginModal.classList.remove("hidden");
-    els.loginModal.setAttribute("aria-hidden", "false");
-    try {
-      const nameInput = els.loginForm?.querySelector('input[name="name"]');
-      if (nameInput) nameInput.focus();
-    } catch {}
-  }
-
-  function closeLoginModal() {
-    els.loginModal.classList.add("hidden");
-    els.loginModal.setAttribute("aria-hidden", "true");
-    els.loginForm.reset();
-  }
-
-  async function onSubmitLogin(e) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const name = String(fd.get("name") || "").trim();
-    const password = String(fd.get("password") || "");
-
-    if (!name || !password) return notify("이름/비밀번호를 입력해 주세요.");
-
-    try {
-      setFormBusy(els.loginForm, true);
-      const res = await api("/auth/login", {
-        method: "POST",
-        body: { name, password },
-      });
-
-      if (!res || !res.token || !res.user) {
-        throw new Error("로그인 응답 형식이 올바르지 않습니다.");
-      }
-
-      state.session = {
-        token: res.token,
-        user: res.user,
-      };
-      saveSession(state.session);
-      renderSessionUI();
-      closeLoginModal();
-      await loadProperties();
-      notify(`${res.user.name}님 로그인되었습니다.`);
-    } catch (err) {
-      console.error(err);
-      notify(err.message || "로그인에 실패했습니다.");
-    } finally {
-      setFormBusy(els.loginForm, false);
-    }
-  }
-
-  function logout() {
-    state.session = null;
-    saveSession(null);
-    renderSessionUI();
-    loadProperties();
+  function redirectToLogin() {
+    const next = encodeURIComponent("./index.html");
+    location.replace(`./login.html?next=${next}`);
   }
 
   function renderSessionUI() {
-    const session = state.session;
-    const isLoggedIn = !!(session && session.user);
-
-    els.btnOpenLogin.classList.toggle("hidden", isLoggedIn);
-    els.btnLogout.classList.toggle("hidden", !isLoggedIn);
-
-    if (!isLoggedIn) {
-      els.userRoleBadge.textContent = "비로그인";
+    const user = state.session?.user;
+    if (!user) {
+      els.userRoleBadge.textContent = "-";
       els.userRoleBadge.className = "badge badge-muted";
-      els.userSummary.innerHTML = `
-        <div class="muted">로그인하면 관리자/담당자 권한에 따라 조회 범위가 적용됩니다.</div>
-      `;
+      els.userSummary.innerHTML = `<div class="muted">로그인이 필요합니다.</div>`;
       return;
     }
 
-    const user = session.user;
     const isAdmin = user.role === "admin";
     els.userRoleBadge.textContent = isAdmin ? "관리자" : "담당자";
     els.userRoleBadge.className = `badge ${isAdmin ? "badge-admin" : "badge-agent"}`;
@@ -208,8 +126,8 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
   async function loadProperties() {
     state.loading = true;
     els.listMeta.textContent = "불러오는 중...";
+
     try {
-      const isLoggedIn = !!(state.session && state.session.token);
       const role = state.session?.user?.role || "guest";
       const params = new URLSearchParams();
 
@@ -221,7 +139,7 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
       const query = params.toString() ? `?${params.toString()}` : "";
       const res = await api(`/properties${query}`, {
         method: "GET",
-        auth: isLoggedIn,
+        auth: true,
       });
 
       const items = Array.isArray(res?.items) ? res.items : [];
@@ -234,6 +152,14 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
       updateCounters();
       renderList();
       els.listMeta.textContent = "불러오기 실패";
+
+      // 인증 실패 시 로그인 페이지로
+      if (String(err?.message || "").includes("401") || err?.status === 401) {
+        saveSession(null);
+        redirectToLogin();
+        return;
+      }
+
       notify(err.message || "물건 목록 조회에 실패했습니다.");
     } finally {
       state.loading = false;
@@ -264,44 +190,32 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
     const isAdmin = user?.role === "admin";
     const isAgent = user?.role === "agent";
 
-    // 서버에서 이미 필터링된다는 전제이나, 프론트에서도 방어적으로 필터링
     if (isAdmin) return state.properties.slice();
 
     if (isAgent) {
       const assignedRegions = Array.isArray(user.assignedRegions) ? user.assignedRegions : [];
       return state.properties.filter((p) => {
         if (p.assignedAgentId && user.id && p.assignedAgentId === user.id) return true;
-
         const tags = [p.regionGu, p.regionDong].filter(Boolean);
         return assignedRegions.some((r) => tags.includes(r));
       });
     }
 
-    // 비로그인: 공개 가능한 물건만 (기본은 전체 공개로 두되, 서버 정책에 맞춰 변경 가능)
     return state.properties.slice();
   }
 
   function getFilteredProperties() {
     let list = getRoleFilteredProperties();
 
-    if (state.sourceTab !== "all") {
-      list = list.filter((p) => p.source === state.sourceTab);
-    }
-
-    if (state.status) {
-      list = list.filter((p) => p.status === state.status);
-    }
+    if (state.sourceTab !== "all") list = list.filter((p) => p.source === state.sourceTab);
+    if (state.status) list = list.filter((p) => p.status === state.status);
 
     if (state.keyword) {
       const q = state.keyword.toLowerCase();
       list = list.filter((p) => {
-        const hay = [
-          p.address,
-          p.assignedAgentName,
-          p.regionGu,
-          p.regionDong,
-          p.registrantName,
-        ].join(" ").toLowerCase();
+        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong, p.registrantName]
+          .join(" ")
+          .toLowerCase();
         return hay.includes(q);
       });
     }
@@ -332,11 +246,8 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
     const list = getFilteredProperties();
     els.propertyList.innerHTML = "";
 
-    if (!list.length) {
-      els.emptyState.classList.remove("hidden");
-    } else {
-      els.emptyState.classList.add("hidden");
-    }
+    if (!list.length) els.emptyState.classList.remove("hidden");
+    else els.emptyState.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
     list.forEach((p) => frag.appendChild(renderCard(p)));
@@ -352,7 +263,8 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
     const sourceLabel = sourceToLabel(p.source);
     const sourceClass =
       p.source === "auction" ? "source-auction" :
-      p.source === "gongmae" ? "source-gongmae" : "source-general";
+      p.source === "gongmae" ? "source-gongmae" :
+      "source-general";
 
     card.innerHTML = `
       <div class="card-top">
@@ -384,18 +296,27 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
 
   // --- API ---
   async function api(path, options = {}) {
-    const method = options.method || "GET";
+    const method = (options.method || "GET").toUpperCase();
     const auth = !!options.auth;
-    const headers = { "Content-Type": "application/json" };
+
+    const headers = { Accept: "application/json" };
+    const hasBody = !["GET", "HEAD"].includes(method);
+    if (hasBody) headers["Content-Type"] = "application/json";
+
     if (auth && state.session?.token) {
       headers.Authorization = `Bearer ${state.session.token}`;
     }
 
-    const res = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: method === "GET" ? undefined : JSON.stringify(options.body || {}),
-    });
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers,
+        body: hasBody ? JSON.stringify(options.body || {}) : undefined,
+      });
+    } catch {
+      throw new Error("서버 연결에 실패했습니다. (네트워크/CORS 확인)");
+    }
 
     const text = await res.text();
     let data = null;
@@ -403,8 +324,11 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
 
     if (!res.ok) {
       const message = data?.message || `API 오류 (${res.status})`;
-      throw new Error(message);
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
     }
+
     return data;
   }
 
@@ -429,17 +353,13 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
     const num = Number(n || 0);
     if (!Number.isFinite(num)) return "-";
     return `${num.toLocaleString("ko-KR")}원`;
-    }
+  }
 
   function formatDate(v) {
     if (!v) return "-";
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return "-";
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  function normalizePhone(v) {
-    return v.replace(/[^\d]/g, "");
   }
 
   function escapeHtml(v) {
@@ -452,14 +372,7 @@ els.btnOpenLogin.addEventListener("click", openLoginModal);
   }
 
   function notify(msg) {
-    // 초기 버전: 가벼운 alert
     window.alert(msg);
-  }
-
-  function setFormBusy(form, busy) {
-    [...form.querySelectorAll("button, input, textarea, select")].forEach((el) => {
-      el.disabled = !!busy;
-    });
   }
 
   function debounce(fn, wait = 200) {

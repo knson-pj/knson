@@ -3,29 +3,17 @@
 
   const API_BASE = "https://knson.vercel.app/api";
 
-  const els = {
-    viewForm: document.getElementById("viewForm"),
-    viewThanks: document.getElementById("viewThanks"),
-    form: document.getElementById("generalListingForm"),
-    btnSubmit: document.getElementById("btnSubmit"),
-    btnNew: document.getElementById("btnNew"),
-    formHint: document.getElementById("formHint"),
-  };
+  const form = document.getElementById("generalForm");
+  const msgEl = document.getElementById("msg");
+  const btnSubmit = document.getElementById("btnSubmit");
 
-  els.form.addEventListener("submit", onSubmit);
-  els.btnNew.addEventListener("click", reset);
+  const viewForm = document.getElementById("viewForm");
+  const viewDone = document.getElementById("viewDone");
 
-  function reset() {
-    els.form.reset();
-    hideHint();
-    els.viewThanks.classList.add("hidden");
-    els.viewForm.classList.remove("hidden");
-  }
-
-  async function onSubmit(e) {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const fd = new FormData(els.form);
+    const fd = new FormData(form);
     const payload = {
       source: "general",
       address: String(fd.get("address") || "").trim(),
@@ -35,67 +23,75 @@
       memo: String(fd.get("memo") || "").trim(),
     };
 
-    const missing = [];
-    if (!payload.address) missing.push("물건 주소");
-    if (!payload.salePrice) missing.push("매각가");
-    if (!payload.registrantName) missing.push("등록자");
-    if (!payload.phone) missing.push("전화번호");
-
-    if (missing.length) {
-      return showHint(`필수 항목을 입력해 주세요: ${missing.join(", ")}`);
+    if (!payload.address || !payload.salePrice || !payload.registrantName || !payload.phone) {
+      setMsg("필수 항목을 모두 입력해 주세요.");
+      return;
     }
 
     try {
       setBusy(true);
+      setMsg("");
 
-      const res = await fetch(`${API_BASE}/public-listings`, {
+      const res = await api("/public-listings", {
         method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+        body: payload,
       });
 
-      const text = await res.text();
-      let data = null;
-      try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-
-      if (!res.ok) {
-        const msg = data?.message || `등록에 실패했습니다. (${res.status})`;
-        throw new Error(msg);
+      if (res?.duplicate) {
+        // 중복이어도 접수로 처리하는 정책
+        // UI 메시지만 안내
+        setMsg("동일 주소 물건이 이미 접수되어 있습니다. 검토 후 연락드리겠습니다.");
       }
 
-      // 성공 → 완료 화면
-      els.viewForm.classList.add("hidden");
-      els.viewThanks.classList.remove("hidden");
+      form.reset();
+      viewForm.classList.add("hidden");
+      viewDone.classList.remove("hidden");
     } catch (err) {
       console.error(err);
-      showHint(err.message || "등록 요청에 실패했습니다.");
+      setMsg(err?.message || "등록 요청에 실패했습니다.");
     } finally {
       setBusy(false);
     }
-  }
+  });
 
-  function setBusy(busy) {
-    els.btnSubmit.disabled = !!busy;
-    [...els.form.querySelectorAll("input, textarea, button")].forEach((el) => {
-      if (el === els.btnNew) return;
-      el.disabled = !!busy;
-    });
+  async function api(path, options = {}) {
+    const method = (options.method || "GET").toUpperCase();
+
+    const headers = { Accept: "application/json" };
+    const hasBody = !["GET", "HEAD"].includes(method);
+    if (hasBody) headers["Content-Type"] = "application/json";
+
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers,
+        body: hasBody ? JSON.stringify(options.body || {}) : undefined,
+      });
+    } catch {
+      throw new Error("서버 연결에 실패했습니다. (네트워크/CORS 확인)");
+    }
+
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+    if (!res.ok) {
+      throw new Error(data?.message || `API 오류 (${res.status})`);
+    }
+    return data;
   }
 
   function normalizePhone(v) {
-    return v.replace(/[^\d]/g, "");
+    return String(v || "").replace(/[\D]/g, "");
   }
 
-  function showHint(msg) {
-    els.formHint.textContent = msg;
-    els.formHint.classList.remove("hidden");
+  function setBusy(busy) {
+    btnSubmit.disabled = busy;
+    [...form.querySelectorAll("input, textarea")].forEach((el) => (el.disabled = busy));
   }
 
-  function hideHint() {
-    els.formHint.textContent = "";
-    els.formHint.classList.add("hidden");
+  function setMsg(text) {
+    msgEl.textContent = text || "";
   }
 })();

@@ -19,8 +19,7 @@
 
       <div class="topbar-actions">
         <button id="btnGoRegister" class="btn btn-secondary">누구나 매물 등록</button>
-        <button id="btnOpenLogin" class="btn btn-primary">로그인</button>
-        <button id="btnLogout" class="btn btn-ghost hidden">로그아웃</button>
+        <button id="btnLogout" class="btn btn-ghost">로그아웃</button>
       </div>
     </header>
 
@@ -29,88 +28,54 @@
       <section class="panel user-panel">
         <div class="panel-title-row">
           <h2>접속 정보</h2>
-          <span id="userRoleBadge" class="badge badge-muted">비로그인</span>
+          <span id="userRoleBadge" class="badge badge-muted">-</span>
         </div>
-        <div id="userSummary" class="user-summary">
-          <div class="muted">로그인하면 관리자/담당자 권한에 따라 조회 범위가 적용됩니다.</div>
-        </div>
+        <div id="userSummary" class="user-summary"></div>
       </section>
 
       <!-- 리스트 화면 -->
-      <section id="viewList" class="view-section">
-        <section class="panel">
-          <div class="panel-title-row">
-            <h2>물건 조회</h2>
-            <div class="chip-row">
-              <span id="countAll" class="chip">전체 0</span>
-              <span id="countAuction" class="chip">경매 0</span>
-              <span id="countGongmae" class="chip">공매 0</span>
-              <span id="countGeneral" class="chip">일반 0</span>
-            </div>
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>물건 조회</h2>
+          <div class="chip-row">
+            <span id="countAll" class="chip">전체 0</span>
+            <span id="countAuction" class="chip">경매 0</span>
+            <span id="countGongmae" class="chip">공매 0</span>
+            <span id="countGeneral" class="chip">일반 0</span>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="tabs" id="sourceTabs">
+            <button class="tab is-active" data-source="all">전체</button>
+            <button class="tab" data-source="auction">경매</button>
+            <button class="tab" data-source="gongmae">공매</button>
+            <button class="tab" data-source="general">일반</button>
           </div>
 
-          <div class="toolbar">
-            <div class="tabs" id="sourceTabs">
-              <button class="tab is-active" data-source="all">전체</button>
-              <button class="tab" data-source="auction">경매</button>
-              <button class="tab" data-source="gongmae">공매</button>
-              <button class="tab" data-source="general">일반</button>
-            </div>
-
-            <div class="filters">
-              <input id="searchKeyword" type="text" class="input" placeholder="주소 / 담당자 / 지역 검색" />
-              <select id="filterStatus" class="select">
-                <option value="">상태 전체</option>
-                <option value="active">진행중</option>
-                <option value="hold">보류</option>
-                <option value="closed">종결</option>
-                <option value="review">검토중</option>
-              </select>
-              <button id="btnRefresh" class="btn btn-secondary">새로고침</button>
-            </div>
+          <div class="filters">
+            <input id="searchKeyword" type="text" class="input" placeholder="주소 / 담당자 / 지역 검색" />
+            <select id="filterStatus" class="select">
+              <option value="">상태 전체</option>
+              <option value="active">진행중</option>
+              <option value="hold">보류</option>
+              <option value="closed">종결</option>
+              <option value="review">검토중</option>
+            </select>
+            <button id="btnRefresh" class="btn btn-secondary">새로고침</button>
           </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title-row">
-            <h2>물건 목록</h2>
-            <div id="listMeta" class="muted">불러오는 중...</div>
-          </div>
-          <div id="propertyList" class="property-grid"></div>
-          <div id="emptyState" class="empty-state hidden">
-            표시할 물건이 없습니다.
-          </div>
-        </section>
+        </div>
       </section>
 
-    </main>
-  </div>
-
-  <!-- 로그인 모달 -->
-  <div id="loginModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>로그인</h3>
-        <button id="btnCloseLogin" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-
-      <form id="loginForm" class="modal-body">
-        <label class="field">
-          <span>이름</span>
-          <input name="name" class="input" type="text" required />
-        </label>
-        <label class="field">
-          <span>비밀번호</span>
-          <input name="password" class="input" type="password" required />
-        </label>
-        <button type="submit" class="btn btn-primary w-full">로그인</button>
-        <button type="button" id="btnPublicRegister" class="btn btn-secondary w-full">누구나 매물 등록</button>
-        <div class="muted small">
-          테스트 계정: 관리자 / admin1234<br>관리자/담당자 계정은 관리자페이지에서 생성됩니다.
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>물건 목록</h2>
+          <div id="listMeta" class="muted">불러오는 중...</div>
         </div>
-      </form>
-    </div>
+        <div id="propertyList" class="property-grid"></div>
+        <div id="emptyState" class="empty-state hidden">표시할 물건이 없습니다.</div>
+      </section>
+    </main>
   </div>
 
   <script src="./app.js"></script>
