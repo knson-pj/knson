@@ -3,32 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>부동산 통합 관리 시스템 | 로그인</title>
+  <title>부동산 매입 관리 시스템 | 로그인</title>
   <link rel="stylesheet" href="./login.css" />
 </head>
 <body>
   <main class="login-page" role="main">
     <section class="split">
-      <!-- LEFT: 로고만 -->
       <div class="left" aria-label="브랜드 영역">
         <div class="brand-wrap">
-          <div class="logo" aria-label="HMK 로고">
-            <img class="logo-img" src="./image/logo.png" alt="HMK" />
-          </div>
+          <img class="brand-logo" src="./image/logo.png" alt="HMK 홀딩스 그룹 로고" />
         </div>
       </div>
 
-      <!-- RIGHT: 로그인 -->
       <div class="right" aria-label="로그인 영역">
         <div class="right-inner">
-          <h1 class="title">부동산 통합 관리 시스템</h1>
+          <h1 class="title">부동산 매입 관리 시스템</h1>
 
-          <div class="stage" aria-label="로그인 일러스트 및 폼">
-            <div class="character" aria-hidden="true">
-              <img class="char-img" src="./image/login.png" alt="" />
-
-              <!-- login.png(분홍 보드) 위에 실제 입력폼을 얹음 -->
-              <section class="login-card" aria-label="로그인 카드">
+          <div class="stage" aria-label="로그인 이미지 및 폼">
+            <div class="hero-wrap">
+              <img class="hero-img" src="./image/login.png" alt="" />
+              <!-- 분홍 보드 영역 위에 실제 입력/버튼을 오버레이 -->
+              <div class="board-ui" aria-label="로그인 폼">
                 <form id="loginForm" class="form" autocomplete="on">
                   <label class="field">
                     <span class="sr-only">Username</span>
@@ -41,16 +36,14 @@
                   </label>
 
                   <button id="btnLogin" type="submit" class="btn-primary">SIGN IN</button>
-
                   <button id="btnPublicRegister" type="button" class="btn-secondary">누구나 매물 등록</button>
 
                   <div id="loginMsg" class="msg" role="status" aria-live="polite"></div>
                 </form>
-              </section>
+              </div>
             </div>
           </div>
 
-          <!-- 요청: 문구 삭제 -->
         </div>
       </div>
     </section>
