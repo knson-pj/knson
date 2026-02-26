@@ -2,7 +2,6 @@
   "use strict";
 
   const API_BASE = "https://knson.vercel.app/api";
-  const SHARED_SESSION_KEY = "knson_bms_session_v1";
   const SESSION_KEY = "knson_bms_admin_session_v1";
 
   const state = {
@@ -1143,8 +1142,8 @@
   // API
   // ---------------------------
   async function api(path, options = {}) {
-    const method = options.method || "GET";
-    const headers = { "Content-Type": "application/json" };
+    const method = (options.method || "GET").toUpperCase();
+    const headers = { Accept: "application/json" };
 
     if (options.auth) {
       const token = state.session?.token;
@@ -1152,10 +1151,13 @@
       headers.Authorization = `Bearer ${token}`;
     }
 
+    const hasBody = !["GET", "HEAD"].includes(method);
+    if (hasBody) headers["Content-Type"] = "application/json";
+
     const res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
-      body: method === "GET" ? undefined : JSON.stringify(options.body || {}),
+      body: hasBody ? JSON.stringify(options.body || {}) : undefined,
     });
 
     const text = await res.text();
@@ -1277,38 +1279,19 @@
   }
 
   function loadSession() {
-    // 1) 관리자 페이지 전용 세션 우선
     try {
-      const rawA = localStorage.getItem(SESSION_KEY);
-      const sA = rawA ? JSON.parse(rawA) : null;
-      if (sA?.token && sA?.user?.role === "admin") return sA;
-    } catch {}
-
-    // 2) 프론트(공유) 세션에서 관리자 토큰 가져오기
-    try {
-      const raw = localStorage.getItem(SHARED_SESSION_KEY);
-      const s = raw ? JSON.parse(raw) : null;
-      if (s?.token && s?.user?.role === "admin") {
-        // 다음부터는 빠르게 읽도록 admin 키에도 복사
-        try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch {}
-        return s;
-      }
-    } catch {}
-
-    return null;
+      const raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
   }
 
   function saveSession(v) {
     if (!v) {
-      try { localStorage.removeItem(SESSION_KEY); } catch {}
-      // 관리자 로그아웃 시, 프론트도 같이 로그아웃이 필요하면 아래 1줄 유지
-      // 프론트는 유지하고 싶다면 아래 줄을 주석 처리하세요.
-      try { localStorage.removeItem(SHARED_SESSION_KEY); } catch {}
+      localStorage.removeItem(SESSION_KEY);
       return;
     }
-
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {}
-    // 관리자 로그인/갱신은 프론트와 세션을 공유해 재로그인 팝업을 방지
-    try { localStorage.setItem(SHARED_SESSION_KEY, JSON.stringify(v)); } catch {}
+    localStorage.setItem(SESSION_KEY, JSON.stringify(v));
   }
 })();
