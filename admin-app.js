@@ -1,20 +1,13 @@
+// Admin app
+const APP_VERSION="20260227-1";
 (() => {
   "use strict";
 
+  const APP_VERSION_INNER = "20260227-1";
+  console.log(`[Admin] admin-app.js v${APP_VERSION_INNER} loaded`);
+
   const API_BASE = "https://knson.vercel.app/api";
-  // NOTE: 로그인 페이지와 관리자 페이지 간 "재로그인" 문제를 방지하기 위해
-  // 여러 키를 호환 로드하고, 저장은 공용 키로 미러링합니다.
-  const SESSION_KEYS = [
-    "knson_bms_session_v1",
-    "knson_bms_admin_session_v1",
-    "knson_bms_session",
-    "knson_session_v1",
-    "knson_session",
-    "knson_auth_session",
-    "knson_auth_token"
-  ];
-  const SESSION_KEY = SESSION_KEYS[0];
-  const LEGACY_KEYS = SESSION_KEYS.slice(1);
+  const SESSION_KEY = "knson_bms_admin_session_v1";
 
   const state = {
     session: loadSession(),
@@ -36,105 +29,6 @@
   const phoneSaveTimers = new Map();
 
   document.addEventListener("DOMContentLoaded", init);
-
-  // ---------------------------
-  // Auth / Role helpers
-  // ---------------------------
-  function normalizeRole(role) {
-    const r = String(role || "").toLowerCase();
-    if (["admin", "manager", "root"].includes(r)) return "admin";
-    if (["agent", "staff", "user"].includes(r)) return "agent";
-    // 서버가 다른 값으로 내려줘도, 최소한 담당자 화면으로 취급
-    return r || "agent";
-  }
-
-  function isAdminUser(user) {
-    return !!user && normalizeRole(user.role) === "admin";
-  }
-
-  function isLoggedIn(user) {
-    const role = normalizeRole(user?.role);
-    // user 정보가 없더라도 token이 있으면 "로그인 상태"로 간주하고 로드를 시도합니다.
-    if (!!state.session?.token && !user) return true;
-    return !!user && (role === "admin" || role === "agent");
-  }
-
-  async function bootstrapSession() {
-    // 1) local/session storage에서 호환 키로 세션 로드
-    const stored = loadSession();
-    if (stored) {
-      // 토큰만 있는 경우에도 우선 세팅
-      state.session = { token: stored.token || null, user: stored.user || null };
-
-      // user 없으면 /auth/me 류로 보강 (Bearer + 쿠키 둘 다)
-      if (!state.session.user && state.session.token) {
-        const enriched = await fetchSessionByToken(state.session.token);
-        if (enriched?.user) state.session.user = enriched.user;
-      }
-
-      if (state.session.user) {
-        state.session.user.role = normalizeRole(state.session.user.role);
-      }
-      saveSession(state.session); // 공용 키로 미러링
-      return true;
-    }
-
-    // 2) 쿠키 기반 세션(로그인 페이지) 호환: /auth/me 류 엔드포인트를 시도
-    const cookieSession = await fetchCookieSession();
-    if (cookieSession?.user) {
-      cookieSession.user.role = normalizeRole(cookieSession.user.role);
-      state.session = cookieSession;
-      saveSession(cookieSession);
-      return true;
-    }
-
-    // 3) /auth/me 류가 없는 경우: 보호 API를 가볍게 probe 해서 쿠키 세션 여부/권한을 추정
-    const probed = await probeCookieRole();
-    if (probed?.user) {
-      probed.user.role = normalizeRole(probed.user.role);
-      state.session = probed;
-      saveSession(probed);
-      return true;
-    }
-
-    return false;
-  }
-
-  async function fetchCookieSession() {
-    const candidates = ["/auth/me", "/auth/session", "/auth/profile"];
-    for (const path of candidates) {
-      try {
-        const res = await fetch(`${API_BASE}${path}`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          credentials: "include",
-        });
-        if (!res.ok) continue;
-        const data = await res.json().catch(() => null);
-        if (!data) continue;
-
-        // { user, token } 또는 user 단독 형태 모두 허용
-        const user = data.user || data.profile || data.me || data;
-        const token = data.token || null;
-
-        if (user && (user.id || user.name)) {
-          return { token, user };
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return null;
-  }
-
-  function handleUnauthorized() {
-    state.session = null;
-    saveSession(null);
-    renderSessionUI();
-    // 중복 alert 방지: 모달만 띄움
-    openLoginModal();
-  }
-
 
   function init() {
     cacheEls();
@@ -269,13 +163,11 @@
   }
 
   async function ensureLoginThenLoad() {
-    await bootstrapSession();
     const user = state.session?.user;
-    if (!isLoggedIn(user)) {
+    if (!user || user.role !== "admin") {
       openLoginModal();
       return;
     }
-    applyRoleUI();
     await loadAllCoreData();
   }
 
@@ -300,46 +192,19 @@
 
   function renderSessionUI() {
     const user = state.session?.user;
-    const loggedIn = isLoggedIn(user);
-    const admin = isAdminUser(user);
+    const isAdmin = !!user && user.role === "admin";
 
-    els.btnAdminLoginOpen.classList.toggle("hidden", loggedIn);
-    els.btnAdminLogout.classList.toggle("hidden", !loggedIn);
+    els.btnAdminLoginOpen.classList.toggle("hidden", isAdmin);
+    els.btnAdminLogout.classList.toggle("hidden", !isAdmin);
 
-    if (loggedIn) {
-      if (!user) {
-        els.adminUserBadge.textContent = "로그인됨";
-        els.adminUserBadge.className = "badge badge-agent";
-        return;
-      }
-      const label = admin ? "관리자" : "담당자";
-      els.adminUserBadge.textContent = `${label}: ${user.name || ""}`.trim();
-      els.adminUserBadge.className = admin ? "badge badge-admin" : "badge badge-agent";
+    if (isAdmin) {
+      els.adminUserBadge.textContent = `관리자: ${user.name}`;
+      els.adminUserBadge.className = "badge badge-admin";
     } else {
       els.adminUserBadge.textContent = "비로그인";
       els.adminUserBadge.className = "badge badge-muted";
     }
   }
-
-  function applyRoleUI() {
-    const user = state.session?.user;
-    const admin = isAdminUser(user);
-
-    // 탭 버튼/패널: 담당자는 "물건 관리"만 사용
-    const adminOnlyTabs = ["csv", "staff", "regions", "offices"];
-    adminOnlyTabs.forEach((tab) => {
-      const btn = els.adminTabs?.querySelector(`.tab[data-tab="${tab}"]`);
-      const panel = document.getElementById(`tab-${tab}`);
-      if (btn) btn.classList.toggle("hidden", !admin);
-      if (panel) panel.classList.toggle("hidden", !admin);
-    });
-
-    // 담당자면 항상 물건 탭으로 이동
-    if (!admin) {
-      setActiveTab("properties");
-    }
-  }
-
 
   function openLoginModal() {
     els.adminLoginModal.classList.remove("hidden");
@@ -366,14 +231,13 @@
         body: { name, password },
       });
 
-      if (!res?.user) {
-        throw new Error("로그인 응답이 올바르지 않습니다.");
+      if (res?.user?.role !== "admin") {
+        throw new Error("관리자 권한 계정만 접속 가능합니다.");
       }
-      res.user.role = normalizeRole(res.user.role);
-      state.session = { token: res.token || null, user: res.user };
+
+      state.session = { token: res.token, user: res.user };
       saveSession(state.session);
       renderSessionUI();
-      applyRoleUI();
       closeLoginModal();
       await loadAllCoreData();
     } catch (err) {
@@ -397,56 +261,20 @@
 
   async function loadAllCoreData() {
     try {
-      const user = state.session?.user;
-      const admin = isAdminUser(user);
-      if (admin) {
-        await Promise.all([loadProperties(), loadStaff(), loadOffices()]);
-      } else {
-        await loadProperties();
-      }
+      await Promise.all([
+        loadProperties(),
+        loadStaff(),
+        loadOffices(),
+      ]);
     } catch (err) {
       console.error(err);
-      if (err && err.status === 401) {
-        handleUnauthorized();
-        return;
-      }
       alert(err.message || "데이터 로드 실패");
     }
   }
 
   async function loadProperties() {
-    const user = state.session?.user;
-    const admin = isAdminUser(user);
-
-    // 담당자는 서버 지원 시 scope=mine를 우선 시도
-    const wantedScope = admin ? "all" : "mine";
-    let res = null;
-
-    try {
-      res = await api(`/admin/properties?scope=${wantedScope}`, { auth: true });
-    } catch (err) {
-      // scope=mine 미지원이면 all로 폴백
-      if (!admin && (err.status === 400 || err.status === 404)) {
-        res = await api("/admin/properties?scope=all", { auth: true });
-      } else {
-        throw err;
-      }
-    }
-
-    let items = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
-
-    // 최종 안전장치: 담당자는 내 물건만
-    if (!admin && user) {
-      const myId = String(user.id || "");
-      const myName = String(user.name || "");
-      items = items.filter((p) => {
-        if (myId && String(p.assignedAgentId || "") === myId) return true;
-        if (myName && String(p.assignedAgentName || "") === myName) return true;
-        return false;
-      });
-    }
-
-    state.properties = items;
+    const res = await api("/admin/properties?scope=all", { auth: true });
+    state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
     renderPropertiesTable();
     renderSummary();
   }
@@ -1322,34 +1150,38 @@
     const method = (options.method || "GET").toUpperCase();
     const headers = { Accept: "application/json" };
 
-    // Bearer 토큰(로컬스토리지 기반) + 쿠키 세션(로그인 페이지) 둘 다 지원
-    const token = state.session?.token;
-    if (options.auth && token) {
+    if (options.auth) {
+      const token = state.session?.token;
+      if (!token) throw new Error("로그인이 필요합니다.");
       headers.Authorization = `Bearer ${token}`;
     }
 
     const hasBody = !["GET", "HEAD"].includes(method);
     if (hasBody) headers["Content-Type"] = "application/json";
 
-    const res = await fetch(`${API_BASE}${path}`, {
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
-      credentials: "include",
       body: hasBody ? JSON.stringify(options.body || {}) : undefined,
+      // CORS: cross-origin에서 쿠키/세션을 보내지 않음(서버에 Allow-Credentials 설정이 없으면 include는 차단됨)
+      credentials: "omit",
+      mode: "cors",
     });
+    } catch (e) {
+      // CORS/네트워크 레벨에서 막히면 여기로 옴
+      throw new Error("네트워크/CORS 오류로 API에 접근할 수 없습니다. (API CORS 설정 또는 credentials 포함 여부를 확인)" );
+    }
+
 
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
 
-    const allow = Array.isArray(options.allowStatuses) ? options.allowStatuses : [];
-    if (!res.ok && !allow.includes(res.status)) {
-      const err = new Error(data?.message || `API 오류 (${res.status})`);
-      err.status = res.status;
-      err.data = data;
-      throw err;
+    if (!res.ok) {
+      throw new Error(data?.message || `API 오류 (${res.status})`);
     }
-
     return data;
   }
 
@@ -1461,76 +1293,117 @@
     return document.querySelector(sel);
   }
 
-  function loadSession() {
-    // 여러 키/형식(JSON, 토큰 문자열) 호환 로드
-    const storages = [localStorage, sessionStorage];
+  
+  function safeJsonParse(v) {
+    try { return JSON.parse(v); } catch { return null; }
+  }
 
-    function tryParse(raw) {
-      if (!raw) return null;
-      // JSON 형태 우선
-      if (raw.startsWith("{") || raw.startsWith("[")) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed && (parsed.user || parsed.token)) return parsed;
-        } catch {
-          // ignore
-        }
-      }
-      // 토큰 문자열만 저장된 경우(JWT 등)
-      const token = String(raw || "").trim();
-      if (token && token.split(".").length >= 3) return { token, user: null };
+  function looksLikeJwt(t) {
+    return typeof t === "string" && /^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+$/.test(t);
+  }
+
+  function decodeJwtPayload(token) {
+    if (!looksLikeJwt(token)) return null;
+    try {
+      const base64Url = token.split(".")[1];
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((base64Url.length + 3) % 4);
+      const jsonStr = decodeURIComponent(atob(base64).split("").map(c => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join(""));
+      return safeJsonParse(jsonStr);
+    } catch {
       return null;
     }
+  }
 
-    // 1) 우선 known keys
-    for (const store of storages) {
-      for (const key of SESSION_KEYS) {
-        try {
-          const raw = store.getItem(key);
-          const parsed = tryParse(raw);
-          if (parsed) return parsed;
-        } catch {
-          // ignore
+  function extractSessionFromValue(raw, keyHint = "") {
+    if (!raw) return null;
+
+    // 1) JSON 형태
+    const obj = typeof raw === "string" ? safeJsonParse(raw) : raw;
+    if (obj && typeof obj === "object") {
+      const token = obj.token || obj.accessToken || obj.jwt || obj.idToken;
+      const user = obj.user || obj.me || obj.profile || null;
+
+      if (token && typeof token === "string") {
+        let role = user?.role || user?.type || null;
+        let name = user?.name || user?.username || user?.id || null;
+
+        // JWT payload에서 role/name 추론
+        const payload = decodeJwtPayload(token);
+        if (payload) {
+          role = role || payload.role || payload.type || payload.userRole || null;
+          name = name || payload.name || payload.username || payload.userName || payload.sub || null;
         }
+
+        // role이 없으면 키 힌트로 최소 추론(서버가 최종 권한 체크)
+        if (!role) role = /admin/i.test(keyHint) ? "admin" : "agent";
+        if (!name) name = "사용자";
+
+        return { token, user: { name, role } };
       }
     }
 
-    // 2) key를 모를 때: 전체 스토리지 스캔(세션 추정)
-    for (const store of storages) {
-      try {
-        for (let i = 0; i < store.length; i += 1) {
-          const key = store.key(i);
-          if (!key) continue;
-          const raw = store.getItem(key);
-          const parsed = tryParse(raw);
-          if (!parsed) continue;
-
-          // user가 있는 세션을 우선 반환
-          if (parsed.user && (parsed.user.id || parsed.user.name)) return parsed;
-
-          // token-only는 최후 후보로 기억
-          if (parsed.token) return parsed;
-        }
-      } catch {
-        // ignore
+    // 2) 문자열 토큰만 저장된 경우(JWT 등)
+    if (typeof raw === "string") {
+      const t = raw.trim();
+      if (looksLikeJwt(t) || t.length > 20) {
+        const payload = decodeJwtPayload(t);
+        let role = payload?.role || payload?.type || null;
+        let name = payload?.name || payload?.username || payload?.sub || null;
+        if (!role) role = /admin/i.test(keyHint) ? "admin" : "agent";
+        if (!name) name = "사용자";
+        return { token: t, user: { name, role } };
       }
     }
 
     return null;
   }
 
-  function saveSession(v) {
-    // 저장은 공용 키로 미러링(이전 키 포함)
-    const targets = [SESSION_KEY, ...LEGACY_KEYS];
-    const payload = v ? JSON.stringify(v) : null;
+  function tryRestoreSessionFromStorages() {
+    // 이미 세션이 있으면 스킵
+    if (state.session?.token && state.session?.user) return false;
 
-    targets.forEach((key) => {
-      try {
-        if (!payload) localStorage.removeItem(key);
-        else localStorage.setItem(key, payload);
-      } catch {
-        // ignore
+    const stores = [localStorage, sessionStorage];
+    const hitKeys = [];
+
+    for (const store of stores) {
+      if (!store) continue;
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (!k) continue;
+        const lk = k.toLowerCase();
+        // admin 세션키는 제외(이미 loadSession에서 처리)
+        if (lk === SESSION_KEY.toLowerCase()) continue;
+
+        if (!/(token|auth|session|login|user)/i.test(lk)) continue;
+
+        const v = store.getItem(k);
+        const sess = extractSessionFromValue(v, k);
+        if (sess?.token) {
+          state.session = sess;
+          saveSession(state.session); // 우리 세션키로 통일 저장
+          hitKeys.push(k);
+          return true;
+        }
       }
-    });
+    }
+
+    return false;
+  }
+
+function loadSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveSession(v) {
+    if (!v) {
+      localStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(v));
   }
 })();
