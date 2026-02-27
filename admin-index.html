@@ -12,14 +12,14 @@
       <div class="brand">
         <div class="brand-dot"></div>
         <div>
-          <h1>관리자 페이지</h1>
-          <p>물건 · 담당자 · 지역배정 · 중개사무소 관리</p>
+          <h1 id="adminPageTitle">관리자 페이지</h1>
+          <p id="adminPageSubtitle">물건 · 담당자 · 지역배정 · 중개사무소 관리</p>
         </div>
       </div>
 
       <div class="top-actions">
         <span id="adminUserBadge" class="badge badge-muted">비로그인</span>
-        <button id="btnAdminLoginOpen" class="btn btn-primary">관리자 로그인</button>
+        <button id="btnAdminLoginOpen" class="btn btn-primary">로그인</button>
         <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
       </div>
     </header>
@@ -52,8 +52,13 @@
       <section id="tab-properties" class="panel tab-panel">
         <div class="panel-title-row">
           <h2>물건 리스팅</h2>
+          <div class="btn-row">
+          <button id="btnPropNew" class="btn btn-primary">신규 등록</button>
           <button id="btnReloadProperties" class="btn btn-secondary">새로고침</button>
         </div>
+      </div>
+
+      <div id="propertiesRoleNote" class="muted small"></div>
 
         <div class="toolbar">
           <select id="propSourceFilter" class="select">
@@ -86,6 +91,7 @@
                 <th>지역(구/동)</th>
                 <th>중복</th>
                 <th>등록일</th>
+              <th>작업</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -328,7 +334,7 @@
     <div class="modal-backdrop" data-close="true"></div>
     <div class="modal-card">
       <div class="modal-header">
-        <h3>관리자 로그인</h3>
+        <h3 id="loginModalTitle">로그인</h3>
         <button id="btnAdminLoginClose" class="icon-btn" aria-label="닫기">✕</button>
       </div>
       <form id="adminLoginForm" class="modal-body">
@@ -341,7 +347,90 @@
           <input name="password" class="input" type="password" required />
         </label>
         <button type="submit" class="btn btn-primary w-full">로그인</button>
-        <div class="muted small">관리자 권한 계정만 접속 가능합니다.</div>
+        <div id="loginModalHint" class="muted small">관리자/담당자 계정으로 로그인 가능합니다.</div>
+      </form>
+    </div>
+  </div>
+
+  
+  <!-- 물건 등록/편집 모달 -->
+  <div id="propertyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h3 id="propertyModalTitle">물건 등록</h3>
+        <button id="btnPropertyModalClose" class="icon-btn" aria-label="닫기">✕</button>
+      </div>
+      <form id="propertyForm" class="modal-body">
+        <input type="hidden" name="id" />
+
+        <div class="field-row">
+          <label class="field">
+            <span>소스 *</span>
+            <select name="source" class="select" required>
+              <option value="general">일반</option>
+              <option value="auction">경매</option>
+              <option value="gongmae">공매</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>상태 *</span>
+            <select name="status" class="select" required>
+              <option value="review">검토중</option>
+              <option value="active">진행중</option>
+              <option value="hold">보류</option>
+              <option value="closed">종결</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>주소 *</span>
+          <input name="address" class="input" type="text" placeholder="예) 서울시 강남구 ..." required />
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>매각가(원)</span>
+            <input name="salePrice" class="input" type="text" inputmode="numeric" placeholder="예) 350000000" />
+          </label>
+
+          <label class="field">
+            <span>감정가(원) (선택)</span>
+            <input name="appraisalPrice" class="input" type="text" inputmode="numeric" placeholder="예) 420000000" />
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>구 (선택)</span>
+            <input name="regionGu" class="input" type="text" placeholder="예) 강남구" />
+          </label>
+
+          <label class="field">
+            <span>동 (선택)</span>
+            <input name="regionDong" class="input" type="text" placeholder="예) 역삼동" />
+          </label>
+        </div>
+
+        <div id="assignedAgentField" class="field hidden">
+          <span>담당자 (관리자만 변경)</span>
+          <select id="assignedAgentSelect" name="assignedAgentId" class="select"></select>
+          <div class="muted small">※ 담당자는 저장 후에도 변경 가능합니다.</div>
+        </div>
+
+        <label class="field">
+          <span>메모 (선택)</span>
+          <textarea name="memo" class="textarea" rows="4" placeholder="메모/특이사항"></textarea>
+        </label>
+
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">저장</button>
+          <button type="button" id="btnPropertyDelete" class="btn btn-ghost hidden">삭제</button>
+        </div>
+
+        <div id="propertyFormMsg" class="muted small"></div>
       </form>
     </div>
   </div>
