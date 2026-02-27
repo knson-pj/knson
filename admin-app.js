@@ -2,7 +2,19 @@
   "use strict";
 
   const API_BASE = "https://knson.vercel.app/api";
-  const SESSION_KEY = "knson_bms_admin_session_v1";
+  // NOTE: 로그인 페이지와 관리자 페이지 간 "재로그인" 문제를 방지하기 위해
+  // 여러 키를 호환 로드하고, 저장은 공용 키로 미러링합니다.
+  const SESSION_KEYS = [
+    "knson_bms_session_v1",
+    "knson_bms_admin_session_v1",
+    "knson_bms_session",
+    "knson_session_v1",
+    "knson_session",
+    "knson_auth_session",
+    "knson_auth_token"
+  ];
+  const SESSION_KEY = SESSION_KEYS[0];
+  const LEGACY_KEYS = SESSION_KEYS.slice(1);
 
   const state = {
     session: loadSession(),
@@ -18,7 +30,6 @@
     csvPreviewRows: [],
     officeCsvPreviewRows: [],
     lastGroupSuggestion: null,
-    propertyEditor: { mode: "create", id: null },
   };
 
   const els = {};
@@ -26,11 +37,109 @@
 
   document.addEventListener("DOMContentLoaded", init);
 
+  // ---------------------------
+  // Auth / Role helpers
+  // ---------------------------
+  function normalizeRole(role) {
+    const r = String(role || "").toLowerCase();
+    if (["admin", "manager", "root"].includes(r)) return "admin";
+    if (["agent", "staff", "user"].includes(r)) return "agent";
+    // 서버가 다른 값으로 내려줘도, 최소한 담당자 화면으로 취급
+    return r || "agent";
+  }
+
+  function isAdminUser(user) {
+    return !!user && normalizeRole(user.role) === "admin";
+  }
+
+  function isLoggedIn(user) {
+    const role = normalizeRole(user?.role);
+    // user 정보가 없더라도 token이 있으면 "로그인 상태"로 간주하고 로드를 시도합니다.
+    if (!!state.session?.token && !user) return true;
+    return !!user && (role === "admin" || role === "agent");
+  }
+
+  async function bootstrapSession() {
+    // 1) local/session storage에서 호환 키로 세션 로드
+    const stored = loadSession();
+    if (stored) {
+      // 토큰만 있는 경우에도 우선 세팅
+      state.session = { token: stored.token || null, user: stored.user || null };
+
+      // user 없으면 /auth/me 류로 보강 (Bearer + 쿠키 둘 다)
+      if (!state.session.user && state.session.token) {
+        const enriched = await fetchSessionByToken(state.session.token);
+        if (enriched?.user) state.session.user = enriched.user;
+      }
+
+      if (state.session.user) {
+        state.session.user.role = normalizeRole(state.session.user.role);
+      }
+      saveSession(state.session); // 공용 키로 미러링
+      return true;
+    }
+
+    // 2) 쿠키 기반 세션(로그인 페이지) 호환: /auth/me 류 엔드포인트를 시도
+    const cookieSession = await fetchCookieSession();
+    if (cookieSession?.user) {
+      cookieSession.user.role = normalizeRole(cookieSession.user.role);
+      state.session = cookieSession;
+      saveSession(cookieSession);
+      return true;
+    }
+
+    // 3) /auth/me 류가 없는 경우: 보호 API를 가볍게 probe 해서 쿠키 세션 여부/권한을 추정
+    const probed = await probeCookieRole();
+    if (probed?.user) {
+      probed.user.role = normalizeRole(probed.user.role);
+      state.session = probed;
+      saveSession(probed);
+      return true;
+    }
+
+    return false;
+  }
+
+  async function fetchCookieSession() {
+    const candidates = ["/auth/me", "/auth/session", "/auth/profile"];
+    for (const path of candidates) {
+      try {
+        const res = await fetch(`${API_BASE}${path}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: "include",
+        });
+        if (!res.ok) continue;
+        const data = await res.json().catch(() => null);
+        if (!data) continue;
+
+        // { user, token } 또는 user 단독 형태 모두 허용
+        const user = data.user || data.profile || data.me || data;
+        const token = data.token || null;
+
+        if (user && (user.id || user.name)) {
+          return { token, user };
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  }
+
+  function handleUnauthorized() {
+    state.session = null;
+    saveSession(null);
+    renderSessionUI();
+    // 중복 alert 방지: 모달만 띄움
+    openLoginModal();
+  }
+
+
   function init() {
     cacheEls();
     bindEvents();
     renderSessionUI();
-    applyRoleUI();
     ensureLoginThenLoad();
   }
 
@@ -40,15 +149,11 @@
       adminUserBadge: $("#adminUserBadge"),
       btnAdminLoginOpen: $("#btnAdminLoginOpen"),
       btnAdminLogout: $("#btnAdminLogout"),
-      adminPageTitle: $("#adminPageTitle"),
-      adminPageSubtitle: $("#adminPageSubtitle"),
 
       // login modal
       adminLoginModal: $("#adminLoginModal"),
       btnAdminLoginClose: $("#btnAdminLoginClose"),
       adminLoginForm: $("#adminLoginForm"),
-      loginModalTitle: $("#loginModalTitle"),
-      loginModalHint: $("#loginModalHint"),
 
       // tabs
       adminTabs: $("#adminTabs"),
@@ -68,20 +173,8 @@
       tabRegions: $("#tab-regions"),
       tabOffices: $("#tab-offices"),
 
-      // property modal
-      propertyModal: $("#propertyModal"),
-      btnPropertyModalClose: $("#btnPropertyModalClose"),
-      propertyModalTitle: $("#propertyModalTitle"),
-      propertyForm: $("#propertyForm"),
-      propertyFormMsg: $("#propertyFormMsg"),
-      btnPropertyDelete: $("#btnPropertyDelete"),
-      assignedAgentField: $("#assignedAgentField"),
-      assignedAgentSelect: $("#assignedAgentSelect"),
-
       // properties table
       btnReloadProperties: $("#btnReloadProperties"),
-      btnPropNew: $("#btnPropNew"),
-      propertiesRoleNote: $("#propertiesRoleNote"),
       propSourceFilter: $("#propSourceFilter"),
       propStatusFilter: $("#propStatusFilter"),
       propKeyword: $("#propKeyword"),
@@ -138,12 +231,11 @@
     // tabs
     els.adminTabs.addEventListener("click", (e) => {
       const btn = e.target.closest(".tab");
-      if (!btn || btn.classList.contains("hidden")) return;
-      const tab = btn.dataset.tab;
-      if (!isTabAllowed(tab)) return;
-      setActiveTab(tab);
+      if (!btn) return;
+      setActiveTab(btn.dataset.tab);
     });
-// properties
+
+    // properties
     els.btnReloadProperties.addEventListener("click", loadAllCoreData);
     els.propSourceFilter.addEventListener("change", () => {
       state.propertyFilters.source = els.propSourceFilter.value;
@@ -157,46 +249,6 @@
       state.propertyFilters.keyword = els.propKeyword.value.trim().toLowerCase();
       renderPropertiesTable();
     }, 120));
-
-
-    // properties: create / edit
-    if (els.btnPropNew) {
-      els.btnPropNew.addEventListener("click", () => openPropertyModalForCreate());
-    }
-    els.propertiesTableBody.addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-prop-act]");
-      if (!btn) return;
-      const id = btn.dataset.id;
-      const act = btn.dataset.propAct;
-      const row = state.properties.find((p) => String(p.id) === String(id));
-      if (!row) return;
-      if (act === "edit") {
-        if (!canEditProperty(row)) return alert("편집 권한이 없습니다.");
-        openPropertyModalForEdit(row);
-      } else if (act === "delete") {
-        if (!isAdmin()) return alert("삭제는 관리자만 가능합니다.");
-        if (!confirm("이 물건을 삭제할까요?")) return;
-        handleDeleteProperty(row);
-      }
-    });
-
-    // property modal
-    if (els.propertyModal) {
-      els.btnPropertyModalClose.addEventListener("click", closePropertyModal);
-      els.propertyModal.addEventListener("click", (e) => {
-        if (e.target?.dataset?.close === "true") closePropertyModal();
-      });
-      els.propertyForm.addEventListener("submit", handleSaveProperty);
-      els.btnPropertyDelete.addEventListener("click", () => {
-        const id = els.propertyForm?.elements?.id?.value;
-        const row = state.properties.find((p) => String(p.id) === String(id));
-        if (!row) return closePropertyModal();
-        if (!isAdmin()) return alert("삭제는 관리자만 가능합니다.");
-        if (!confirm("이 물건을 삭제할까요?")) return;
-        handleDeleteProperty(row);
-      });
-    }
-
 
     // CSV import
     els.btnCsvPreview.addEventListener("click", handleCsvPreview);
@@ -217,8 +269,9 @@
   }
 
   async function ensureLoginThenLoad() {
+    await bootstrapSession();
     const user = state.session?.user;
-    if (!user) {
+    if (!isLoggedIn(user)) {
       openLoginModal();
       return;
     }
@@ -227,7 +280,6 @@
   }
 
   function setActiveTab(tab) {
-    if (!isTabAllowed(tab)) tab = "properties";
     state.activeTab = tab;
 
     [...els.adminTabs.querySelectorAll(".tab")].forEach((el) => {
@@ -248,22 +300,46 @@
 
   function renderSessionUI() {
     const user = state.session?.user;
-    const isLoggedIn = !!user;
+    const loggedIn = isLoggedIn(user);
+    const admin = isAdminUser(user);
 
-    els.btnAdminLoginOpen.classList.toggle("hidden", isLoggedIn);
-    els.btnAdminLogout.classList.toggle("hidden", !isLoggedIn);
+    els.btnAdminLoginOpen.classList.toggle("hidden", loggedIn);
+    els.btnAdminLogout.classList.toggle("hidden", !loggedIn);
 
-    if (isLoggedIn) {
-      const roleLabel = user.role === "admin" ? "관리자" : "담당자";
-      els.adminUserBadge.textContent = `${roleLabel}: ${user.name}`;
-      els.adminUserBadge.className = user.role === "admin"
-        ? "badge badge-admin"
-        : "badge badge-agent";
+    if (loggedIn) {
+      if (!user) {
+        els.adminUserBadge.textContent = "로그인됨";
+        els.adminUserBadge.className = "badge badge-agent";
+        return;
+      }
+      const label = admin ? "관리자" : "담당자";
+      els.adminUserBadge.textContent = `${label}: ${user.name || ""}`.trim();
+      els.adminUserBadge.className = admin ? "badge badge-admin" : "badge badge-agent";
     } else {
       els.adminUserBadge.textContent = "비로그인";
       els.adminUserBadge.className = "badge badge-muted";
     }
   }
+
+  function applyRoleUI() {
+    const user = state.session?.user;
+    const admin = isAdminUser(user);
+
+    // 탭 버튼/패널: 담당자는 "물건 관리"만 사용
+    const adminOnlyTabs = ["csv", "staff", "regions", "offices"];
+    adminOnlyTabs.forEach((tab) => {
+      const btn = els.adminTabs?.querySelector(`.tab[data-tab="${tab}"]`);
+      const panel = document.getElementById(`tab-${tab}`);
+      if (btn) btn.classList.toggle("hidden", !admin);
+      if (panel) panel.classList.toggle("hidden", !admin);
+    });
+
+    // 담당자면 항상 물건 탭으로 이동
+    if (!admin) {
+      setActiveTab("properties");
+    }
+  }
+
 
   function openLoginModal() {
     els.adminLoginModal.classList.remove("hidden");
@@ -289,10 +365,12 @@
         method: "POST",
         body: { name, password },
       });
-      if (!res?.token || !res?.user?.role) {
+
+      if (!res?.user) {
         throw new Error("로그인 응답이 올바르지 않습니다.");
       }
-      state.session = { token: res.token, user: res.user };
+      res.user.role = normalizeRole(res.user.role);
+      state.session = { token: res.token || null, user: res.user };
       saveSession(state.session);
       renderSessionUI();
       applyRoleUI();
@@ -310,7 +388,6 @@
     state.session = null;
     saveSession(null);
     renderSessionUI();
-    applyRoleUI();
     state.properties = [];
     state.staff = [];
     state.offices = [];
@@ -320,55 +397,59 @@
 
   async function loadAllCoreData() {
     try {
-      const role = state.session?.user?.role;
-      if (role === "admin") {
-        await Promise.all([
-          loadProperties(),
-          loadStaff(),
-          loadOffices(),
-        ]);
+      const user = state.session?.user;
+      const admin = isAdminUser(user);
+      if (admin) {
+        await Promise.all([loadProperties(), loadStaff(), loadOffices()]);
       } else {
         await loadProperties();
-        // agent 계정은 관리 기능 데이터 로드하지 않음
-        state.staff = [];
-        state.offices = [];
-        renderStaffTable();
-        renderAssignmentTable();
-        renderOfficesTable();
-        renderSummary();
       }
     } catch (err) {
       console.error(err);
+      if (err && err.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       alert(err.message || "데이터 로드 실패");
     }
   }
 
   async function loadProperties() {
-    const role = state.session?.user?.role;
-    const paths = role === "admin"
-      ? ["/admin/properties?scope=all", "/admin/properties", "/properties?scope=all", "/properties"]
-      : ["/admin/properties?scope=mine", "/properties?scope=mine", "/agent/properties", "/properties"];
+    const user = state.session?.user;
+    const admin = isAdminUser(user);
 
-    const res = await apiTry(paths, { auth: true });
-    let items = Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []);
-    let normalized = items.map(normalizeProperty);
+    // 담당자는 서버 지원 시 scope=mine를 우선 시도
+    const wantedScope = admin ? "all" : "mine";
+    let res = null;
 
-    // 담당자 계정은 "내 물건"만 강제 필터(서버가 all을 주더라도 UI에서 차단)
-    if (role !== "admin") {
-      normalized = normalized.filter((p) => isMyProperty(p));
-      // 표시용: 담당자명 누락 시 내 이름 채우기
-      const me = state.session?.user?.name || "";
-      normalized = normalized.map((p) => ({
-        ...p,
-        assignedAgentName: p.assignedAgentName || me,
-      }));
+    try {
+      res = await api(`/admin/properties?scope=${wantedScope}`, { auth: true });
+    } catch (err) {
+      // scope=mine 미지원이면 all로 폴백
+      if (!admin && (err.status === 400 || err.status === 404)) {
+        res = await api("/admin/properties?scope=all", { auth: true });
+      } else {
+        throw err;
+      }
     }
 
-    state.properties = normalized;
+    let items = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
+
+    // 최종 안전장치: 담당자는 내 물건만
+    if (!admin && user) {
+      const myId = String(user.id || "");
+      const myName = String(user.name || "");
+      items = items.filter((p) => {
+        if (myId && String(p.assignedAgentId || "") === myId) return true;
+        if (myName && String(p.assignedAgentName || "") === myName) return true;
+        return false;
+      });
+    }
+
+    state.properties = items;
     renderPropertiesTable();
     renderSummary();
   }
-
 
   async function loadStaff() {
     const res = await api("/admin/staff", { auth: true });
@@ -477,12 +558,6 @@
     const frag = document.createDocumentFragment();
     for (const p of rows) {
       const tr = document.createElement("tr");
-      const canEdit = canEditProperty(p);
-      const actions = [
-        `<button class="btn btn-secondary btn-sm" data-prop-act="edit" data-id="${escapeAttr(p.id)}" ${!canEdit ? "disabled" : ""}>편집</button>`,
-        isAdmin() ? `<button class="btn btn-ghost btn-sm" data-prop-act="delete" data-id="${escapeAttr(p.id)}">삭제</button>` : "",
-      ].filter(Boolean).join("");
-
       tr.innerHTML = `
         <td>${escapeHtml(sourceLabel(p.source))}</td>
         <td>${escapeHtml(p.address)}</td>
@@ -492,7 +567,6 @@
         <td>${escapeHtml([p.regionGu, p.regionDong].filter(Boolean).join(" / ") || "-")}</td>
         <td>${p.duplicateFlag ? '<span class="cell-badge danger">중복</span>' : '<span class="cell-badge ok">정상</span>'}</td>
         <td>${escapeHtml(formatDate(p.createdAt))}</td>
-        <td><div class="action-row">${actions || "-"}</div></td>
       `;
       frag.appendChild(tr);
     }
@@ -639,282 +713,7 @@
     });
   }
 
-  
   // ---------------------------
-  // Role / Permissions
-  // ---------------------------
-  function isAdmin() {
-    return state.session?.user?.role === "admin";
-  }
-  function isAgent() {
-    return state.session?.user?.role === "agent";
-  }
-  function isTabAllowed(tab) {
-    if (isAdmin()) return true;
-    return tab === "properties";
-  }
-
-  function applyRoleUI() {
-    const user = state.session?.user;
-    const role = user?.role;
-
-    // header copy
-    if (els.adminPageTitle) {
-      els.adminPageTitle.textContent = role === "admin" ? "관리자 페이지" : (role ? "담당자 페이지" : "관리자 페이지");
-    }
-    if (els.adminPageSubtitle) {
-      els.adminPageSubtitle.textContent = role === "admin"
-        ? "물건 · 담당자 · 지역배정 · 중개사무소 관리"
-        : (role ? "내 물건 등록 · 수정" : "물건 · 담당자 · 지역배정 · 중개사무소 관리");
-    }
-
-    // login modal copy
-    if (els.loginModalTitle) els.loginModalTitle.textContent = "로그인";
-    if (els.loginModalHint) els.loginModalHint.textContent = "관리자/담당자 계정으로 로그인 가능합니다.";
-
-    // tabs visibility
-    if (els.adminTabs) {
-      [...els.adminTabs.querySelectorAll(".tab")].forEach((btn) => {
-        const tab = btn.dataset.tab;
-        const allowed = isTabAllowed(tab);
-        btn.classList.toggle("hidden", !allowed);
-      });
-    }
-
-    // summary cards: admin만 담당자/중개사무소 노출
-    const agentCard = els.sumAgents?.closest?.(".summary-card");
-    const officeCard = els.sumOffices?.closest?.(".summary-card");
-    if (agentCard) agentCard.classList.toggle("hidden", !isAdmin());
-    if (officeCard) officeCard.classList.toggle("hidden", !isAdmin());
-
-    // properties note
-    if (els.propertiesRoleNote) {
-      if (!user) {
-        els.propertiesRoleNote.textContent = "";
-      } else if (isAdmin()) {
-        els.propertiesRoleNote.textContent = "관리자: 전체 물건 조회/편집 · CSV 업로드 · 담당자 배정 가능";
-      } else {
-        els.propertiesRoleNote.textContent = "담당자: 내 물건만 조회/편집/등록 가능 (CSV 업로드는 관리자만)";
-      }
-    }
-
-    // agent면 관리자 탭으로 이동 방지
-    if (!isAdmin() && state.activeTab !== "properties") {
-      setActiveTab("properties");
-    }
-  }
-
-  function isMyProperty(p) {
-    const user = state.session?.user;
-    if (!user) return false;
-    const myId = String(user.id || "");
-    const myName = String(user.name || "");
-    if (myId && String(p.assignedAgentId || "") === myId) return true;
-    if (myName && String(p.assignedAgentName || "") === myName) return true;
-    if (myName && String(p.assignedAgentName || "").includes(myName)) return true;
-    return false;
-  }
-
-  function canEditProperty(p) {
-    if (isAdmin()) return true;
-    return isMyProperty(p);
-  }
-
-  // ---------------------------
-  // Property Create / Edit Modal
-  // ---------------------------
-  function openPropertyModalForCreate() {
-    state.propertyEditor = { mode: "create", id: null };
-    fillPropertyForm(null);
-    els.propertyModalTitle.textContent = "물건 등록";
-    els.btnPropertyDelete.classList.add("hidden");
-    toggleAssignedAgentField();
-    openModal(els.propertyModal);
-  }
-
-  function openPropertyModalForEdit(prop) {
-    state.propertyEditor = { mode: "edit", id: prop?.id || null };
-    fillPropertyForm(prop);
-    els.propertyModalTitle.textContent = "물건 편집";
-    els.btnPropertyDelete.classList.toggle("hidden", !isAdmin());
-    toggleAssignedAgentField();
-    openModal(els.propertyModal);
-  }
-
-  function closePropertyModal() {
-    closeModal(els.propertyModal);
-    if (els.propertyFormMsg) els.propertyFormMsg.textContent = "";
-    if (els.propertyForm) els.propertyForm.reset();
-    if (els.propertyForm?.elements?.id) els.propertyForm.elements.id.value = "";
-  }
-
-  function openModal(modalEl) {
-    if (!modalEl) return;
-    modalEl.classList.remove("hidden");
-    modalEl.setAttribute("aria-hidden", "false");
-  }
-
-  function closeModal(modalEl) {
-    if (!modalEl) return;
-    modalEl.classList.add("hidden");
-    modalEl.setAttribute("aria-hidden", "true");
-  }
-
-  function toggleAssignedAgentField() {
-    if (!els.assignedAgentField) return;
-    els.assignedAgentField.classList.toggle("hidden", !isAdmin());
-    if (isAdmin()) buildAssignedAgentOptions();
-  }
-
-  function buildAssignedAgentOptions(selectedId = "") {
-    if (!els.assignedAgentSelect) return;
-    const agents = state.staff.filter((s) => s.role === "agent");
-    els.assignedAgentSelect.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "미배정";
-    els.assignedAgentSelect.appendChild(opt0);
-
-    agents.forEach((a) => {
-      const opt = document.createElement("option");
-      opt.value = a.id;
-      opt.textContent = a.name;
-      opt.selected = selectedId && String(selectedId) === String(a.id);
-      els.assignedAgentSelect.appendChild(opt);
-    });
-  }
-
-  function fillPropertyForm(prop) {
-    const f = els.propertyForm;
-    if (!f) return;
-    f.reset();
-
-    const address = prop?.address || "";
-    const x = extractGuDong(address);
-
-    f.elements.id.value = prop?.id || "";
-    f.elements.source.value = prop?.source || "general";
-    f.elements.status.value = prop?.status || "review";
-    f.elements.address.value = address;
-    f.elements.salePrice.value = prop?.salePrice ? String(prop.salePrice) : "";
-    if (f.elements.appraisalPrice) f.elements.appraisalPrice.value = String(prop?.appraisalPrice || "");
-    f.elements.regionGu.value = prop?.regionGu || x.gu || "";
-    f.elements.regionDong.value = prop?.regionDong || x.dong || "";
-    if (f.elements.memo) f.elements.memo.value = prop?.memo || "";
-
-    if (isAdmin()) buildAssignedAgentOptions(prop?.assignedAgentId || "");
-  }
-
-  function parseMoneyInput(v) {
-    const n = String(v || "").replace(/[^\d.-]/g, "");
-    return Number(n || 0) || 0;
-  }
-
-  function buildPropertyPayloadFromForm() {
-    const f = els.propertyForm;
-    const user = state.session?.user || {};
-    const fd = new FormData(f);
-
-    const address = String(fd.get("address") || "").trim();
-    const source = String(fd.get("source") || "general");
-    const status = String(fd.get("status") || "review");
-    const salePrice = parseMoneyInput(fd.get("salePrice"));
-    const appraisalPrice = parseMoneyInput(fd.get("appraisalPrice"));
-    const regionGu = String(fd.get("regionGu") || "").trim();
-    const regionDong = String(fd.get("regionDong") || "").trim();
-    const memo = String(fd.get("memo") || "").trim();
-
-    const x = extractGuDong(address);
-    const payload = {
-      source,
-      status,
-      address,
-      salePrice,
-      // 서버가 모르면 무시(호환 목적)
-      appraisalPrice,
-      regionGu: regionGu || x.gu || "",
-      regionDong: regionDong || x.dong || "",
-      memo,
-    };
-
-    if (isAdmin()) {
-      const assignedAgentId = String(fd.get("assignedAgentId") || "").trim();
-      payload.assignedAgentId = assignedAgentId || null;
-    } else {
-      payload.assignedAgentId = user.id || null;
-      payload.assignedAgentName = user.name || "";
-    }
-
-    return payload;
-  }
-
-  function getPropertyCreatePaths() {
-    return isAdmin()
-      ? ["/admin/properties", "/properties"]
-      : ["/agent/properties", "/properties"];
-  }
-
-  function getPropertyUpdatePaths(id) {
-    const sid = encodeURIComponent(String(id));
-    return isAdmin()
-      ? [`/admin/properties/${sid}`, `/properties/${sid}`]
-      : [`/agent/properties/${sid}`, `/properties/${sid}`, `/admin/properties/${sid}`];
-  }
-
-  function getPropertyDeletePaths(id) {
-    const sid = encodeURIComponent(String(id));
-    return isAdmin()
-      ? [`/admin/properties/${sid}`, `/properties/${sid}`]
-      : [`/agent/properties/${sid}`, `/properties/${sid}`, `/admin/properties/${sid}`];
-  }
-
-  async function handleSaveProperty(e) {
-    e.preventDefault();
-    const mode = state.propertyEditor?.mode || (els.propertyForm?.elements?.id?.value ? "edit" : "create");
-    const id = String(els.propertyForm?.elements?.id?.value || "").trim();
-
-    const payload = buildPropertyPayloadFromForm();
-    if (!payload.address) return alert("주소는 필수입니다.");
-
-    try {
-      setFormBusy(els.propertyForm, true);
-      if (els.propertyFormMsg) els.propertyFormMsg.textContent = "저장 중...";
-
-      if (mode === "edit" && id) {
-        await apiTry(getPropertyUpdatePaths(id), { method: "PATCH", auth: true, body: payload });
-      } else {
-        await apiTry(getPropertyCreatePaths(), { method: "POST", auth: true, body: payload });
-      }
-
-      if (els.propertyFormMsg) els.propertyFormMsg.textContent = "저장 완료";
-      closePropertyModal();
-      await loadProperties();
-      alert("저장되었습니다.");
-    } catch (err) {
-      console.error(err);
-      if (els.propertyFormMsg) els.propertyFormMsg.textContent = err.message || "저장 실패";
-      alert(err.message || "저장 실패");
-    } finally {
-      setFormBusy(els.propertyForm, false);
-    }
-  }
-
-  async function handleDeleteProperty(prop) {
-    try {
-      const id = prop?.id;
-      if (!id) return;
-
-      await apiTry(getPropertyDeletePaths(id), { method: "DELETE", auth: true });
-      closePropertyModal();
-      await loadProperties();
-      alert("삭제되었습니다.");
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "삭제 실패");
-    }
-  }
-
-// ---------------------------
   // Staff CRUD
   // ---------------------------
   function fillStaffForm(staff) {
@@ -931,8 +730,6 @@
   }
 
   async function handleSaveStaff(e) {
-    if (!isAdmin()) return alert("담당자 관리는 관리자만 가능합니다.");
-
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const id = String(fd.get("id") || "").trim();
@@ -975,8 +772,6 @@
   // CSV Import (Properties)
   // ---------------------------
   async function handleCsvPreview() {
-    if (!isAdmin()) return alert("CSV 업로드는 관리자만 가능합니다.");
-
     try {
       const file = els.csvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
@@ -1017,8 +812,6 @@
   }
 
   async function handleCsvUpload() {
-    if (!isAdmin()) return alert("CSV 업로드는 관리자만 가능합니다.");
-
     try {
       const file = els.csvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
@@ -1093,8 +886,6 @@
   }
 
   async function handleSuggestGrouping() {
-    if (!isAdmin()) return alert("지역 배정은 관리자만 가능합니다.");
-
     const agents = state.staff.filter((s) => s.role === "agent");
     if (!agents.length) return alert("담당자 계정을 먼저 등록해 주세요.");
 
@@ -1148,8 +939,6 @@
   }
 
   async function handleSaveAssignments() {
-    if (!isAdmin()) return alert("지역 배정 저장은 관리자만 가능합니다.");
-
     const agents = state.staff.filter((s) => s.role === "agent");
     if (!agents.length) return alert("담당자 계정이 없습니다.");
 
@@ -1317,8 +1106,6 @@
   // Offices CSV / Autosave
   // ---------------------------
   async function handleOfficeCsvPreview() {
-    if (!isAdmin()) return alert("중개사무소 CSV 업로드는 관리자만 가능합니다.");
-
     try {
       const file = els.officeCsvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
@@ -1358,8 +1145,6 @@
   }
 
   async function handleOfficeCsvUpload() {
-    if (!isAdmin()) return alert("중개사무소 CSV 업로드는 관리자만 가능합니다.");
-
     try {
       const file = els.officeCsvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
@@ -1533,17 +1318,13 @@
   // ---------------------------
   // API
   // ---------------------------
-  async function fetchApi(path, options = {}) {
+  async function api(path, options = {}) {
     const method = (options.method || "GET").toUpperCase();
     const headers = { Accept: "application/json" };
 
-    if (options.auth) {
-      const token = state.session?.token;
-      if (!token) {
-        const err = new Error("로그인이 필요합니다.");
-        err.status = 401;
-        throw err;
-      }
+    // Bearer 토큰(로컬스토리지 기반) + 쿠키 세션(로그인 페이지) 둘 다 지원
+    const token = state.session?.token;
+    if (options.auth && token) {
       headers.Authorization = `Bearer ${token}`;
     }
 
@@ -1553,40 +1334,23 @@
     const res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
+      credentials: "include",
       body: hasBody ? JSON.stringify(options.body || {}) : undefined,
     });
 
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-    return { ok: res.ok, status: res.status, data };
-  }
 
-  async function api(path, options = {}) {
-    const out = await fetchApi(path, options);
-    if (!out.ok) {
-      const err = new Error(out.data?.message || `API 오류 (${out.status})`);
-      err.status = out.status;
-      err.data = out.data;
+    const allow = Array.isArray(options.allowStatuses) ? options.allowStatuses : [];
+    if (!res.ok && !allow.includes(res.status)) {
+      const err = new Error(data?.message || `API 오류 (${res.status})`);
+      err.status = res.status;
+      err.data = data;
       throw err;
     }
-    return out.data;
-  }
 
-  async function apiTry(paths, options = {}) {
-    const list = Array.isArray(paths) ? paths : [paths];
-    let lastErr = null;
-
-    for (const p of list) {
-      try {
-        return await api(p, options);
-      } catch (err) {
-        lastErr = err;
-        // 다음 후보로 넘어갈 수 있는 경우(엔드포인트 미존재/권한 등)
-        if (![404, 405, 501, 403].includes(err.status)) break;
-      }
-    }
-    throw lastErr || new Error("API 오류");
+    return data;
   }
 
   // ---------------------------
@@ -1698,19 +1462,75 @@
   }
 
   function loadSession() {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
+    // 여러 키/형식(JSON, 토큰 문자열) 호환 로드
+    const storages = [localStorage, sessionStorage];
+
+    function tryParse(raw) {
+      if (!raw) return null;
+      // JSON 형태 우선
+      if (raw.startsWith("{") || raw.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.user || parsed.token)) return parsed;
+        } catch {
+          // ignore
+        }
+      }
+      // 토큰 문자열만 저장된 경우(JWT 등)
+      const token = String(raw || "").trim();
+      if (token && token.split(".").length >= 3) return { token, user: null };
       return null;
     }
+
+    // 1) 우선 known keys
+    for (const store of storages) {
+      for (const key of SESSION_KEYS) {
+        try {
+          const raw = store.getItem(key);
+          const parsed = tryParse(raw);
+          if (parsed) return parsed;
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // 2) key를 모를 때: 전체 스토리지 스캔(세션 추정)
+    for (const store of storages) {
+      try {
+        for (let i = 0; i < store.length; i += 1) {
+          const key = store.key(i);
+          if (!key) continue;
+          const raw = store.getItem(key);
+          const parsed = tryParse(raw);
+          if (!parsed) continue;
+
+          // user가 있는 세션을 우선 반환
+          if (parsed.user && (parsed.user.id || parsed.user.name)) return parsed;
+
+          // token-only는 최후 후보로 기억
+          if (parsed.token) return parsed;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return null;
   }
 
   function saveSession(v) {
-    if (!v) {
-      localStorage.removeItem(SESSION_KEY);
-      return;
-    }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(v));
+    // 저장은 공용 키로 미러링(이전 키 포함)
+    const targets = [SESSION_KEY, ...LEGACY_KEYS];
+    const payload = v ? JSON.stringify(v) : null;
+
+    targets.forEach((key) => {
+      try {
+        if (!payload) localStorage.removeItem(key);
+        else localStorage.setItem(key, payload);
+      } catch {
+        // ignore
+      }
+    });
   }
 })();
