@@ -471,11 +471,3 @@ body {
     grid-template-columns: 1fr;
   }
 }
-
-
-/* 담당자 뱃지 */
-.badge-agent{
-  background: rgba(255, 140, 0, 0.10);
-  border: 1px solid rgba(255, 140, 0, 0.35);
-  color: #ff8c00;
-}
