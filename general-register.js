@@ -15,7 +15,9 @@
 
     const fd = new FormData(form);
     const payload = {
-      source: "general",
+      source: "general", // backward compat
+      sourceType: "realtor",
+      isGeneral: true,
       address: String(fd.get("address") || "").trim(),
       salePrice: Number(fd.get("salePrice") || 0),
       registrantName: String(fd.get("registrantName") || "").trim(),

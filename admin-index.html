@@ -4,7 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>부동산 물건 관리 시스템 | 관리자</title>
-  <link rel="stylesheet" href="./admin-styles.css" />
+  
+  <style>html{visibility:hidden;}</style>
+  <script>
+    (function(){
+      try{
+        var raw = localStorage.getItem('knson_bms_session_v1');
+        var s = raw ? JSON.parse(raw) : null;
+        if (!s || !s.token || !s.user) {
+          location.replace('./login.html?next=' + encodeURIComponent('./admin-index.html'));
+          return;
+        }
+      }catch(e){
+        location.replace('./login.html?next=' + encodeURIComponent('./admin-index.html'));
+        return;
+      }
+      document.documentElement.style.visibility = 'visible';
+    })();
+  </script>
+
+  <link rel="stylesheet" href="./admin-styles.css?v=20260305-1" />
 </head>
 <body>
   <div class="admin-shell">
@@ -19,7 +38,7 @@
 
       <div class="top-actions">
         <span id="adminUserBadge" class="badge badge-muted">비로그인</span>
-        <button id="btnAdminLoginOpen" class="btn btn-primary">관리자 로그인</button>
+        <button id="btnAdminLoginOpen" class="btn btn-primary">로그인</button>
         <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
       </div>
     </header>
@@ -31,7 +50,7 @@
           <div class="summary-card"><span>전체 물건</span><strong id="sumTotal">0</strong></div>
           <div class="summary-card"><span>경매</span><strong id="sumAuction">0</strong></div>
           <div class="summary-card"><span>공매</span><strong id="sumGongmae">0</strong></div>
-          <div class="summary-card"><span>일반</span><strong id="sumGeneral">0</strong></div>
+          <div class="summary-card"><span>중개</span><strong id="sumGeneral">0</strong><em id="sumGeneralFlag" class="summary-mini">일반 0</em></div>
           <div class="summary-card"><span>담당자 수</span><strong id="sumAgents">0</strong></div>
           <div class="summary-card"><span>중개사무소 수</span><strong id="sumOffices">0</strong></div>
         </div>
@@ -59,8 +78,8 @@
           <select id="propSourceFilter" class="select">
             <option value="">전체 소스</option>
             <option value="auction">경매</option>
-            <option value="gongmae">공매</option>
-            <option value="general">일반</option>
+            <option value="onbid">공매</option>
+            <option value="realtor">중개</option>
           </select>
 
           <select id="propStatusFilter" class="select">
@@ -78,13 +97,16 @@
           <table class="table" id="propertiesTable">
             <thead>
               <tr>
-                <th>소스</th>
+                <th>물건번호</th>
+                <th>구분</th>
+                <th>일반</th>
                 <th>주소</th>
-                <th>매각가</th>
-                <th>상태</th>
+                <th>부동산유형</th>
+                <th>기준금액</th>
+                <th>진행상태</th>
+                <th>위도</th>
+                <th>경도</th>
                 <th>담당자</th>
-                <th>지역(구/동)</th>
-                <th>중복</th>
                 <th>등록일</th>
               </tr>
             </thead>
@@ -106,7 +128,8 @@
               <span>업로드 대상</span>
               <select id="csvImportSource" class="select">
                 <option value="auction">경매 CSV</option>
-                <option value="gongmae">공매 CSV</option>
+                <option value="onbid">공매 CSV</option>
+                <option value="realtor">중개 CSV</option>
               </select>
             </label>
 
@@ -136,11 +159,12 @@
               <thead>
                 <tr>
                   <th>#</th>
+                  <th>물건번호</th>
                   <th>주소</th>
-                  <th>매각가</th>
+                  <th>기준금액</th>
                   <th>상태</th>
-                  <th>구</th>
-                  <th>동</th>
+                  <th>위도</th>
+                  <th>경도</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -323,12 +347,12 @@
     </main>
   </div>
 
-  <!-- 관리자 로그인 모달 -->
+  <!-- 로그인 모달 -->
   <div id="adminLoginModal" class="modal hidden" aria-hidden="true">
     <div class="modal-backdrop" data-close="true"></div>
     <div class="modal-card">
       <div class="modal-header">
-        <h3>관리자 로그인</h3>
+        <h3>로그인</h3>
         <button id="btnAdminLoginClose" class="icon-btn" aria-label="닫기">✕</button>
       </div>
       <form id="adminLoginForm" class="modal-body">
@@ -346,6 +370,96 @@
     </div>
   </div>
 
-  <script src="./admin-app.js?v=20260227-1"></script>
+  
+  <!-- 물건 편집 모달 -->
+  <div id="propertyEditModalAdmin" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="aemTitle">물건 정보 수정</h3>
+        <button id="aemClose" class="icon-btn" aria-label="닫기">✕</button>
+      </div>
+      <form id="aemForm" class="modal-body">
+        <div class="grid2">
+          <label class="field">
+            <span>물건번호</span>
+            <input name="itemNo" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>구분</span>
+            <select name="sourceType" class="input">
+              <option value="auction">경매</option>
+              <option value="onbid">공매</option>
+              <option value="realtor">중개</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid2">
+          <label class="field">
+            <span>일반(누구나)</span>
+            <select name="isGeneral" class="input">
+              <option value="false">아님</option>
+              <option value="true">일반</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>담당자명</span>
+            <input name="assignedAgentName" class="input" type="text" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>주소</span>
+          <input name="address" class="input" type="text" />
+        </label>
+
+        <div class="grid2">
+          <label class="field">
+            <span>부동산유형</span>
+            <input name="assetType" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>사용승인일</span>
+            <input name="useapproval" class="input" type="text" />
+          </label>
+        </div>
+
+        <div class="grid3">
+          <label class="field"><span>공용면적(평)</span><input name="exclusivearea" class="input" type="number" step="0.01" /></label>
+          <label class="field"><span>전용면적(평)</span><input name="commonarea" class="input" type="number" step="0.01" /></label>
+          <label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="number" step="0.01" /></label>
+        </div>
+
+        <div class="grid2">
+          <label class="field"><span>진행상태</span><input name="status" class="input" type="text" /></label>
+          <label class="field"><span>기준금액(원)</span><input name="priceMain" class="input" type="number" step="1" /></label>
+        </div>
+
+        <div class="grid2">
+          <label class="field"><span>주요일정</span><input name="dateMain" class="input" type="text" /></label>
+          <label class="field"><span>원문링크</span><input name="sourceUrl" class="input" type="url" /></label>
+        </div>
+
+        <label class="field">
+          <span>메모</span>
+          <textarea name="memo" class="input" rows="3"></textarea>
+        </label>
+
+        <div class="grid2">
+          <label class="field"><span>위도</span><input name="latitude" class="input" type="number" step="0.0000001" /></label>
+          <label class="field"><span>경도</span><input name="longitude" class="input" type="number" step="0.0000001" /></label>
+        </div>
+
+        <div class="modal-actions">
+          <button id="aemSave" class="btn btn-primary" type="submit">저장</button>
+          <button id="aemCancel" class="btn btn-ghost" type="button">취소</button>
+        </div>
+        <div id="aemMsg" class="note"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="./admin-app.js?v=20260305-1"></script>
 </body>
 </html>

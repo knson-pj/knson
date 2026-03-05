@@ -255,3 +255,38 @@ body{
   .kpi-num{font-size:36px;}
   .filter-row{grid-template-columns:1fr;}
 }
+
+
+/* ---- Modal (light) ---- */
+
+.modal{position:fixed;inset:0;z-index:80}
+.modal.hidden{display:none}
+.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.35);backdrop-filter:blur(3px)}
+.modal-card{position:relative;width:min(520px, calc(100% - 24px));margin:8vh auto 0;background:#fff;border:1px solid #e6e6e6;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.15);overflow:hidden}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #eee}
+.modal-header h3{margin:0;font-size:15px}
+.modal-body{padding:14px;display:grid;gap:10px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.icon-btn{border:1px solid #e5e5e5;background:#fff;border-radius:10px;padding:6px 9px;cursor:pointer}
+.field{display:grid;gap:6px}
+.field span{font-size:12px;color:#555}
+.textarea{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;resize:vertical}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.form-msg{font-size:12px;color:#b00020}
+.btn-primary{background:#ff7a00;border:1px solid #ff7a00;color:#fff;border-radius:10px;padding:10px 12px;font-weight:700;cursor:pointer}
+.btn-ghost{background:#fff;border:1px solid #ddd;color:#333;border-radius:10px;padding:10px 12px;font-weight:700;cursor:pointer}
+@media (max-width:520px){.grid2,.grid3{grid-template-columns:1fr}}
+
+.kpi-mini{margin-top:4px;font-size:11px;opacity:.8}
+
+.cell-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;font-size:12px;border:1px solid #ddd;background:#fafafa}
+.cell-badge.ok{border-color:#bfe5c8;background:#effaf2;color:#197a34}
+.cell-badge.warn{border-color:#ffd7a8;background:#fff4e6;color:#a85d00}
+.cell-badge.muted{opacity:.85}
+.kind-chip{display:inline-flex;align-items:center;justify-content:center;padding:4px 10px;border-radius:999px;font-weight:700;font-size:12px}
+.kind-auction{background:#ffe9d6;color:#b55400;border:1px solid #ffd0a6}
+.kind-gongmae{background:#e7f0ff;color:#0b4bb3;border:1px solid #c8ddff}
+.kind-realtor{background:#eaf8ef;color:#1b7a3a;border:1px solid #cbead6}
+
+.link{color:#0b4bb3;text-decoration:underline}

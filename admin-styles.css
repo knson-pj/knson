@@ -471,3 +471,9 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media (max-width:520px){.grid2,.grid3{grid-template-columns:1fr}}
+
+.summary-mini{display:block;margin-top:4px;font-size:11px;opacity:.8;font-style:normal}

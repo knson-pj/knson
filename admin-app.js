@@ -1,18 +1,14 @@
-// Admin app
-const APP_VERSION="20260227-1";
 (() => {
   "use strict";
 
-  const APP_VERSION_INNER = "20260227-1";
-  console.log(`[Admin] admin-app.js v${APP_VERSION_INNER} loaded`);
-
   const API_BASE = "https://knson.vercel.app/api";
-  const SESSION_KEY = "knson_bms_admin_session_v1";
+  const SESSION_KEY = "knson_bms_session_v1";
 
   const state = {
     session: loadSession(),
     activeTab: "properties",
     properties: [],
+    editingProperty: null,
     staff: [],
     offices: [],
     propertyFilters: {
@@ -109,65 +105,127 @@ const APP_VERSION="20260227-1";
       officePreviewEmpty: $("#officePreviewEmpty"),
       officeTableBody: $("#officeTable tbody"),
       officeEmpty: $("#officeEmpty"),
+      // property edit modal
+      propertyEditModalAdmin: $("#propertyEditModalAdmin"),
+      aemClose: $("#aemClose"),
+      aemCancel: $("#aemCancel"),
+      aemForm: $("#aemForm"),
+      aemSave: $("#aemSave"),
+      aemMsg: $("#aemMsg"),
+
     });
   }
 
   function bindEvents() {
-    // login modal
-    els.btnAdminLoginOpen.addEventListener("click", openLoginModal);
-    els.btnAdminLoginClose.addEventListener("click", closeLoginModal);
-    els.adminLoginModal.addEventListener("click", (e) => {
-      if (e.target?.dataset?.close === "true") closeLoginModal();
-    });
-    els.adminLoginForm.addEventListener("submit", onSubmitAdminLogin);
-    els.btnAdminLogout.addEventListener("click", logout);
+    // login / logout
+    if (els.btnAdminLoginOpen) els.btnAdminLoginOpen.addEventListener("click", goLoginPage);
+    if (els.btnAdminLogout) els.btnAdminLogout.addEventListener("click", logout);
 
     // tabs
-    els.adminTabs.addEventListener("click", (e) => {
-      const btn = e.target.closest(".tab");
-      if (!btn) return;
-      setActiveTab(btn.dataset.tab);
-    });
+    if (els.adminTabs) {
+      els.adminTabs.addEventListener("click", (e) => {
+        const btn = e.target.closest(".tab");
+        if (!btn) return;
+        const key = btn.dataset.tab;
+        const user = state.session?.user;
+        if (user?.role !== "admin" && key !== "properties") return;
+        setActiveTab(key);
+      });
+    }
 
     // properties
-    els.btnReloadProperties.addEventListener("click", loadAllCoreData);
-    els.propSourceFilter.addEventListener("change", () => {
-      state.propertyFilters.source = els.propSourceFilter.value;
+    if (els.btnReloadProperties) els.btnReloadProperties.addEventListener("click", loadProperties);
+    if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
+      state.propertyFilters.source = String(e.target.value || "");
       renderPropertiesTable();
+      renderSummary();
     });
-    els.propStatusFilter.addEventListener("change", () => {
-      state.propertyFilters.status = els.propStatusFilter.value;
+    if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
+      state.propertyFilters.status = String(e.target.value || "");
       renderPropertiesTable();
+      renderSummary();
     });
-    els.propKeyword.addEventListener("input", debounce(() => {
-      state.propertyFilters.keyword = els.propKeyword.value.trim().toLowerCase();
+    if (els.propKeyword) els.propKeyword.addEventListener("input", debounce((e) => {
+      state.propertyFilters.keyword = String(e.target.value || "").toLowerCase();
       renderPropertiesTable();
-    }, 120));
+      renderSummary();
+    }, 150));
 
-    // CSV import
-    els.btnCsvPreview.addEventListener("click", handleCsvPreview);
-    els.btnCsvUpload.addEventListener("click", handleCsvUpload);
+    // CSV import (관리자만)
+    if (els.btnCsvPreview) els.btnCsvPreview.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
+      handleCsvPreview();
+    });
+    if (els.btnCsvUpload) els.btnCsvUpload.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
+      handleCsvUpload();
+    });
 
-    // staff
-    els.staffForm.addEventListener("submit", handleSaveStaff);
-    els.btnStaffReset.addEventListener("click", resetStaffForm);
+    // staff/regions/offices (관리자만)
+    if (els.staffForm) els.staffForm.addEventListener("submit", (e) => {
+      if (state.session?.user?.role !== "admin") return;
+      onSubmitStaff(e);
+    });
+    if (els.btnStaffReset) els.btnStaffReset.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      resetStaffForm();
+    });
 
-    // regions
-    els.btnSuggestGrouping.addEventListener("click", handleSuggestGrouping);
-    els.btnSaveAssignments.addEventListener("click", handleSaveAssignments);
+    if (els.btnSuggestGrouping) els.btnSuggestGrouping.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      handleSuggestGrouping();
+    });
+    if (els.btnSaveAssignments) els.btnSaveAssignments.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      handleSaveAssignments();
+    });
 
-    // offices
-    els.btnOfficeCsvPreview.addEventListener("click", handleOfficeCsvPreview);
-    els.btnOfficeCsvUpload.addEventListener("click", handleOfficeCsvUpload);
-    els.btnReloadOffices.addEventListener("click", loadOffices);
+    if (els.btnOfficeCsvPreview) els.btnOfficeCsvPreview.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      handleOfficeCsvPreview();
+    });
+    if (els.btnOfficeCsvUpload) els.btnOfficeCsvUpload.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      handleOfficeCsvUpload();
+    });
+    if (els.btnReloadOffices) els.btnReloadOffices.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      loadOffices();
+    });
+
+    // property edit modal
+    if (els.propertyEditModalAdmin) {
+      els.propertyEditModalAdmin.addEventListener("click", (e) => {
+        const t = e.target;
+        if (t && t.dataset && t.dataset.close === "true") closePropertyEditModal();
+      });
+    }
+    if (els.aemClose) els.aemClose.addEventListener("click", closePropertyEditModal);
+    if (els.aemCancel) els.aemCancel.addEventListener("click", closePropertyEditModal);
+    if (els.aemForm) {
+      els.aemForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        savePropertyEditModal();
+      });
+    }
   }
 
-  async function ensureLoginThenLoad() {
+  async async function ensureLoginThenLoad() {
     const user = state.session?.user;
-    if (!user || user.role !== "admin") {
-      openLoginModal();
+    const loggedIn = !!(state.session?.token && user);
+
+    if (!loggedIn) {
+      goLoginPage();
       return;
     }
+
+    // 담당자: properties만
+    if (user.role !== "admin") {
+      setActiveTab("properties");
+      await loadProperties();
+      return;
+    }
+
     await loadAllCoreData();
   }
 
@@ -192,24 +250,35 @@ const APP_VERSION="20260227-1";
 
   function renderSessionUI() {
     const user = state.session?.user;
-    const isAdmin = !!user && user.role === "admin";
+    const loggedIn = !!(state.session?.token && user);
 
-    els.btnAdminLoginOpen.classList.toggle("hidden", isAdmin);
-    els.btnAdminLogout.classList.toggle("hidden", !isAdmin);
+    els.btnAdminLoginOpen?.classList.toggle("hidden", loggedIn);
+    els.btnAdminLogout?.classList.toggle("hidden", !loggedIn);
 
-    if (isAdmin) {
+    if (!loggedIn) {
+      els.adminUserBadge.textContent = "비로그인";
+      els.adminUserBadge.className = "badge badge-muted";
+      return;
+    }
+
+    if (user.role === "admin") {
       els.adminUserBadge.textContent = `관리자: ${user.name}`;
       els.adminUserBadge.className = "badge badge-admin";
     } else {
-      els.adminUserBadge.textContent = "비로그인";
-      els.adminUserBadge.className = "badge badge-muted";
+      els.adminUserBadge.textContent = `담당자: ${user.name}`;
+      els.adminUserBadge.className = "badge badge-agent";
     }
+
+    // 탭 권한: 담당자는 properties만
+    const isAdmin = user.role === "admin";
+    document.querySelectorAll("[data-tab]").forEach((btn) => {
+      const key = btn.getAttribute("data-tab");
+      if (!key) return;
+      btn.classList.toggle("hidden", !isAdmin && key !== "properties");
+    });
   }
 
-  function openLoginModal() {
-    els.adminLoginModal.classList.remove("hidden");
-    els.adminLoginModal.setAttribute("aria-hidden", "false");
-  }
+  function openLoginModal(){ goLoginPage(); }
 
   function closeLoginModal() {
     els.adminLoginModal.classList.add("hidden");
@@ -272,8 +341,11 @@ const APP_VERSION="20260227-1";
     }
   }
 
-  async function loadProperties() {
-    const res = await api("/admin/properties?scope=all", { auth: true });
+  async async function loadProperties() {
+    const user = state.session?.user;
+    const isAdmin = user?.role === "admin";
+    const path = isAdmin ? "/admin/properties?scope=all" : "/properties?scope=mine";
+    const res = await api(path, { auth: true });
     state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
     renderPropertiesTable();
     renderSummary();
@@ -295,20 +367,40 @@ const APP_VERSION="20260227-1";
   }
 
   function normalizeProperty(item) {
+    const rawSource = (item.sourceType || item.source || item.category || "").toString().toLowerCase();
+    const sourceType =
+      rawSource === "auction" ? "auction" :
+      rawSource === "gongmae" || rawSource === "onbid" ? "onbid" :
+      rawSource === "realtor" ? "realtor" :
+      rawSource === "general" ? "realtor" :
+      "realtor";
+
+    const itemNo = (item.itemNo || item.caseNo || item.externalId || item.listingId || "").toString().trim();
+    const address = (item.address || item.location || item.addr || "").toString().trim();
+
+    const latitude = toNumber(item.latitude ?? item.lat ?? item.y ?? "");
+    const longitude = toNumber(item.longitude ?? item.lng ?? item.x ?? "");
+
     return {
-      id: item.id || "",
-      source: item.source || "general",
-      address: item.address || "",
-      normalizedAddress: item.normalizedAddress || normalizeAddress(item.address || ""),
-      salePrice: Number(item.salePrice || 0),
-      status: item.status || "review",
-      assignedAgentId: item.assignedAgentId || null,
-      assignedAgentName: item.assignedAgentName || "",
+      id: (item.id || item._id || item.globalId || "").toString(),
+      globalId: (item.globalId || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")).toString(),
+      sourceType,
+      itemNo,
+      isGeneral: Boolean(item.isGeneral || item.source === "general" || item.origin === "general"),
+      address,
+      assetType: (item.assetType || item.type || item.propertyType || item.kind || "").toString().trim(),
+      priceMain: toNumber(item.priceMain ?? item.salePrice ?? item.price ?? item.appraisalPrice ?? 0),
+      status: (item.status || "").toString(),
+      latitude: Number.isFinite(latitude) ? latitude : null,
+      longitude: Number.isFinite(longitude) ? longitude : null,
+      assignedAgentId: item.assignedAgentId || item.assigneeId || null,
+      assignedAgentName: item.assignedAgentName || item.assigneeName || "",
+      createdAt: item.date || item.createdAt || "",
+      duplicateFlag: !!item.duplicateFlag,
       regionGu: item.regionGu || "",
       regionDong: item.regionDong || "",
-      duplicateFlag: !!item.duplicateFlag,
-      createdAt: item.createdAt || "",
       memo: item.memo || "",
+      _raw: item,
     };
   }
 
@@ -352,22 +444,40 @@ const APP_VERSION="20260227-1";
     const staff = state.staff;
     const offices = state.offices;
 
-    els.sumTotal.textContent = String(props.length);
-    els.sumAuction.textContent = String(props.filter(p => p.source === "auction").length);
-    els.sumGongmae.textContent = String(props.filter(p => p.source === "gongmae").length);
-    els.sumGeneral.textContent = String(props.filter(p => p.source === "general").length);
-    els.sumAgents.textContent = String(staff.filter(s => s.role === "agent").length);
-    els.sumOffices.textContent = String(offices.length);
+    if (els.sumTotal) els.sumTotal.textContent = String(props.length);
+    if (els.sumAuction) els.sumAuction.textContent = String(props.filter(p => p.sourceType === "auction").length);
+    if (els.sumGongmae) els.sumGongmae.textContent = String(props.filter(p => p.sourceType === "onbid").length);
+    if (els.sumGeneral) els.sumGeneral.textContent = String(props.filter(p => p.sourceType === "realtor").length);
+
+    const generalCnt = props.filter(p => p.isGeneral).length;
+    const mini = document.getElementById("sumGeneralFlag");
+    if (mini) mini.textContent = `일반 ${generalCnt}`;
+
+    if (els.sumAgents) els.sumAgents.textContent = String(staff.filter(s => s.role === "agent").length);
+    if (els.sumOffices) els.sumOffices.textContent = String(offices.length);
   }
 
   function getFilteredProperties() {
     const f = state.propertyFilters;
+    const kw = (f.keyword || "").toLowerCase().trim();
+
     return state.properties.filter((p) => {
-      if (f.source && p.source !== f.source) return false;
-      if (f.status && p.status !== f.status) return false;
-      if (f.keyword) {
-        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong].join(" ").toLowerCase();
-        if (!hay.includes(f.keyword)) return false;
+      if (f.source && p.sourceType !== f.source) return false;
+      if (f.status) {
+        // exact match for status codes if stored; otherwise substring
+        if ((p.status || "") !== f.status && !(p.status || "").includes(f.status)) return false;
+      }
+      if (kw) {
+        const hay = [
+          p.itemNo,
+          p.address,
+          p.assetType,
+          p.assignedAgentName,
+          p.regionGu,
+          p.regionDong,
+          p.status,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(kw)) return false;
       }
       return true;
     });
@@ -386,20 +496,239 @@ const APP_VERSION="20260227-1";
     const frag = document.createDocumentFragment();
     for (const p of rows) {
       const tr = document.createElement("tr");
+
+      const kindLabel = p.sourceType === "auction" ? "경매" : p.sourceType === "onbid" ? "공매" : "중개";
+      const general = p.isGeneral ? '<span class="cell-badge danger">일반</span>' : '-';
+
       tr.innerHTML = `
-        <td>${escapeHtml(sourceLabel(p.source))}</td>
-        <td>${escapeHtml(p.address)}</td>
-        <td>${formatMoneyKRW(p.salePrice)}</td>
-        <td>${escapeHtml(statusLabel(p.status))}</td>
+        <td>${escapeHtml(p.itemNo || "-")}</td>
+        <td>${escapeHtml(kindLabel)}</td>
+        <td>${general}</td>
+        <td>${escapeHtml(p.address || "-")}</td>
+        <td>${escapeHtml(p.assetType || "-")}</td>
+        <td>${p.priceMain ? formatMoneyKRW(p.priceMain) : "-"}</td>
+        <td>${escapeHtml(statusLabel(p.status) || p.status || "-")}</td>
+        <td>${p.latitude != null ? escapeHtml(String(p.latitude)) : '<span class="cell-badge warn">필요</span>'}</td>
+        <td>${p.longitude != null ? escapeHtml(String(p.longitude)) : '<span class="cell-badge warn">필요</span>'}</td>
         <td>${escapeHtml(p.assignedAgentName || "미배정")}</td>
-        <td>${escapeHtml([p.regionGu, p.regionDong].filter(Boolean).join(" / ") || "-")}</td>
-        <td>${p.duplicateFlag ? '<span class="cell-badge danger">중복</span>' : '<span class="cell-badge ok">정상</span>'}</td>
-        <td>${escapeHtml(formatDate(p.createdAt))}</td>
+        <td>${escapeHtml(formatDate(p.createdAt) || "-")}</td>
       `;
+
+      tr.addEventListener("click", () => openPropertyEditModal(p));
       frag.appendChild(tr);
     }
     els.propertiesTableBody.appendChild(frag);
   }
+
+  // ---------------------------
+  // Property Edit Modal
+  // ---------------------------
+  function openPropertyEditModal(item) {
+    if (!els.propertyEditModalAdmin || !els.aemForm) return;
+
+    const user = state.session?.user;
+    const isAdmin = user?.role === "admin";
+
+    // 담당자: 본인 물건만
+    if (!isAdmin) {
+      const myId = user?.id || "";
+      const assignedId = item.assignedAgentId || "";
+      if (assignedId && myId && assignedId !== myId) {
+        alert("본인에게 배정된 물건만 수정할 수 있습니다.");
+        return;
+      }
+    }
+
+    state.editingProperty = item;
+
+    const f = els.aemForm;
+    const setVal = (name, v) => {
+      const el = f.elements[name];
+      if (!el) return;
+      el.value = v == null ? "" : String(v);
+    };
+
+    setVal("itemNo", item.itemNo);
+    setVal("sourceType", item.sourceType);
+    setVal("isGeneral", item.isGeneral ? "true" : "false");
+    setVal("assignedAgentName", item.assignedAgentName);
+    setVal("address", item.address);
+    setVal("assetType", item.assetType);
+    setVal("exclusivearea", item.exclusivearea ?? "");
+    setVal("commonarea", item.commonarea ?? "");
+    setVal("sitearea", item.sitearea ?? "");
+    setVal("useapproval", item.useapproval ?? "");
+    setVal("status", item.status ?? "");
+    setVal("priceMain", item.priceMain ?? "");
+    setVal("dateMain", item.dateMain ?? "");
+    setVal("sourceUrl", item.sourceUrl ?? "");
+    setVal("memo", item.memo ?? "");
+    setVal("latitude", item.latitude ?? "");
+    setVal("longitude", item.longitude ?? "");
+
+    // 담당자: 빈 값만
+    const hasText = (v) => v != null && String(v).trim() !== "";
+    const hasNum = (v) => v != null && String(v).trim() !== "" && !Number.isNaN(Number(v));
+
+    const lockIfHas = (name, has) => {
+      const el = f.elements[name];
+      if (!el) return;
+      el.disabled = !isAdmin && has;
+    };
+
+    lockIfHas("itemNo", hasText(item.itemNo));
+    lockIfHas("address", hasText(item.address));
+    lockIfHas("assetType", hasText(item.assetType));
+    lockIfHas("exclusivearea", hasNum(item.exclusivearea));
+    lockIfHas("commonarea", hasNum(item.commonarea));
+    lockIfHas("sitearea", hasNum(item.sitearea));
+    lockIfHas("useapproval", hasText(item.useapproval));
+    lockIfHas("status", hasText(item.status));
+    lockIfHas("priceMain", hasNum(item.priceMain));
+    lockIfHas("dateMain", hasText(item.dateMain));
+    lockIfHas("sourceUrl", hasText(item.sourceUrl));
+    lockIfHas("memo", hasText(item.memo));
+    lockIfHas("latitude", hasNum(item.latitude));
+    lockIfHas("longitude", hasNum(item.longitude));
+
+    // 관리자 전용 필드
+    if (f.elements["sourceType"]) f.elements["sourceType"].disabled = !isAdmin;
+    if (f.elements["isGeneral"]) f.elements["isGeneral"].disabled = !isAdmin;
+    if (f.elements["assignedAgentName"]) f.elements["assignedAgentName"].disabled = !isAdmin;
+
+    setAemMsg("");
+    els.propertyEditModalAdmin.classList.remove("hidden");
+    els.propertyEditModalAdmin.setAttribute("aria-hidden", "false");
+  }
+
+  function closePropertyEditModal() {
+    if (!els.propertyEditModalAdmin) return;
+    els.propertyEditModalAdmin.classList.add("hidden");
+    els.propertyEditModalAdmin.setAttribute("aria-hidden", "true");
+    state.editingProperty = null;
+    setAemMsg("");
+  }
+
+  function setAemMsg(text, isError = true) {
+    if (!els.aemMsg) return;
+    els.aemMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
+    els.aemMsg.textContent = text || "";
+  }
+
+  async function savePropertyEditModal() {
+    const item = state.editingProperty;
+    if (!item || !els.aemForm) return;
+
+    const user = state.session?.user;
+    const isAdmin = user?.role === "admin";
+
+    const fd = new FormData(els.aemForm);
+    const readStr = (k) => String(fd.get(k) || "").trim();
+    const readNum = (k) => {
+      const v = String(fd.get(k) || "").trim();
+      if (!v) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const patch = {
+      id: item.id || "",
+      globalId: item.globalId || "",
+      itemNo: readStr("itemNo") || null,
+      sourceType: readStr("sourceType") || null,
+      isGeneral: readStr("isGeneral") === "true",
+      assignedAgentName: readStr("assignedAgentName") || null,
+      address: readStr("address") || null,
+      assetType: readStr("assetType") || null,
+      exclusivearea: readNum("exclusivearea"),
+      commonarea: readNum("commonarea"),
+      sitearea: readNum("sitearea"),
+      useapproval: readStr("useapproval") || null,
+      status: readStr("status") || null,
+      priceMain: readNum("priceMain"),
+      dateMain: readStr("dateMain") || null,
+      sourceUrl: readStr("sourceUrl") || null,
+      memo: readStr("memo") || null,
+      latitude: readNum("latitude"),
+      longitude: readNum("longitude"),
+    };
+
+    if (!isAdmin) {
+      // 빈 값만
+      const allowIfEmpty = (k, oldVal) => {
+        const v = patch[k];
+        const isEmptyOld = oldVal == null || String(oldVal).trim() === "";
+        const isEmptyOldNum = oldVal == null || String(oldVal).trim() === "" || Number.isNaN(Number(oldVal));
+        const ok = (typeof v === "number") ? isEmptyOldNum : isEmptyOld;
+        if (!ok) delete patch[k];
+      };
+      allowIfEmpty("itemNo", item.itemNo);
+      allowIfEmpty("address", item.address);
+      allowIfEmpty("assetType", item.assetType);
+      allowIfEmpty("exclusivearea", item.exclusivearea);
+      allowIfEmpty("commonarea", item.commonarea);
+      allowIfEmpty("sitearea", item.sitearea);
+      allowIfEmpty("useapproval", item.useapproval);
+      allowIfEmpty("status", item.status);
+      allowIfEmpty("priceMain", item.priceMain);
+      allowIfEmpty("dateMain", item.dateMain);
+      allowIfEmpty("sourceUrl", item.sourceUrl);
+      allowIfEmpty("memo", item.memo);
+      allowIfEmpty("latitude", item.latitude);
+      allowIfEmpty("longitude", item.longitude);
+      delete patch.sourceType;
+      delete patch.isGeneral;
+      delete patch.assignedAgentName;
+    }
+
+    const targetId = patch.id || patch.globalId;
+    if (!targetId) {
+      setAemMsg("저장 실패: 물건 식별자(id)가 없습니다.");
+      return;
+    }
+
+    try {
+      if (els.aemSave) els.aemSave.disabled = true;
+      setAemMsg("");
+
+      await updatePropertyAdmin(targetId, patch, isAdmin);
+
+      setAemMsg("저장 완료", false);
+      closePropertyEditModal();
+      await loadProperties();
+    } catch (err) {
+      console.error(err);
+      setAemMsg(err?.message || "저장 실패");
+    } finally {
+      if (els.aemSave) els.aemSave.disabled = false;
+    }
+  }
+
+  async function updatePropertyAdmin(targetId, patch, isAdmin) {
+    const candidates = [];
+    if (isAdmin) {
+      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PATCH" });
+      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PUT" });
+    }
+    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: "PATCH" });
+    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: "PUT" });
+    candidates.push({ path: `/properties/update`, method: "POST" });
+    candidates.push({ path: `/admin/properties/update`, method: "POST" });
+
+    let lastErr = null;
+    for (const c of candidates) {
+      try {
+        await api(c.path, { method: c.method, auth: true, body: patch });
+        return;
+      } catch (e) {
+        lastErr = e;
+        const msg = String(e?.message || "");
+        if (msg.includes("404") || msg.includes("405") || msg.includes("not found")) continue;
+      }
+    }
+    throw lastErr || new Error("저장 실패");
+  }
+
 
   function renderStaffTable() {
     els.staffTableBody.innerHTML = "";
@@ -599,13 +928,15 @@ const APP_VERSION="20260227-1";
   // ---------------------------
   // CSV Import (Properties)
   // ---------------------------
-  async function handleCsvPreview() {
+  async async function handleCsvPreview() {
     try {
       const file = els.csvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
+      const sourceType = String(els.csvImportSource.value || "auction"); // auction|onbid|realtor
+
       const text = await file.text();
       const rows = parseCsv(text);
-      state.csvPreviewRows = rows.map(mapPropertyCsvRow).filter(Boolean);
+      state.csvPreviewRows = rows.map((r) => mapPropertyCsvRow(r, sourceType)).filter(Boolean);
 
       renderCsvPreviewTable();
       showResultBox(els.csvResultBox, `미리보기 완료: ${state.csvPreviewRows.length}행`);
@@ -628,29 +959,37 @@ const APP_VERSION="20260227-1";
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${idx + 1}</td>
-        <td>${escapeHtml(r.address)}</td>
-        <td>${formatMoneyKRW(r.salePrice)}</td>
-        <td>${escapeHtml(statusLabel(r.status))}</td>
-        <td>${escapeHtml(r.regionGu || "-")}</td>
-        <td>${escapeHtml(r.regionDong || "-")}</td>
+        <td>${escapeHtml(r.itemNo || "-")}</td>
+        <td>${escapeHtml(r.address || "-")}</td>
+        <td>${r.priceMain ? formatMoneyKRW(r.priceMain) : "-"}</td>
+        <td>${escapeHtml(r.status || "-")}</td>
+        <td>${r.latitude != null ? escapeHtml(String(r.latitude)) : "-"}</td>
+        <td>${r.longitude != null ? escapeHtml(String(r.longitude)) : "-"}</td>
       `;
       frag.appendChild(tr);
     });
     els.csvPreviewTableBody.appendChild(frag);
   }
 
-  async function handleCsvUpload() {
+  async async function handleCsvUpload() {
     try {
       const file = els.csvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
-      const source = els.csvImportSource.value;
+
+      const sourceType = String(els.csvImportSource.value || "auction"); // auction|onbid|realtor
+      const source =
+        sourceType === "auction" ? "auction" :
+        sourceType === "onbid" ? "gongmae" :
+        "general"; // realtor는 레거시 general로 전송
+
       const csvText = await file.text();
 
       const res = await api("/admin/import/properties-csv", {
         method: "POST",
         auth: true,
         body: {
-          source,        // auction | gongmae
+          source,         // legacy
+          sourceType,     // new
           csvText,
           dedupeKey: "address",
         },
@@ -671,7 +1010,7 @@ const APP_VERSION="20260227-1";
     }
   }
 
-  function mapPropertyCsvRow(row) {
+  function mapPropertyCsvRow(row, sourceType) {
     const pick = (...keys) => {
       for (const k of keys) {
         if (row[k] != null && String(row[k]).trim() !== "") return String(row[k]).trim();
@@ -679,26 +1018,40 @@ const APP_VERSION="20260227-1";
       return "";
     };
 
-    const address = pick("address", "주소");
-    if (!address) return null;
+    const toNum = (v) => Number(String(v || "").replace(/[^\d.-]/g, "")) || 0;
 
-    const salePrice = Number(
-      pick("sale_price", "매각가", "매각가(원)", "매각가격").replace(/[^\d.-]/g, "")
-    ) || 0;
+    let itemNo = "";
+    let address = "";
+    let status = "";
+    let priceMain = 0;
+    let latitude = null;
+    let longitude = null;
 
-    const statusRaw = pick("status", "상태").toLowerCase();
-    const status = normalizeStatus(statusRaw);
+    if (sourceType === "auction") {
+      itemNo = pick("사건번호", "itemNo", "caseNo", "물건번호");
+      address = pick("주소(시군구동)", "주소", "소재지", "address");
+      status = pick("진행상태", "상태", "status");
+      priceMain = toNum(pick("감정가", "감정가(원)", "최저가", "priceMain"));
+    } else if (sourceType === "onbid") {
+      itemNo = pick("물건관리번호", "itemNo", "물건번호");
+      address = pick("소재지", "주소", "address");
+      status = pick("물건상태", "상태", "status");
+      priceMain = toNum(pick("감정가(원)", "감정가", "최저입찰가(원)", "priceMain"));
+    } else {
+      // realtor
+      itemNo = pick("매물ID", "itemNo", "물건번호");
+      address = pick("주소(통합)", "도로명주소", "지번주소", "주소", "address");
+      status = pick("거래유형", "status"); // 없으면 빈 값
+      priceMain = toNum(pick("가격(원)", "가격(원본)", "매매가", "priceMain"));
+      const lat = pick("위도", "latitude", "lat");
+      const lng = pick("경도", "longitude", "lng");
+      latitude = lat ? Number(lat) : null;
+      longitude = lng ? Number(lng) : null;
+    }
 
-    const regionGu = pick("region_gu", "구") || extractGuDong(address).gu || "";
-    const regionDong = pick("region_dong", "동") || extractGuDong(address).dong || "";
+    if (!address && !itemNo) return null;
 
-    return {
-      address,
-      salePrice,
-      status,
-      regionGu,
-      regionDong,
-    };
+    return { itemNo, address, status, priceMain, latitude, longitude };
   }
 
   // ---------------------------
@@ -1159,21 +1512,11 @@ const APP_VERSION="20260227-1";
     const hasBody = !["GET", "HEAD"].includes(method);
     if (hasBody) headers["Content-Type"] = "application/json";
 
-    let res;
-    try {
-      res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
       body: hasBody ? JSON.stringify(options.body || {}) : undefined,
-      // CORS: cross-origin에서 쿠키/세션을 보내지 않음(서버에 Allow-Credentials 설정이 없으면 include는 차단됨)
-      credentials: "omit",
-      mode: "cors",
     });
-    } catch (e) {
-      // CORS/네트워크 레벨에서 막히면 여기로 옴
-      throw new Error("네트워크/CORS 오류로 API에 접근할 수 없습니다. (API CORS 설정 또는 credentials 포함 여부를 확인)" );
-    }
-
 
     const text = await res.text();
     let data = null;
@@ -1293,104 +1636,12 @@ const APP_VERSION="20260227-1";
     return document.querySelector(sel);
   }
 
-  
-  function safeJsonParse(v) {
-    try { return JSON.parse(v); } catch { return null; }
+  function goLoginPage() {
+    const next = encodeURIComponent("./admin-index.html");
+    location.href = `./login.html?next=${next}`;
   }
 
-  function looksLikeJwt(t) {
-    return typeof t === "string" && /^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+$/.test(t);
-  }
-
-  function decodeJwtPayload(token) {
-    if (!looksLikeJwt(token)) return null;
-    try {
-      const base64Url = token.split(".")[1];
-      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((base64Url.length + 3) % 4);
-      const jsonStr = decodeURIComponent(atob(base64).split("").map(c => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join(""));
-      return safeJsonParse(jsonStr);
-    } catch {
-      return null;
-    }
-  }
-
-  function extractSessionFromValue(raw, keyHint = "") {
-    if (!raw) return null;
-
-    // 1) JSON 형태
-    const obj = typeof raw === "string" ? safeJsonParse(raw) : raw;
-    if (obj && typeof obj === "object") {
-      const token = obj.token || obj.accessToken || obj.jwt || obj.idToken;
-      const user = obj.user || obj.me || obj.profile || null;
-
-      if (token && typeof token === "string") {
-        let role = user?.role || user?.type || null;
-        let name = user?.name || user?.username || user?.id || null;
-
-        // JWT payload에서 role/name 추론
-        const payload = decodeJwtPayload(token);
-        if (payload) {
-          role = role || payload.role || payload.type || payload.userRole || null;
-          name = name || payload.name || payload.username || payload.userName || payload.sub || null;
-        }
-
-        // role이 없으면 키 힌트로 최소 추론(서버가 최종 권한 체크)
-        if (!role) role = /admin/i.test(keyHint) ? "admin" : "agent";
-        if (!name) name = "사용자";
-
-        return { token, user: { name, role } };
-      }
-    }
-
-    // 2) 문자열 토큰만 저장된 경우(JWT 등)
-    if (typeof raw === "string") {
-      const t = raw.trim();
-      if (looksLikeJwt(t) || t.length > 20) {
-        const payload = decodeJwtPayload(t);
-        let role = payload?.role || payload?.type || null;
-        let name = payload?.name || payload?.username || payload?.sub || null;
-        if (!role) role = /admin/i.test(keyHint) ? "admin" : "agent";
-        if (!name) name = "사용자";
-        return { token: t, user: { name, role } };
-      }
-    }
-
-    return null;
-  }
-
-  function tryRestoreSessionFromStorages() {
-    // 이미 세션이 있으면 스킵
-    if (state.session?.token && state.session?.user) return false;
-
-    const stores = [localStorage, sessionStorage];
-    const hitKeys = [];
-
-    for (const store of stores) {
-      if (!store) continue;
-      for (let i = 0; i < store.length; i++) {
-        const k = store.key(i);
-        if (!k) continue;
-        const lk = k.toLowerCase();
-        // admin 세션키는 제외(이미 loadSession에서 처리)
-        if (lk === SESSION_KEY.toLowerCase()) continue;
-
-        if (!/(token|auth|session|login|user)/i.test(lk)) continue;
-
-        const v = store.getItem(k);
-        const sess = extractSessionFromValue(v, k);
-        if (sess?.token) {
-          state.session = sess;
-          saveSession(state.session); // 우리 세션키로 통일 저장
-          hitKeys.push(k);
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
-function loadSession() {
+  function loadSession() {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
