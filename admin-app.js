@@ -210,7 +210,7 @@
     }
   }
 
-  async async function ensureLoginThenLoad() {
+  async function ensureLoginThenLoad() {
     const user = state.session?.user;
     const loggedIn = !!(state.session?.token && user);
 
@@ -341,7 +341,7 @@
     }
   }
 
-  async async function loadProperties() {
+  async function loadProperties() {
     const user = state.session?.user;
     const isAdmin = user?.role === "admin";
     const path = isAdmin ? "/admin/properties?scope=all" : "/properties?scope=mine";
@@ -928,7 +928,7 @@
   // ---------------------------
   // CSV Import (Properties)
   // ---------------------------
-  async async function handleCsvPreview() {
+  async function handleCsvPreview() {
     try {
       const file = els.csvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
@@ -971,7 +971,7 @@
     els.csvPreviewTableBody.appendChild(frag);
   }
 
-  async async function handleCsvUpload() {
+  async function handleCsvUpload() {
     try {
       const file = els.csvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
