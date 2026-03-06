@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>부동산 매입 관리 시스템</title>
+  <meta name="supabase-url" content="" />
+  <meta name="supabase-anon-key" content="" />
 
   <!-- 카카오 JavaScript 키 (Kakao Developers에서 발급) -->
   <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
@@ -68,8 +70,7 @@
       </button>
 
       <button id="statGeneralCard" class="kpi-card kpi-general" type="button">
-        <div class="kpi-label">중개</div>
-        <div class="kpi-mini" id="statGeneralFlagMini">일반 0</div>
+        <div class="kpi-label">일반</div>
         <div class="kpi-num" id="statGeneral">0</div>
       </button>
     </section>
@@ -116,24 +117,20 @@
           <table class="table">
             <thead>
               <tr>
-                <th>물건번호</th>
                 <th>구분</th>
-                <th>일반</th>
-                <th>주소</th>
-                <th>부동산유형</th>
-                <th>공용면적(평)</th>
-                <th>전용면적(평)</th>
-                <th>토지면적(평)</th>
-                <th>사용승인일</th>
-                <th>진행상태</th>
-                <th>기준금액</th>
-                <th>주요일정</th>
-                <th>원문링크</th>
-                <th>메모</th>
-                <th>위도</th>
-                <th>경도</th>
+                <th>소재지</th>
+                <th>종류</th>
+                <th>층수</th>
+                <th>전용면적<br/>(평)</th>
+                <th>감정가<br/>(매각가)</th>
+                <th>현재가격</th>
+                <th>비율</th>
+                <th>입찰일</th>
                 <th>등록일</th>
                 <th>담당자</th>
+                <th>관리<br/>분석</th>
+                <th>현장<br/>실사</th>
+                <th>의견</th>
               </tr>
             </thead>
             <tbody id="tableBody"></tbody>
@@ -146,124 +143,8 @@
     </main>
   </div>
 
-  
-  <!-- 물건 편집 모달 (담당자: 빈 값만 입력 / 관리자: 전체 수정 가능) -->
-  <div id="propertyEditModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pemTitle">
-      <div class="modal-header">
-        <h3 id="pemTitle">물건 정보 수정</h3>
-        <button id="pemClose" class="icon-btn" type="button" aria-label="닫기">✕</button>
-      </div>
-      <form id="pemForm" class="modal-body">
-        <div class="grid2">
-          <label class="field">
-            <span>물건번호</span>
-            <input name="itemNo" class="input" type="text" placeholder="예) 2024타경12345" />
-          </label>
-          <label class="field">
-            <span>구분</span>
-            <select name="sourceType" class="select">
-              <option value="auction">경매</option>
-              <option value="onbid">공매</option>
-              <option value="realtor">중개</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="grid2">
-          <label class="field">
-            <span>일반(누구나)</span>
-            <select name="isGeneral" class="select">
-              <option value="false">아님</option>
-              <option value="true">일반</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>담당자</span>
-            <input name="assignedAgentName" class="input" type="text" placeholder="(관리자만 변경 가능)" />
-          </label>
-        </div>
-
-        <label class="field">
-          <span>주소</span>
-          <input name="address" class="input" type="text" placeholder="주소(통합)" />
-        </label>
-
-        <div class="grid2">
-          <label class="field">
-            <span>부동산유형</span>
-            <input name="assetType" class="input" type="text" placeholder="예) 근린생활시설" />
-          </label>
-          <label class="field">
-            <span>사용승인일</span>
-            <input name="useapproval" class="input" type="text" placeholder="예) 2009-03-12" />
-          </label>
-        </div>
-
-        <div class="grid3">
-          <label class="field">
-            <span>공용면적(평)</span>
-            <input name="exclusivearea" class="input" type="number" step="0.01" />
-          </label>
-          <label class="field">
-            <span>전용면적(평)</span>
-            <input name="commonarea" class="input" type="number" step="0.01" />
-          </label>
-          <label class="field">
-            <span>토지면적(평)</span>
-            <input name="sitearea" class="input" type="number" step="0.01" />
-          </label>
-        </div>
-
-        <div class="grid2">
-          <label class="field">
-            <span>진행상태</span>
-            <input name="status" class="input" type="text" placeholder="예) 유찰 2회 / 낙찰 / 진행중" />
-          </label>
-          <label class="field">
-            <span>기준금액(원)</span>
-            <input name="priceMain" class="input" type="number" step="1" />
-          </label>
-        </div>
-
-        <div class="grid2">
-          <label class="field">
-            <span>주요일정</span>
-            <input name="dateMain" class="input" type="text" placeholder="예) 2026-03-04 또는 2026-03-04 17:00" />
-          </label>
-          <label class="field">
-            <span>원문링크</span>
-            <input name="sourceUrl" class="input" type="url" placeholder="https://..." />
-          </label>
-        </div>
-
-        <label class="field">
-          <span>메모</span>
-          <textarea name="memo" class="textarea" rows="3" placeholder="상세/툴팁용"></textarea>
-        </label>
-
-        <div class="grid2">
-          <label class="field">
-            <span>위도</span>
-            <input name="latitude" class="input" type="number" step="0.0000001" />
-          </label>
-          <label class="field">
-            <span>경도</span>
-            <input name="longitude" class="input" type="number" step="0.0000001" />
-          </label>
-        </div>
-
-        <div class="modal-actions">
-          <button id="pemSave" class="btn-primary" type="submit">저장</button>
-          <button id="pemCancel" class="btn-ghost" type="button">취소</button>
-        </div>
-
-        <div id="pemMsg" class="form-msg" aria-live="polite"></div>
-      </form>
-    </div>
-  </div>
-
-  <script src="./app.js?v=20260305-1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./knson-core.js?v=20260306-1"></script>
+  <script src="./app.js?v=20260306-1"></script>
 </body>
 </html>

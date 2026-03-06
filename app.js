@@ -10,9 +10,8 @@
   const state = {
     session: loadSession(),
     items: [],
-    editingItem: null,
     view: "text", // text | map
-    source: "all", // all | auction | onbid | realtor
+    source: "all", // all | auction | gongmae | general
     keyword: "",
     status: "",
 
@@ -28,7 +27,22 @@
 
   document.addEventListener("DOMContentLoaded", init);
 
+  const K = window.KNSN || null;
+
   function init() {
+    // Keep session when moving to admin page (prevents pagehide auto-logout)
+    try {
+      const adminLink = document.querySelector(".admin-link");
+      if (adminLink) {
+        adminLink.addEventListener("click", () => {
+          if (K && typeof K.setKeepSessionOnce === "function") K.setKeepSessionOnce();
+          else {
+            try { sessionStorage.setItem("knson_nav_keep_session","1"); setTimeout(()=>{try{sessionStorage.removeItem("knson_nav_keep_session")}catch{}},15000); } catch {}
+          }
+        }, { capture: true });
+      }
+    } catch {}
+
     cacheEls();
 
     // 내부 페이지 이동(관리자페이지 등) 시에는 자동 로그아웃을 스킵하기 위한 플래그
@@ -59,7 +73,6 @@
     els.statAuction = document.getElementById("statAuction");
     els.statGongmae = document.getElementById("statGongmae");
     els.statGeneral = document.getElementById("statGeneral");
-    els.statGeneralFlagMini = document.getElementById("statGeneralFlagMini");
 
     els.statTotalCard = document.getElementById("statTotalCard");
     els.statAuctionCard = document.getElementById("statAuctionCard");
@@ -84,16 +97,7 @@
     els.searchKeyword = document.getElementById("searchKeyword");
     els.filterStatus = document.getElementById("filterStatus");
     els.btnRefresh = document.getElementById("btnRefresh");
-  
-    // Edit modal
-    els.propertyEditModal = document.getElementById("propertyEditModal");
-    els.pemClose = document.getElementById("pemClose");
-    els.pemCancel = document.getElementById("pemCancel");
-    els.pemForm = document.getElementById("pemForm");
-    els.pemSave = document.getElementById("pemSave");
-    els.pemMsg = document.getElementById("pemMsg");
-
-}
+  }
 
   function bindEvents() {
     // 방어: DOM 구조가 바뀌어도 에러 안 나게
@@ -193,24 +197,7 @@
       try { keep = sessionStorage.getItem("knson_nav_keep_session") === "1"; } catch {}
       if (!keep) clearSession();
     });
-  
-    // Edit modal events
-    if (els.propertyEditModal) {
-      els.propertyEditModal.addEventListener("click", (e) => {
-        const t = e.target;
-        if (t && t.dataset && t.dataset.close === "true") showModal(false);
-      });
-    }
-    if (els.pemClose) els.pemClose.addEventListener("click", () => showModal(false));
-    if (els.pemCancel) els.pemCancel.addEventListener("click", () => showModal(false));
-    if (els.pemForm) {
-      els.pemForm.addEventListener("submit", (e) => {
-        e.preventDefault();
-        saveEditModal();
-      });
-    }
-
-}
+  }
 
   function setView(view) {
     state.view = view;
@@ -269,105 +256,76 @@
   }
 
   function normalizeItem(p) {
-    // 서버 레거시 필드 호환: p.source(auction/gongmae/general) -> sourceType(auction/onbid/realtor)
-    const rawSource = (p.sourceType || p.source || p.category || "").toString().toLowerCase();
-    const sourceType =
-      rawSource === "auction" ? "auction" :
-      rawSource === "gongmae" || rawSource === "onbid" ? "onbid" :
-      rawSource === "realtor" ? "realtor" :
-      rawSource === "general" ? "realtor" :
-      "realtor";
-
-    const itemNo = (p.itemNo || p.caseNo || p.item_id || p.listingId || p.externalId || "").toString().trim();
-
-    const address = (p.address || p.location || p.addr || "").toString().trim();
-
-    const latitude = toNumber(p.latitude ?? p.lat ?? p.y ?? "");
-    const longitude = toNumber(p.longitude ?? p.lng ?? p.lon ?? p.x ?? "");
-
-    const priceMain = toNumber(p.priceMain ?? p.salePrice ?? p.price ?? p.appraisalPrice ?? p.appraisal ?? 0);
-    const dateMain = (p.dateMain || p.bidDate || p.bidEndAt || "").toString().trim();
-    const createdAt = p.date || p.createdAt || p.created || "";
-
-    const memo = (p.memo || "").toString();
+    const source = p.source || p.category || "general"; // auction | gongmae | general
+    const address = p.address || p.location || "";
 
     return {
-      // identifiers
-      id: (p.id || p._id || p.globalId || "").toString(),
-      globalId: (p.globalId || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")).toString(),
-      // standard
-      itemNo,
-      sourceType,
-      isGeneral: Boolean(p.isGeneral || p.source === "general" || p.origin === "general"),
+      id: p.id || "",
+      source,
       address,
-      assetType: (p.assetType || p.type || p.propertyType || p.kind || "").toString().trim(),
-      exclusivearea: toNumber(p.exclusivearea ?? p.exclusiveArea ?? p.commonAreaPy ?? p.publicAreaPy ?? ""),
-      commonarea: toNumber(p.commonarea ?? p.commonArea ?? p.privateAreaPy ?? p.areaPyeong ?? p.areaPy ?? ""),
-      sitearea: toNumber(p.sitearea ?? p.siteArea ?? p.landAreaPy ?? ""),
-      useapproval: (p.useapproval || p.useApproval || p.approvalDate || "").toString().trim(),
-      status: (p.status || "").toString().trim(),
-      priceMain,
-      dateMain,
-      sourceUrl: (p.sourceUrl || p.url || p.sourceURL || "").toString().trim(),
-      memo,
-      latitude: Number.isFinite(latitude) ? latitude : null,
-      longitude: Number.isFinite(longitude) ? longitude : null,
-      date: createdAt,
-      // assignment
-      assignedAgentId: (p.assignedAgentId || p.assigneeId || "").toString(),
-      assignedAgentName: (p.assignedAgentName || p.assigneeName || "").toString(),
-      // region hints (optional)
-      regionGu: (p.regionGu || "").toString(),
-      regionDong: (p.regionDong || "").toString(),
-      // raw keep
-      _raw: p,
+      // 테이블
+      type: p.type || p.propertyType || p.kind || "-",
+      floor: p.floor || p.floorText || "-",
+      areaPyeong: toAreaPy(p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
+      appraisalPrice: toNumber(p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price),
+      currentPrice: toNumber(p.currentPrice ?? p.current_price),
+      bidDate: p.bidDate || p.bid_date || "-",
+      createdAt: p.createdAt || p.created_at || "",
+      assignedAgentName: p.assignedAgentName || p.agentName || p.manager || "-",
+      analysisDone: !!(p.analysisDone ?? p.analysis_done),
+      fieldDone: !!(p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done),
+      memo: p.memo || p.comment || "",
+      status: p.status || "", // optional
+      regionGu: p.regionGu || "",
+      regionDong: p.regionDong || "",
     };
   }
 
   // ---- Render ----
   function getFilteredRows() {
-    let rows = state.items.slice();
+    let list = state.items.slice();
 
-    // sourceType filter
-    if (state.source && state.source !== "all") {
-      rows = rows.filter((p) => p.sourceType === state.source);
+    if (state.source !== "all") {
+      list = list.filter((p) => p.source === state.source);
     }
 
-    // status filter (문자열 포함)
-    const st = (state.status || "").trim();
-    if (st) rows = rows.filter((p) => (p.status || "").includes(st));
+    if (state.status) {
+      list = list.filter((p) => String(p.status || "") === state.status);
+    }
 
-    // keyword filter (주소/담당자/물건번호)
-    const kw = (state.keyword || "").trim().toLowerCase();
-    if (kw) {
-      rows = rows.filter((p) => {
-        const blob = [
-          p.itemNo,
-          p.address,
-          p.assetType,
-          p.assignedAgentName,
-          p.status,
-        ].filter(Boolean).join(" ").toLowerCase();
-        return blob.includes(kw);
+    if (state.keyword) {
+      const q = state.keyword.toLowerCase();
+      list = list.filter((p) => {
+        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong, p.type]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
       });
     }
 
-    return rows;
+    // 최신등록 우선
+    return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   }
 
   function renderKPIs() {
-    const items = state.items || [];
-    const total = items.length;
-    const auction = items.filter((p) => p.sourceType === "auction").length;
-    const onbid = items.filter((p) => p.sourceType === "onbid").length;
-    const realtor = items.filter((p) => p.sourceType === "realtor").length;
-    const general = items.filter((p) => p.isGeneral).length;
+    // KPI는 전체(필터 전) 기준으로 유지
+    const all = state.items;
 
-    if (els.statTotal) els.statTotal.textContent = formatInt(total);
-    if (els.statAuction) els.statAuction.textContent = formatInt(auction);
-    if (els.statGongmae) els.statGongmae.textContent = formatInt(onbid);
-    if (els.statGeneral) els.statGeneral.textContent = formatInt(realtor);
-    if (els.statGeneralFlagMini) els.statGeneralFlagMini.textContent = `일반 ${formatInt(general)}`;
+    if (els.statTotal) els.statTotal.textContent = String(all.length);
+    if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => p.source === "auction").length);
+    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => p.source === "gongmae").length);
+    if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => p.source === "general").length);
+
+    // 선택 상태 시각화
+    const setActive = (card, on) => {
+      if (!card) return;
+      card.classList.toggle("is-selected", on);
+    };
+
+    setActive(els.statTotalCard, state.source === "all");
+    setActive(els.statAuctionCard, state.source === "auction");
+    setActive(els.statGongmaeCard, state.source === "gongmae");
+    setActive(els.statGeneralCard, state.source === "general");
   }
 
   function renderTable() {
@@ -397,280 +355,40 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
 
-    const kindClass =
-      p.sourceType === "auction" ? "kind-auction" :
-      p.sourceType === "onbid" ? "kind-gongmae" :
-      "kind-realtor";
+    const kindClass = p.source === "auction" ? "kind-auction" : p.source === "gongmae" ? "kind-gongmae" : "kind-general";
+    const kindLabel = p.source === "auction" ? "경매" : p.source === "gongmae" ? "공매" : "일반";
 
-    const kindLabel =
-      p.sourceType === "auction" ? "경매" :
-      p.sourceType === "onbid" ? "공매" :
-      "중개";
-
-    const generalBadge = p.isGeneral ? '<span class="cell-badge warn">일반</span>' : '<span class="cell-badge muted">-</span>';
-
-    const linkCell = p.sourceUrl ? `<a class="link" href="${escapeAttr(p.sourceUrl)}" target="_blank" rel="noopener">보기</a>` : "-";
-    const memoCell = p.memo ? `<button class="btn-view" type="button">보기</button>` : "-";
+    const locText = formatLocation(p);
+    const appraisal = p.appraisalPrice ? formatMoneyEok(p.appraisalPrice) : "-";
+    const current = p.currentPrice ? formatMoneyEok(p.currentPrice) : "-";
+    const rate = calcRate(p.appraisalPrice, p.currentPrice);
 
     tr.innerHTML = `
-      <td>${escapeHtml(p.itemNo || "-")}</td>
-      <td><span class="kind-chip ${kindClass}">${escapeHtml(kindLabel)}</span></td>
-      <td>${generalBadge}</td>
-      <td>${escapeHtml(p.address || "-")}</td>
-      <td>${escapeHtml(p.assetType || "-")}</td>
-      <td>${formatNum(p.exclusivearea)}</td>
-      <td>${formatNum(p.commonarea)}</td>
-      <td>${formatNum(p.sitearea)}</td>
-      <td>${escapeHtml(p.useapproval || "-")}</td>
-      <td>${escapeHtml(p.status || "-")}</td>
-      <td>${p.priceMain ? formatMoneyKRW(p.priceMain) : "-"}</td>
-      <td>${escapeHtml(p.dateMain || "-")}</td>
-      <td>${linkCell}</td>
-      <td>${memoCell}</td>
-      <td>${p.latitude != null ? escapeHtml(String(p.latitude)) : '<span class="cell-badge warn">필요</span>'}</td>
-      <td>${p.longitude != null ? escapeHtml(String(p.longitude)) : '<span class="cell-badge warn">필요</span>'}</td>
-      <td>${escapeHtml(formatShortDate(p.date) || "-")}</td>
+      <td class="kind-chip ${kindClass}">${escapeHtml(kindLabel)}</td>
+      <td>${escapeHtml(locText || "-")}</td>
+      <td>${escapeHtml(p.type || "-")}</td>
+      <td>${escapeHtml(String(p.floor || "-"))}</td>
+      <td>${p.areaPyeong ? escapeHtml(String(p.areaPyeong)) : "-"}</td>
+      <td>${escapeHtml(appraisal)}</td>
+      <td>${escapeHtml(current)}</td>
+      <td>${escapeHtml(rate)}</td>
+      <td>${escapeHtml(formatShortDate(p.bidDate) || "-")}</td>
+      <td>${escapeHtml(formatShortDate(p.createdAt) || "-")}</td>
       <td>${escapeHtml(p.assignedAgentName || "-")}</td>
+      <td>${p.analysisDone ? '<span class="check">✓</span>' : "-"}</td>
+      <td>${p.fieldDone ? '<span class="check">✓</span>' : "-"}</td>
+      <td>${p.memo ? `<button class="btn-view" type="button">보기</button>` : "-"}</td>
     `;
 
-    // memo button
     const btn = tr.querySelector(".btn-view");
     if (btn) {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        openMemoAlert(p.memo);
+        alert(p.memo);
       });
     }
 
-    // row click to edit (권한 검사 후 모달)
-    tr.addEventListener("click", () => openEditModal(p));
-    
-  // ---------------------------
-  // Edit Modal (index)
-  // ---------------------------
-  function openMemoAlert(text) {
-    alert(text || "");
-  }
-
-  function openEditModal(item) {
-    if (!els.propertyEditModal || !els.pemForm) return;
-
-    // 담당자는 본인 물건만(서버에서 mine으로 내려오지만, 방어적으로 체크)
-    const isAdmin = isAdminUser(state.session?.user);
-    if (!isAdmin) {
-      const myId = state.session?.user?.id || "";
-      const assignedId = item.assignedAgentId || "";
-      if (assignedId && myId && assignedId !== myId) {
-        alert("본인에게 배정된 물건만 수정할 수 있습니다.");
-        return;
-      }
-    }
-
-    state.editingItem = item;
-
-    // Fill
-    const f = els.pemForm;
-    const setVal = (name, v) => {
-      const el = f.elements[name];
-      if (!el) return;
-      el.value = v == null ? "" : String(v);
-    };
-
-    setVal("itemNo", item.itemNo);
-    setVal("sourceType", item.sourceType);
-    setVal("isGeneral", item.isGeneral ? "true" : "false");
-    setVal("assignedAgentName", item.assignedAgentName);
-    setVal("address", item.address);
-    setVal("assetType", item.assetType);
-    setVal("exclusivearea", item.exclusivearea ?? "");
-    setVal("commonarea", item.commonarea ?? "");
-    setVal("sitearea", item.sitearea ?? "");
-    setVal("useapproval", item.useapproval);
-    setVal("status", item.status);
-    setVal("priceMain", item.priceMain ?? "");
-    setVal("dateMain", item.dateMain);
-    setVal("sourceUrl", item.sourceUrl);
-    setVal("memo", item.memo);
-    setVal("latitude", item.latitude ?? "");
-    setVal("longitude", item.longitude ?? "");
-
-    // 권한/규칙: 담당자는 '빈 값'만 입력 가능
-    const lockIfHasValue = (name, hasValue) => {
-      const el = f.elements[name];
-      if (!el) return;
-      el.disabled = !isAdmin && hasValue;
-    };
-
-    const hasText = (v) => v != null && String(v).trim() !== "";
-    const hasNum = (v) => v != null && String(v).trim() !== "" && !Number.isNaN(Number(v));
-
-    lockIfHasValue("itemNo", hasText(item.itemNo));
-    lockIfHasValue("address", hasText(item.address));
-    lockIfHasValue("assetType", hasText(item.assetType));
-    lockIfHasValue("exclusivearea", hasNum(item.exclusivearea));
-    lockIfHasValue("commonarea", hasNum(item.commonarea));
-    lockIfHasValue("sitearea", hasNum(item.sitearea));
-    lockIfHasValue("useapproval", hasText(item.useapproval));
-    lockIfHasValue("status", hasText(item.status));
-    lockIfHasValue("priceMain", hasNum(item.priceMain));
-    lockIfHasValue("dateMain", hasText(item.dateMain));
-    lockIfHasValue("sourceUrl", hasText(item.sourceUrl));
-    lockIfHasValue("memo", hasText(item.memo));
-    lockIfHasValue("latitude", hasNum(item.latitude));
-    lockIfHasValue("longitude", hasNum(item.longitude));
-
-    // sourceType/isGeneral/담당자명은 관리자만 변경(담당자 페이지에서는 읽기 전용)
-    const stEl = f.elements["sourceType"];
-    const genEl = f.elements["isGeneral"];
-    const asEl = f.elements["assignedAgentName"];
-    if (stEl) stEl.disabled = !isAdmin;
-    if (genEl) genEl.disabled = !isAdmin;
-    if (asEl) asEl.disabled = !isAdmin;
-
-    setPemMsg("");
-    showModal(true);
-  }
-
-  function showModal(open) {
-    if (!els.propertyEditModal) return;
-    if (open) {
-      els.propertyEditModal.classList.remove("hidden");
-      els.propertyEditModal.setAttribute("aria-hidden", "false");
-    } else {
-      els.propertyEditModal.classList.add("hidden");
-      els.propertyEditModal.setAttribute("aria-hidden", "true");
-      state.editingItem = null;
-    }
-  }
-
-  function setPemMsg(msg, isError = true) {
-    if (!els.pemMsg) return;
-    els.pemMsg.style.color = isError ? "#b00020" : "#197a34";
-    els.pemMsg.textContent = msg || "";
-  }
-
-  async function saveEditModal() {
-    const item = state.editingItem;
-    if (!item || !els.pemForm) return;
-
-    const isAdmin = isAdminUser(state.session?.user);
-    const fd = new FormData(els.pemForm);
-
-    const readStr = (k) => String(fd.get(k) || "").trim();
-    const readNum = (k) => {
-      const v = String(fd.get(k) || "").trim();
-      if (!v) return null;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    };
-
-    const patch = {
-      id: item.id || "",
-      globalId: item.globalId || "",
-      itemNo: readStr("itemNo") || null,
-      sourceType: readStr("sourceType") || null,
-      isGeneral: readStr("isGeneral") === "true",
-      assignedAgentName: readStr("assignedAgentName") || null,
-      address: readStr("address") || null,
-      assetType: readStr("assetType") || null,
-      exclusivearea: readNum("exclusivearea"),
-      commonarea: readNum("commonarea"),
-      sitearea: readNum("sitearea"),
-      useapproval: readStr("useapproval") || null,
-      status: readStr("status") || null,
-      priceMain: readNum("priceMain"),
-      dateMain: readStr("dateMain") || null,
-      sourceUrl: readStr("sourceUrl") || null,
-      memo: readStr("memo") || null,
-      latitude: readNum("latitude"),
-      longitude: readNum("longitude"),
-    };
-
-    // 담당자는 빈 값이었던 필드만 patch에 남기기(서버 보호 + 실수 방지)
-    if (!isAdmin) {
-      const allowIfEmpty = (k, oldVal) => {
-        const v = patch[k];
-        const isEmptyOld = oldVal == null || String(oldVal).trim() === "";
-        const isEmptyOldNum = oldVal == null || String(oldVal).trim() === "" || Number.isNaN(Number(oldVal));
-        const ok = (typeof v === "number") ? isEmptyOldNum : isEmptyOld;
-        if (!ok) delete patch[k];
-      };
-
-      allowIfEmpty("itemNo", item.itemNo);
-      allowIfEmpty("address", item.address);
-      allowIfEmpty("assetType", item.assetType);
-      allowIfEmpty("exclusivearea", item.exclusivearea);
-      allowIfEmpty("commonarea", item.commonarea);
-      allowIfEmpty("sitearea", item.sitearea);
-      allowIfEmpty("useapproval", item.useapproval);
-      allowIfEmpty("status", item.status);
-      allowIfEmpty("priceMain", item.priceMain);
-      allowIfEmpty("dateMain", item.dateMain);
-      allowIfEmpty("sourceUrl", item.sourceUrl);
-      allowIfEmpty("memo", item.memo);
-      allowIfEmpty("latitude", item.latitude);
-      allowIfEmpty("longitude", item.longitude);
-
-      // 관리자 전용 필드 제거
-      delete patch.sourceType;
-      delete patch.isGeneral;
-      delete patch.assignedAgentName;
-    }
-
-    // 필수로 보낼 식별자 확보
-    const targetId = patch.id || patch.globalId;
-    if (!targetId) {
-      setPemMsg("저장 실패: 물건 식별자(id)가 없습니다. 관리자에게 문의해 주세요.");
-      return;
-    }
-
-    try {
-      els.pemSave && (els.pemSave.disabled = true);
-      setPemMsg("");
-
-      await updateProperty(targetId, patch, isAdmin);
-
-      setPemMsg("저장 완료", false);
-      showModal(false);
-      await loadProperties();
-    } catch (err) {
-      console.error(err);
-      setPemMsg(err?.message || "저장에 실패했습니다.");
-    } finally {
-      els.pemSave && (els.pemSave.disabled = false);
-    }
-  }
-
-  async function updateProperty(targetId, patch, isAdmin) {
-    // 레거시/신규 API 모두 고려한 보수적 접근
-    const candidates = [];
-    if (isAdmin) {
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PATCH" });
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PUT" });
-    }
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: "PATCH" });
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: "PUT" });
-    candidates.push({ path: `/properties/update`, method: "POST" });
-    candidates.push({ path: `/admin/properties/update`, method: "POST" });
-
-    let lastErr = null;
-    for (const c of candidates) {
-      try {
-        const body = c.method === "POST" ? patch : patch;
-        await api(c.path, { method: c.method, auth: true, body });
-        return;
-      } catch (e) {
-        lastErr = e;
-        // 404/405면 다음 후보로
-        const msg = String(e?.message || "");
-        if (msg.includes("404") || msg.includes("405") || msg.includes("not found")) continue;
-      }
-    }
-    throw lastErr || new Error("저장에 실패했습니다.");
-  }
-
-
-  return tr;
+    return tr;
   }
 
   function formatLocation(p) {
@@ -759,9 +477,7 @@
     let firstPos = null;
 
     for (const it of valid.slice(0, 200)) {
-      const pos = (it.latitude != null && it.longitude != null)
-        ? { lat: Number(it.latitude), lng: Number(it.longitude) }
-        : await geocodeCached(it.address);
+      const pos = await geocodeCached(it.address);
       if (!pos) continue;
 
       if (!firstPos) firstPos = pos;
@@ -936,21 +652,6 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
-  }
-
-
-  function escapeAttr(v) {
-    // For attribute values (href etc.)
-    return escapeHtml(v).replaceAll("`", "&#96;");
-  }
-
-  function formatNum(v) {
-    if (v == null || v === "") return "-";
-    const n = Number(v);
-    if (!Number.isFinite(n)) return "-";
-    // 0이면 0 표시
-    const s = (Math.round(n * 100) / 100).toString();
-    return s;
   }
 
   function debounce(fn, wait = 200) {

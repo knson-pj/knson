@@ -10,90 +10,115 @@
   const viewForm = document.getElementById("viewForm");
   const viewDone = document.getElementById("viewDone");
 
+  const K = window.KNSN || null;
+  const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const fd = new FormData(form);
-    const payload = {
-      source: "general", // backward compat
-      sourceType: "realtor",
-      isGeneral: true,
-      address: String(fd.get("address") || "").trim(),
-      salePrice: Number(fd.get("salePrice") || 0),
-      registrantName: String(fd.get("registrantName") || "").trim(),
-      phone: normalizePhone(String(fd.get("phone") || "")),
-      memo: String(fd.get("memo") || "").trim(),
-    };
+    const address = String(fd.get("address") || "").trim();
+    const salePrice = Number(fd.get("salePrice") || 0);
+    const registrant = String(fd.get("registrant") || "").trim();
+    const phone = String(fd.get("phone") || "").trim();
 
-    if (!payload.address || !payload.salePrice || !payload.registrantName || !payload.phone) {
-      setMsg("필수 항목을 모두 입력해 주세요.");
+    if (!address || !salePrice || !registrant || !phone) {
+      setMsg("주소/매각가/등록자/전화번호를 모두 입력해 주세요.");
       return;
     }
+
+    const payload = {
+      // 최신 정책:
+      // - sourceType은 3종 고정: auction / onbid / realtor(중개)
+      // - '일반'은 sourceType이 아니라 추가 컬럼(플래그)로 사용
+      sourceType: "realtor",
+      isGeneral: true, // '누구나 매물 등록'으로 들어온 매물
+      address,
+      priceMain: salePrice,
+      memo: `등록자:${registrant} / 전화:${phone}`,
+      registrant,
+      phone,
+    };
 
     try {
       setBusy(true);
       setMsg("");
 
-      const res = await api("/public-listings", {
-        method: "POST",
-        body: payload,
-      });
+      if (sbEnabled) {
+        // Supabase 직접 저장(초기 버전: 즉시 노출 요구사항 반영)
+        // 보안/검증은 추후 강화 예정 (승인/캡차/레이트리밋 등)
+        const sb = K.initSupabase();
+        const globalId = `realtor:public:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        const row = {
+          global_id: globalId,
+          item_no: globalId,
+          source_type: "realtor",
+          is_general: true,
+          address,
+          price_main: salePrice,
+          memo: payload.memo,
+          assignee_id: null,
+          raw: payload,
+        };
 
-      if (res?.duplicate) {
-        // 중복이어도 접수로 처리하는 정책
-        // UI 메시지만 안내
-        setMsg("동일 주소 물건이 이미 접수되어 있습니다. 검토 후 연락드리겠습니다.");
+        const { error } = await sb.from("properties").insert(row);
+        if (error) throw error;
+
+        done();
+        return;
       }
 
-      form.reset();
-      viewForm.classList.add("hidden");
-      viewDone.classList.remove("hidden");
+      // Legacy (Vercel API)
+      const res = await api("/public-listings", {
+        method: "POST",
+        body: {
+          source: "general",
+          address: payload.address,
+          salePrice: payload.priceMain,
+          registrant: payload.registrant,
+          phone: payload.phone,
+          // forward-compatible fields
+          sourceType: payload.sourceType,
+          isGeneral: payload.isGeneral,
+          priceMain: payload.priceMain,
+          memo: payload.memo,
+        },
+      });
+
+      if (!res?.ok) throw new Error(res?.message || "등록에 실패했습니다.");
+      done();
     } catch (err) {
-      console.error(err);
-      setMsg(err?.message || "등록 요청에 실패했습니다.");
+      setMsg(err?.message || "등록에 실패했습니다.");
     } finally {
       setBusy(false);
     }
   });
 
+  function done() {
+    viewForm.classList.add("hidden");
+    viewDone.classList.remove("hidden");
+  }
+
+  function setBusy(b) {
+    btnSubmit.disabled = !!b;
+    btnSubmit.textContent = b ? "등록 중..." : "등록";
+  }
+
+  function setMsg(msg) {
+    msgEl.textContent = msg || "";
+    msgEl.classList.toggle("show", !!msg);
+  }
+
   async function api(path, options = {}) {
-    const method = (options.method || "GET").toUpperCase();
-
-    const headers = { Accept: "application/json" };
-    const hasBody = !["GET", "HEAD"].includes(method);
-    if (hasBody) headers["Content-Type"] = "application/json";
-
-    let res;
-    try {
-      res = await fetch(`${API_BASE}${path}`, {
-        method,
-        headers,
-        body: hasBody ? JSON.stringify(options.body || {}) : undefined,
-      });
-    } catch {
-      throw new Error("서버 연결에 실패했습니다. (네트워크/CORS 확인)");
-    }
-
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: options.method || "GET",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-
-    if (!res.ok) {
-      throw new Error(data?.message || `API 오류 (${res.status})`);
-    }
+    try { data = text ? JSON.parse(text) : null; } catch {}
+    if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
     return data;
-  }
-
-  function normalizePhone(v) {
-    return String(v || "").replace(/[\D]/g, "");
-  }
-
-  function setBusy(busy) {
-    btnSubmit.disabled = busy;
-    [...form.querySelectorAll("input, textarea")].forEach((el) => (el.disabled = busy));
-  }
-
-  function setMsg(text) {
-    msgEl.textContent = text || "";
   }
 })();

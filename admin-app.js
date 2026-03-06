@@ -1,6 +1,25 @@
 (() => {
   "use strict";
 
+  const K = window.KNSN || null;
+  const toNumber = (K && typeof K.toNumber === "function") ? K.toNumber : (v) => {
+    if (v === null || v === undefined) return NaN;
+    if (typeof v === "number") return v;
+    const s = String(v).trim();
+    if (!s) return NaN;
+    const s2 = s.replace(/,/g, "");
+    const m = s2.match(/[+-]?\d+(\.\d+)?/);
+    if (!m) return NaN;
+    const n = Number(m[0]);
+    return Number.isFinite(n) ? n : NaN;
+  };
+
+  function chunkArray(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
   const API_BASE = "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
 
@@ -376,9 +395,29 @@ function bindEvents() {
       alert(err.message || "데이터 로드 실패");
     }
   }
-
   async function loadProperties() {
+    // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
+    // (Vercel API 401/CORS 이슈와 무관하게 안정적으로 동작)
+    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     const user = state.session?.user;
+
+    if (sb) {
+      try { await K.sbSyncLocalSession(); } catch {}
+      const uid = state.session?.user?.id;
+      const isAdmin = user?.role === "admin";
+
+      let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).limit(5000);
+      if (!isAdmin) q = q.eq("assignee_id", uid);
+
+      const { data, error } = await q;
+      if (error) throw error;
+
+      state.properties = Array.isArray(data) ? data.map(normalizeProperty) : [];
+      renderPropertiesTable();
+      renderSummary();
+      return;
+    }
+
     const isAdmin = user?.role === "admin";
     const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });
@@ -403,7 +442,7 @@ function bindEvents() {
   }
 
   function normalizeProperty(item) {
-    const rawSource = (item.sourceType || item.source || item.category || "").toString().toLowerCase();
+    const rawSource = (item.sourceType || item.source || item.category || item.source_type || "").toString().toLowerCase();
     const sourceType =
       rawSource === "auction" ? "auction" :
       rawSource === "gongmae" || rawSource === "onbid" ? "onbid" :
@@ -411,31 +450,31 @@ function bindEvents() {
       rawSource === "general" ? "realtor" :
       "realtor";
 
-    const itemNo = (item.itemNo || item.caseNo || item.externalId || item.listingId || "").toString().trim();
+    const itemNo = (item.itemNo || item.caseNo || item.externalId || item.listingId || item.item_no || "").toString().trim();
     const address = (item.address || item.location || item.addr || "").toString().trim();
 
-    const latitude = toNumber(item.latitude ?? item.lat ?? item.y ?? "");
-    const longitude = toNumber(item.longitude ?? item.lng ?? item.x ?? "");
+    const latitude = toNumber(item.latitude ?? item.lat ?? item.y ?? item.latitude ?? "");
+    const longitude = toNumber(item.longitude ?? item.lng ?? item.x ?? item.longitude ?? "");
 
     return {
       id: (item.id || item._id || item.globalId || "").toString(),
       globalId: (item.globalId || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")).toString(),
       sourceType,
       itemNo,
-      isGeneral: Boolean(item.isGeneral || item.source === "general" || item.origin === "general"),
+      isGeneral: Boolean(item.isGeneral || item.is_general || item.source === "general" || item.origin === "general"),
       address,
-      assetType: (item.assetType || item.type || item.propertyType || item.kind || "").toString().trim(),
-      priceMain: toNumber(item.priceMain ?? item.salePrice ?? item.price ?? item.appraisalPrice ?? 0),
+      assetType: (item.assetType || item.asset_type || item.type || item.propertyType || item.kind || "").toString().trim(),
+      priceMain: toNumber(item.priceMain ?? item.price_main ?? item.salePrice ?? item.price ?? item.appraisalPrice ?? 0),
       status: (item.status || "").toString(),
       latitude: Number.isFinite(latitude) ? latitude : null,
       longitude: Number.isFinite(longitude) ? longitude : null,
-      assignedAgentId: item.assignedAgentId || item.assigneeId || null,
+      assignedAgentId: item.assignedAgentId || item.assigneeId || item.assignee_id || null,
       assignedAgentName: item.assignedAgentName || item.assigneeName || "",
-      createdAt: item.date || item.createdAt || "",
+      createdAt: item.date || item.date_uploaded || item.createdAt || item.created_at || "",
       duplicateFlag: !!item.duplicateFlag,
       regionGu: item.regionGu || "",
       regionDong: item.regionDong || "",
-      memo: item.memo || "",
+      memo: item.memo || item.raw?.memo || "",
       _raw: item,
     };
   }
@@ -460,7 +499,7 @@ function bindEvents() {
       regionDong: item.regionDong || "",
       managerName: item.managerName || "",
       phone: item.phone || "",
-      memo: item.memo || "",
+      memo: item.memo || item.raw?.memo || "",
     };
   }
 
@@ -1006,7 +1045,6 @@ function bindEvents() {
     });
     els.csvPreviewTableBody.appendChild(frag);
   }
-
   async function handleCsvUpload() {
     try {
       const file = els.csvFileInput.files?.[0];
@@ -1020,6 +1058,39 @@ function bindEvents() {
 
       const csvText = await file.text();
 
+      // Supabase import (admin only)
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+      if (sb) {
+        try { await K.sbSyncLocalSession(); } catch {}
+        if (state.session?.user?.role !== "admin") {
+          throw new Error("관리자만 CSV 업로드가 가능합니다.");
+        }
+
+        const rawRows = parseCsv(csvText);
+        const mappedRows = [];
+        for (const r of rawRows) {
+          const m = mapPropertyCsvRow(r, sourceType);
+          if (!m || !m.itemNo || !m.address) continue;
+          mappedRows.push(buildSupabasePropertyRow(r, m, sourceType));
+        }
+
+        if (!mappedRows.length) throw new Error("유효한 행이 없습니다.");
+
+        // chunk upsert
+        const chunks = (K && typeof K.chunk === "function") ? K.chunk(mappedRows, 500) : chunkArray(mappedRows, 500);
+        let okCnt = 0;
+        for (const c of chunks) {
+          const { error } = await sb.from("properties").upsert(c, { onConflict: "global_id" });
+          if (error) throw error;
+          okCnt += c.length;
+        }
+
+        showResultBox(els.csvResultBox, `업로드 완료 / 처리: ${okCnt}건`);
+        await loadProperties();
+        return;
+      }
+
+      // Legacy (Vercel API)
       const res = await api("/admin/import/properties-csv", {
         method: "POST",
         auth: true,
@@ -1050,7 +1121,7 @@ function bindEvents() {
     }
   }
 
-  function mapPropertyCsvRow(row, sourceType) {
+    function mapPropertyCsvRow(row, sourceType) {
     const pick = (...keys) => {
       for (const k of keys) {
         if (row[k] != null && String(row[k]).trim() !== "") return String(row[k]).trim();
@@ -1058,7 +1129,20 @@ function bindEvents() {
       return "";
     };
 
-    const toNum = (v) => Number(String(v || "").replace(/[^\d.-]/g, "")) || 0;
+    const toNum = (v) => {
+      const n = toNumber(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const m2ToPyeong = (m2) => {
+      const n = toNum(m2);
+      return n ? (n / 3.305785) : 0;
+    };
+
+    const toISO = (v) => {
+      if (K && typeof K.toISODate === "function") return K.toISODate(v);
+      return null;
+    };
 
     let itemNo = "";
     let address = "";
@@ -1067,35 +1151,126 @@ function bindEvents() {
     let latitude = null;
     let longitude = null;
 
+    let assetType = "";
+    let commonArea = null;     // 전용면적(평)
+    let exclusiveArea = null;  // 공용면적(평)
+    let siteArea = null;       // 토지면적(평)
+    let useApproval = null;
+    let dateMain = null;
+    let sourceUrl = "";
+    let memo = "";
+
     if (sourceType === "auction") {
       itemNo = pick("사건번호", "itemNo", "caseNo", "물건번호");
       address = pick("주소(시군구동)", "주소", "소재지", "address");
       status = pick("진행상태", "상태", "status");
       priceMain = toNum(pick("감정가", "감정가(원)", "최저가", "priceMain"));
+      assetType = pick("종별", "부동산유형", "assetType");
+      dateMain = toISO(pick("입찰일자", "입찰일", "dateMain")) || null;
+      memo = pick("경매현황", "비고", "memo");
+
+      // 면적(경매현황 문자열 파싱은 추후 고도화) -> 초기에는 null 유지
     } else if (sourceType === "onbid") {
       itemNo = pick("물건관리번호", "itemNo", "물건번호");
       address = pick("소재지", "주소", "address");
       status = pick("물건상태", "상태", "status");
       priceMain = toNum(pick("감정가(원)", "감정가", "최저입찰가(원)", "priceMain"));
+      assetType = pick("용도", "부동산유형", "assetType");
+      dateMain = pick("입찰마감일시", "입찰마감", "dateMain") || null;
+      memo = pick("물건명", "memo");
+
+      // 공매는 ㎡로 오는 경우가 많아서 평으로 변환
+      const bM2 = pick("건물 면적(㎡)", "건물 면적(m²)", "건물 면적(m2)", "건물면적(㎡)");
+      const tM2 = pick("토지 면적(㎡)", "토지 면적(m²)", "토지 면적(m2)", "토지면적(㎡)");
+      if (bM2) commonArea = m2ToPyeong(bM2);
+      if (tM2) siteArea = m2ToPyeong(tM2);
     } else {
       // realtor
       itemNo = pick("매물ID", "itemNo", "물건번호");
       address = pick("주소(통합)", "도로명주소", "지번주소", "주소", "address");
-      status = pick("거래유형", "status"); // 없으면 빈 값
+      status = pick("거래유형", "status");
       priceMain = toNum(pick("가격(원)", "가격(원본)", "매매가", "priceMain"));
+      assetType = pick("부동산유형", "세부유형", "제목", "assetType");
+      sourceUrl = pick("매물URL", "sourceUrl", "url");
+      memo = pick("매물특징", "memo");
+
+      const ex = pick("전용면적(평)", "전용면적", "commonArea");
+      if (ex) commonArea = toNum(ex);
+
+      const supply = pick("공급/계약면적(평)", "공급면적(평)");
+      if (supply && commonArea != null) {
+        const s = toNum(supply);
+        const diff = s - commonArea;
+        if (Number.isFinite(diff) && diff > 0) exclusiveArea = diff;
+      }
+
       const lat = pick("위도", "latitude", "lat");
       const lng = pick("경도", "longitude", "lng");
       latitude = lat ? Number(lat) : null;
       longitude = lng ? Number(lng) : null;
+
+      useApproval = pick("사용승인일", "useApproval") || null;
     }
 
     if (!address && !itemNo) return null;
 
-    return { itemNo, address, status, priceMain, latitude, longitude };
+    return {
+      itemNo,
+      address,
+      status,
+      priceMain,
+      latitude: Number.isFinite(latitude) ? latitude : null,
+      longitude: Number.isFinite(longitude) ? longitude : null,
+      assetType,
+      commonArea,
+      exclusiveArea,
+      siteArea,
+      useApproval,
+      dateMain,
+      sourceUrl,
+      memo,
+    };
+  }
+
+  function buildSupabasePropertyRow(rawRow, m, sourceType) {
+    const globalId = `${sourceType}:${m.itemNo}`;
+    const toNullNum = (v) => (v == null ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
+
+    const row = {
+      global_id: globalId,
+      item_no: String(m.itemNo || ""),
+      source_type: sourceType,
+      is_general: false,
+
+      address: String(m.address || ""),
+      asset_type: (m.assetType || "") || null,
+      exclusive_area: toNullNum(m.exclusiveArea),
+      common_area: toNullNum(m.commonArea),
+      site_area: toNullNum(m.siteArea),
+      use_approval: m.useApproval || null,
+      status: m.status || null,
+
+      price_main: toNullNum(m.priceMain),
+      date_main: m.dateMain || null,
+      source_url: m.sourceUrl || null,
+      memo: m.memo || null,
+
+      latitude: m.latitude,
+      longitude: m.longitude,
+
+      geocode_status: (m.latitude != null && m.longitude != null)
+        ? "ok"
+        : (sourceType === "realtor" ? null : "pending"),
+
+      raw: rawRow,
+    };
+
+    return row;
   }
 
   // ---------------------------
   // Region Assignments
+
   // ---------------------------
   function getRegionOptionsFromProperties() {
     const set = new Set();
