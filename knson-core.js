@@ -52,9 +52,7 @@
     clearLegacySession();
   }
 
-  }
-
-  function setKeepSessionOnce(ms = 15000) {
+function setKeepSessionOnce(ms = 15000) {
     try {
       sessionStorage.setItem(KEEP_SESSION_KEY, "1");
       window.setTimeout(() => {
