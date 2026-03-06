@@ -17,7 +17,10 @@
   <script>
     (function(){
       try {
-        var raw = localStorage.getItem('knson_bms_session_v1');
+        var raw = null;
+        try { raw = sessionStorage.getItem('knson_bms_session_v1'); } catch(e) {}
+        // 과거 버전 세션 정리(브라우저 재접속 자동로그인 방지)
+        try { localStorage.removeItem('knson_bms_session_v1'); } catch(e) {}
         var s = raw ? JSON.parse(raw) : null;
         if (!s || !s.token || !s.user) {
           location.replace('./login.html?next=' + encodeURIComponent('./index.html'));
@@ -144,7 +147,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./knson-core.js?v=20260306-1"></script>
-  <script src="./app.js?v=20260306-3"></script>
+  <script src="./knson-core.js?v=20260306-2"></script>
+  <script src="./app.js?v=20260306-4"></script>
 </body>
 </html>

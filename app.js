@@ -61,10 +61,9 @@
       return;
     }
 
-    // admin link: admin만 노출
-    const isAdmin = isAdminUser(state.session.user);
+    // admin link: 관리자/담당자 모두 접근 가능(권한에 따라 admin 페이지에서 탭이 달라짐)
     if (els.adminLink) {
-      els.adminLink.style.display = isAdmin ? "inline-flex" : "none";
+      els.adminLink.style.display = "inline-flex";
     }
 
     bindEvents();
@@ -679,7 +678,7 @@
 
   function loadSession() {
     try {
-      const raw = localStorage.getItem(SESSION_KEY);
+      const raw = sessionStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
@@ -687,9 +686,8 @@
   }
 
   function clearSession() {
-    try {
-      localStorage.removeItem(SESSION_KEY);
-    } catch {}
+    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    try { localStorage.removeItem(SESSION_KEY); } catch {}
     state.session = null;
   }
 

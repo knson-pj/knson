@@ -1889,7 +1889,7 @@ function bindEvents() {
 
   function loadSession() {
     try {
-      const raw = localStorage.getItem(SESSION_KEY);
+      const raw = sessionStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
@@ -1897,10 +1897,14 @@ function bindEvents() {
   }
 
   function saveSession(v) {
-    if (!v) {
-      localStorage.removeItem(SESSION_KEY);
-      return;
-    }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(v));
+    try {
+      if (!v) {
+        sessionStorage.removeItem(SESSION_KEY);
+        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+        return;
+      }
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(v));
+      try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    } catch {}
   }
 })();

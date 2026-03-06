@@ -12,23 +12,46 @@
   const SESSION_KEY = "knson_bms_session_v1";
   const KEEP_SESSION_KEY = "knson_nav_keep_session";
 
+  // A안: 브라우저 종료 시 자동 로그아웃(세션 유지 X)
+  // - 앱 세션은 sessionStorage에만 저장합니다.
+  // - 과거 버전 localStorage 세션은 자동로그인의 원인이므로 정리합니다.
+  const SESSION_STORE = (typeof sessionStorage !== "undefined") ? sessionStorage : null;
+  const LEGACY_STORE = (typeof localStorage !== "undefined") ? localStorage : null;
+
+  function clearLegacySession() {
+    try { LEGACY_STORE && LEGACY_STORE.removeItem(SESSION_KEY); } catch {}
+  }
+
+  // 초기 로드 시 과거 세션 정리
+  clearLegacySession();
+
+
   function safeJsonParse(str) {
     try { return JSON.parse(str); } catch { return null; }
   }
 
   function loadSession() {
-    const raw = localStorage.getItem(SESSION_KEY);
+    let raw = null;
+    try { raw = SESSION_STORE ? SESSION_STORE.getItem(SESSION_KEY) : null; } catch {}
     const s = raw ? safeJsonParse(raw) : null;
     if (!s || typeof s !== "object") return null;
     return s;
   }
 
   function saveSession(session) {
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify(session || null)); } catch {}
+    try {
+      if (!SESSION_STORE) return;
+      if (!session) { SESSION_STORE.removeItem(SESSION_KEY); return; }
+      SESSION_STORE.setItem(SESSION_KEY, JSON.stringify(session));
+      clearLegacySession();
+    } catch {}
   }
 
   function clearSession() {
-    try { localStorage.removeItem(SESSION_KEY); } catch {}
+    try { SESSION_STORE && SESSION_STORE.removeItem(SESSION_KEY); } catch {}
+    clearLegacySession();
+  }
+
   }
 
   function setKeepSessionOnce(ms = 15000) {
@@ -120,6 +143,7 @@
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
+        storage: SESSION_STORE || undefined,
       },
     });
 
@@ -189,12 +213,18 @@ function clearSupabaseStorage() {
   const ref = getSupabaseProjectRef();
   if (!ref) return;
   const prefix = `sb-${ref}-`;
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(prefix)) localStorage.removeItem(k);
-    }
-  } catch {}
+  const stores = [];
+  try { if (LEGACY_STORE) stores.push(LEGACY_STORE); } catch {}
+  try { if (SESSION_STORE) stores.push(SESSION_STORE); } catch {}
+
+  for (const st of stores) {
+    try {
+      for (let i = st.length - 1; i >= 0; i--) {
+        const k = st.key(i);
+        if (k && k.startsWith(prefix)) st.removeItem(k);
+      }
+    } catch {}
+  }
 }
 
 async function sbHardSignOut() {

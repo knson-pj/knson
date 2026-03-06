@@ -27,6 +27,7 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
         if (sbEnabled && K && typeof K.sbHardSignOut === "function") await K.sbHardSignOut();
         else if (sbEnabled && K && typeof K.sbSignOut === "function") await K.sbSignOut();
       } catch {}
+      try { sessionStorage.removeItem(SESSION_KEY); } catch {}
       try { localStorage.removeItem(SESSION_KEY); } catch {}
       try {
         if (urlObj) {
@@ -108,12 +109,16 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   }
 
   function saveSession(session) {
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch {}
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      // 과거 버전 세션 정리
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+    } catch {}
   }
 
   function loadSession() {
     try {
-      const raw = localStorage.getItem(SESSION_KEY);
+      const raw = sessionStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   }

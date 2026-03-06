@@ -26,7 +26,7 @@ body {
 .hidden { display: none !important; }
 
 .admin-shell {
-  max-width: 1600px;
+  max-width: 1640px;
   margin: 0 auto;
   padding: 16px;
 }
@@ -70,18 +70,6 @@ body {
   gap: 12px;
 }
 
-
-
-.global-msg{
-  margin-top: 10px;
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(255,255,255,.04);
-  color: var(--text);
-  font-size: 13px;
-}
 .panel {
   background: linear-gradient(180deg, var(--panel), var(--panel2));
   border: 1px solid var(--line);
@@ -483,9 +471,3 @@ body {
     grid-template-columns: 1fr;
   }
 }
-
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-@media (max-width:520px){.grid2,.grid3{grid-template-columns:1fr}}
-
-.summary-mini{display:block;margin-top:4px;font-size:11px;opacity:.8;font-style:normal}
