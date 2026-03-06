@@ -70,6 +70,18 @@ body {
   gap: 12px;
 }
 
+
+
+.global-msg{
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  font-size: 13px;
+}
 .panel {
   background: linear-gradient(180deg, var(--panel), var(--panel2));
   border: 1px solid var(--line);

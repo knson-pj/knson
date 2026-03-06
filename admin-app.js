@@ -37,6 +37,7 @@
     Object.assign(els, {
       // top
       adminUserBadge: $("#adminUserBadge"),
+      globalMsg: $("#globalMsg"),
       btnAdminLoginOpen: $("#btnAdminLoginOpen"),
       btnAdminLogout: $("#btnAdminLogout"),
 
@@ -116,9 +117,28 @@
     });
   }
 
-  function bindEvents() {
+  
+  function setGlobalMsg(msg = "") {
+    if (!els.globalMsg) return;
+    const m = String(msg || "").trim();
+    els.globalMsg.textContent = m;
+    els.globalMsg.classList.toggle("hidden", !m);
+  }
+
+
+  function handleAsyncError(err, fallbackMsg = "요청 처리 중 오류가 발생했습니다.") {
+    console.error(err);
+    if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
+      setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
+      openLoginModal();
+      return;
+    }
+    alert(err?.message || fallbackMsg);
+  }
+
+function bindEvents() {
     // login / logout
-    if (els.btnAdminLoginOpen) els.btnAdminLoginOpen.addEventListener("click", goLoginPage);
+    if (els.btnAdminLoginOpen) els.btnAdminLoginOpen.addEventListener("click", openLoginModal);
     if (els.btnAdminLogout) els.btnAdminLogout.addEventListener("click", logout);
 
     // tabs
@@ -130,11 +150,17 @@
         const user = state.session?.user;
         if (user?.role !== "admin" && key !== "properties") return;
         setActiveTab(key);
+
+        // 관리자 탭은 탭 진입 시 필요한 데이터만 로드
+        if (state.session?.user?.role === "admin") {
+          if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
+          if (key === "offices") loadOffices().catch((e)=>handleAsyncError(e,"중개사무소 로드 실패"));
+        }
       });
     }
 
     // properties
-    if (els.btnReloadProperties) els.btnReloadProperties.addEventListener("click", loadProperties);
+    if (els.btnReloadProperties) els.btnReloadProperties.addEventListener("click", () => loadProperties().catch((e)=>handleAsyncError(e,"물건 로드 실패")));
     if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
       state.propertyFilters.source = String(e.target.value || "");
       renderPropertiesTable();
@@ -158,7 +184,7 @@
     });
     if (els.btnCsvUpload) els.btnCsvUpload.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
-      handleCsvUpload();
+      handleCsvUpload().catch((e)=>handleAsyncError(e,"업로드 실패"));
     });
 
     // staff/regions/offices (관리자만)
@@ -186,7 +212,7 @@
     });
     if (els.btnOfficeCsvUpload) els.btnOfficeCsvUpload.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return;
-      handleOfficeCsvUpload();
+      handleOfficeCsvUpload().catch((e)=>handleAsyncError(e,"업로드 실패"));
     });
     if (els.btnReloadOffices) els.btnReloadOffices.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return;
@@ -211,6 +237,9 @@
   }
 
   async function ensureLoginThenLoad() {
+    // storage에 저장된 세션을 최신으로 반영 (탭 이동/리다이렉트 직후 레이스 방지)
+    state.session = loadSession();
+    renderSessionUI();
     const user = state.session?.user;
     const loggedIn = !!(state.session?.token && user);
 
@@ -308,6 +337,7 @@
       saveSession(state.session);
       renderSessionUI();
       closeLoginModal();
+      setGlobalMsg("");
       await loadAllCoreData();
     } catch (err) {
       console.error(err);
@@ -330,13 +360,19 @@
 
   async function loadAllCoreData() {
     try {
-      await Promise.all([
-        loadProperties(),
-        loadStaff(),
-        loadOffices(),
-      ]);
+      // 초기 진입에서는 "물건 리스트"만 먼저 로드해서 관리자 페이지가 바로 usable 하게.
+      // (staff/offices 등 /admin/* 는 탭 진입 시 온디맨드 로드)
+      await loadProperties();
     } catch (err) {
       console.error(err);
+      // 인증 문제는 팝업으로 괴롭히지 말고 로그인 모달로 유도
+      if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
+        try { state.session = loadSession(); } catch {}
+        renderSessionUI();
+        openLoginModal();
+        setGlobalMsg("세션이 만료되었거나 인증이 필요합니다. 다시 로그인해 주세요.");
+        return;
+      }
       alert(err.message || "데이터 로드 실패");
     }
   }
@@ -344,7 +380,7 @@
   async function loadProperties() {
     const user = state.session?.user;
     const isAdmin = user?.role === "admin";
-    const path = isAdmin ? "/admin/properties?scope=all" : "/properties?scope=mine";
+    const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });
     state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
     renderPropertiesTable();
@@ -1006,6 +1042,10 @@
       await loadProperties();
     } catch (err) {
       console.error(err);
+      if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
+        setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
+        openLoginModal();
+      }
       showResultBox(els.csvResultBox, `업로드 실패: ${err.message}`, true);
     }
   }
@@ -1348,7 +1388,11 @@
       await loadOffices();
     } catch (err) {
       console.error(err);
-      showResultBox(els.officeResultBox, `업로드 실패: ${err.message}`, true);
+      if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
+        setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
+        openLoginModal();
+      }
+      showResultBox(els.officeCsvResultBox, `업로드 실패: ${err.message}`, true);
     }
   }
 
@@ -1504,8 +1548,17 @@
     const headers = { Accept: "application/json" };
 
     if (options.auth) {
-      const token = state.session?.token;
-      if (!token) throw new Error("로그인이 필요합니다.");
+      // 혹시 state.session이 오래된 경우를 대비해 1회 리프레시
+      let token = state.session?.token;
+      if (!token) {
+        state.session = loadSession();
+        token = state.session?.token;
+      }
+      if (!token) {
+        const err = new Error("로그인이 필요합니다.");
+        err.code = "LOGIN_REQUIRED";
+        throw err;
+      }
       headers.Authorization = `Bearer ${token}`;
     }
 
@@ -1523,7 +1576,10 @@
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
 
     if (!res.ok) {
-      throw new Error(data?.message || `API 오류 (${res.status})`);
+      const err = new Error(data?.message || `API 오류 (${res.status})`);
+      err.status = res.status;
+      if (res.status === 401) err.code = "LOGIN_REQUIRED";
+      throw err;
     }
     return data;
   }
