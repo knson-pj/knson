@@ -29,7 +29,7 @@
 
   const K = window.KNSN || null;
 
-  function init() {
+  async function init() {
     // Keep session when moving to admin page (prevents pagehide auto-logout)
     try {
       const adminLink = document.querySelector(".admin-link");
@@ -44,6 +44,13 @@
     } catch {}
 
     cacheEls();
+
+    // Supabase 사용 시, 저장된 세션/role을 먼저 동기화해서
+    // (로그아웃 루프/관리자 링크 숨김 등) 상태 불일치를 줄입니다.
+    if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase()) {
+      try { await K.sbSyncLocalSession(); } catch {}
+      try { state.session = loadSession(); } catch {}
+    }
 
     // 내부 페이지 이동(관리자페이지 등) 시에는 자동 로그아웃을 스킵하기 위한 플래그
     try { sessionStorage.removeItem("knson_nav_keep_session"); } catch {}
@@ -102,9 +109,8 @@
   function bindEvents() {
     // 방어: DOM 구조가 바뀌어도 에러 안 나게
     if (els.btnLogout) {
-      els.btnLogout.addEventListener("click", () => {
-        clearSession();
-        redirectToLogin(true);
+      els.btnLogout.addEventListener("click", async () => {
+        await logoutNow({ redirect: true });
       });
     }
 
@@ -195,7 +201,16 @@
     window.addEventListener("pagehide", () => {
       let keep = false;
       try { keep = sessionStorage.getItem("knson_nav_keep_session") === "1"; } catch {}
-      if (!keep) clearSession();
+      if (!keep) {
+        // Supabase 세션이 남아있으면 로그인 페이지에서 자동 복원되므로,
+        // 페이지 이탈 시에도 best-effort로 signOut을 호출합니다.
+        try {
+          if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbSignOut === "function") {
+            K.sbSignOut(); // fire-and-forget
+          }
+        } catch {}
+        clearSession();
+      }
     });
   }
 
@@ -676,6 +691,18 @@
       localStorage.removeItem(SESSION_KEY);
     } catch {}
     state.session = null;
+  }
+
+
+  async function logoutNow({ redirect = true } = {}) {
+    // Supabase 사용 시 supabase.auth 세션도 같이 종료해야 로그아웃이 유지됩니다.
+    try {
+      if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbSignOut === "function") {
+        await K.sbSignOut();
+      }
+    } catch {}
+    clearSession();
+    if (redirect) redirectToLogin(true);
   }
 
   function redirectToLogin(replace = false) {

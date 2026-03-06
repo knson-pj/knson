@@ -371,8 +371,14 @@ function bindEvents() {
       setFormBusy(e.currentTarget, false);
     }
   }
+  async function logout() {
+    // Supabase 사용 시 auth 세션까지 종료해야 로그아웃이 유지됩니다.
+    try {
+      if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbSignOut === "function") {
+        await K.sbSignOut();
+      }
+    } catch {}
 
-  function logout() {
     state.session = null;
     saveSession(null);
     renderSessionUI();
