@@ -206,7 +206,7 @@
         // 페이지 이탈 시에도 best-effort로 signOut을 호출합니다.
         try {
           if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbSignOut === "function") {
-            K.sbSignOut(); // fire-and-forget
+            if (typeof K.sbHardSignOut === "function") K.sbHardSignOut(); else if (typeof K.sbSignOut === "function") K.sbSignOut(); // fire-and-forget
           }
         } catch {}
         clearSession();
@@ -697,16 +697,19 @@
   async function logoutNow({ redirect = true } = {}) {
     // Supabase 사용 시 supabase.auth 세션도 같이 종료해야 로그아웃이 유지됩니다.
     try {
-      if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbSignOut === "function") {
+      if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbHardSignOut === "function") {
+        await K.sbHardSignOut();
+      } else if (typeof K.sbSignOut === "function") {
         await K.sbSignOut();
       }
     } catch {}
     clearSession();
-    if (redirect) redirectToLogin(true);
+    if (redirect) redirectToLogin(true, { logout: true });
   }
 
-  function redirectToLogin(replace = false) {
-    const url = `./login.html?next=${encodeURIComponent("./index.html")}`;
+  function redirectToLogin(replace = false, opts = {}) {
+    const extra = opts && opts.logout ? "&logout=1" : "";
+    const url = `./login.html?next=${encodeURIComponent("./index.html")}${extra}`;
     if (replace) location.replace(url);
     else location.href = url;
   }

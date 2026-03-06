@@ -149,7 +149,7 @@
     console.error(err);
     if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
       setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
-      openLoginModal();
+      goLoginPage(true);
       return;
     }
     alert(err?.message || fallbackMsg);
@@ -374,7 +374,9 @@ function bindEvents() {
   async function logout() {
     // Supabase 사용 시 auth 세션까지 종료해야 로그아웃이 유지됩니다.
     try {
-      if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbSignOut === "function") {
+      if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbHardSignOut === "function") {
+        await K.sbHardSignOut();
+      } else if (typeof K.sbSignOut === "function") {
         await K.sbSignOut();
       }
     } catch {}
@@ -386,7 +388,7 @@ function bindEvents() {
     state.staff = [];
     state.offices = [];
     renderAll();
-    openLoginModal();
+    goLoginPage(true);
   }
 
   async function loadAllCoreData() {
@@ -400,7 +402,7 @@ function bindEvents() {
       if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
         try { state.session = loadSession(); } catch {}
         renderSessionUI();
-        openLoginModal();
+        goLoginPage(true);
         setGlobalMsg("세션이 만료되었거나 인증이 필요합니다. 다시 로그인해 주세요.");
         return;
       }
@@ -1127,7 +1129,7 @@ function bindEvents() {
       console.error(err);
       if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
         setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
-        openLoginModal();
+        goLoginPage(true);
       }
       showResultBox(els.csvResultBox, `업로드 실패: ${err.message}`, true);
     }
@@ -1577,7 +1579,7 @@ function bindEvents() {
       console.error(err);
       if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
         setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
-        openLoginModal();
+        goLoginPage(true);
       }
       showResultBox(els.officeCsvResultBox, `업로드 실패: ${err.message}`, true);
     }
@@ -1879,9 +1881,10 @@ function bindEvents() {
     return document.querySelector(sel);
   }
 
-  function goLoginPage() {
+  function goLoginPage(withLogout = false) {
     const next = encodeURIComponent("./admin-index.html");
-    location.href = `./login.html?next=${next}`;
+    const extra = withLogout ? "&logout=1" : "";
+    location.href = `./login.html?next=${next}${extra}`;
   }
 
   function loadSession() {

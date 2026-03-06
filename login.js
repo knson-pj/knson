@@ -11,11 +11,32 @@
 
   const nextUrl = getNextUrl();
 
+const urlObj = (() => { try { return new URL(location.href); } catch { return null; } })();
+const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
+
+
   const K = window.KNSN || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
 
   // 이미 로그인되어 있으면 바로 이동
   (async () => {
+    // 로그아웃으로 넘어온 경우: Supabase 세션/로컬 세션을 강제로 정리한 뒤,
+    // 자동 리다이렉트(자동 로그인)를 하지 않고 로그인 화면을 유지합니다.
+    if (isLogoutFlow) {
+      try {
+        if (sbEnabled && K && typeof K.sbHardSignOut === "function") await K.sbHardSignOut();
+        else if (sbEnabled && K && typeof K.sbSignOut === "function") await K.sbSignOut();
+      } catch {}
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+      try {
+        if (urlObj) {
+          urlObj.searchParams.delete("logout");
+          history.replaceState({}, "", urlObj.pathname + (urlObj.searchParams.toString() ? ("?" + urlObj.searchParams.toString()) : ""));
+        }
+      } catch {}
+      setMsg("로그아웃되었습니다. 다시 로그인해 주세요.");
+      return;
+    }
     if (sbEnabled) {
       try {
         const synced = await K.sbSyncLocalSession();

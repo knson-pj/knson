@@ -173,15 +173,49 @@
     return local;
   }
 
-  async function sbSignOut() {
-    const sb = initSupabase();
-    if (sb) {
-      try { await sb.auth.signOut(); } catch {}
-    }
-    clearSession();
+  function getSupabaseProjectRef() {
+  const cfg = getSupabaseConfig();
+  if (!cfg.url) return "";
+  try {
+    const u = new URL(cfg.url);
+    const host = u.hostname || "";
+    return (host.split(".")[0] || "").trim();
+  } catch {
+    return "";
   }
+}
 
-  async function sbGetSession() {
+function clearSupabaseStorage() {
+  const ref = getSupabaseProjectRef();
+  if (!ref) return;
+  const prefix = `sb-${ref}-`;
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) localStorage.removeItem(k);
+    }
+  } catch {}
+}
+
+async function sbHardSignOut() {
+  const sb = initSupabase();
+  if (sb) {
+    try { await sb.auth.signOut(); } catch {}
+  }
+  // signOut이 실패/경쟁상태여도, 로컬 스토리지의 supabase 세션 키를 강제로 제거해
+  // '로그아웃했는데 다시 자동 로그인' 되는 현상을 차단합니다.
+  clearSupabaseStorage();
+  clearSession();
+  try { sessionStorage.removeItem(KEEP_SESSION_KEY); } catch {}
+  return true;
+}
+
+// 기존 호환용
+async function sbSignOut() {
+  return sbHardSignOut();
+}
+
+async function sbGetSession() {
     const sb = initSupabase();
     if (!sb) return null;
     const { data } = await sb.auth.getSession();
@@ -247,6 +281,7 @@
     normalizeLoginEmail,
     sbSignIn,
     sbSignOut,
+    sbHardSignOut,
     sbGetSession,
     sbSyncLocalSession,
   };
