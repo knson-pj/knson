@@ -256,6 +256,12 @@ function bindEvents() {
   }
 
   async function ensureLoginThenLoad() {
+    // Supabase 세션이 있으면 local session(roles/name 포함)을 먼저 동기화한 뒤 UI를 렌더합니다.
+    try {
+      if (window.KNSN && K.supabaseEnabled && K.supabaseEnabled()) {
+        await K.sbSyncLocalSession();
+      }
+    } catch {}
     // storage에 저장된 세션을 최신으로 반영 (탭 이동/리다이렉트 직후 레이스 방지)
     state.session = loadSession();
     renderSessionUI();
