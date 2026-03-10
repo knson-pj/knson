@@ -17,8 +17,8 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     return send(res, 200, {
       ok: true,
-      message: '일반물건 등록 API',
-      requiredFields: ['address', 'price', 'registrantName', 'phone'],
+      message: '공개 매물 등록 API',
+      requiredFields: ['submitterType', 'address', 'assetType', 'priceMain', 'submitterName', 'submitterPhone'],
     });
   }
 
@@ -27,51 +27,86 @@ module.exports = async function handler(req, res) {
   }
 
   const body = getJsonBody(req);
-  const address = String(body.address || '').trim();
-  const price = Number(body.price || 0);
-  const registrantName = String(body.registrantName || body.ownerName || '').trim();
-  const phone = normalizePhone(body.phone);
+  const submitterType = String(body.submitterType || '').trim() === 'realtor' ? 'realtor' : 'owner';
+  const sourceType = submitterType === 'realtor' ? 'realtor' : 'general';
 
-  if (!address || !price || !registrantName || !phone) {
-    return send(res, 400, { ok: false, message: '필수값(address, price, registrantName, phone)을 입력하세요.' });
+  const address = String(body.address || '').trim();
+  const assetType = String(body.assetType || '').trim();
+  const priceMain = Number(body.priceMain || 0);
+  const submitterName = String(body.submitterName || body.registrantName || '').trim();
+  const submitterPhone = normalizePhone(body.submitterPhone || body.phone);
+  const brokerOfficeName = String(body.brokerOfficeName || '').trim();
+  const brokerName = String(body.brokerName || '').trim();
+  const brokerLicenseNo = String(body.brokerLicenseNo || '').trim();
+
+  if (!address || !assetType || !priceMain || !submitterName || !submitterPhone) {
+    return send(res, 400, {
+      ok: false,
+      message: '필수값(submitterType, address, assetType, priceMain, submitterName, submitterPhone)을 입력하세요.',
+    });
+  }
+
+  if (submitterType === 'realtor' && !brokerOfficeName) {
+    return send(res, 400, { ok: false, message: '공인중개사 등록은 중개사무소명이 필요합니다.' });
   }
 
   const normalizedAddress = normalizeAddress(address);
-  const exists = store.properties.some(p => p.normalizedAddress === normalizedAddress);
+  const exists = store.properties.some((p) => p.normalizedAddress === normalizedAddress && p.source === sourceType);
   if (exists) {
     return send(res, 409, { ok: false, message: '동일 주소 물건이 이미 등록되어 있습니다.' });
   }
 
   const geo = extractGuDong(address);
+  const prefix = sourceType === 'realtor' ? 'R' : 'G';
+  const itemNo = `${prefix}${(store.properties.filter((p) => String(p.source || '').toLowerCase() === sourceType).length + 1)}`;
+
   const item = {
     id: id('prop'),
-    source: 'general',
+    globalId: `${sourceType}:${itemNo}`,
+    itemNo,
+    source: sourceType,
+    sourceType,
+    submitterType,
     address,
     normalizedAddress,
-    price,
+    assetType,
+    priceMain,
     region: String(body.region || '').trim(),
     district: String(body.district || geo.gu || '').trim(),
     dong: String(body.dong || geo.dong || '').trim(),
-    ownerName: registrantName,
-    phone,
+    ownerName: submitterName,
+    submitterName,
+    submitterPhone,
+    brokerOfficeName,
+    brokerName,
+    brokerLicenseNo,
+    commonArea: body.commonArea ?? null,
+    exclusiveArea: body.exclusiveArea ?? null,
+    siteArea: body.siteArea ?? null,
+    useApproval: body.useApproval || null,
+    sourceUrl: body.sourceUrl || null,
+    memo: String(body.memo || '').trim(),
     assigneeId: null,
     assigneeName: '',
     status: 'review',
     createdByType: 'public',
-    createdByName: registrantName,
+    createdByName: submitterName,
     createdAt: nowIso(),
     updatedAt: nowIso(),
-    note: String(body.note || '프론트 일반물건 등록').trim(),
+    note: String(body.note || '공개 매물 등록').trim(),
+    raw: body,
   };
 
   store.properties.unshift(item);
 
   return send(res, 201, {
     ok: true,
-    message: '검토후 연락드리겠습니다.',
+    message: '등록이 접수되었습니다.',
     item: {
       id: item.id,
       source: item.source,
+      sourceType: item.sourceType,
+      itemNo: item.itemNo,
       status: item.status,
       address: item.address,
       createdAt: item.createdAt,
