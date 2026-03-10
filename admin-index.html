@@ -56,7 +56,8 @@
           <div class="summary-card"><span>전체 물건</span><strong id="sumTotal">0</strong></div>
           <div class="summary-card"><span>경매</span><strong id="sumAuction">0</strong></div>
           <div class="summary-card"><span>공매</span><strong id="sumGongmae">0</strong></div>
-          <div class="summary-card"><span>중개</span><strong id="sumGeneral">0</strong><em id="sumGeneralFlag" class="summary-mini">일반 0</em></div>
+          <div class="summary-card"><span>중개</span><strong id="sumRealtor">0</strong></div>
+          <div class="summary-card"><span>일반</span><strong id="sumGeneral">0</strong></div>
           <div class="summary-card"><span>담당자 수</span><strong id="sumAgents">0</strong></div>
           <div class="summary-card"><span>중개사무소 수</span><strong id="sumOffices">0</strong></div>
         </div>
@@ -86,6 +87,7 @@
             <option value="auction">경매</option>
             <option value="onbid">공매</option>
             <option value="realtor">중개</option>
+            <option value="general">일반</option>
           </select>
 
           <select id="propStatusFilter" class="select">
@@ -105,7 +107,6 @@
               <tr>
                 <th>물건번호</th>
                 <th>구분</th>
-                <th>일반</th>
                 <th>주소</th>
                 <th>부동산유형</th>
                 <th>기준금액</th>
@@ -397,6 +398,7 @@
               <option value="auction">경매</option>
               <option value="onbid">공매</option>
               <option value="realtor">중개</option>
+            <option value="general">일반</option>
             </select>
           </label>
         </div>
@@ -467,7 +469,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./knson-core.js?v=20260306-2"></script>
-  <script src="./admin-app.js?v=20260306-4"></script>
+  <script src="./knson-core.js?v=20260310-1"></script>
+  <script src="./admin-app.js?v=20260310-1"></script>
 </body>
 </html>

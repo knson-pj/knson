@@ -73,6 +73,7 @@
       sumTotal: $("#sumTotal"),
       sumAuction: $("#sumAuction"),
       sumGongmae: $("#sumGongmae"),
+      sumRealtor: $("#sumRealtor"),
       sumGeneral: $("#sumGeneral"),
       sumAgents: $("#sumAgents"),
       sumOffices: $("#sumOffices"),
@@ -476,10 +477,10 @@ function bindEvents() {
     const rawSource = (item.sourceType || item.source || item.category || item.source_type || "").toString().toLowerCase();
     const sourceType =
       rawSource === "auction" ? "auction" :
-      rawSource === "gongmae" || rawSource === "onbid" ? "onbid" :
+      rawSource === "gongmae" || rawSource === "public" || rawSource === "onbid" ? "onbid" :
       rawSource === "realtor" ? "realtor" :
-      rawSource === "general" ? "realtor" :
-      "realtor";
+      rawSource === "general" ? "general" :
+      "general";
 
     const itemNo = (item.itemNo || item.caseNo || item.externalId || item.listingId || item.item_no || "").toString().trim();
     const address = (item.address || item.location || item.addr || "").toString().trim();
@@ -492,7 +493,7 @@ function bindEvents() {
       globalId: (item.globalId || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")).toString(),
       sourceType,
       itemNo,
-      isGeneral: Boolean(item.isGeneral || item.is_general || item.source === "general" || item.origin === "general"),
+      isGeneral: Boolean(item.isGeneral || item.is_general || item.origin === "general"),
       address,
       assetType: (item.assetType || item.asset_type || item.type || item.propertyType || item.kind || "").toString().trim(),
       priceMain: toNumber(item.priceMain ?? item.price_main ?? item.salePrice ?? item.price ?? item.appraisalPrice ?? 0),
@@ -553,11 +554,8 @@ function bindEvents() {
     if (els.sumTotal) els.sumTotal.textContent = String(props.length);
     if (els.sumAuction) els.sumAuction.textContent = String(props.filter(p => p.sourceType === "auction").length);
     if (els.sumGongmae) els.sumGongmae.textContent = String(props.filter(p => p.sourceType === "onbid").length);
-    if (els.sumGeneral) els.sumGeneral.textContent = String(props.filter(p => p.sourceType === "realtor").length);
-
-    const generalCnt = props.filter(p => p.isGeneral).length;
-    const mini = document.getElementById("sumGeneralFlag");
-    if (mini) mini.textContent = `일반 ${generalCnt}`;
+    if (els.sumRealtor) els.sumRealtor.textContent = String(props.filter(p => p.sourceType === "realtor").length);
+    if (els.sumGeneral) els.sumGeneral.textContent = String(props.filter(p => p.sourceType === "general").length);
 
     if (els.sumAgents) els.sumAgents.textContent = String(staff.filter(s => s.role === "agent").length);
     if (els.sumOffices) els.sumOffices.textContent = String(offices.length);
@@ -603,13 +601,11 @@ function bindEvents() {
     for (const p of rows) {
       const tr = document.createElement("tr");
 
-      const kindLabel = p.sourceType === "auction" ? "경매" : p.sourceType === "onbid" ? "공매" : "중개";
-      const general = p.isGeneral ? '<span class="cell-badge danger">일반</span>' : '-';
+      const kindLabel = p.sourceType === "auction" ? "경매" : p.sourceType === "onbid" ? "공매" : p.sourceType === "realtor" ? "중개" : "일반";
 
       tr.innerHTML = `
         <td>${escapeHtml(p.itemNo || "-")}</td>
         <td>${escapeHtml(kindLabel)}</td>
-        <td>${general}</td>
         <td>${escapeHtml(p.address || "-")}</td>
         <td>${escapeHtml(p.assetType || "-")}</td>
         <td>${p.priceMain ? formatMoneyKRW(p.priceMain) : "-"}</td>
@@ -656,7 +652,6 @@ function bindEvents() {
 
     setVal("itemNo", item.itemNo);
     setVal("sourceType", item.sourceType);
-    setVal("isGeneral", item.isGeneral ? "true" : "false");
     setVal("assignedAgentName", item.assignedAgentName);
     setVal("address", item.address);
     setVal("assetType", item.assetType);
@@ -699,7 +694,7 @@ function bindEvents() {
 
     // 관리자 전용 필드
     if (f.elements["sourceType"]) f.elements["sourceType"].disabled = !isAdmin;
-    if (f.elements["isGeneral"]) f.elements["isGeneral"].disabled = !isAdmin;
+    if (f.elements["isGeneral"]) f.elements["isGeneral"].disabled = true;
     if (f.elements["assignedAgentName"]) f.elements["assignedAgentName"].disabled = !isAdmin;
 
     setAemMsg("");
@@ -742,7 +737,6 @@ function bindEvents() {
       globalId: item.globalId || "",
       itemNo: readStr("itemNo") || null,
       sourceType: readStr("sourceType") || null,
-      isGeneral: readStr("isGeneral") === "true",
       assignedAgentName: readStr("assignedAgentName") || null,
       address: readStr("address") || null,
       assetType: readStr("assetType") || null,

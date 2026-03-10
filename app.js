@@ -11,7 +11,7 @@
     session: loadSession(),
     items: [],
     view: "text", // text | map
-    source: "all", // all | auction | gongmae | general
+    source: "all", // all | auction | onbid | realtor | general
     keyword: "",
     status: "",
 
@@ -78,11 +78,13 @@
     els.statTotal = document.getElementById("statTotal");
     els.statAuction = document.getElementById("statAuction");
     els.statGongmae = document.getElementById("statGongmae");
+    els.statRealtor = document.getElementById("statRealtor");
     els.statGeneral = document.getElementById("statGeneral");
 
     els.statTotalCard = document.getElementById("statTotalCard");
     els.statAuctionCard = document.getElementById("statAuctionCard");
     els.statGongmaeCard = document.getElementById("statGongmaeCard");
+    els.statRealtorCard = document.getElementById("statRealtorCard");
     els.statGeneralCard = document.getElementById("statGeneralCard");
 
     // Views
@@ -161,7 +163,8 @@
 
     bindCard(els.statTotalCard, "all");
     bindCard(els.statAuctionCard, "auction");
-    bindCard(els.statGongmaeCard, "gongmae");
+    bindCard(els.statGongmaeCard, "onbid");
+    bindCard(els.statRealtorCard, "realtor");
     bindCard(els.statGeneralCard, "general");
 
     // 탭
@@ -251,10 +254,26 @@
   // ---- Data ----
   async function loadProperties() {
     try {
-      const role = state.session?.user?.role;
-      const scope = isAdminUser(state.session.user) ? "all" : "mine";
-      const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
-      state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+      const user = state.session?.user;
+
+      if (sb) {
+        try { await K.sbSyncLocalSession(); } catch {}
+        const uid = state.session?.user?.id;
+        const isAdmin = isAdminUser(state.session?.user);
+
+        let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).limit(5000);
+        if (!isAdmin) q = q.eq("assignee_id", uid);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
+      } else {
+        const scope = isAdminUser(state.session.user) ? "all" : "mine";
+        const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
+        state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
+      }
 
       renderKPIs();
       renderTable();
@@ -263,42 +282,49 @@
         await ensureKakaoMap();
         await renderKakaoMarkers();
       }
-
-      // 필터 패널 닫기(선택)
       closeFilter();
     } catch (err) {
       console.error(err);
       state.items = [];
       renderKPIs();
       renderTable();
-      // 네트워크 오류는 alert로 충분
       alert(err?.message || "목록을 불러오지 못했습니다.");
     }
   }
 
   function normalizeItem(p) {
-    const source = p.source || p.category || "general"; // auction | gongmae | general
+    const rawSource = (p.sourceType || p.source_type || p.source || p.category || "").toString().toLowerCase();
+    const source =
+      rawSource === "auction" ? "auction" :
+      rawSource === "gongmae" || rawSource === "public" || rawSource === "onbid" ? "onbid" :
+      rawSource === "realtor" ? "realtor" :
+      rawSource === "general" ? "general" :
+      "general";
+
+    const lat = toNumber(p.latitude ?? p.lat ?? "");
+    const lng = toNumber(p.longitude ?? p.lng ?? "");
     const address = p.address || p.location || "";
 
     return {
-      id: p.id || "",
+      id: p.id || p.global_id || "",
       source,
       address,
-      // 테이블
-      type: p.type || p.propertyType || p.kind || "-",
+      type: p.assetType || p.asset_type || p.type || p.propertyType || p.kind || "-",
       floor: p.floor || p.floorText || "-",
-      areaPyeong: toAreaPy(p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
-      appraisalPrice: toNumber(p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price),
-      currentPrice: toNumber(p.currentPrice ?? p.current_price),
-      bidDate: p.bidDate || p.bid_date || "-",
-      createdAt: p.createdAt || p.created_at || "",
-      assignedAgentName: p.assignedAgentName || p.agentName || p.manager || "-",
+      areaPyeong: toAreaPy(p.commonArea ?? p.common_area ?? p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
+      appraisalPrice: toNumber(p.appraisalPrice ?? p.appraisal_price ?? p.priceMain ?? p.price_main ?? p.salePrice ?? p.sale_price),
+      currentPrice: toNumber(p.currentPrice ?? p.current_price ?? p.priceMain ?? p.price_main),
+      bidDate: p.dateMain || p.date_main || p.bidDate || p.bid_date || "-",
+      createdAt: p.date || p.date_uploaded || p.createdAt || p.created_at || "",
+      assignedAgentName: p.assignedAgentName || p.assigneeName || p.agentName || p.manager || "-",
       analysisDone: !!(p.analysisDone ?? p.analysis_done),
       fieldDone: !!(p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done),
-      memo: p.memo || p.comment || "",
-      status: p.status || "", // optional
-      regionGu: p.regionGu || "",
-      regionDong: p.regionDong || "",
+      memo: p.memo || p.comment || p.raw?.memo || "",
+      status: p.status || "",
+      regionGu: p.regionGu || p.region_gu || "",
+      regionDong: p.regionDong || p.region_dong || "",
+      latitude: Number.isFinite(lat) ? lat : null,
+      longitude: Number.isFinite(lng) ? lng : null,
     };
   }
 
@@ -334,7 +360,8 @@
 
     if (els.statTotal) els.statTotal.textContent = String(all.length);
     if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => p.source === "auction").length);
-    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => p.source === "gongmae").length);
+    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => p.source === "onbid").length);
+    if (els.statRealtor) els.statRealtor.textContent = String(all.filter((p) => p.source === "realtor").length);
     if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => p.source === "general").length);
 
     // 선택 상태 시각화
@@ -345,7 +372,8 @@
 
     setActive(els.statTotalCard, state.source === "all");
     setActive(els.statAuctionCard, state.source === "auction");
-    setActive(els.statGongmaeCard, state.source === "gongmae");
+    setActive(els.statGongmaeCard, state.source === "onbid");
+    setActive(els.statRealtorCard, state.source === "realtor");
     setActive(els.statGeneralCard, state.source === "general");
   }
 
@@ -376,8 +404,8 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
 
-    const kindClass = p.source === "auction" ? "kind-auction" : p.source === "gongmae" ? "kind-gongmae" : "kind-general";
-    const kindLabel = p.source === "auction" ? "경매" : p.source === "gongmae" ? "공매" : "일반";
+    const kindClass = p.source === "auction" ? "kind-auction" : p.source === "onbid" ? "kind-gongmae" : p.source === "realtor" ? "kind-realtor" : "kind-general";
+    const kindLabel = p.source === "auction" ? "경매" : p.source === "onbid" ? "공매" : p.source === "realtor" ? "중개" : "일반";
 
     const locText = formatLocation(p);
     const appraisal = p.appraisalPrice ? formatMoneyEok(p.appraisalPrice) : "-";
@@ -492,13 +520,13 @@
     state.markers = [];
 
     const rows = getFilteredRows();
-    const valid = rows.filter((r) => (r.address || "").trim().length > 0);
+    const valid = rows.filter((r) => (r.address || "").trim().length > 0 || (r.latitude != null && r.longitude != null));
     if (!valid.length) return;
 
     let firstPos = null;
 
     for (const it of valid.slice(0, 200)) {
-      const pos = await geocodeCached(it.address);
+      const pos = (it.latitude != null && it.longitude != null) ? { lat: it.latitude, lng: it.longitude } : await geocodeCached(it.address);
       if (!pos) continue;
 
       if (!firstPos) firstPos = pos;

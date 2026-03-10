@@ -94,6 +94,24 @@
     return el ? String(el.getAttribute("content") || "").trim() : "";
   }
 
+  function getStoredSupabaseConfig() {
+    try {
+      return {
+        url: String(localStorage.getItem("knson_supabase_url") || "").trim(),
+        anonKey: String(localStorage.getItem("knson_supabase_key") || "").trim(),
+      };
+    } catch {
+      return { url: "", anonKey: "" };
+    }
+  }
+
+  function storeSupabaseConfig(url, anonKey) {
+    try {
+      if (url) localStorage.setItem("knson_supabase_url", url);
+      if (anonKey) localStorage.setItem("knson_supabase_key", anonKey);
+    } catch {}
+  }
+
   // ---------------------------------------------------------------------------
   // Theme helpers
   // ---------------------------------------------------------------------------
@@ -156,7 +174,13 @@
   let _sb = null;
 
   function getSupabaseConfig() {
-    return { url: getMeta("supabase-url"), anonKey: getMeta("supabase-anon-key") };
+    const metaUrl = getMeta("supabase-url");
+    const metaAnonKey = getMeta("supabase-anon-key");
+    if (metaUrl && metaAnonKey) {
+      storeSupabaseConfig(metaUrl, metaAnonKey);
+      return { url: metaUrl, anonKey: metaAnonKey };
+    }
+    return getStoredSupabaseConfig();
   }
 
   function supabaseEnabled() {

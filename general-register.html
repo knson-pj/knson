@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>누구나 매물 등록 | 부동산 통합 관리 시스템</title>
-  <meta name="supabase-url" content="https://sdkiwbzpllyqqlvdtimz.supabase.co" />
-  <meta name="supabase-anon-key" content="sb_publishable_Q3YN6qECq8gl1ABy4elRqg_jLAn_Te7" />
+  <meta name="supabase-url" content="" />
+  <meta name="supabase-anon-key" content="" />
   <link rel="stylesheet" href="./general-register.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
       <div class="dot"></div>
       <div>
         <div class="brand-title">누구나 매물 등록</div>
-        <div class="brand-sub">주소·매각가·등록자·전화번호를 입력해 주세요.</div>
+        <div class="brand-sub">구분·주소·매각가·등록자·전화번호를 입력해 주세요.</div>
       </div>
     </div>
 
@@ -27,9 +27,17 @@
   <main class="wrap">
     <section id="viewForm" class="card">
       <h1 class="h1">매물 정보 입력</h1>
-      <p class="muted">제3자(부동산 소유자/중개인)가 등록하는 페이지입니다. 등록 후 <strong>검토 후 연락드리겠습니다.</strong></p>
+      <p class="muted">누구나 등록할 수 있는 페이지입니다. <strong>중개</strong>는 공인중개사 관련 등록물, <strong>일반</strong>은 공인중개사와 관련없는 일반 등록물로 분류됩니다.</p>
 
       <form id="generalForm" class="form">
+        <label class="field">
+          <span>구분 *</span>
+          <select name="sourceType" required>
+            <option value="realtor">중개 (공인중개사 관련 등록물)</option>
+            <option value="general">일반 (공인중개사와 관련없는 일반 등록물)</option>
+          </select>
+        </label>
+
         <label class="field">
           <span>물건 주소 *</span>
           <input name="address" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
@@ -75,7 +83,7 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./knson-core.js?v=20260306-1"></script>
-  <script src="./general-register.js?v=20260306-1"></script>
+  <script src="./knson-core.js?v=20260310-1"></script>
+  <script src="./general-register.js?v=20260310-1"></script>
 </body>
 </html>

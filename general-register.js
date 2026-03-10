@@ -23,6 +23,7 @@
     e.preventDefault();
 
     const fd = new FormData(form);
+    const sourceType = String(fd.get("sourceType") || "general").trim() || "general";
     const address = String(fd.get("address") || "").trim();
     const salePrice = Number(fd.get("salePrice") || 0);
     const registrant = String(fd.get("registrantName") || "").trim();
@@ -34,11 +35,7 @@
     }
 
     const payload = {
-      // 최신 정책:
-      // - sourceType은 3종 고정: auction / onbid / realtor(중개)
-      // - '일반'은 sourceType이 아니라 추가 컬럼(플래그)로 사용
-      sourceType: "realtor",
-      isGeneral: true, // '누구나 매물 등록'으로 들어온 매물
+      sourceType,
       address,
       priceMain: salePrice,
       memo: `등록자:${registrant} / 전화:${phone}`,
@@ -54,16 +51,17 @@
         // Supabase 직접 저장(초기 버전: 즉시 노출 요구사항 반영)
         // 보안/검증은 추후 강화 예정 (승인/캡차/레이트리밋 등)
         const sb = K.initSupabase();
-        const globalId = `realtor:public:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        const globalId = `${sourceType}:public:${Date.now()}:${Math.random().toString(16).slice(2)}`;
         const row = {
           global_id: globalId,
           item_no: globalId,
-          source_type: "realtor",
-          is_general: true,
+          source_type: sourceType,
+          is_general: false,
           address,
           price_main: salePrice,
-          memo: payload.memo,
+          memo: [payload.memo, fd.get("memo") ? String(fd.get("memo")).trim() : ""].filter(Boolean).join("\n"),
           assignee_id: null,
+          date_uploaded: new Date().toISOString(),
           raw: payload,
         };
 
@@ -78,14 +76,13 @@
       const res = await api("/public-listings", {
         method: "POST",
         body: {
-          source: "general",
+          source: sourceType === "realtor" ? "general" : "general",
           address: payload.address,
           salePrice: payload.priceMain,
           registrant: payload.registrant,
           phone: payload.phone,
           // forward-compatible fields
           sourceType: payload.sourceType,
-          isGeneral: payload.isGeneral,
           priceMain: payload.priceMain,
           memo: payload.memo,
         },
