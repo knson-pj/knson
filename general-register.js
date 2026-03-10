@@ -13,13 +13,19 @@
   const K = window.KNSN || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
 
+  document.addEventListener("DOMContentLoaded", () => {
+    if (K && typeof K.initTheme === "function") {
+      K.initTheme({ container: document.querySelector(".actions"), className: "theme-toggle" });
+    }
+  });
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const fd = new FormData(form);
     const address = String(fd.get("address") || "").trim();
     const salePrice = Number(fd.get("salePrice") || 0);
-    const registrant = String(fd.get("registrant") || "").trim();
+    const registrant = String(fd.get("registrantName") || "").trim();
     const phone = String(fd.get("phone") || "").trim();
 
     if (!address || !salePrice || !registrant || !phone) {

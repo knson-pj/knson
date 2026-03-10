@@ -1,30 +1,18 @@
 (() => {
   "use strict";
 
-  // ---------------------------------------------------------------------------
-  // KNSN Core Utilities (shared across login / main / admin / public register)
-  // - Safe session handling across page navigation
-  // - Numeric/date parsing helpers (fixes: toNumber is not defined)
-  // - Optional Supabase bootstrap (enabled only if meta tags are set)
-  // ---------------------------------------------------------------------------
-
   const API_BASE_FALLBACK = "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
   const KEEP_SESSION_KEY = "knson_nav_keep_session";
+  const THEME_KEY = "knson_theme_v1";
 
-  // A안: 브라우저 종료 시 자동 로그아웃(세션 유지 X)
-  // - 앱 세션은 sessionStorage에만 저장합니다.
-  // - 과거 버전 localStorage 세션은 자동로그인의 원인이므로 정리합니다.
   const SESSION_STORE = (typeof sessionStorage !== "undefined") ? sessionStorage : null;
   const LEGACY_STORE = (typeof localStorage !== "undefined") ? localStorage : null;
 
   function clearLegacySession() {
     try { LEGACY_STORE && LEGACY_STORE.removeItem(SESSION_KEY); } catch {}
   }
-
-  // 초기 로드 시 과거 세션 정리
   clearLegacySession();
-
 
   function safeJsonParse(str) {
     try { return JSON.parse(str); } catch { return null; }
@@ -52,7 +40,7 @@
     clearLegacySession();
   }
 
-function setKeepSessionOnce(ms = 15000) {
+  function setKeepSessionOnce(ms = 15000) {
     try {
       sessionStorage.setItem(KEEP_SESSION_KEY, "1");
       window.setTimeout(() => {
@@ -65,7 +53,6 @@ function setKeepSessionOnce(ms = 15000) {
     try { return sessionStorage.getItem(KEEP_SESSION_KEY) === "1"; } catch { return false; }
   }
 
-  // Extract a number from mixed strings like "12,345", "12,345원", "건물 12.3", "  "
   function toNumber(v) {
     if (v === null || v === undefined) return NaN;
     if (typeof v === "number") return v;
@@ -82,22 +69,17 @@ function setKeepSessionOnce(ms = 15000) {
     if (!value) return null;
     const s = String(value).trim();
     if (!s) return null;
-
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-
     const m1 = s.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
     if (m1) {
       const yy = Number(m1[1]);
       const yyyy = yy >= 70 ? 1900 + yy : 2000 + yy;
       return `${yyyy}-${m1[2]}-${m1[3]}`;
     }
-
     const m2 = s.match(/^(\d{4})\.(\d{2})\.(\d{2})$/);
     if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
-
     const m3 = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
     if (m3) return `${m3[1]}-${m3[2]}-${m3[3]}`;
-
     return null;
   }
 
@@ -112,7 +94,65 @@ function setKeepSessionOnce(ms = 15000) {
     return el ? String(el.getAttribute("content") || "").trim() : "";
   }
 
-  // --- Supabase (optional) ----------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Theme helpers
+  // ---------------------------------------------------------------------------
+  function getStoredTheme() {
+    try {
+      const raw = localStorage.getItem(THEME_KEY);
+      if (raw === "light" || raw === "dark") return raw;
+    } catch {}
+    try {
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    } catch {
+      return "light";
+    }
+  }
+
+  function applyTheme(theme) {
+    const next = theme === "dark" ? "dark" : "light";
+    try { document.documentElement.setAttribute("data-theme", next); } catch {}
+    try { localStorage.setItem(THEME_KEY, next); } catch {}
+    const btns = document.querySelectorAll("[data-theme-toggle]");
+    btns.forEach((btn) => {
+      btn.setAttribute("aria-pressed", next === "dark" ? "true" : "false");
+      btn.innerHTML = next === "dark"
+        ? '<span class="theme-icon">☀</span><span>라이트</span>'
+        : '<span class="theme-icon">☾</span><span>다크</span>';
+    });
+    return next;
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute("data-theme") || getStoredTheme();
+    return applyTheme(current === "dark" ? "light" : "dark");
+  }
+
+  function mountThemeToggle(container, opts = {}) {
+    if (!container) return null;
+    let btn = container.querySelector("[data-theme-toggle]");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = opts.className || "btn-theme";
+      btn.setAttribute("data-theme-toggle", "true");
+      btn.setAttribute("aria-label", "라이트/다크 모드 전환");
+      container.prepend(btn);
+      btn.addEventListener("click", () => toggleTheme());
+    }
+    applyTheme(getStoredTheme());
+    return btn;
+  }
+
+  function initTheme(opts = {}) {
+    applyTheme(getStoredTheme());
+    if (opts && opts.container) mountThemeToggle(opts.container, opts);
+    return document.documentElement.getAttribute("data-theme") || "light";
+  }
+
+  // ---------------------------------------------------------------------------
+  // Supabase (optional)
+  // ---------------------------------------------------------------------------
   let _sb = null;
 
   function getSupabaseConfig() {
@@ -128,15 +168,10 @@ function setKeepSessionOnce(ms = 15000) {
     if (_sb) return _sb;
     const cfg = getSupabaseConfig();
     if (!cfg.url || !cfg.anonKey) return null;
-
-    const g = (window.supabase && typeof window.supabase.createClient === "function")
-      ? window.supabase
-      : null;
+    const g = (window.supabase && typeof window.supabase.createClient === "function") ? window.supabase : null;
     if (!g) return null;
 
-    const { createClient } = g;
-
-    _sb = createClient(cfg.url, cfg.anonKey, {
+    _sb = g.createClient(cfg.url, cfg.anonKey, {
       auth: {
         autoRefreshToken: true,
         persistSession: true,
@@ -196,54 +231,48 @@ function setKeepSessionOnce(ms = 15000) {
   }
 
   function getSupabaseProjectRef() {
-  const cfg = getSupabaseConfig();
-  if (!cfg.url) return "";
-  try {
-    const u = new URL(cfg.url);
-    const host = u.hostname || "";
-    return (host.split(".")[0] || "").trim();
-  } catch {
-    return "";
-  }
-}
-
-function clearSupabaseStorage() {
-  const ref = getSupabaseProjectRef();
-  if (!ref) return;
-  const prefix = `sb-${ref}-`;
-  const stores = [];
-  try { if (LEGACY_STORE) stores.push(LEGACY_STORE); } catch {}
-  try { if (SESSION_STORE) stores.push(SESSION_STORE); } catch {}
-
-  for (const st of stores) {
+    const cfg = getSupabaseConfig();
+    if (!cfg.url) return "";
     try {
-      for (let i = st.length - 1; i >= 0; i--) {
-        const k = st.key(i);
-        if (k && k.startsWith(prefix)) st.removeItem(k);
-      }
-    } catch {}
+      const u = new URL(cfg.url);
+      const host = u.hostname || "";
+      return (host.split(".")[0] || "").trim();
+    } catch {
+      return "";
+    }
   }
-}
 
-async function sbHardSignOut() {
-  const sb = initSupabase();
-  if (sb) {
-    try { await sb.auth.signOut(); } catch {}
+  function clearSupabaseStorage() {
+    const ref = getSupabaseProjectRef();
+    if (!ref) return;
+    const prefix = `sb-${ref}-`;
+    const stores = [];
+    try { if (LEGACY_STORE) stores.push(LEGACY_STORE); } catch {}
+    try { if (SESSION_STORE) stores.push(SESSION_STORE); } catch {}
+    for (const st of stores) {
+      try {
+        for (let i = st.length - 1; i >= 0; i--) {
+          const k = st.key(i);
+          if (k && k.startsWith(prefix)) st.removeItem(k);
+        }
+      } catch {}
+    }
   }
-  // signOut이 실패/경쟁상태여도, 로컬 스토리지의 supabase 세션 키를 강제로 제거해
-  // '로그아웃했는데 다시 자동 로그인' 되는 현상을 차단합니다.
-  clearSupabaseStorage();
-  clearSession();
-  try { sessionStorage.removeItem(KEEP_SESSION_KEY); } catch {}
-  return true;
-}
 
-// 기존 호환용
-async function sbSignOut() {
-  return sbHardSignOut();
-}
+  async function sbHardSignOut() {
+    const sb = initSupabase();
+    if (sb) {
+      try { await sb.auth.signOut(); } catch {}
+    }
+    clearSupabaseStorage();
+    clearSession();
+    try { sessionStorage.removeItem(KEEP_SESSION_KEY); } catch {}
+    return true;
+  }
 
-async function sbGetSession() {
+  async function sbSignOut() { return sbHardSignOut(); }
+
+  async function sbGetSession() {
     const sb = initSupabase();
     if (!sb) return null;
     const { data } = await sb.auth.getSession();
@@ -291,18 +320,23 @@ async function sbGetSession() {
     API_BASE_FALLBACK,
     SESSION_KEY,
     KEEP_SESSION_KEY,
+    THEME_KEY,
 
     safeJsonParse,
     loadSession,
     saveSession,
     clearSession,
-
     setKeepSessionOnce,
     isKeepSession,
-
     toNumber,
     toISODate,
     chunk,
+
+    getStoredTheme,
+    applyTheme,
+    toggleTheme,
+    mountThemeToggle,
+    initTheme,
 
     supabaseEnabled,
     initSupabase,

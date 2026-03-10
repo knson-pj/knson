@@ -44,6 +44,7 @@
     } catch {}
 
     cacheEls();
+    setupChrome();
 
     // Supabase 사용 시, 저장된 세션/role을 먼저 동기화해서
     // (로그아웃 루프/관리자 링크 숨김 등) 상태 불일치를 줄입니다.
@@ -52,8 +53,6 @@
       try { state.session = loadSession(); } catch {}
     }
 
-    // 내부 페이지 이동(관리자페이지 등) 시에는 자동 로그아웃을 스킵하기 위한 플래그
-    try { sessionStorage.removeItem("knson_nav_keep_session"); } catch {}
 
     // 로그인 없으면 즉시 로그인 페이지
     if (!state.session?.token || !state.session?.user) {
@@ -64,6 +63,7 @@
     // admin link: 관리자/담당자 모두 접근 가능(권한에 따라 admin 페이지에서 탭이 달라짐)
     if (els.adminLink) {
       els.adminLink.style.display = "inline-flex";
+      els.adminLink.classList.add("is-visible");
     }
 
     bindEvents();
@@ -105,12 +105,34 @@
     els.btnRefresh = document.getElementById("btnRefresh");
   }
 
+  function setupChrome() {
+    if (K && typeof K.initTheme === "function") {
+      const topRight = document.querySelector(".topbar-right");
+      K.initTheme({ container: topRight, className: "theme-toggle" });
+    }
+
+    const right = document.querySelector(".topbar-right");
+    if (right && !right.querySelector(".user-chip")) {
+      const chip = document.createElement("span");
+      chip.className = "user-chip";
+      const user = state.session?.user;
+      chip.textContent = user?.name ? `${user.name}${user.role ? ` · ${user.role === "admin" ? "관리자" : "담당자"}` : ""}` : "로그인";
+      right.prepend(chip);
+    }
+  }
+
+
   function bindEvents() {
     // 방어: DOM 구조가 바뀌어도 에러 안 나게
     if (els.btnLogout) {
       els.btnLogout.addEventListener("click", async () => {
         await logoutNow({ redirect: true });
       });
+    }
+
+    const themeBtn = document.querySelector("[data-theme-toggle]");
+    if (themeBtn && K && typeof K.mountThemeToggle === "function") {
+      K.mountThemeToggle(document.querySelector(".topbar-right"), { className: "theme-toggle" });
     }
 
     // 관리자페이지로 이동할 때는 '페이지 떠나면 자동 로그아웃' 규칙에서 예외 처리
@@ -194,23 +216,8 @@
         }
       }, 150)
     );
-
-    // 요구사항: 로그인 이후 페이지를 나가면 자동 로그아웃
-    // 단, 관리자페이지로 이동 같은 '내부 이동'은 예외 처리(위 플래그)
-    window.addEventListener("pagehide", () => {
-      let keep = false;
-      try { keep = sessionStorage.getItem("knson_nav_keep_session") === "1"; } catch {}
-      if (!keep) {
-        // Supabase 세션이 남아있으면 로그인 페이지에서 자동 복원되므로,
-        // 페이지 이탈 시에도 best-effort로 signOut을 호출합니다.
-        try {
-          if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbSignOut === "function") {
-            if (typeof K.sbHardSignOut === "function") K.sbHardSignOut(); else if (typeof K.sbSignOut === "function") K.sbSignOut(); // fire-and-forget
-          }
-        } catch {}
-        clearSession();
-      }
-    });
+    // 브라우저 종료 시에는 sessionStorage 기반 세션이 자동으로 종료됩니다.
+    // 내부 이동/새로고침 시 예기치 않은 로그아웃을 막기 위해 pagehide 강제 로그아웃은 사용하지 않습니다.
   }
 
   function setView(view) {

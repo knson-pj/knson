@@ -47,6 +47,7 @@
 
   function init() {
     cacheEls();
+    setupChrome();
     bindEvents();
     renderSessionUI();
     ensureLoginThenLoad();
@@ -134,6 +135,22 @@
       aemMsg: $("#aemMsg"),
 
     });
+  }
+
+
+  function setupChrome() {
+    if (K && typeof K.initTheme === "function") {
+      K.initTheme({ container: document.querySelector(".top-actions"), className: "theme-toggle" });
+    }
+
+    const actions = document.querySelector(".top-actions");
+    if (actions && !actions.querySelector(".top-link")) {
+      const mainLink = document.createElement("a");
+      mainLink.className = "btn btn-secondary top-link";
+      mainLink.href = "./index.html";
+      mainLink.textContent = "메인으로";
+      actions.prepend(mainLink);
+    }
   }
 
   
