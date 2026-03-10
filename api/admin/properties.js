@@ -34,7 +34,7 @@ module.exports = async function handler(req, res) {
     const address = String(body.address || '').trim();
     const source = String(body.source || 'general').trim().toLowerCase();
     const price = Number(body.price || 0);
-    if (!address || !['auction', 'public', 'general'].includes(source)) {
+    if (!address || !['auction', 'onbid', 'realtor', 'general'].includes(source)) {
       return send(res, 400, { ok: false, message: 'address, source 값이 올바르지 않습니다.' });
     }
 

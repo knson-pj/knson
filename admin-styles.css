@@ -105,7 +105,6 @@ body{
   border-color:transparent;
 }
 .btn-ghost{background:transparent;}
-.btn-danger{background:var(--danger);border-color:transparent;color:#fff;}
 .badge{cursor:default;}
 .badge-muted{color:var(--muted);}
 .badge-admin{
@@ -311,7 +310,6 @@ body{
   justify-content:space-between;
   gap:10px;
 }
-.modal-card-wide{width:min(920px, calc(100% - 24px));}
 .modal-header h3{margin:0;font-size:18px;}
 .modal-body{padding:18px;display:grid;gap:12px;}
 .icon-btn{
@@ -333,3 +331,6 @@ body{
 @media (max-width: 680px){
   .summary-grid{grid-template-columns:repeat(2, minmax(0,1fr));}
 }
+
+.btn-danger{background:#dc2626;color:#fff;border-color:#dc2626;}
+html[data-theme="dark"] .btn-danger{background:#ef4444;border-color:#ef4444;color:#fff;}

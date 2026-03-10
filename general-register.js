@@ -6,181 +6,190 @@
   const form = document.getElementById("generalForm");
   const msgEl = document.getElementById("msg");
   const btnSubmit = document.getElementById("btnSubmit");
-
   const viewForm = document.getElementById("viewForm");
   const viewDone = document.getElementById("viewDone");
+  const realtorFields = document.getElementById("realtorFields");
+  const ownerFields = document.getElementById("ownerFields");
+  const typeCards = () => [...document.querySelectorAll('.type-card')];
 
   const K = window.KNSN || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
-
-  const submitterRadios = [...document.querySelectorAll('input[name="submitterType"]')];
-  const ownerPanel = document.querySelector('[data-panel="owner"]');
-  const realtorPanel = document.querySelector('[data-panel="realtor"]');
 
   document.addEventListener("DOMContentLoaded", () => {
     if (K && typeof K.initTheme === "function") {
       K.initTheme({ container: document.querySelector(".actions"), className: "theme-toggle" });
     }
-    syncPanels(getSubmitterType());
-  });
-
-  submitterRadios.forEach((radio) => {
-    radio.addEventListener("change", () => syncPanels(getSubmitterType()));
+    bindTypeSwitch();
+    updateTypeUi(getSubmitterKind());
   });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const fd = new FormData(form);
-    const submitterType = getSubmitterType();
-    const sourceType = submitterType === "realtor" ? "realtor" : "general";
+    const submitterKind = getSubmitterKind();
+    const sourceType = submitterKind === 'realtor' ? 'realtor' : 'general';
+    const submitterType = submitterKind === 'realtor' ? 'realtor' : 'owner';
+
+    const address = readStr(fd, 'address');
+    const assetType = readStr(fd, 'assetType');
+    const priceMain = readNum(fd, 'priceMain');
+    const exclusiveArea = readNum(fd, 'exclusiveArea');
+    const commonArea = readNum(fd, 'commonArea');
+    const siteArea = readNum(fd, 'siteArea');
+    const useApproval = readStr(fd, 'useApproval') || null;
+    const sourceUrl = readStr(fd, 'sourceUrl') || null;
+    const memo = readStr(fd, 'memo') || null;
+
+    let submitterName = '';
+    let submitterPhone = '';
+    let brokerOfficeName = null;
+    let brokerName = null;
+    let brokerLicenseNo = null;
+
+    if (submitterKind === 'realtor') {
+      brokerOfficeName = readStr(fd, 'brokerOfficeName');
+      brokerName = readStr(fd, 'brokerName');
+      brokerLicenseNo = readStr(fd, 'brokerLicenseNo') || null;
+      submitterPhone = readStr(fd, 'submitterPhoneRealtor');
+      submitterName = brokerName;
+      if (!brokerOfficeName || !brokerName || !submitterPhone) {
+        setMsg('공인중개사 등록은 중개사무소명/공인중개사명/연락처를 입력해 주세요.');
+        return;
+      }
+    } else {
+      submitterName = readStr(fd, 'submitterNameOwner');
+      submitterPhone = readStr(fd, 'submitterPhoneOwner');
+      if (!submitterName || !submitterPhone) {
+        setMsg('소유자/일반 등록은 이름과 연락처를 입력해 주세요.');
+        return;
+      }
+    }
+
+    if (!address || !assetType || !priceMain) {
+      setMsg('주소/부동산유형/기준금액을 입력해 주세요.');
+      return;
+    }
 
     const payload = {
       sourceType,
       submitterType,
-      address: readText(fd, "address"),
-      assetType: readText(fd, "assetType"),
-      priceMain: readNumber(fd, "priceMain"),
-      commonArea: readNumber(fd, "commonArea"),
-      exclusiveArea: readNumber(fd, "exclusiveArea"),
-      siteArea: readNumber(fd, "siteArea"),
-      useApproval: readText(fd, "useApproval") || null,
-      sourceUrl: readText(fd, "sourceUrl") || null,
-      memo: readText(fd, "memo") || null,
-      submitterName: submitterType === "realtor" ? readText(fd, "brokerName") : readText(fd, "submitterNameOwner"),
-      submitterPhone: submitterType === "realtor" ? readText(fd, "submitterPhoneRealtor") : readText(fd, "submitterPhoneOwner"),
-      brokerOfficeName: submitterType === "realtor" ? readText(fd, "brokerOfficeName") : null,
-      brokerName: submitterType === "realtor" ? readText(fd, "brokerName") : null,
-      brokerLicenseNo: submitterType === "realtor" ? readText(fd, "brokerLicenseNo") : null,
+      address,
+      assetType,
+      priceMain,
+      exclusiveArea,
+      commonArea,
+      siteArea,
+      useApproval,
+      sourceUrl,
+      memo,
+      submitterName,
+      submitterPhone,
+      brokerOfficeName,
+      brokerName,
+      brokerLicenseNo,
     };
-
-    const validationError = validatePayload(payload);
-    if (validationError) {
-      setMsg(validationError);
-      return;
-    }
 
     try {
       setBusy(true);
-      setMsg("");
+      setMsg('');
 
       if (sbEnabled) {
         const sb = K.initSupabase();
         const row = {
-          source_type: payload.sourceType,
-          is_general: payload.sourceType === "general",
-          address: payload.address,
-          asset_type: payload.assetType,
-          exclusive_area: payload.exclusiveArea,
-          common_area: payload.commonArea,
-          site_area: payload.siteArea,
-          use_approval: payload.useApproval,
-          status: "review",
-          price_main: payload.priceMain,
-          source_url: payload.sourceUrl,
-          memo: payload.memo,
+          source_type: sourceType,
+          address,
+          asset_type: assetType,
+          exclusive_area: exclusiveArea,
+          common_area: commonArea,
+          site_area: siteArea,
+          use_approval: useApproval,
+          price_main: priceMain,
+          source_url: sourceUrl,
+          memo,
           assignee_id: null,
-          submitter_type: payload.submitterType,
-          submitter_name: payload.submitterName,
-          submitter_phone: payload.submitterPhone,
-          broker_office_name: payload.brokerOfficeName,
-          broker_name: payload.brokerName,
-          broker_license_no: payload.brokerLicenseNo,
-          raw: {
-            channel: "public-register",
-            submitted_at: new Date().toISOString(),
-            form: payload,
-          },
+          submitter_type: submitterType,
+          submitter_name: submitterName,
+          submitter_phone: submitterPhone,
+          broker_office_name: brokerOfficeName,
+          broker_name: brokerName,
+          broker_license_no: brokerLicenseNo,
+          raw: payload,
         };
 
-        Object.keys(row).forEach((key) => {
-          if (row[key] === "") row[key] = null;
-        });
-
-        const { error } = await sb.from("properties").insert(row);
+        const { error } = await sb.from('properties').insert(row);
         if (error) throw error;
-
         done();
         return;
       }
 
-      const res = await api("/public-listings", {
-        method: "POST",
+      const res = await api('/public-listings', {
+        method: 'POST',
         body: payload,
       });
-
-      if (!res?.ok) throw new Error(res?.message || "등록에 실패했습니다.");
+      if (!res?.ok) throw new Error(res?.message || '등록에 실패했습니다.');
       done();
     } catch (err) {
-      setMsg(err?.message || "등록에 실패했습니다.");
+      setMsg(err?.message || '등록에 실패했습니다.');
     } finally {
       setBusy(false);
     }
   });
 
-  function getSubmitterType() {
-    return (submitterRadios.find((radio) => radio.checked)?.value || "realtor").trim();
+  function bindTypeSwitch() {
+    typeCards().forEach((card) => {
+      const input = card.querySelector('input[name="submitterKind"]');
+      if (!input) return;
+      const sync = () => updateTypeUi(input.value);
+      input.addEventListener('change', sync);
+      card.addEventListener('click', () => {
+        input.checked = true;
+        updateTypeUi(input.value);
+      });
+    });
   }
 
-  function syncPanels(type) {
-    const isRealtor = type === "realtor";
-    realtorPanel?.classList.toggle("hidden", !isRealtor);
-    ownerPanel?.classList.toggle("hidden", isRealtor);
-
-    setRequired("brokerOfficeName", isRealtor);
-    setRequired("brokerName", isRealtor);
-    setRequired("submitterPhoneRealtor", isRealtor);
-    setRequired("submitterNameOwner", !isRealtor);
-    setRequired("submitterPhoneOwner", !isRealtor);
+  function getSubmitterKind() {
+    return document.querySelector('input[name="submitterKind"]:checked')?.value || 'realtor';
   }
 
-  function setRequired(name, required) {
-    const el = form.elements[name];
-    if (!el) return;
-    el.required = !!required;
-    if (!required) el.setCustomValidity("");
+  function updateTypeUi(kind) {
+    typeCards().forEach((card) => {
+      const input = card.querySelector('input[name="submitterKind"]');
+      card.classList.toggle('is-active', !!input && input.value === kind);
+    });
+    const isRealtor = kind === 'realtor';
+    realtorFields?.classList.toggle('hidden', !isRealtor);
+    ownerFields?.classList.toggle('hidden', isRealtor);
   }
 
-  function validatePayload(payload) {
-    if (!payload.address) return "물건 주소를 입력해 주세요.";
-    if (!payload.assetType) return "부동산유형을 입력해 주세요.";
-    if (!payload.priceMain) return "기준금액을 입력해 주세요.";
-    if (!payload.submitterName) return payload.submitterType === "realtor" ? "공인중개사명을 입력해 주세요." : "등록자명을 입력해 주세요.";
-    if (!payload.submitterPhone) return "연락처를 입력해 주세요.";
-    if (payload.submitterType === "realtor" && !payload.brokerOfficeName) return "중개사무소명을 입력해 주세요.";
-    return "";
-  }
-
-  function readText(fd, key) {
-    return String(fd.get(key) || "").trim();
-  }
-
-  function readNumber(fd, key) {
-    const raw = String(fd.get(key) || "").trim();
-    if (!raw) return null;
-    const n = Number(raw.replace(/,/g, ""));
+  function readStr(fd, key) { return String(fd.get(key) || '').trim(); }
+  function readNum(fd, key) {
+    const v = String(fd.get(key) || '').trim();
+    if (!v) return null;
+    const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
 
   function done() {
-    viewForm.classList.add("hidden");
-    viewDone.classList.remove("hidden");
+    viewForm.classList.add('hidden');
+    viewDone.classList.remove('hidden');
   }
 
   function setBusy(b) {
     btnSubmit.disabled = !!b;
-    btnSubmit.textContent = b ? "등록 중..." : "등록 요청하기";
+    btnSubmit.textContent = b ? '등록 중...' : '등록 요청하기';
   }
 
   function setMsg(msg) {
-    msgEl.textContent = msg || "";
-    msgEl.classList.toggle("show", !!msg);
+    msgEl.textContent = msg || '';
+    msgEl.classList.toggle('show', !!msg);
   }
 
   async function api(path, options = {}) {
     const res = await fetch(`${API_BASE}${path}`, {
-      method: options.method || "GET",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      method: options.method || 'GET',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
     const text = await res.text();

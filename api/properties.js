@@ -16,32 +16,33 @@ module.exports = async function handler(req, res) {
 
   let items = [...store.properties];
 
-  if (session?.role === 'staff' || session?.role === 'agent') {
-    items = items.filter((p) => p.assigneeId === session.userId);
+  if (session?.role === 'staff') {
+    items = items.filter(p => p.assigneeId === session.userId);
   } else if (!session) {
-    items = items.filter((p) => p.status === 'active');
+    // 비로그인 사용자는 공개용으로 active만 조회
+    items = items.filter(p => p.status === 'active');
   }
 
   if (source && source !== 'all') {
-    items = items.filter((p) => String(p.sourceType || p.source || '').toLowerCase() === source);
+    items = items.filter(p => p.source === source);
   }
   if (status) {
-    items = items.filter((p) => String(p.status || '').toLowerCase() === status);
+    items = items.filter(p => String(p.status || '').toLowerCase() === status);
   }
   if (q) {
-    items = items.filter((p) =>
-      [p.address, p.region, p.district, p.dong, p.assigneeName, p.note, p.submitterName]
+    items = items.filter(p =>
+      [p.address, p.region, p.district, p.dong, p.assigneeName, p.note]
         .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q))
+        .some(v => String(v).toLowerCase().includes(q))
     );
   }
 
   const grouped = {
     all: items,
-    auction: items.filter((v) => (v.sourceType || v.source) === 'auction'),
-    onbid: items.filter((v) => (v.sourceType || v.source) === 'onbid'),
-    realtor: items.filter((v) => (v.sourceType || v.source) === 'realtor'),
-    general: items.filter((v) => (v.sourceType || v.source) === 'general'),
+    auction: items.filter(v => v.source === 'auction'),
+    onbid: items.filter(v => v.source === 'onbid' || v.source === 'public'),
+    realtor: items.filter(v => v.source === 'realtor'),
+    general: items.filter(v => v.source === 'general'),
   };
 
   return send(res, 200, {
