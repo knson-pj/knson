@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>누구나 매물 등록 | 부동산 통합 관리 시스템</title>
+  <title>공개 매물 등록 | 부동산 통합 관리 시스템</title>
   <meta name="supabase-url" content="" />
   <meta name="supabase-anon-key" content="" />
   <link rel="stylesheet" href="./general-register.css" />
@@ -13,8 +13,8 @@
     <div class="brand">
       <div class="dot"></div>
       <div>
-        <div class="brand-title">누구나 매물 등록</div>
-        <div class="brand-sub">구분·주소·매각가·등록자·전화번호를 입력해 주세요.</div>
+        <div class="brand-title">공개 매물 등록</div>
+        <div class="brand-sub">공인중개사 또는 소유자/일반 등록자가 물건 정보를 직접 등록할 수 있습니다.</div>
       </div>
     </div>
 
@@ -27,43 +27,137 @@
   <main class="wrap">
     <section id="viewForm" class="card">
       <h1 class="h1">매물 정보 입력</h1>
-      <p class="muted">누구나 등록할 수 있는 페이지입니다. <strong>중개</strong>는 공인중개사 관련 등록물, <strong>일반</strong>은 공인중개사와 관련없는 일반 등록물로 분류됩니다.</p>
+      <p class="muted">
+        먼저 <strong>등록자 유형</strong>을 선택해 주세요. 공인중개사가 등록하면 <strong>중개(realtor)</strong>,
+        소유자/일반 등록자가 등록하면 <strong>일반(general)</strong>으로 저장됩니다.
+        최초 등록 시에는 관리자만 확인 가능하며, 이후 관리자가 담당자를 배정하면 해당 담당자가 확인·수정할 수 있습니다.
+      </p>
 
       <form id="generalForm" class="form">
-        <label class="field">
-          <span>구분 *</span>
-          <select name="sourceType" required>
-            <option value="realtor">중개 (공인중개사 관련 등록물)</option>
-            <option value="general">일반 (공인중개사와 관련없는 일반 등록물)</option>
-          </select>
-        </label>
+        <div class="full section-card">
+          <div class="section-head">
+            <h2>1. 등록자 유형</h2>
+            <p>선택한 유형에 맞춰 입력 항목이 바뀝니다.</p>
+          </div>
+          <div class="type-switch" role="radiogroup" aria-label="등록자 유형">
+            <label class="type-option">
+              <input type="radio" name="submitterType" value="realtor" checked />
+              <span>
+                <strong>공인중개사</strong>
+                <small>중개사무소·중개사 정보를 함께 등록</small>
+              </span>
+            </label>
+            <label class="type-option">
+              <input type="radio" name="submitterType" value="owner" />
+              <span>
+                <strong>소유자 / 일반</strong>
+                <small>소유자 또는 일반 등록자 정보로 등록</small>
+              </span>
+            </label>
+          </div>
+        </div>
 
-        <label class="field">
-          <span>물건 주소 *</span>
-          <input name="address" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
-        </label>
+        <div class="full section-card">
+          <div class="section-head">
+            <h2>2. 공통 물건 정보</h2>
+            <p>모든 등록 유형에서 공통으로 사용하는 물건 정보입니다.</p>
+          </div>
 
-        <label class="field">
-          <span>매각가(원) *</span>
-          <input name="salePrice" type="number" min="0" step="10000" required placeholder="예: 580000000" />
-        </label>
+          <div class="grid2">
+            <label class="field full-mobile">
+              <span>물건 주소 *</span>
+              <input name="address" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
+            </label>
+            <label class="field">
+              <span>부동산유형 *</span>
+              <input name="assetType" type="text" required placeholder="예: 아파트, 일반상가, 토지" />
+            </label>
+          </div>
 
-        <label class="field">
-          <span>등록자 *</span>
-          <input name="registrantName" type="text" required placeholder="성함 또는 상호" />
-        </label>
+          <div class="grid3">
+            <label class="field">
+              <span>기준금액(원) *</span>
+              <input name="priceMain" type="number" min="0" step="10000" required placeholder="예: 580000000" />
+            </label>
+            <label class="field">
+              <span>전용면적(평)</span>
+              <input name="commonArea" type="number" min="0" step="0.01" placeholder="예: 24.32" />
+            </label>
+            <label class="field">
+              <span>공용면적(평)</span>
+              <input name="exclusiveArea" type="number" min="0" step="0.01" placeholder="예: 37.81" />
+            </label>
+          </div>
 
-        <label class="field">
-          <span>전화번호 *</span>
-          <input name="phone" type="tel" required placeholder="010-0000-0000" />
-        </label>
+          <div class="grid3">
+            <label class="field">
+              <span>토지면적(평)</span>
+              <input name="siteArea" type="number" min="0" step="0.01" placeholder="예: 12.45" />
+            </label>
+            <label class="field">
+              <span>사용승인일</span>
+              <input name="useApproval" type="date" />
+            </label>
+            <label class="field">
+              <span>원문 링크(선택)</span>
+              <input name="sourceUrl" type="url" placeholder="예: https://..." />
+            </label>
+          </div>
 
-        <label class="field full">
-          <span>비고 (선택)</span>
-          <textarea name="memo" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
-        </label>
+          <label class="field full">
+            <span>매물 특징 / 메모</span>
+            <textarea name="memo" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
+          </label>
+        </div>
 
-        <div class="row full">
+        <div class="full section-card" data-panel="realtor">
+          <div class="section-head">
+            <h2>3. 공인중개사 정보</h2>
+            <p>공인중개사 관련 등록물(realtor)로 저장됩니다.</p>
+          </div>
+
+          <div class="grid2">
+            <label class="field">
+              <span>중개사무소명 *</span>
+              <input name="brokerOfficeName" type="text" placeholder="예: OO공인중개사사무소" />
+            </label>
+            <label class="field">
+              <span>공인중개사명 *</span>
+              <input name="brokerName" type="text" placeholder="예: 홍길동" />
+            </label>
+          </div>
+
+          <div class="grid2">
+            <label class="field">
+              <span>등록번호</span>
+              <input name="brokerLicenseNo" type="text" placeholder="예: 11-2026-00001" />
+            </label>
+            <label class="field">
+              <span>대표 연락처 *</span>
+              <input name="submitterPhoneRealtor" type="tel" placeholder="010-0000-0000" />
+            </label>
+          </div>
+        </div>
+
+        <div class="full section-card hidden" data-panel="owner">
+          <div class="section-head">
+            <h2>3. 소유자 / 일반 등록자 정보</h2>
+            <p>공인중개사와 관련 없는 일반 등록물(general)로 저장됩니다.</p>
+          </div>
+
+          <div class="grid2">
+            <label class="field">
+              <span>등록자명 *</span>
+              <input name="submitterNameOwner" type="text" placeholder="예: 홍길동" />
+            </label>
+            <label class="field">
+              <span>연락처 *</span>
+              <input name="submitterPhoneOwner" type="tel" placeholder="010-0000-0000" />
+            </label>
+          </div>
+        </div>
+
+        <div class="row full sticky-submit">
           <button id="btnSubmit" type="submit" class="btn btn-primary">등록 요청하기</button>
         </div>
 
@@ -74,7 +168,7 @@
     <section id="viewDone" class="card done hidden">
       <div class="check">✓</div>
       <h2>등록이 접수되었습니다</h2>
-      <p>검토후 연락드리겠습니다.</p>
+      <p>등록된 물건은 우선 관리자만 확인할 수 있으며, 담당자 배정 후 내부 처리 흐름으로 이어집니다.</p>
       <div class="row">
         <a class="btn btn-primary" href="./login.html">로그인</a>
         <a class="btn btn-secondary" href="./index.html">메인</a>
@@ -83,7 +177,7 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./knson-core.js?v=20260310-1"></script>
-  <script src="./general-register.js?v=20260310-1"></script>
+  <script src="./knson-core.js?v=20260310-2"></script>
+  <script src="./general-register.js?v=20260310-2"></script>
 </body>
 </html>

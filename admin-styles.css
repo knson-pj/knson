@@ -105,6 +105,7 @@ body{
   border-color:transparent;
 }
 .btn-ghost{background:transparent;}
+.btn-danger{background:var(--danger);border-color:transparent;color:#fff;}
 .badge{cursor:default;}
 .badge-muted{color:var(--muted);}
 .badge-admin{
@@ -310,6 +311,7 @@ body{
   justify-content:space-between;
   gap:10px;
 }
+.modal-card-wide{width:min(920px, calc(100% - 24px));}
 .modal-header h3{margin:0;font-size:18px;}
 .modal-body{padding:18px;display:grid;gap:12px;}
 .icon-btn{

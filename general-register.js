@@ -13,57 +13,89 @@
   const K = window.KNSN || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
 
+  const submitterRadios = [...document.querySelectorAll('input[name="submitterType"]')];
+  const ownerPanel = document.querySelector('[data-panel="owner"]');
+  const realtorPanel = document.querySelector('[data-panel="realtor"]');
+
   document.addEventListener("DOMContentLoaded", () => {
     if (K && typeof K.initTheme === "function") {
       K.initTheme({ container: document.querySelector(".actions"), className: "theme-toggle" });
     }
+    syncPanels(getSubmitterType());
+  });
+
+  submitterRadios.forEach((radio) => {
+    radio.addEventListener("change", () => syncPanels(getSubmitterType()));
   });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const fd = new FormData(form);
-    const sourceType = String(fd.get("sourceType") || "general").trim() || "general";
-    const address = String(fd.get("address") || "").trim();
-    const salePrice = Number(fd.get("salePrice") || 0);
-    const registrant = String(fd.get("registrantName") || "").trim();
-    const phone = String(fd.get("phone") || "").trim();
-
-    if (!address || !salePrice || !registrant || !phone) {
-      setMsg("주소/매각가/등록자/전화번호를 모두 입력해 주세요.");
-      return;
-    }
+    const submitterType = getSubmitterType();
+    const sourceType = submitterType === "realtor" ? "realtor" : "general";
 
     const payload = {
       sourceType,
-      address,
-      priceMain: salePrice,
-      memo: `등록자:${registrant} / 전화:${phone}`,
-      registrant,
-      phone,
+      submitterType,
+      address: readText(fd, "address"),
+      assetType: readText(fd, "assetType"),
+      priceMain: readNumber(fd, "priceMain"),
+      commonArea: readNumber(fd, "commonArea"),
+      exclusiveArea: readNumber(fd, "exclusiveArea"),
+      siteArea: readNumber(fd, "siteArea"),
+      useApproval: readText(fd, "useApproval") || null,
+      sourceUrl: readText(fd, "sourceUrl") || null,
+      memo: readText(fd, "memo") || null,
+      submitterName: submitterType === "realtor" ? readText(fd, "brokerName") : readText(fd, "submitterNameOwner"),
+      submitterPhone: submitterType === "realtor" ? readText(fd, "submitterPhoneRealtor") : readText(fd, "submitterPhoneOwner"),
+      brokerOfficeName: submitterType === "realtor" ? readText(fd, "brokerOfficeName") : null,
+      brokerName: submitterType === "realtor" ? readText(fd, "brokerName") : null,
+      brokerLicenseNo: submitterType === "realtor" ? readText(fd, "brokerLicenseNo") : null,
     };
+
+    const validationError = validatePayload(payload);
+    if (validationError) {
+      setMsg(validationError);
+      return;
+    }
 
     try {
       setBusy(true);
       setMsg("");
 
       if (sbEnabled) {
-        // Supabase 직접 저장(초기 버전: 즉시 노출 요구사항 반영)
-        // 보안/검증은 추후 강화 예정 (승인/캡차/레이트리밋 등)
         const sb = K.initSupabase();
-        const globalId = `${sourceType}:public:${Date.now()}:${Math.random().toString(16).slice(2)}`;
         const row = {
-          global_id: globalId,
-          item_no: globalId,
-          source_type: sourceType,
-          is_general: false,
-          address,
-          price_main: salePrice,
-          memo: [payload.memo, fd.get("memo") ? String(fd.get("memo")).trim() : ""].filter(Boolean).join("\n"),
+          source_type: payload.sourceType,
+          is_general: payload.sourceType === "general",
+          address: payload.address,
+          asset_type: payload.assetType,
+          exclusive_area: payload.exclusiveArea,
+          common_area: payload.commonArea,
+          site_area: payload.siteArea,
+          use_approval: payload.useApproval,
+          status: "review",
+          price_main: payload.priceMain,
+          source_url: payload.sourceUrl,
+          memo: payload.memo,
           assignee_id: null,
-          date_uploaded: new Date().toISOString(),
-          raw: payload,
+          submitter_type: payload.submitterType,
+          submitter_name: payload.submitterName,
+          submitter_phone: payload.submitterPhone,
+          broker_office_name: payload.brokerOfficeName,
+          broker_name: payload.brokerName,
+          broker_license_no: payload.brokerLicenseNo,
+          raw: {
+            channel: "public-register",
+            submitted_at: new Date().toISOString(),
+            form: payload,
+          },
         };
+
+        Object.keys(row).forEach((key) => {
+          if (row[key] === "") row[key] = null;
+        });
 
         const { error } = await sb.from("properties").insert(row);
         if (error) throw error;
@@ -72,20 +104,9 @@
         return;
       }
 
-      // Legacy (Vercel API)
       const res = await api("/public-listings", {
         method: "POST",
-        body: {
-          source: sourceType === "realtor" ? "general" : "general",
-          address: payload.address,
-          salePrice: payload.priceMain,
-          registrant: payload.registrant,
-          phone: payload.phone,
-          // forward-compatible fields
-          sourceType: payload.sourceType,
-          priceMain: payload.priceMain,
-          memo: payload.memo,
-        },
+        body: payload,
       });
 
       if (!res?.ok) throw new Error(res?.message || "등록에 실패했습니다.");
@@ -97,6 +118,50 @@
     }
   });
 
+  function getSubmitterType() {
+    return (submitterRadios.find((radio) => radio.checked)?.value || "realtor").trim();
+  }
+
+  function syncPanels(type) {
+    const isRealtor = type === "realtor";
+    realtorPanel?.classList.toggle("hidden", !isRealtor);
+    ownerPanel?.classList.toggle("hidden", isRealtor);
+
+    setRequired("brokerOfficeName", isRealtor);
+    setRequired("brokerName", isRealtor);
+    setRequired("submitterPhoneRealtor", isRealtor);
+    setRequired("submitterNameOwner", !isRealtor);
+    setRequired("submitterPhoneOwner", !isRealtor);
+  }
+
+  function setRequired(name, required) {
+    const el = form.elements[name];
+    if (!el) return;
+    el.required = !!required;
+    if (!required) el.setCustomValidity("");
+  }
+
+  function validatePayload(payload) {
+    if (!payload.address) return "물건 주소를 입력해 주세요.";
+    if (!payload.assetType) return "부동산유형을 입력해 주세요.";
+    if (!payload.priceMain) return "기준금액을 입력해 주세요.";
+    if (!payload.submitterName) return payload.submitterType === "realtor" ? "공인중개사명을 입력해 주세요." : "등록자명을 입력해 주세요.";
+    if (!payload.submitterPhone) return "연락처를 입력해 주세요.";
+    if (payload.submitterType === "realtor" && !payload.brokerOfficeName) return "중개사무소명을 입력해 주세요.";
+    return "";
+  }
+
+  function readText(fd, key) {
+    return String(fd.get(key) || "").trim();
+  }
+
+  function readNumber(fd, key) {
+    const raw = String(fd.get(key) || "").trim();
+    if (!raw) return null;
+    const n = Number(raw.replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
   function done() {
     viewForm.classList.add("hidden");
     viewDone.classList.remove("hidden");
@@ -104,7 +169,7 @@
 
   function setBusy(b) {
     btnSubmit.disabled = !!b;
-    btnSubmit.textContent = b ? "등록 중..." : "등록";
+    btnSubmit.textContent = b ? "등록 중..." : "등록 요청하기";
   }
 
   function setMsg(msg) {
