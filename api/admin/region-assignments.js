@@ -2,6 +2,12 @@ const { applyCors } = require('../_lib/cors');
 const { getStore } = require('../_lib/store');
 const { send, getJsonBody, nowIso } = require('../_lib/utils');
 const { requireAdmin } = require('../_lib/auth');
+const {
+  hasSupabaseAdminEnv,
+  requireSupabaseAdmin,
+  listStaff,
+  updateStaff,
+} = require('../_lib/supabase-admin');
 
 function makeBuckets(properties) {
   const guMap = new Map();
@@ -32,7 +38,6 @@ function suggestGroups(properties, staffCount) {
   const guSorted = buckets.gu.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   const dongSorted = buckets.dong.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
-  // 구 단위 수보다 담당자가 많으면 동 단위로 재편성(요구사항 반영)
   let units = guSorted;
   let mode = 'gu';
   if (staffCount > guSorted.length && dongSorted.length) {
@@ -46,8 +51,7 @@ function suggestGroups(properties, staffCount) {
     totalCount: 0,
   }));
 
-  // 동선 고려의 간단 버전: 같은 접두(시/구)를 우선 유지하도록 정렬 후 최소합 그리디 분배
-  units.forEach(unit => {
+  units.forEach((unit) => {
     groups.sort((a, b) => a.totalCount - b.totalCount || a.index - b.index);
     groups[0].items.push(unit);
     groups[0].totalCount += unit.count;
@@ -59,21 +63,68 @@ function suggestGroups(properties, staffCount) {
 
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
+
+  if (hasSupabaseAdminEnv()) {
+    const session = await requireSupabaseAdmin(req, res);
+    if (!session) return;
+
+    if (req.method === 'GET') {
+      const items = await listStaff();
+      const agentCount = items.filter((u) => u.role !== 'admin').length || 1;
+      return send(res, 200, {
+        ok: true,
+        agentCount,
+        suggestion: { mode: 'gu', groups: [] },
+        currentAssignments: items
+          .filter((u) => u.role !== 'admin')
+          .map((u) => ({ id: u.id, name: u.name, regions: u.assignedRegions || [] })),
+      });
+    }
+
+    if (req.method === 'POST' || req.method === 'PATCH') {
+      const body = getJsonBody(req);
+      const assignments = Array.isArray(body.assignments) ? body.assignments : [];
+
+      try {
+        for (const row of assignments) {
+          const staffId = String(row.staffId || row.agentId || '').trim();
+          if (!staffId) continue;
+          const regions = Array.isArray(row.regions)
+            ? row.regions
+            : (Array.isArray(row.assignedRegions) ? row.assignedRegions : []);
+          await updateStaff(staffId, { assignedRegions: regions });
+        }
+
+        const items = await listStaff();
+        return send(res, 200, {
+          ok: true,
+          items: items
+            .filter((u) => u.role !== 'admin')
+            .map((u) => ({ id: u.id, name: u.name, regions: u.assignedRegions || [] })),
+        });
+      } catch (err) {
+        return send(res, err?.status || 500, { ok: false, message: err?.message || '배정 저장 실패' });
+      }
+    }
+
+    return send(res, 405, { ok: false, message: 'Method Not Allowed' });
+  }
+
   const session = requireAdmin(req, res);
   if (!session) return;
 
   const store = getStore();
 
   if (req.method === 'GET') {
-    const agentCount = store.staff.filter(u => u.role === 'agent').length || 1;
+    const agentCount = store.staff.filter((u) => u.role !== 'admin').length || 1;
     const suggestion = suggestGroups(store.properties, agentCount);
     return send(res, 200, {
       ok: true,
       agentCount,
       suggestion,
       currentAssignments: store.staff
-        .filter(u => u.role === 'agent')
-        .map(u => ({ id: u.id, name: u.name, regions: u.regions || [] })),
+        .filter((u) => u.role !== 'admin')
+        .map((u) => ({ id: u.id, name: u.name, regions: u.regions || [] })),
     });
   }
 
@@ -81,14 +132,20 @@ module.exports = async function handler(req, res) {
     const body = getJsonBody(req);
     const assignments = Array.isArray(body.assignments) ? body.assignments : [];
     for (const a of assignments) {
-      const user = store.staff.find(u => u.id === a.staffId && u.role === 'agent');
+      const staffId = String(a.staffId || a.agentId || '').trim();
+      const user = store.staff.find((u) => u.id === staffId && u.role !== 'admin');
       if (!user) continue;
-      user.regions = Array.isArray(a.regions) ? a.regions : [];
+      const regions = Array.isArray(a.regions)
+        ? a.regions
+        : (Array.isArray(a.assignedRegions) ? a.assignedRegions : []);
+      user.regions = regions;
       user.updatedAt = nowIso();
     }
     return send(res, 200, {
       ok: true,
-      items: store.staff.filter(u => u.role === 'agent').map(u => ({ id: u.id, name: u.name, regions: u.regions || [] })),
+      items: store.staff
+        .filter((u) => u.role !== 'admin')
+        .map((u) => ({ id: u.id, name: u.name, regions: u.regions || [] })),
     });
   }
 

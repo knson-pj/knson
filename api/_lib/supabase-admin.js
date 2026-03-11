@@ -123,9 +123,72 @@ async function requireSupabaseAdmin(req, res) {
   };
 }
 
+function normalizeUserList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.users)) return data.users;
+  return [];
+}
+
+async function listAuthUsers() {
+  const data = await supabaseFetch('/auth/v1/admin/users?page=1&per_page=1000');
+  return normalizeUserList(data);
+}
+
+async function getAuthUser(userId) {
+  const data = await supabaseFetch(`/auth/v1/admin/users/${encodeURIComponent(userId)}`);
+  return data?.user || data || null;
+}
+
 async function listProfiles() {
-  const rows = await supabaseFetch('/rest/v1/profiles?select=id,name,role,assigned_regions,created_at&order=created_at.desc.nullslast,name.asc');
+  const rows = await supabaseFetch('/rest/v1/profiles?select=id,name,role,created_at&order=created_at.desc.nullslast,name.asc');
   return Array.isArray(rows) ? rows : [];
+}
+
+function pickAssignedRegionsFromUser(user) {
+  const regions = user?.user_metadata?.assigned_regions;
+  return Array.isArray(regions) ? regions.filter(Boolean).map((v) => String(v)) : [];
+}
+
+function normalizeRole(role) {
+  return role === 'admin' ? 'admin' : 'staff';
+}
+
+function normalizeStaffItem({ profile, user }) {
+  const role = normalizeRole(profile?.role || user?.user_metadata?.role || 'staff');
+  return {
+    id: profile?.id || user?.id || '',
+    email: user?.email || '',
+    name: profile?.name || user?.user_metadata?.display_name || user?.email || '',
+    role,
+    assignedRegions: pickAssignedRegionsFromUser(user),
+    createdAt: profile?.created_at || user?.created_at || '',
+  };
+}
+
+async function listStaff() {
+  const [profiles, users] = await Promise.all([listProfiles(), listAuthUsers()]);
+  const profileMap = new Map((profiles || []).map((row) => [String(row.id), row]));
+  const items = [];
+
+  for (const user of users) {
+    const id = String(user?.id || '');
+    if (!id) continue;
+    const profile = profileMap.get(id) || { id, name: '', role: 'staff', created_at: user?.created_at || '' };
+    items.push(normalizeStaffItem({ profile, user }));
+    profileMap.delete(id);
+  }
+
+  for (const [id, profile] of profileMap.entries()) {
+    items.push(normalizeStaffItem({ profile, user: { id } }));
+  }
+
+  items.sort((a, b) => {
+    const ad = new Date(a.createdAt || 0).getTime();
+    const bd = new Date(b.createdAt || 0).getTime();
+    return (Number.isFinite(bd) ? bd : 0) - (Number.isFinite(ad) ? ad : 0);
+  });
+
+  return items;
 }
 
 async function createAuthUser({ email, password, name, role }) {
@@ -135,7 +198,8 @@ async function createAuthUser({ email, password, name, role }) {
     email_confirm: true,
     user_metadata: {
       display_name: name || '',
-      role: role || 'staff',
+      role: normalizeRole(role),
+      assigned_regions: [],
     },
   };
 
@@ -151,18 +215,16 @@ async function createAuthUser({ email, password, name, role }) {
     id: user.id,
     name,
     role,
-    assignedRegions: [],
   });
 
   return user;
 }
 
-async function upsertProfile({ id, name, role, assignedRegions }) {
+async function upsertProfile({ id, name, role }) {
   const payload = [{
     id,
     name: name || '',
-    role: role === 'admin' ? 'admin' : 'staff',
-    assigned_regions: Array.isArray(assignedRegions) ? assignedRegions : [],
+    role: normalizeRole(role),
   }];
 
   const data = await supabaseFetch('/rest/v1/profiles?on_conflict=id', {
@@ -179,8 +241,7 @@ async function upsertProfile({ id, name, role, assignedRegions }) {
 async function updateProfile(userId, patch = {}) {
   const payload = {};
   if (patch.name != null) payload.name = String(patch.name || '').trim();
-  if (patch.role != null) payload.role = patch.role === 'admin' ? 'admin' : 'staff';
-  if (patch.assignedRegions != null) payload.assigned_regions = Array.isArray(patch.assignedRegions) ? patch.assignedRegions : [];
+  if (patch.role != null) payload.role = normalizeRole(patch.role);
 
   const data = await supabaseFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
     method: 'PATCH',
@@ -193,8 +254,58 @@ async function updateProfile(userId, patch = {}) {
   return Array.isArray(data) ? data[0] : data;
 }
 
+async function updateAuthUser(userId, patch = {}) {
+  const current = await getAuthUser(userId);
+  if (!current?.id) throw new Error('계정을 찾을 수 없습니다.');
+
+  const currentMeta = current.user_metadata && typeof current.user_metadata === 'object'
+    ? current.user_metadata
+    : {};
+
+  const nextMeta = { ...currentMeta };
+  if (patch.name != null) nextMeta.display_name = String(patch.name || '').trim();
+  if (patch.role != null) nextMeta.role = normalizeRole(patch.role);
+  if (patch.assignedRegions != null) {
+    nextMeta.assigned_regions = Array.isArray(patch.assignedRegions)
+      ? patch.assignedRegions.filter(Boolean).map((v) => String(v))
+      : [];
+  }
+
+  const body = { user_metadata: nextMeta };
+  if (patch.password != null && String(patch.password || '').trim()) {
+    body.password = String(patch.password || '');
+  }
+  if (patch.email != null && String(patch.email || '').trim()) {
+    body.email = String(patch.email || '').trim();
+  }
+
+  const data = await supabaseFetch(`/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    json: body,
+  });
+
+  return data?.user || data || null;
+}
+
+async function getStaff(userId) {
+  const [profile, user] = await Promise.all([
+    getProfile(userId),
+    getAuthUser(userId).catch(() => null),
+  ]);
+  if (!profile && !user) return null;
+  return normalizeStaffItem({ profile, user });
+}
+
+async function updateStaff(userId, patch = {}) {
+  await Promise.all([
+    updateProfile(userId, patch),
+    updateAuthUser(userId, patch),
+  ]);
+  return getStaff(userId);
+}
+
 async function getProfile(userId) {
-  const rows = await supabaseFetch(`/rest/v1/profiles?select=id,name,role,assigned_regions,created_at&id=eq.${encodeURIComponent(userId)}&limit=1`);
+  const rows = await supabaseFetch(`/rest/v1/profiles?select=id,name,role,created_at&id=eq.${encodeURIComponent(userId)}&limit=1`);
   return Array.isArray(rows) ? (rows[0] || null) : null;
 }
 
@@ -212,9 +323,15 @@ module.exports = {
   verifySupabaseUser,
   requireSupabaseAdmin,
   listProfiles,
+  listAuthUsers,
+  getAuthUser,
+  listStaff,
   createAuthUser,
   upsertProfile,
   updateProfile,
+  updateAuthUser,
+  updateStaff,
   getProfile,
+  getStaff,
   deleteAuthUser,
 };

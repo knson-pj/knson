@@ -562,18 +562,11 @@ function bindEvents() {
   }
 
   async function loadStaff() {
-    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    if (sb) {
-      try { await K.sbSyncLocalSession(); } catch {}
-      const { data, error } = await sb.from("profiles").select("id,name,role,assigned_regions,created_at").order("created_at", { ascending: false });
-      if (error) throw error;
-      state.staff = Array.isArray(data) ? data.map(normalizeStaff) : [];
-      renderStaffTable();
-      renderAssignmentTable();
-      renderSummary();
-      hydrateAssignedAgentNames();
-      renderPropertiesTable();
-      return;
+    if (isSupabaseMode()) {
+      try {
+        await K.sbSyncLocalSession();
+        state.session = loadSession();
+      } catch {}
     }
 
     const res = await api("/admin/staff", { auth: true });
@@ -1650,22 +1643,11 @@ function bindEvents() {
     });
 
     try {
-      const sb = isSupabaseMode() ? K.initSupabase() : null;
-      if (sb) {
-        for (const row of rows) {
-          const { error } = await sb
-            .from("profiles")
-            .update({ assigned_regions: row.assignedRegions })
-            .eq("id", row.agentId);
-          if (error) throw error;
-        }
-      } else {
-        await api("/admin/region-assignments", {
-          method: "POST",
-          auth: true,
-          body: { assignments: rows },
-        });
-      }
+      await api("/admin/region-assignments", {
+        method: "POST",
+        auth: true,
+        body: { assignments: rows },
+      });
 
       await loadStaff();
       alert("담당자 지역 배정이 저장되었습니다.");
@@ -2051,6 +2033,13 @@ function bindEvents() {
     const headers = { Accept: "application/json" };
 
     if (options.auth) {
+      if (isSupabaseMode()) {
+        try {
+          await K.sbSyncLocalSession();
+          state.session = loadSession();
+        } catch {}
+      }
+
       // 혹시 state.session이 오래된 경우를 대비해 1회 리프레시
       let token = state.session?.token;
       if (!token) {
@@ -2165,6 +2154,7 @@ function bindEvents() {
   }
 
   function setFormBusy(form, busy) {
+    if (!form || typeof form.querySelectorAll !== "function") return;
     [...form.querySelectorAll("button, input, select, textarea")].forEach((el) => {
       el.disabled = !!busy;
     });
