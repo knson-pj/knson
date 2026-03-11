@@ -18,8 +18,12 @@ module.exports = async function handler(req, res) {
     if (!session) return;
 
     if (req.method === 'GET') {
-      const items = await listStaff();
-      return send(res, 200, { ok: true, items });
+      try {
+        const items = await listStaff();
+        return send(res, 200, { ok: true, items });
+      } catch (err) {
+        return send(res, err?.status || 500, { ok: false, message: err?.message || '담당자 목록 조회 실패' });
+      }
     }
 
     if (req.method === 'POST') {
