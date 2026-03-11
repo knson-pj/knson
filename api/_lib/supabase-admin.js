@@ -95,22 +95,38 @@ async function verifySupabaseUser(req) {
 }
 
 function normalizeRole(role) {
-  return role === 'admin' ? 'admin' : 'staff';
+  const s = String(role || '').trim().toLowerCase();
+  if (['admin', '관리자'].includes(s)) return 'admin';
+  if (['agent', 'staff', '담당자'].includes(s)) return 'staff';
+  return 'staff';
+}
+
+function extractRoleCandidate(user) {
+  if (!user || typeof user !== 'object') return '';
+  return String(
+    user?.app_metadata?.role ||
+    user?.user_metadata?.role ||
+    user?.role ||
+    ''
+  ).trim();
+}
+
+function extractDisplayName(user) {
+  return String(
+    user?.user_metadata?.display_name ||
+    user?.email ||
+    ''
+  ).trim();
 }
 
 function pickRoleFromUser(user) {
-  return normalizeRole(
-    user?.app_metadata?.role ||
-    user?.user_metadata?.role ||
-    'staff'
-  );
+  return normalizeRole(extractRoleCandidate(user));
 }
 
 function pickDisplayName({ profile, user }) {
   return (
     profile?.name ||
-    user?.user_metadata?.display_name ||
-    user?.email ||
+    extractDisplayName(user) ||
     ''
   );
 }
@@ -146,36 +162,6 @@ async function safeListProfiles() {
   }
 }
 
-async function requireSupabaseAdmin(req, res) {
-  const user = await verifySupabaseUser(req);
-  if (!user?.id) {
-    send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
-    return null;
-  }
-
-  let profile = null;
-  let role = pickRoleFromUser(user);
-  try {
-    profile = await safeGetProfile(user.id);
-    if (profile?.role) role = normalizeRole(profile.role);
-  } catch (err) {
-    send(res, 500, { ok: false, message: err.message || '프로필 조회에 실패했습니다.' });
-    return null;
-  }
-
-  if (role !== 'admin') {
-    send(res, 403, { ok: false, message: '관리자 권한이 필요합니다.' });
-    return null;
-  }
-
-  return {
-    userId: user.id,
-    role,
-    name: pickDisplayName({ profile, user }),
-    email: user.email || '',
-  };
-}
-
 function normalizeUserList(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.users)) return data.users;
@@ -192,6 +178,61 @@ async function getAuthUser(userId) {
   return data?.user || data || null;
 }
 
+async function resolveCurrentUserContext(req) {
+  const bearerUser = await verifySupabaseUser(req);
+  if (!bearerUser?.id) return null;
+
+  const adminUser = await getAuthUser(bearerUser.id).catch(() => null);
+  const authUser = adminUser || bearerUser;
+
+  let role = normalizeRole(
+    extractRoleCandidate(authUser) ||
+    extractRoleCandidate(bearerUser) ||
+    'staff'
+  );
+
+  let profile = null;
+  profile = await safeGetProfile(bearerUser.id);
+  if (profile?.role) role = normalizeRole(profile.role);
+
+  return {
+    userId: bearerUser.id,
+    email: authUser?.email || bearerUser?.email || '',
+    name: pickDisplayName({ profile, user: authUser || bearerUser }),
+    role,
+    authUser,
+    bearerUser,
+    profile,
+  };
+}
+
+async function requireSupabaseAdmin(req, res) {
+  let ctx = null;
+  try {
+    ctx = await resolveCurrentUserContext(req);
+  } catch (err) {
+    send(res, 500, { ok: false, message: err.message || '프로필 조회에 실패했습니다.' });
+    return null;
+  }
+
+  if (!ctx?.userId) {
+    send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+    return null;
+  }
+
+  if (ctx.role !== 'admin') {
+    send(res, 403, { ok: false, message: '관리자 권한이 필요합니다.' });
+    return null;
+  }
+
+  return {
+    userId: ctx.userId,
+    role: ctx.role,
+    name: ctx.name,
+    email: ctx.email,
+  };
+}
+
 async function listProfiles() {
   return safeListProfiles();
 }
@@ -206,7 +247,7 @@ function normalizeStaffItem({ profile, user }) {
     id: profile?.id || user?.id || '',
     email: user?.email || '',
     name: pickDisplayName({ profile, user }),
-    role: normalizeRole(profile?.role || pickRoleFromUser(user)),
+    role: normalizeRole(profile?.role || extractRoleCandidate(user)),
     assignedRegions: pickAssignedRegionsFromUser(user),
     createdAt: profile?.created_at || user?.created_at || '',
   };
@@ -391,6 +432,7 @@ module.exports = {
   readBearer,
   verifySupabaseUser,
   requireSupabaseAdmin,
+  resolveCurrentUserContext,
   listProfiles,
   listAuthUsers,
   getAuthUser,

@@ -46,6 +46,15 @@
   function isSupabaseMode() {
     return !!(K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase());
   }
+  async function syncSupabaseSessionIfNeeded() {
+    if (!isSupabaseMode()) return state.session;
+    try {
+      const synced = await K.sbSyncLocalSession();
+      state.session = synced || loadSession();
+      renderSessionUI();
+    } catch {}
+    return state.session;
+  }
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -276,15 +285,21 @@ function bindEvents() {
 
     // tabs
     if (els.adminTabs) {
-      els.adminTabs.addEventListener("click", (e) => {
+      els.adminTabs.addEventListener("click", async (e) => {
         const btn = e.target.closest(".tab");
         if (!btn) return;
+
+        await syncSupabaseSessionIfNeeded();
+
         const key = btn.dataset.tab;
         const user = state.session?.user;
-        if (user?.role !== "admin" && key !== "properties") return;
+        if (user?.role !== "admin" && key !== "properties") {
+          setGlobalMsg("관리자 권한이 확인되지 않았습니다. 다시 로그인해 주세요.");
+          return;
+        }
+        setGlobalMsg("");
         setActiveTab(key);
 
-        // 관리자 탭은 탭 진입 시 필요한 데이터만 로드
         if (state.session?.user?.role === "admin") {
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
           if (key === "offices") loadOffices().catch((e)=>handleAsyncError(e,"중개사무소 로드 실패"));
@@ -373,13 +388,7 @@ function bindEvents() {
   }
 
   async function ensureLoginThenLoad() {
-    // Supabase 세션이 있으면 local session(roles/name 포함)을 먼저 동기화한 뒤 UI를 렌더합니다.
-    try {
-      if (window.KNSN && K.supabaseEnabled && K.supabaseEnabled()) {
-        await K.sbSyncLocalSession();
-      }
-    } catch {}
-    // storage에 저장된 세션을 최신으로 반영 (탭 이동/리다이렉트 직후 레이스 방지)
+    await syncSupabaseSessionIfNeeded();
     state.session = loadSession();
     renderSessionUI();
     const user = state.session?.user;
@@ -562,12 +571,7 @@ function bindEvents() {
   }
 
   async function loadStaff() {
-    if (isSupabaseMode()) {
-      try {
-        await K.sbSyncLocalSession();
-        state.session = loadSession();
-      } catch {}
-    }
+    await syncSupabaseSessionIfNeeded();
 
     const res = await api("/admin/staff", { auth: true });
     state.staff = Array.isArray(res?.items) ? res.items.map(normalizeStaff) : [];

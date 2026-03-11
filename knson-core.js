@@ -213,6 +213,60 @@
     if (s.includes("@")) return s;
     return `${s}@knson.local`;
   }
+  function normalizeRoleValue(role) {
+    const s = String(role || "").trim().toLowerCase();
+    if (["admin", "관리자"].includes(s)) return "admin";
+    if (["agent", "staff", "담당자"].includes(s)) return "staff";
+    return "";
+  }
+
+  function pickRoleFromAuthUser(user, fallback = "staff") {
+    const role = normalizeRoleValue(
+      user?.app_metadata?.role ||
+      user?.user_metadata?.role ||
+      user?.role ||
+      ""
+    );
+    return role || normalizeRoleValue(fallback) || "staff";
+  }
+
+  function pickDisplayNameFromAuthUser(user, fallback = "") {
+    return String(
+      user?.user_metadata?.display_name ||
+      user?.email ||
+      fallback ||
+      ""
+    ).trim();
+  }
+
+  async function buildLocalSupabaseSession(sess, fallbackLocal = null) {
+    const sb = initSupabase();
+    if (!sb || !sess?.access_token || !sess?.user) return null;
+
+    const authUser = sess.user;
+    let role = pickRoleFromAuthUser(authUser, fallbackLocal?.user?.role || "staff");
+    let displayName = pickDisplayNameFromAuthUser(authUser, fallbackLocal?.user?.name || "");
+
+    try {
+      const profRes = await sb.from("profiles").select("role,name").eq("id", authUser.id).maybeSingle();
+      if (profRes?.data) {
+        role = normalizeRoleValue(profRes.data.role) || role;
+        displayName = String(profRes.data.name || displayName || "").trim();
+      }
+    } catch {}
+
+    return {
+      backend: "supabase",
+      token: sess.access_token,
+      user: {
+        id: authUser.id,
+        email: authUser.email,
+        name: displayName || authUser.email || "",
+        role: role || "staff",
+      },
+      at: Date.now(),
+    };
+  }
 
   async function sbSignIn({ name, password }) {
     const sb = initSupabase();
@@ -222,34 +276,20 @@
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
-    const user = data?.user;
     const session = data?.session;
-    if (!user || !session?.access_token) throw new Error("로그인 세션 생성에 실패했습니다.");
+    if (!session?.access_token || !data?.user) throw new Error("로그인 세션 생성에 실패했습니다.");
 
-    let role = "staff";
-    let displayName = name;
+    const local = await buildLocalSupabaseSession(session, null);
+    if (!local) throw new Error("로그인 세션 생성에 실패했습니다.");
 
     try {
-      const profRes = await sb.from("profiles").select("role,name").eq("id", user.id).maybeSingle();
-      if (profRes?.data) {
-        role = profRes.data.role || role;
-        displayName = profRes.data.name || displayName;
-      } else {
-        await sb.from("profiles").upsert({ id: user.id, name: displayName, role }, { onConflict: "id" });
-      }
+      await sb.from("profiles").upsert({
+        id: local.user.id,
+        name: local.user.name || "",
+        role: local.user.role || "staff",
+      }, { onConflict: "id" });
     } catch {}
 
-    const local = {
-      backend: "supabase",
-      token: session.access_token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: displayName,
-        role,
-      },
-      at: Date.now(),
-    };
     saveSession(local);
     return local;
   }
@@ -308,36 +348,27 @@
     if (!sb) return null;
 
     const sess = await sbGetSession();
-    if (!sess?.access_token || !sess?.user) return null;
-
-    const local = loadSession();
-    if (!local || local.backend !== "supabase" || local.user?.id !== sess.user.id || local.token !== sess.access_token) {
-      let role = local?.user?.role || "staff";
-      let displayName = local?.user?.name || (sess.user.email || "");
-      try {
-        const profRes = await sb.from("profiles").select("role,name").eq("id", sess.user.id).maybeSingle();
-        if (profRes?.data) {
-          role = profRes.data.role || role;
-          displayName = profRes.data.name || displayName;
-        }
-      } catch {}
-
-      const next = {
-        backend: "supabase",
-        token: sess.access_token,
-        user: {
-          id: sess.user.id,
-          email: sess.user.email,
-          name: displayName,
-          role,
-        },
-        at: Date.now(),
-      };
-      saveSession(next);
-      return next;
+    if (!sess?.access_token || !sess?.user) {
+      clearSession();
+      return null;
     }
 
-    return local;
+    const local = loadSession();
+    const next = await buildLocalSupabaseSession(sess, local);
+    if (!next) return null;
+
+    const changed = (
+      !local ||
+      local.backend !== next.backend ||
+      local.token !== next.token ||
+      local.user?.id !== next.user.id ||
+      local.user?.role !== next.user.role ||
+      local.user?.name !== next.user.name ||
+      local.user?.email !== next.user.email
+    );
+
+    if (changed) saveSession(next);
+    return changed ? next : (local || next);
   }
 
   window.KNSN = {
