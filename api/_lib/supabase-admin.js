@@ -1,5 +1,15 @@
 const { send } = require('./utils');
 
+function cleanTokenLike(value) {
+  let s = String(value || '').trim();
+  if (!s) return '';
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  s = s.replace(/^Bearer\s+/i, '').trim();
+  return s;
+}
+
 function getEnv() {
   const url = String(
     process.env.SUPABASE_URL ||
@@ -7,16 +17,16 @@ function getEnv() {
     ''
   ).trim();
 
-  const serviceRoleKey = String(
+  const serviceRoleKey = cleanTokenLike(
     process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-  ).trim();
+  );
 
-  const anonKey = String(
+  const anonKey = cleanTokenLike(
     process.env.SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY_PUBLIC ||
     ''
-  ).trim();
+  );
 
   return { url, serviceRoleKey, anonKey };
 }
@@ -29,13 +39,13 @@ function hasSupabaseAdminEnv() {
 function readBearer(req) {
   const auth = req.headers.authorization || '';
   const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m ? String(m[1] || '').trim() : '';
+  return m ? cleanTokenLike(m[1] || '') : '';
 }
 
 function buildHeaders({ token, useAnon = false, hasJson = false, extra = {} } = {}) {
   const { serviceRoleKey, anonKey } = getEnv();
-  const apikey = useAnon ? (anonKey || serviceRoleKey) : serviceRoleKey;
-  const authorization = token || serviceRoleKey;
+  const apikey = cleanTokenLike(useAnon ? (anonKey || serviceRoleKey) : serviceRoleKey);
+  const authorization = cleanTokenLike(token || serviceRoleKey);
 
   const headers = {
     Accept: 'application/json',
@@ -49,8 +59,14 @@ function buildHeaders({ token, useAnon = false, hasJson = false, extra = {} } = 
 }
 
 async function supabaseFetch(path, options = {}) {
-  const { url } = getEnv();
+  const { url, serviceRoleKey, anonKey } = getEnv();
   if (!url) throw new Error('SUPABASE_URL 이 설정되지 않았습니다.');
+  if (path.startsWith('/auth/v1/admin') && !serviceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.');
+  }
+  if (options.useAnon && !(anonKey || serviceRoleKey)) {
+    throw new Error('SUPABASE_ANON_KEY 또는 SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.');
+  }
 
   const res = await fetch(`${url}${path}`, {
     method: options.method || 'GET',
@@ -72,10 +88,15 @@ async function supabaseFetch(path, options = {}) {
   }
 
   if (!res.ok) {
-    const err = new Error(
-      (data && (data.msg || data.message || data.error_description || data.error)) ||
-      `Supabase API 오류 (${res.status})`
-    );
+    let message = (data && (data.msg || data.message || data.error_description || data.error)) || `Supabase API 오류 (${res.status})`;
+    if (/valid bearer token/i.test(String(message || ''))) {
+      if (path.startsWith('/auth/v1/admin')) {
+        message = 'Supabase 관리자 API 인증에 실패했습니다. Vercel의 SUPABASE_SERVICE_ROLE_KEY 값을 다시 확인해 주세요.';
+      } else if (options.useAnon) {
+        message = 'Supabase 사용자 토큰이 유효하지 않습니다. 다시 로그인해 주세요.';
+      }
+    }
+    const err = new Error(message);
     err.status = res.status;
     err.data = data;
     throw err;
@@ -454,6 +475,7 @@ async function deleteAuthUser(userId) {
 }
 
 module.exports = {
+  cleanTokenLike,
   getEnv,
   hasSupabaseAdminEnv,
   readBearer,
