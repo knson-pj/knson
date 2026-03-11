@@ -43,12 +43,17 @@
   const els = {};
   const phoneSaveTimers = new Map();
 
+  function isSupabaseMode() {
+    return !!(K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase());
+  }
+
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
     cacheEls();
     setupChrome();
     bindEvents();
+    resetStaffForm();
     renderSessionUI();
     ensureLoginThenLoad();
   }
@@ -59,12 +64,21 @@
       adminUserBadge: $("#adminUserBadge"),
       globalMsg: $("#globalMsg"),
       btnAdminLoginOpen: $("#btnAdminLoginOpen"),
+      btnChangeMyPassword: $("#btnChangeMyPassword"),
       btnAdminLogout: $("#btnAdminLogout"),
 
       // login modal
       adminLoginModal: $("#adminLoginModal"),
       btnAdminLoginClose: $("#btnAdminLoginClose"),
       adminLoginForm: $("#adminLoginForm"),
+
+      // password modal
+      passwordChangeModal: $("#passwordChangeModal"),
+      passwordChangeForm: $("#passwordChangeForm"),
+      btnPwdModalClose: $("#pwdModalClose"),
+      btnPwdCancel: $("#pwdCancel"),
+      pwdMsg: $("#pwdMsg"),
+      pwdSave: $("#pwdSave"),
 
       // tabs
       adminTabs: $("#adminTabs"),
@@ -104,6 +118,8 @@
 
       // staff
       staffForm: $("#staffForm"),
+      staffFormHint: $("#staffFormHint"),
+      btnStaffSave: $("#btnStaffSave"),
       btnStaffReset: $("#btnStaffReset"),
       staffTableBody: $("#staffTable tbody"),
       staffEmpty: $("#staffEmpty"),
@@ -156,6 +172,69 @@
   }
 
   
+  function setModalOpen(open) {
+    document.body.classList.toggle("modal-open", !!open);
+  }
+
+  function openPasswordChangeModal() {
+    if (!els.passwordChangeModal) return;
+    if (!isSupabaseMode()) {
+      alert("Supabase 인증에서만 비밀번호 변경이 가능합니다.");
+      return;
+    }
+    if (els.passwordChangeForm) els.passwordChangeForm.reset();
+    setPwdMsg("");
+    setModalOpen(true);
+    els.passwordChangeModal.classList.remove("hidden");
+    els.passwordChangeModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closePasswordChangeModal() {
+    if (!els.passwordChangeModal) return;
+    els.passwordChangeModal.classList.add("hidden");
+    els.passwordChangeModal.setAttribute("aria-hidden", "true");
+    setModalOpen(false);
+    setPwdMsg("");
+  }
+
+  function setPwdMsg(text, isError = true) {
+    if (!els.pwdMsg) return;
+    els.pwdMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
+    els.pwdMsg.textContent = text || "";
+  }
+
+  async function changeMyPassword() {
+    if (!isSupabaseMode()) throw new Error("Supabase 인증에서만 비밀번호 변경이 가능합니다.");
+    const fd = new FormData(els.passwordChangeForm);
+    const newPassword = String(fd.get("newPassword") || "");
+    const confirmPassword = String(fd.get("confirmPassword") || "");
+
+    if (newPassword.length < 8) {
+      setPwdMsg("비밀번호는 8자 이상으로 입력해 주세요.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdMsg("새 비밀번호와 확인 값이 일치하지 않습니다.");
+      return;
+    }
+
+    const sb = K.initSupabase();
+    if (!sb) throw new Error("Supabase가 설정되지 않았습니다.");
+
+    if (els.pwdSave) els.pwdSave.disabled = true;
+    setPwdMsg("");
+    try {
+      const { error } = await sb.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setPwdMsg("비밀번호가 변경되었습니다.", false);
+      window.setTimeout(() => closePasswordChangeModal(), 500);
+    } catch (err) {
+      setPwdMsg(err?.message || "비밀번호 변경 실패");
+    } finally {
+      if (els.pwdSave) els.pwdSave.disabled = false;
+    }
+  }
+
   function setGlobalMsg(msg = "") {
     if (!els.globalMsg) return;
     const m = String(msg || "").trim();
@@ -177,7 +256,23 @@
 function bindEvents() {
     // login / logout
     if (els.btnAdminLoginOpen) els.btnAdminLoginOpen.addEventListener("click", openLoginModal);
+    if (els.btnChangeMyPassword) els.btnChangeMyPassword.addEventListener("click", openPasswordChangeModal);
     if (els.btnAdminLogout) els.btnAdminLogout.addEventListener("click", logout);
+
+    if (els.passwordChangeModal) {
+      els.passwordChangeModal.addEventListener("click", (e) => {
+        const t = e.target;
+        if (t && t.dataset && t.dataset.close === "true") closePasswordChangeModal();
+      });
+    }
+    if (els.btnPwdModalClose) els.btnPwdModalClose.addEventListener("click", closePasswordChangeModal);
+    if (els.btnPwdCancel) els.btnPwdCancel.addEventListener("click", closePasswordChangeModal);
+    if (els.passwordChangeForm) {
+      els.passwordChangeForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        changeMyPassword().catch(() => {});
+      });
+    }
 
     // tabs
     if (els.adminTabs) {
@@ -320,6 +415,7 @@ function bindEvents() {
       offices: els.tabOffices,
     };
     Object.entries(map).forEach(([key, panel]) => {
+      if (!panel) return;
       panel.classList.toggle("hidden", key !== tab);
     });
   }
@@ -329,6 +425,7 @@ function bindEvents() {
     const loggedIn = !!(state.session?.token && user);
 
     els.btnAdminLoginOpen?.classList.toggle("hidden", loggedIn);
+    els.btnChangeMyPassword?.classList.toggle("hidden", !loggedIn || !isSupabaseMode());
     els.btnAdminLogout?.classList.toggle("hidden", !loggedIn);
 
     if (!loggedIn) {
@@ -468,7 +565,7 @@ function bindEvents() {
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (sb) {
       try { await K.sbSyncLocalSession(); } catch {}
-      const { data, error } = await sb.from("profiles").select("id,name,role,created_at").order("created_at", { ascending: false });
+      const { data, error } = await sb.from("profiles").select("id,name,role,assigned_regions,created_at").order("created_at", { ascending: false });
       if (error) throw error;
       state.staff = Array.isArray(data) ? data.map(normalizeStaff) : [];
       renderStaffTable();
@@ -550,8 +647,10 @@ function bindEvents() {
       id: item.id || "",
       name: item.name || "",
       role: item.role || "staff",
-      assignedRegions: Array.isArray(item.assignedRegions) ? item.assignedRegions : [],
-      createdAt: item.createdAt || "",
+      assignedRegions: Array.isArray(item.assignedRegions)
+        ? item.assignedRegions
+        : (Array.isArray(item.assigned_regions) ? item.assigned_regions : []),
+      createdAt: item.createdAt || item.created_at || "",
     };
   }
 
@@ -752,6 +851,7 @@ function bindEvents() {
     if (els.aemDelete) els.aemDelete.classList.toggle("hidden", !isAdmin);
 
     setAemMsg("");
+    setModalOpen(true);
     els.propertyEditModalAdmin.classList.remove("hidden");
     els.propertyEditModalAdmin.setAttribute("aria-hidden", "false");
   }
@@ -770,6 +870,7 @@ function bindEvents() {
     els.propertyEditModalAdmin.setAttribute("aria-hidden", "true");
     state.editingProperty = null;
     setAemMsg("");
+    setModalOpen(false);
   }
 
   function toInputDateTimeLocal(value) {
@@ -1070,6 +1171,7 @@ function bindEvents() {
   }
 
   function renderOfficesTable() {
+    if (!els.officeTableBody || !els.officeEmpty) return;
     els.officeTableBody.innerHTML = "";
 
     if (!state.offices.length) {
@@ -1112,17 +1214,51 @@ function bindEvents() {
   // ---------------------------
   // Staff CRUD
   // ---------------------------
+  function setStaffFormMode(mode = "create") {
+    const editing = mode === "edit";
+    const emailEl = els.staffForm?.elements.email;
+    const passwordEl = els.staffForm?.elements.password;
+
+    if (emailEl) {
+      emailEl.disabled = editing;
+      if (editing) emailEl.removeAttribute("required");
+      else emailEl.setAttribute("required", "required");
+    }
+    if (passwordEl) {
+      passwordEl.disabled = editing;
+      if (editing) {
+        passwordEl.value = "";
+        passwordEl.removeAttribute("required");
+        passwordEl.placeholder = "비밀번호는 본인 메뉴에서 변경";
+      } else {
+        passwordEl.setAttribute("required", "required");
+        passwordEl.placeholder = "신규 생성 시만 입력";
+      }
+    }
+    if (els.btnStaffSave) els.btnStaffSave.textContent = editing ? "프로필 저장" : "계정 생성";
+    if (els.staffFormHint) {
+      els.staffFormHint.innerHTML = editing
+        ? '선택한 계정의 <strong>이름 / 권한</strong>만 수정합니다. 비밀번호는 상단의 <strong>내 비밀번호 변경</strong>으로 처리합니다.'
+        : '신규 생성 시에는 <strong>Supabase Auth 계정 + profiles</strong>가 함께 생성됩니다. 기존 계정은 여기서 <strong>이름 / 권한</strong>만 수정하고, 비밀번호는 본인 메뉴에서 직접 변경합니다.';
+    }
+  }
+
   function fillStaffForm(staff) {
+    if (!els.staffForm) return;
     els.staffForm.elements.id.value = staff.id || "";
+    if (els.staffForm.elements.email) els.staffForm.elements.email.value = "";
     els.staffForm.elements.name.value = staff.name || "";
     els.staffForm.elements.role.value = staff.role || "staff";
-    els.staffForm.elements.password.value = "";
+    if (els.staffForm.elements.password) els.staffForm.elements.password.value = "";
+    setStaffFormMode("edit");
   }
 
   function resetStaffForm() {
+    if (!els.staffForm) return;
     els.staffForm.reset();
     els.staffForm.elements.id.value = "";
     els.staffForm.elements.role.value = "staff";
+    setStaffFormMode("create");
   }
 
   async function handleSaveStaff(e) {
@@ -1130,13 +1266,15 @@ function bindEvents() {
     const fd = new FormData(e.currentTarget);
     const id = String(fd.get("id") || "").trim();
     const payload = {
+      email: String(fd.get("email") || "").trim(),
       name: String(fd.get("name") || "").trim(),
       role: String(fd.get("role") || "staff"),
       password: String(fd.get("password") || ""),
     };
 
     if (!payload.name) return alert("이름을 입력해 주세요.");
-    if (!id && !payload.password) return alert("신규 계정은 비밀번호가 필요합니다.");
+    if (!id && !payload.email) return alert("로그인 이메일을 입력해 주세요.");
+    if (!id && !payload.password) return alert("신규 계정은 초기 비밀번호가 필요합니다.");
 
     try {
       setFormBusy(e.currentTarget, true);
@@ -1144,7 +1282,10 @@ function bindEvents() {
         await api(`/admin/staff/${encodeURIComponent(id)}`, {
           method: "PATCH",
           auth: true,
-          body: payload,
+          body: {
+            name: payload.name,
+            role: payload.role,
+          },
         });
       } else {
         await api("/admin/staff", {
@@ -1155,7 +1296,7 @@ function bindEvents() {
       }
       resetStaffForm();
       await loadStaff();
-      alert("저장되었습니다.");
+      alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
     } catch (err) {
       console.error(err);
       alert(err.message || "저장 실패");
@@ -1509,11 +1650,22 @@ function bindEvents() {
     });
 
     try {
-      await api("/admin/region-assignments", {
-        method: "POST",
-        auth: true,
-        body: { assignments: rows },
-      });
+      const sb = isSupabaseMode() ? K.initSupabase() : null;
+      if (sb) {
+        for (const row of rows) {
+          const { error } = await sb
+            .from("profiles")
+            .update({ assigned_regions: row.assignedRegions })
+            .eq("id", row.agentId);
+          if (error) throw error;
+        }
+      } else {
+        await api("/admin/region-assignments", {
+          method: "POST",
+          auth: true,
+          body: { assignments: rows },
+        });
+      }
 
       await loadStaff();
       alert("담당자 지역 배정이 저장되었습니다.");
@@ -2066,7 +2218,7 @@ function bindEvents() {
         return;
       }
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(v));
-      try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
     } catch {}
   }
 })();

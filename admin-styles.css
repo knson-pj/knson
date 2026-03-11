@@ -282,26 +282,36 @@ body{
 .cell-badge.danger{color:var(--danger);}
 .staff-form{
   display:grid;
-  grid-template-columns:1.1fr 1fr 180px auto;
+  grid-template-columns:repeat(4,minmax(0,1fr));
   gap:10px;
   align-items:end;
 }
+.staff-form .form-note,
+.staff-form .btn-row{grid-column:1 / -1;}
+.sub-card-title{font-size:14px;font-weight:800;}
 .modal{
   position:fixed;inset:0;z-index:60;
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;
 }
+body.modal-open{overflow:hidden;}
 .modal-backdrop{
   position:absolute;inset:0;background:rgba(15,23,42,.52);backdrop-filter:blur(6px);
 }
 .modal-card{
   position:relative;
-  width:min(720px, calc(100% - 24px));
-  margin:5vh auto 0;
+  z-index:1;
+  width:min(720px, 100%);
+  max-height:calc(100dvh - 40px);
   border:1px solid var(--line);
   border-radius:24px;
   background:var(--surface);
   box-shadow:var(--shadow-lg);
   overflow:hidden;
+  display:flex;
+  flex-direction:column;
 }
+.modal-card-sm{width:min(480px, 100%);}
 .modal-header{
   padding:16px 18px;
   border-bottom:1px solid var(--line);
@@ -311,7 +321,7 @@ body{
   gap:10px;
 }
 .modal-header h3{margin:0;font-size:18px;}
-.modal-body{padding:18px;display:grid;gap:12px;}
+.modal-body{padding:18px;display:grid;gap:12px;overflow:auto;min-height:0;}
 .icon-btn{
   width:36px;height:36px;border-radius:999px;border:1px solid var(--line);
   background:var(--surface);color:var(--text);cursor:pointer;
@@ -327,6 +337,8 @@ body{
   .admin-topbar{flex-direction:column;align-items:flex-start;}
   .top-actions{width:100%;}
   .toolbar,.field-row,.grid2,.grid3,.staff-form{grid-template-columns:1fr;}
+  .modal{padding:12px;}
+  .modal-card{max-height:calc(100dvh - 24px);}
 }
 @media (max-width: 680px){
   .summary-grid{grid-template-columns:repeat(2, minmax(0,1fr));}
