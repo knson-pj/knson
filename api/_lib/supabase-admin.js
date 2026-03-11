@@ -94,6 +94,58 @@ async function verifySupabaseUser(req) {
   }
 }
 
+function normalizeRole(role) {
+  return role === 'admin' ? 'admin' : 'staff';
+}
+
+function pickRoleFromUser(user) {
+  return normalizeRole(
+    user?.app_metadata?.role ||
+    user?.user_metadata?.role ||
+    'staff'
+  );
+}
+
+function pickDisplayName({ profile, user }) {
+  return (
+    profile?.name ||
+    user?.user_metadata?.display_name ||
+    user?.email ||
+    ''
+  );
+}
+
+function isProfileReadIssue(err) {
+  const msg = String(err?.message || '').toLowerCase();
+  return (
+    msg.includes('stack depth') ||
+    msg.includes('infinite recursion') ||
+    msg.includes('policy') ||
+    msg.includes('profiles') ||
+    msg.includes('does not exist')
+  );
+}
+
+async function safeGetProfile(userId) {
+  try {
+    const rows = await supabaseFetch(`/rest/v1/profiles?select=id,name,role,created_at&id=eq.${encodeURIComponent(userId)}&limit=1`);
+    return Array.isArray(rows) ? (rows[0] || null) : null;
+  } catch (err) {
+    if (isProfileReadIssue(err)) return null;
+    throw err;
+  }
+}
+
+async function safeListProfiles() {
+  try {
+    const rows = await supabaseFetch('/rest/v1/profiles?select=id,name,role,created_at&order=created_at.desc.nullslast,name.asc');
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    if (isProfileReadIssue(err)) return [];
+    throw err;
+  }
+}
+
 async function requireSupabaseAdmin(req, res) {
   const user = await verifySupabaseUser(req);
   if (!user?.id) {
@@ -102,23 +154,24 @@ async function requireSupabaseAdmin(req, res) {
   }
 
   let profile = null;
+  let role = pickRoleFromUser(user);
   try {
-    const rows = await supabaseFetch(`/rest/v1/profiles?select=id,name,role&id=eq.${encodeURIComponent(user.id)}&limit=1`);
-    profile = Array.isArray(rows) ? rows[0] : null;
+    profile = await safeGetProfile(user.id);
+    if (profile?.role) role = normalizeRole(profile.role);
   } catch (err) {
     send(res, 500, { ok: false, message: err.message || '프로필 조회에 실패했습니다.' });
     return null;
   }
 
-  if (!profile || profile.role !== 'admin') {
+  if (role !== 'admin') {
     send(res, 403, { ok: false, message: '관리자 권한이 필요합니다.' });
     return null;
   }
 
   return {
     userId: user.id,
-    role: profile.role,
-    name: profile.name || user.email || '',
+    role,
+    name: pickDisplayName({ profile, user }),
     email: user.email || '',
   };
 }
@@ -140,8 +193,7 @@ async function getAuthUser(userId) {
 }
 
 async function listProfiles() {
-  const rows = await supabaseFetch('/rest/v1/profiles?select=id,name,role,created_at&order=created_at.desc.nullslast,name.asc');
-  return Array.isArray(rows) ? rows : [];
+  return safeListProfiles();
 }
 
 function pickAssignedRegionsFromUser(user) {
@@ -149,31 +201,27 @@ function pickAssignedRegionsFromUser(user) {
   return Array.isArray(regions) ? regions.filter(Boolean).map((v) => String(v)) : [];
 }
 
-function normalizeRole(role) {
-  return role === 'admin' ? 'admin' : 'staff';
-}
-
 function normalizeStaffItem({ profile, user }) {
-  const role = normalizeRole(profile?.role || user?.user_metadata?.role || 'staff');
   return {
     id: profile?.id || user?.id || '',
     email: user?.email || '',
-    name: profile?.name || user?.user_metadata?.display_name || user?.email || '',
-    role,
+    name: pickDisplayName({ profile, user }),
+    role: normalizeRole(profile?.role || pickRoleFromUser(user)),
     assignedRegions: pickAssignedRegionsFromUser(user),
     createdAt: profile?.created_at || user?.created_at || '',
   };
 }
 
 async function listStaff() {
-  const [profiles, users] = await Promise.all([listProfiles(), listAuthUsers()]);
+  const users = await listAuthUsers();
+  const profiles = await safeListProfiles();
   const profileMap = new Map((profiles || []).map((row) => [String(row.id), row]));
   const items = [];
 
   for (const user of users) {
     const id = String(user?.id || '');
     if (!id) continue;
-    const profile = profileMap.get(id) || { id, name: '', role: 'staff', created_at: user?.created_at || '' };
+    const profile = profileMap.get(id) || null;
     items.push(normalizeStaffItem({ profile, user }));
     profileMap.delete(id);
   }
@@ -192,13 +240,17 @@ async function listStaff() {
 }
 
 async function createAuthUser({ email, password, name, role }) {
+  const normalizedRole = normalizeRole(role);
   const body = {
     email,
     password,
     email_confirm: true,
+    app_metadata: {
+      role: normalizedRole,
+    },
     user_metadata: {
       display_name: name || '',
-      role: normalizeRole(role),
+      role: normalizedRole,
       assigned_regions: [],
     },
   };
@@ -211,11 +263,15 @@ async function createAuthUser({ email, password, name, role }) {
   const user = data?.user || data;
   if (!user?.id) throw new Error('Supabase 계정 생성 응답이 올바르지 않습니다.');
 
-  await upsertProfile({
-    id: user.id,
-    name,
-    role,
-  });
+  try {
+    await upsertProfile({
+      id: user.id,
+      name,
+      role: normalizedRole,
+    });
+  } catch (err) {
+    if (!isProfileReadIssue(err)) throw err;
+  }
 
   return user;
 }
@@ -242,6 +298,7 @@ async function updateProfile(userId, patch = {}) {
   const payload = {};
   if (patch.name != null) payload.name = String(patch.name || '').trim();
   if (patch.role != null) payload.role = normalizeRole(patch.role);
+  if (!Object.keys(payload).length) return null;
 
   const data = await supabaseFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
     method: 'PATCH',
@@ -261,17 +318,28 @@ async function updateAuthUser(userId, patch = {}) {
   const currentMeta = current.user_metadata && typeof current.user_metadata === 'object'
     ? current.user_metadata
     : {};
+  const currentAppMeta = current.app_metadata && typeof current.app_metadata === 'object'
+    ? current.app_metadata
+    : {};
 
   const nextMeta = { ...currentMeta };
+  const nextAppMeta = { ...currentAppMeta };
   if (patch.name != null) nextMeta.display_name = String(patch.name || '').trim();
-  if (patch.role != null) nextMeta.role = normalizeRole(patch.role);
+  if (patch.role != null) {
+    const role = normalizeRole(patch.role);
+    nextMeta.role = role;
+    nextAppMeta.role = role;
+  }
   if (patch.assignedRegions != null) {
     nextMeta.assigned_regions = Array.isArray(patch.assignedRegions)
       ? patch.assignedRegions.filter(Boolean).map((v) => String(v))
       : [];
   }
 
-  const body = { user_metadata: nextMeta };
+  const body = {
+    user_metadata: nextMeta,
+    app_metadata: nextAppMeta,
+  };
   if (patch.password != null && String(patch.password || '').trim()) {
     body.password = String(patch.password || '');
   }
@@ -288,25 +356,26 @@ async function updateAuthUser(userId, patch = {}) {
 }
 
 async function getStaff(userId) {
-  const [profile, user] = await Promise.all([
-    getProfile(userId),
+  const [user, profile] = await Promise.all([
     getAuthUser(userId).catch(() => null),
+    safeGetProfile(userId).catch(() => null),
   ]);
   if (!profile && !user) return null;
   return normalizeStaffItem({ profile, user });
 }
 
 async function updateStaff(userId, patch = {}) {
-  await Promise.all([
-    updateProfile(userId, patch),
-    updateAuthUser(userId, patch),
-  ]);
+  await updateAuthUser(userId, patch);
+  try {
+    await updateProfile(userId, patch);
+  } catch (err) {
+    if (!isProfileReadIssue(err)) throw err;
+  }
   return getStaff(userId);
 }
 
 async function getProfile(userId) {
-  const rows = await supabaseFetch(`/rest/v1/profiles?select=id,name,role,created_at&id=eq.${encodeURIComponent(userId)}&limit=1`);
-  return Array.isArray(rows) ? (rows[0] || null) : null;
+  return safeGetProfile(userId);
 }
 
 async function deleteAuthUser(userId) {
