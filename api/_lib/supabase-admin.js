@@ -198,8 +198,13 @@ async function resolveCurrentUserContext(req) {
     extractRoleCandidate(bearerUser)
   );
 
+  const authName = pickDisplayName({ profile: null, user: authUser || bearerUser });
+  const needsProfileFallback = !authRole || !authName;
+
   let profile = null;
-  profile = await safeGetProfile(bearerUser.id);
+  if (needsProfileFallback) {
+    profile = await safeGetProfile(bearerUser.id);
+  }
 
   const role = mergeRoles(authRole, profile?.role) || 'staff';
 
@@ -264,16 +269,24 @@ function normalizeStaffItem({ profile, user }) {
 
 async function listStaff() {
   const users = await listAuthUsers();
-  const profiles = await safeListProfiles();
+  const needProfiles = users.some((user) => {
+    const role = mergeRoles(extractRoleCandidate(user));
+    const name = pickDisplayName({ profile: null, user });
+    return !role || !name;
+  });
+
+  const profiles = needProfiles ? await safeListProfiles() : [];
   const profileMap = new Map((profiles || []).map((row) => [String(row.id), row]));
   const items = [];
 
   for (const user of users) {
     const id = String(user?.id || '');
     if (!id) continue;
-    const profile = profileMap.get(id) || null;
+    const role = mergeRoles(extractRoleCandidate(user));
+    const name = pickDisplayName({ profile: null, user });
+    const profile = (!role || !name) ? (profileMap.get(id) || null) : null;
     items.push(normalizeStaffItem({ profile, user }));
-    profileMap.delete(id);
+    if (profile) profileMap.delete(id);
   }
 
   for (const [id, profile] of profileMap.entries()) {
@@ -406,10 +419,15 @@ async function updateAuthUser(userId, patch = {}) {
 }
 
 async function getStaff(userId) {
-  const [user, profile] = await Promise.all([
-    getAuthUser(userId).catch(() => null),
-    safeGetProfile(userId).catch(() => null),
-  ]);
+  const user = await getAuthUser(userId).catch(() => null);
+  let profile = null;
+  if (user) {
+    const role = mergeRoles(extractRoleCandidate(user));
+    const name = pickDisplayName({ profile: null, user });
+    if (!role || !name) profile = await safeGetProfile(userId).catch(() => null);
+  } else {
+    profile = await safeGetProfile(userId).catch(() => null);
+  }
   if (!profile && !user) return null;
   return normalizeStaffItem({ profile, user });
 }

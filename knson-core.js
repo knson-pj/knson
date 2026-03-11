@@ -172,6 +172,9 @@
   // Supabase (optional)
   // ---------------------------------------------------------------------------
   let _sb = null;
+  let _authMeCache = { token: "", at: 0, user: null };
+  let _syncCache = { token: "", at: 0, session: null };
+  let _syncPromise = null;
 
   function getSupabaseConfig() {
     const metaUrl = getMeta("supabase-url");
@@ -250,6 +253,10 @@
     const token = String(accessToken || "").trim();
     if (!token) return null;
 
+    if (_authMeCache.token === token && (Date.now() - _authMeCache.at) < 10000) {
+      return _authMeCache.user || null;
+    }
+
     try {
       const res = await fetch(`${API_BASE_FALLBACK}/auth/me`, {
         method: "GET",
@@ -263,7 +270,9 @@
       let data = null;
       try { data = text ? JSON.parse(text) : null; } catch {}
       if (!res.ok) return null;
-      return data?.user || null;
+      const user = data?.user || null;
+      _authMeCache = { token, at: Date.now(), user };
+      return user;
     } catch {
       return null;
     }
@@ -375,32 +384,56 @@
     return data?.session || null;
   }
 
-  async function sbSyncLocalSession() {
+  async function sbSyncLocalSession(force = false) {
     const sb = initSupabase();
     if (!sb) return null;
 
     const sess = await sbGetSession();
     if (!sess?.access_token || !sess?.user) {
       clearSession();
+      _syncCache = { token: "", at: 0, session: null };
       return null;
     }
 
     const local = loadSession();
-    const next = await buildLocalSupabaseSession(sess, local);
-    if (!next) return null;
-
-    const changed = (
-      !local ||
-      local.backend !== next.backend ||
-      local.token !== next.token ||
-      local.user?.id !== next.user.id ||
-      local.user?.role !== next.user.role ||
-      local.user?.name !== next.user.name ||
-      local.user?.email !== next.user.email
+    const sameTokenRecent = (
+      !force &&
+      _syncCache.token === sess.access_token &&
+      (Date.now() - _syncCache.at) < 8000 &&
+      _syncCache.session
     );
+    if (sameTokenRecent) {
+      if (local && local.token === _syncCache.token) return local;
+      saveSession(_syncCache.session);
+      return _syncCache.session;
+    }
 
-    if (changed) saveSession(next);
-    return changed ? next : (local || next);
+    if (_syncPromise && !force) return _syncPromise;
+
+    _syncPromise = (async () => {
+      const next = await buildLocalSupabaseSession(sess, local);
+      if (!next) return null;
+
+      const changed = (
+        !local ||
+        local.backend !== next.backend ||
+        local.token !== next.token ||
+        local.user?.id !== next.user.id ||
+        local.user?.role !== next.user.role ||
+        local.user?.name !== next.user.name ||
+        local.user?.email !== next.user.email
+      );
+
+      if (changed) saveSession(next);
+      _syncCache = { token: next.token, at: Date.now(), session: next };
+      return changed ? next : (local || next);
+    })();
+
+    try {
+      return await _syncPromise;
+    } finally {
+      _syncPromise = null;
+    }
   }
 
   window.KNSN = {

@@ -7,6 +7,7 @@ const {
   requireSupabaseAdmin,
   listStaff,
   createAuthUser,
+  getStaff,
 } = require('../../_lib/supabase-admin');
 
 module.exports = async function handler(req, res) {
@@ -34,9 +35,18 @@ module.exports = async function handler(req, res) {
 
       try {
         const user = await createAuthUser({ email, password, name, role });
-        const items = await listStaff();
-        const item = items.find((row) => row.id === user.id) || null;
-        return send(res, 201, { ok: true, item });
+        const item = await getStaff(user.id).catch(() => null);
+        return send(res, 201, {
+          ok: true,
+          item: item || {
+            id: user.id,
+            email: user.email || email,
+            name,
+            role,
+            assignedRegions: [],
+            createdAt: user.created_at || new Date().toISOString(),
+          },
+        });
       } catch (err) {
         const msg = String(err?.message || '');
         if (/already|exists|registered|duplicate/i.test(msg)) {

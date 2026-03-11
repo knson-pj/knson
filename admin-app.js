@@ -1275,8 +1275,9 @@ function bindEvents() {
 
     try {
       setFormBusy(e.currentTarget, true);
+      let saved = null;
       if (id) {
-        await api(`/admin/staff/${encodeURIComponent(id)}`, {
+        const res = await api(`/admin/staff/${encodeURIComponent(id)}`, {
           method: "PATCH",
           auth: true,
           body: {
@@ -1284,15 +1285,29 @@ function bindEvents() {
             role: payload.role,
           },
         });
+        saved = res?.item || null;
+        if (saved) {
+          state.staff = state.staff.map((row) => String(row.id) === String(id) ? normalizeStaff(saved) : row);
+        }
       } else {
-        await api("/admin/staff", {
+        const res = await api("/admin/staff", {
           method: "POST",
           auth: true,
           body: payload,
         });
+        saved = res?.item || null;
+        if (saved) {
+          state.staff = [normalizeStaff(saved), ...state.staff.filter((row) => String(row.id) !== String(saved.id))];
+        }
       }
       resetStaffForm();
-      await loadStaff();
+      if (saved) {
+        renderStaffTable();
+        renderAssignmentTable();
+        renderSummary();
+      } else {
+        await loadStaff();
+      }
       alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
     } catch (err) {
       console.error(err);
@@ -2036,19 +2051,19 @@ function bindEvents() {
     const method = (options.method || "GET").toUpperCase();
     const headers = { Accept: "application/json" };
 
+    let token = "";
     if (options.auth) {
-      if (isSupabaseMode()) {
+      token = state.session?.token || "";
+      if (!token) {
+        state.session = loadSession();
+        token = state.session?.token || "";
+      }
+      if (!token && isSupabaseMode()) {
         try {
           await K.sbSyncLocalSession();
           state.session = loadSession();
+          token = state.session?.token || "";
         } catch {}
-      }
-
-      // 혹시 state.session이 오래된 경우를 대비해 1회 리프레시
-      let token = state.session?.token;
-      if (!token) {
-        state.session = loadSession();
-        token = state.session?.token;
       }
       if (!token) {
         const err = new Error("로그인이 필요합니다.");
@@ -2061,15 +2076,30 @@ function bindEvents() {
     const hasBody = !["GET", "HEAD"].includes(method);
     if (hasBody) headers["Content-Type"] = "application/json";
 
-    const res = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: hasBody ? JSON.stringify(options.body || {}) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers,
+        body: hasBody ? JSON.stringify(options.body || {}) : undefined,
+      });
+    } catch (fetchErr) {
+      const err = new Error("네트워크 연결 또는 서버 응답에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+      err.cause = fetchErr;
+      throw err;
+    }
 
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+    if (res.status === 401 && options.auth && !options._retried && isSupabaseMode()) {
+      try {
+        await K.sbSyncLocalSession();
+        state.session = loadSession();
+        return api(path, { ...options, _retried: true });
+      } catch {}
+    }
 
     if (!res.ok) {
       const err = new Error(data?.message || `API 오류 (${res.status})`);
