@@ -384,6 +384,33 @@
     return data?.session || null;
   }
 
+  async function sbGetAccessToken(options = {}) {
+    const force = !!options.forceRefresh;
+    const sb = initSupabase();
+    if (!sb) return '';
+    try {
+      const sess = await sbGetSession();
+      const token = String(sess?.access_token || '').trim();
+      if (!token) return '';
+      if (force) {
+        const next = await sbSyncLocalSession(true).catch(() => null);
+        return String(next?.token || token || '').trim();
+      }
+      const local = loadSession();
+      if (!local || local.token !== token) {
+        saveSession({
+          backend: 'supabase',
+          token,
+          user: local?.user || { id: sess?.user?.id || '', email: sess?.user?.email || '', name: sess?.user?.email || '', role: local?.user?.role || 'staff' },
+          at: Date.now(),
+        });
+      }
+      return token;
+    } catch {
+      return '';
+    }
+  }
+
   async function sbSyncLocalSession(force = false) {
     const sb = initSupabase();
     if (!sb) return null;
@@ -466,6 +493,7 @@
     sbSignOut,
     sbHardSignOut,
     sbGetSession,
+    sbGetAccessToken,
     sbSyncLocalSession,
   };
 })();

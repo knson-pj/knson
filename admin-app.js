@@ -2053,14 +2053,22 @@ function bindEvents() {
 
     let token = "";
     if (options.auth) {
-      token = state.session?.token || "";
+      if (isSupabaseMode() && K && typeof K.sbGetAccessToken === "function") {
+        try {
+          token = await K.sbGetAccessToken();
+          state.session = loadSession();
+        } catch {}
+      }
+      if (!token) {
+        token = state.session?.token || "";
+      }
       if (!token) {
         state.session = loadSession();
         token = state.session?.token || "";
       }
       if (!token && isSupabaseMode()) {
         try {
-          await K.sbSyncLocalSession();
+          await K.sbSyncLocalSession(true);
           state.session = loadSession();
           token = state.session?.token || "";
         } catch {}
@@ -2084,7 +2092,8 @@ function bindEvents() {
         body: hasBody ? JSON.stringify(options.body || {}) : undefined,
       });
     } catch (fetchErr) {
-      const err = new Error("네트워크 연결 또는 서버 응답에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+      const detail = String(fetchErr?.message || "").trim();
+      const err = new Error(detail ? `네트워크 연결 또는 서버 응답에 실패했습니다. (${detail})` : "네트워크 연결 또는 서버 응답에 실패했습니다. 잠시 후 다시 시도해 주세요.");
       err.cause = fetchErr;
       throw err;
     }
@@ -2095,7 +2104,14 @@ function bindEvents() {
 
     if (res.status === 401 && options.auth && !options._retried && isSupabaseMode()) {
       try {
-        await K.sbSyncLocalSession();
+        if (K && typeof K.sbGetAccessToken === "function") {
+          const nextToken = await K.sbGetAccessToken({ forceRefresh: true });
+          if (nextToken) {
+            state.session = loadSession();
+            return api(path, { ...options, _retried: true });
+          }
+        }
+        await K.sbSyncLocalSession(true);
         state.session = loadSession();
         return api(path, { ...options, _retried: true });
       } catch {}
