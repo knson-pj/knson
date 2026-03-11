@@ -215,6 +215,7 @@
   }
   function normalizeRoleValue(role) {
     const s = String(role || "").trim().toLowerCase();
+    if (!s) return "";
     if (["admin", "관리자"].includes(s)) return "admin";
     if (["agent", "staff", "담당자"].includes(s)) return "staff";
     return "";
@@ -245,22 +246,54 @@
     ).trim();
   }
 
+  async function fetchSessionUserFromApi(accessToken) {
+    const token = String(accessToken || "").trim();
+    if (!token) return null;
+
+    try {
+      const res = await fetch(`${API_BASE_FALLBACK}/auth/me`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+      if (!res.ok) return null;
+      return data?.user || null;
+    } catch {
+      return null;
+    }
+  }
+
   async function buildLocalSupabaseSession(sess, fallbackLocal = null) {
     const sb = initSupabase();
     if (!sb || !sess?.access_token || !sess?.user) return null;
 
     const authUser = sess.user;
-    const authRole = pickRoleFromAuthUser(authUser, fallbackLocal?.user?.role || "staff");
-    let role = authRole;
-    let displayName = pickDisplayNameFromAuthUser(authUser, fallbackLocal?.user?.name || "");
+    const apiUser = await fetchSessionUserFromApi(sess.access_token);
 
-    try {
-      const profRes = await sb.from("profiles").select("role,name").eq("id", authUser.id).maybeSingle();
-      if (profRes?.data) {
-        role = mergeRoleValues(authRole, profRes.data.role) || authRole;
-        displayName = String(profRes.data.name || displayName || "").trim();
-      }
-    } catch {}
+    const fallbackRole = normalizeRoleValue(fallbackLocal?.user?.role || "");
+    const authRole = pickRoleFromAuthUser(authUser, "");
+    let role = mergeRoleValues(apiUser?.role, authRole, fallbackRole) || "staff";
+    let displayName = String(
+      apiUser?.name ||
+      pickDisplayNameFromAuthUser(authUser, fallbackLocal?.user?.name || "") ||
+      ""
+    ).trim();
+
+    if (!apiUser) {
+      try {
+        const profRes = await sb.from("profiles").select("role,name").eq("id", authUser.id).maybeSingle();
+        if (profRes?.data) {
+          role = mergeRoleValues(profRes.data.role, authRole, fallbackRole) || role;
+          displayName = String(profRes.data.name || displayName || "").trim();
+        }
+      } catch {}
+    }
 
     return {
       backend: "supabase",
@@ -288,14 +321,6 @@
 
     const local = await buildLocalSupabaseSession(session, null);
     if (!local) throw new Error("로그인 세션 생성에 실패했습니다.");
-
-    try {
-      await sb.from("profiles").upsert({
-        id: local.user.id,
-        name: local.user.name || "",
-        role: local.user.role || "staff",
-      }, { onConflict: "id" });
-    } catch {}
 
     saveSession(local);
     return local;
@@ -403,6 +428,7 @@
     supabaseEnabled,
     initSupabase,
     normalizeLoginEmail,
+    fetchSessionUserFromApi,
     sbSignIn,
     sbSignOut,
     sbHardSignOut,

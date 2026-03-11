@@ -96,9 +96,10 @@ async function verifySupabaseUser(req) {
 
 function normalizeRole(role) {
   const s = String(role || '').trim().toLowerCase();
+  if (!s) return '';
   if (['admin', '관리자'].includes(s)) return 'admin';
   if (['agent', 'staff', '담당자'].includes(s)) return 'staff';
-  return 'staff';
+  return '';
 }
 
 function extractRoleCandidate(user) {
@@ -123,11 +124,11 @@ function mergeRoles(...roles) {
   const normalized = roles.map((v) => normalizeRole(v)).filter(Boolean);
   if (normalized.includes('admin')) return 'admin';
   if (normalized.includes('staff')) return 'staff';
-  return 'staff';
+  return '';
 }
 
 function pickRoleFromUser(user) {
-  return mergeRoles(extractRoleCandidate(user));
+  return mergeRoles(extractRoleCandidate(user)) || 'staff';
 }
 
 function pickDisplayName({ profile, user }) {
@@ -197,17 +198,17 @@ async function resolveCurrentUserContext(req) {
     extractRoleCandidate(bearerUser)
   );
 
-  let role = authRole;
-
   let profile = null;
   profile = await safeGetProfile(bearerUser.id);
-  if (profile?.role) role = mergeRoles(authRole, profile.role);
+
+  const role = mergeRoles(authRole, profile?.role) || 'staff';
 
   return {
     userId: bearerUser.id,
     email: authUser?.email || bearerUser?.email || '',
     name: pickDisplayName({ profile, user: authUser || bearerUser }),
     role,
+    assignedRegions: pickAssignedRegionsFromUser(authUser || bearerUser),
     authUser,
     bearerUser,
     profile,
@@ -255,7 +256,7 @@ function normalizeStaffItem({ profile, user }) {
     id: profile?.id || user?.id || '',
     email: user?.email || '',
     name: pickDisplayName({ profile, user }),
-    role: mergeRoles(extractRoleCandidate(user), profile?.role),
+    role: mergeRoles(extractRoleCandidate(user), profile?.role) || 'staff',
     assignedRegions: pickAssignedRegionsFromUser(user),
     createdAt: profile?.created_at || user?.created_at || '',
   };
@@ -289,7 +290,7 @@ async function listStaff() {
 }
 
 async function createAuthUser({ email, password, name, role }) {
-  const normalizedRole = normalizeRole(role);
+  const normalizedRole = normalizeRole(role) || 'staff';
   const body = {
     email,
     password,
@@ -329,7 +330,7 @@ async function upsertProfile({ id, name, role }) {
   const payload = [{
     id,
     name: name || '',
-    role: normalizeRole(role),
+    role: normalizeRole(role) || 'staff',
   }];
 
   const data = await supabaseFetch('/rest/v1/profiles?on_conflict=id', {
@@ -346,7 +347,7 @@ async function upsertProfile({ id, name, role }) {
 async function updateProfile(userId, patch = {}) {
   const payload = {};
   if (patch.name != null) payload.name = String(patch.name || '').trim();
-  if (patch.role != null) payload.role = normalizeRole(patch.role);
+  if (patch.role != null) payload.role = normalizeRole(patch.role) || 'staff';
   if (!Object.keys(payload).length) return null;
 
   const data = await supabaseFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
@@ -375,7 +376,7 @@ async function updateAuthUser(userId, patch = {}) {
   const nextAppMeta = { ...currentAppMeta };
   if (patch.name != null) nextMeta.display_name = String(patch.name || '').trim();
   if (patch.role != null) {
-    const role = normalizeRole(patch.role);
+    const role = normalizeRole(patch.role) || 'staff';
     nextMeta.role = role;
     nextAppMeta.role = role;
   }
