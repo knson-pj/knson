@@ -119,8 +119,15 @@ function extractDisplayName(user) {
   ).trim();
 }
 
+function mergeRoles(...roles) {
+  const normalized = roles.map((v) => normalizeRole(v)).filter(Boolean);
+  if (normalized.includes('admin')) return 'admin';
+  if (normalized.includes('staff')) return 'staff';
+  return 'staff';
+}
+
 function pickRoleFromUser(user) {
-  return normalizeRole(extractRoleCandidate(user));
+  return mergeRoles(extractRoleCandidate(user));
 }
 
 function pickDisplayName({ profile, user }) {
@@ -185,15 +192,16 @@ async function resolveCurrentUserContext(req) {
   const adminUser = await getAuthUser(bearerUser.id).catch(() => null);
   const authUser = adminUser || bearerUser;
 
-  let role = normalizeRole(
-    extractRoleCandidate(authUser) ||
-    extractRoleCandidate(bearerUser) ||
-    'staff'
+  const authRole = mergeRoles(
+    extractRoleCandidate(authUser),
+    extractRoleCandidate(bearerUser)
   );
+
+  let role = authRole;
 
   let profile = null;
   profile = await safeGetProfile(bearerUser.id);
-  if (profile?.role) role = normalizeRole(profile.role);
+  if (profile?.role) role = mergeRoles(authRole, profile.role);
 
   return {
     userId: bearerUser.id,
@@ -247,7 +255,7 @@ function normalizeStaffItem({ profile, user }) {
     id: profile?.id || user?.id || '',
     email: user?.email || '',
     name: pickDisplayName({ profile, user }),
-    role: normalizeRole(profile?.role || extractRoleCandidate(user)),
+    role: mergeRoles(extractRoleCandidate(user), profile?.role),
     assignedRegions: pickAssignedRegionsFromUser(user),
     createdAt: profile?.created_at || user?.created_at || '',
   };

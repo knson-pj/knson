@@ -220,14 +220,20 @@
     return "";
   }
 
+  function mergeRoleValues(...roles) {
+    const normalized = roles.map((v) => normalizeRoleValue(v)).filter(Boolean);
+    if (normalized.includes("admin")) return "admin";
+    if (normalized.includes("staff")) return "staff";
+    return "";
+  }
+
   function pickRoleFromAuthUser(user, fallback = "staff") {
-    const role = normalizeRoleValue(
-      user?.app_metadata?.role ||
-      user?.user_metadata?.role ||
-      user?.role ||
-      ""
-    );
-    return role || normalizeRoleValue(fallback) || "staff";
+    return mergeRoleValues(
+      user?.app_metadata?.role,
+      user?.user_metadata?.role,
+      user?.role,
+      fallback
+    ) || "staff";
   }
 
   function pickDisplayNameFromAuthUser(user, fallback = "") {
@@ -244,13 +250,14 @@
     if (!sb || !sess?.access_token || !sess?.user) return null;
 
     const authUser = sess.user;
-    let role = pickRoleFromAuthUser(authUser, fallbackLocal?.user?.role || "staff");
+    const authRole = pickRoleFromAuthUser(authUser, fallbackLocal?.user?.role || "staff");
+    let role = authRole;
     let displayName = pickDisplayNameFromAuthUser(authUser, fallbackLocal?.user?.name || "");
 
     try {
       const profRes = await sb.from("profiles").select("role,name").eq("id", authUser.id).maybeSingle();
       if (profRes?.data) {
-        role = normalizeRoleValue(profRes.data.role) || role;
+        role = mergeRoleValues(authRole, profRes.data.role) || authRole;
         displayName = String(profRes.data.name || displayName || "").trim();
       }
     } catch {}
