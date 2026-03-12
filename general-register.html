@@ -6,7 +6,7 @@
   <title>누구나 매물 등록 | 부동산 통합 관리 시스템</title>
   <meta name="supabase-url" content="" />
   <meta name="supabase-anon-key" content="" />
-  <link rel="stylesheet" href="./general-register.css" />
+  <link rel="stylesheet" href="./general-register.css?v=20260312-colfix2" />
 </head>
 <body>
   <header class="topbar">
@@ -47,67 +47,67 @@
         </div>
 
         <label class="field full">
-          <span>물건 주소 *</span>
+          <span>주소 *</span>
           <input name="address" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
         </label>
 
         <div class="grid2 full">
           <label class="field">
-            <span>부동산유형 *</span>
+            <span>세부유형 *</span>
             <input name="assetType" type="text" required placeholder="예: 아파트, 오피스텔, 근린생활시설" />
           </label>
           <label class="field">
-            <span>기준금액(원) *</span>
+            <span>매매가(원) *</span>
             <input name="priceMain" type="number" min="0" step="10000" required placeholder="예: 580000000" />
           </label>
         </div>
 
         <div class="grid3 full">
           <label class="field">
-            <span>공용면적(평)</span>
-            <input name="exclusiveArea" type="number" min="0" step="0.01" placeholder="예: 10.52" />
+            <span>해당층</span>
+            <input name="floor" type="text" placeholder="예: 5 / B1" />
           </label>
           <label class="field">
-            <span>전용면적(평)</span>
-            <input name="commonArea" type="number" min="0" step="0.01" placeholder="예: 18.34" />
+            <span>총층</span>
+            <input name="totalfloor" type="text" placeholder="예: 15" />
           </label>
           <label class="field">
-            <span>토지면적(평)</span>
-            <input name="siteArea" type="number" min="0" step="0.01" placeholder="예: 42.10" />
+            <span>사용승인일</span>
+            <input name="useapproval" type="date" />
           </label>
         </div>
 
-        <div class="grid2 full">
+        <div class="grid3 full">
           <label class="field">
-            <span>사용승인일</span>
-            <input name="useApproval" type="date" />
+            <span>공용면적(평)</span>
+            <input name="commonarea" type="number" min="0" step="0.01" placeholder="예: 10.52" />
           </label>
           <label class="field">
-            <span>원문 링크</span>
-            <input name="sourceUrl" type="url" placeholder="https://" />
+            <span>전용면적(평)</span>
+            <input name="exclusivearea" type="number" min="0" step="0.01" placeholder="예: 18.34" />
+          </label>
+          <label class="field">
+            <span>토지면적(평)</span>
+            <input name="sitearea" type="number" min="0" step="0.01" placeholder="예: 42.10" />
           </label>
         </div>
 
         <section class="sub-section full" id="realtorFields">
-          <h2>공인중개사 정보</h2>
+          <h2>중개사 정보</h2>
           <div class="grid2">
             <label class="field">
               <span>중개사무소명 *</span>
-              <input name="brokerOfficeName" type="text" placeholder="예: 한빛공인중개사사무소" />
+              <input name="realtorname" type="text" placeholder="예: 한빛공인중개사사무소" />
             </label>
             <label class="field">
-              <span>공인중개사명 *</span>
-              <input name="brokerName" type="text" placeholder="예: 홍길동" />
+              <span>유선전화</span>
+              <input name="realtorphone" type="tel" placeholder="예: 02-1234-5678" />
             </label>
           </div>
           <div class="grid2">
             <label class="field">
-              <span>등록번호</span>
-              <input name="brokerLicenseNo" type="text" placeholder="예: 12345-2026-00001" />
-            </label>
-            <label class="field">
-              <span>연락처 *</span>
-              <input name="submitterPhoneRealtor" type="tel" placeholder="010-0000-0000" />
+              <span>휴대폰번호 *</span>
+              <input name="realtorcell" type="tel" placeholder="010-0000-0000" />
             </label>
           </div>
         </section>
@@ -117,18 +117,18 @@
           <div class="grid2">
             <label class="field">
               <span>이름 *</span>
-              <input name="submitterNameOwner" type="text" placeholder="예: 홍길동" />
+              <input name="submitterName" type="text" placeholder="예: 홍길동" />
             </label>
             <label class="field">
               <span>연락처 *</span>
-              <input name="submitterPhoneOwner" type="tel" placeholder="010-0000-0000" />
+              <input name="submitterPhone" type="tel" placeholder="010-0000-0000" />
             </label>
           </div>
         </section>
 
         <label class="field full">
-          <span>메모 / 매물특징</span>
-          <textarea name="memo" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
+          <span>의견</span>
+          <textarea name="opinion" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
         </label>
 
         <div class="row full">
@@ -152,6 +152,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260310-1"></script>
-  <script src="./general-register.js?v=20260310-1"></script>
+  <script src="./general-register.js?v=20260312-colfix2"></script>
 </body>
 </html>

@@ -259,6 +259,7 @@
 
       if (sb) {
         try { await K.sbSyncLocalSession(); } catch {}
+        try { state.session = loadSession(); } catch {}
         const uid = state.session?.user?.id;
         const isAdmin = isAdminUser(state.session?.user);
 
@@ -293,7 +294,8 @@
   }
 
   function normalizeItem(p) {
-    const rawSource = (p.sourceType || p.source_type || p.source || p.category || "").toString().toLowerCase();
+    const raw = p?.raw && typeof p.raw === "object" ? p.raw : {};
+    const rawSource = (p.sourceType || p.source_type || p.source || p.category || raw.sourceType || "").toString().toLowerCase();
     const source =
       rawSource === "auction" ? "auction" :
       rawSource === "gongmae" || rawSource === "public" || rawSource === "onbid" ? "onbid" :
@@ -301,30 +303,48 @@
       rawSource === "general" ? "general" :
       "general";
 
-    const lat = toNumber(p.latitude ?? p.lat ?? "");
-    const lng = toNumber(p.longitude ?? p.lng ?? "");
-    const address = p.address || p.location || "";
+    const lat = toNullableNumber(p.latitude ?? p.lat ?? raw.latitude ?? raw.lat ?? "");
+    const lng = toNullableNumber(p.longitude ?? p.lng ?? raw.longitude ?? raw.lng ?? "");
+    const address = firstText(p.address, p.location, raw.address, raw.location, "");
+    const priceMain = toNullableNumber(
+      p.priceMain ?? p.price_main ?? raw.priceMain ?? raw.price_main ?? p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price
+    );
+    const lowprice =
+      source === "realtor" || source === "general"
+        ? null
+        : toNullableNumber(
+            p.lowprice ?? p.low_price ?? raw.lowprice ?? raw.low_price ?? p.currentPrice ?? p.current_price ?? raw.currentPrice ?? raw.current_price
+          );
+
+    const rightsAnalysisRaw = firstText(p.rightsAnalysis, p.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "");
+    const siteInspectionRaw = firstText(p.siteInspection, p.site_inspection, raw.siteInspection, raw.site_inspection, "");
 
     return {
       id: p.id || p.global_id || "",
+      itemNo: firstText(p.itemNo, p.item_no, raw.itemNo, raw.item_no, ""),
       source,
+      status: firstText(p.status, raw.status, ""),
       address,
-      type: p.assetType || p.asset_type || p.type || p.propertyType || p.kind || "-",
-      floor: p.floor || p.floorText || "-",
-      areaPyeong: toAreaPy(p.commonArea ?? p.common_area ?? p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
-      appraisalPrice: toNumber(p.appraisalPrice ?? p.appraisal_price ?? p.priceMain ?? p.price_main ?? p.salePrice ?? p.sale_price),
-      currentPrice: toNumber(p.currentPrice ?? p.current_price ?? p.priceMain ?? p.price_main),
-      bidDate: p.dateMain || p.date_main || p.bidDate || p.bid_date || "-",
-      createdAt: p.date || p.date_uploaded || p.createdAt || p.created_at || "",
-      assignedAgentName: p.assignedAgentName || p.assigneeName || p.agentName || p.manager || "-",
-      analysisDone: !!(p.analysisDone ?? p.analysis_done),
-      fieldDone: !!(p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done),
-      memo: p.memo || p.comment || p.raw?.memo || "",
-      status: p.status || "",
-      regionGu: p.regionGu || p.region_gu || "",
-      regionDong: p.regionDong || p.region_dong || "",
-      latitude: Number.isFinite(lat) ? lat : null,
-      longitude: Number.isFinite(lng) ? lng : null,
+      type: firstText(p.assetType, p.asset_type, p.type, p.propertyType, p.kind, raw.assetType, raw.asset_type, raw["세부유형"], "-"),
+      floor: firstText(p.floor, p.floor_text, raw.floor, raw.floorText, extractFloorText(address, raw["물건명"], raw.address)),
+      totalFloor: firstText(p.totalfloor, p.total_floor, raw.totalfloor, raw.total_floor, raw.totalFloor, ""),
+      useapproval: firstText(p.useapproval, p.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, ""),
+      exclusivearea: toNullableNumber(p.exclusivearea ?? p.exclusive_area ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"] ?? p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
+      commonarea: toNullableNumber(p.commonarea ?? p.common_area ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"]),
+      appraisalPrice: priceMain,
+      currentPrice: lowprice,
+      bidDate: firstText(p.dateMain, p.date_main, raw.dateMain, raw.date_main, p.bidDate, p.bid_date, ""),
+      createdAt: firstText(p.date, p.date_uploaded, p.createdAt, p.created_at, raw.date, raw.createdAt, ""),
+      assignedAgentName: firstText(p.assignedAgentName, p.assigneeName, p.assignee_name, p.agentName, p.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "-"),
+      rightsAnalysis: rightsAnalysisRaw || ((p.analysisDone ?? p.analysis_done) ? "완료" : ""),
+      siteInspection: siteInspectionRaw || ((p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done) ? "완료" : ""),
+      opinion: firstText(p.opinion, raw.opinion, p.memo, raw.memo, p.comment, ""),
+      statusLabel: statusLabel(firstText(p.status, raw.status, "")),
+      regionGu: firstText(p.regionGu, p.region_gu, raw.regionGu, raw.region_gu, ""),
+      regionDong: firstText(p.regionDong, p.region_dong, raw.regionDong, raw.region_dong, ""),
+      latitude: lat,
+      longitude: lng,
+      raw,
     };
   }
 
@@ -343,19 +363,17 @@
     if (state.keyword) {
       const q = state.keyword.toLowerCase();
       list = list.filter((p) => {
-        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong, p.type]
+        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong, p.type, p.rightsAnalysis, p.siteInspection, p.opinion]
           .join(" ")
           .toLowerCase();
         return hay.includes(q);
       });
     }
 
-    // 최신등록 우선
     return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   }
 
   function renderKPIs() {
-    // KPI는 전체(필터 전) 기준으로 유지
     const all = state.items;
 
     if (els.statTotal) els.statTotal.textContent = String(all.length);
@@ -364,7 +382,6 @@
     if (els.statRealtor) els.statRealtor.textContent = String(all.filter((p) => p.source === "realtor").length);
     if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => p.source === "general").length);
 
-    // 선택 상태 시각화
     const setActive = (card, on) => {
       if (!card) return;
       card.classList.toggle("is-selected", on);
@@ -384,7 +401,6 @@
     els.tableBody.innerHTML = "";
 
     if (!rows.length) {
-      // 요구사항: 빈 데이터 의미없이 보여주지 않기
       if (els.tableWrap) els.tableWrap.classList.add("hidden");
       if (els.emptyState) {
         els.emptyState.classList.remove("hidden");
@@ -403,45 +419,41 @@
 
   function renderRow(p) {
     const tr = document.createElement("tr");
-
     const kindClass = p.source === "auction" ? "kind-auction" : p.source === "onbid" ? "kind-gongmae" : p.source === "realtor" ? "kind-realtor" : "kind-general";
     const kindLabel = p.source === "auction" ? "경매" : p.source === "onbid" ? "공매" : p.source === "realtor" ? "중개" : "일반";
-
-    const locText = formatLocation(p);
-    const appraisal = p.appraisalPrice ? formatMoneyEok(p.appraisalPrice) : "-";
-    const current = p.currentPrice ? formatMoneyEok(p.currentPrice) : "-";
+    const appraisal = p.appraisalPrice != null ? formatMoneyEok(p.appraisalPrice) : "-";
+    const current = p.currentPrice != null ? formatMoneyEok(p.currentPrice) : "-";
     const rate = calcRate(p.appraisalPrice, p.currentPrice);
+    const moveLink = buildKakaoMapLink(p);
+    const locationCell = moveLink
+      ? `<a class="map-link" href="${escapeAttr(moveLink)}" target="_blank" rel="noopener noreferrer">이동</a>`
+      : "-";
 
     tr.innerHTML = `
       <td class="kind-chip ${kindClass}">${escapeHtml(kindLabel)}</td>
-      <td>${escapeHtml(locText || "-")}</td>
+      <td>${escapeHtml(p.statusLabel || "-")}</td>
+      <td class="text-cell">${escapeHtml(p.address || "-")}</td>
       <td>${escapeHtml(p.type || "-")}</td>
       <td>${escapeHtml(String(p.floor || "-"))}</td>
-      <td>${p.areaPyeong ? escapeHtml(String(p.areaPyeong)) : "-"}</td>
+      <td>${escapeHtml(String(p.totalFloor || "-"))}</td>
+      <td>${escapeHtml(formatShortDate(p.useapproval) || "-")}</td>
+      <td>${p.exclusivearea != null ? escapeHtml(formatAreaPyeong(p.exclusivearea)) : "-"}</td>
       <td>${escapeHtml(appraisal)}</td>
       <td>${escapeHtml(current)}</td>
       <td>${escapeHtml(rate)}</td>
       <td>${escapeHtml(formatShortDate(p.bidDate) || "-")}</td>
+      <td>${locationCell}</td>
       <td>${escapeHtml(formatShortDate(p.createdAt) || "-")}</td>
       <td>${escapeHtml(p.assignedAgentName || "-")}</td>
-      <td>${p.analysisDone ? '<span class="check">✓</span>' : "-"}</td>
-      <td>${p.fieldDone ? '<span class="check">✓</span>' : "-"}</td>
-      <td>${p.memo ? `<button class="btn-view" type="button">보기</button>` : "-"}</td>
+      <td class="text-cell">${escapeHtml(p.rightsAnalysis || "-")}</td>
+      <td class="text-cell">${escapeHtml(p.siteInspection || "-")}</td>
+      <td class="text-cell opinion-cell">${escapeHtml(p.opinion || "-")}</td>
     `;
-
-    const btn = tr.querySelector(".btn-view");
-    if (btn) {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        alert(p.memo);
-      });
-    }
 
     return tr;
   }
 
   function formatLocation(p) {
-    // 화면 샘플처럼: 구/동 있으면 "서울 / 미아동" 형태를 우선
     if (p.regionGu || p.regionDong) {
       const left = p.regionGu || "";
       const right = p.regionDong || "";
@@ -455,7 +467,56 @@
     const a = Number(appraisal || 0);
     const c = Number(current || 0);
     if (!Number.isFinite(a) || !Number.isFinite(c) || a <= 0 || c <= 0) return "-";
-    return `${((c / a) * 100).toFixed(2)} %`;
+    return `${((c / a) * 100).toFixed(1)}%`;
+  }
+
+  function statusLabel(v) {
+    const s = String(v || "").trim().toLowerCase();
+    if (!s) return "-";
+    if (["active", "진행", "진행중", "진행중인"].includes(s)) return "진행중";
+    if (["hold", "보류"].includes(s)) return "보류";
+    if (["closed", "종결", "완료"].includes(s)) return "종결";
+    if (["review", "검토", "검토중"].includes(s)) return "검토중";
+    return String(v || "-");
+  }
+
+  function firstText(...values) {
+    for (const value of values) {
+      if (value == null) continue;
+      const s = String(value).trim();
+      if (s) return s;
+    }
+    return "";
+  }
+
+  function toNullableNumber(v) {
+    if (v == null || v === "") return null;
+    const n = Number(String(v).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatAreaPyeong(v) {
+    const n = toNullableNumber(v);
+    if (n == null || n <= 0) return "-";
+    return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+
+  function buildKakaoMapLink(p) {
+    if (p.latitude == null || p.longitude == null) return "";
+    const label = encodeURIComponent(p.address || p.type || "매물 위치");
+    return `https://map.kakao.com/link/map/${label},${p.latitude},${p.longitude}`;
+  }
+
+  function extractFloorText(...texts) {
+    const joined = texts.filter(Boolean).join(" ");
+    if (!joined) return "";
+    const basement = joined.match(/(?:지하|제?비)(\d+)층?/);
+    if (basement) return `B${basement[1]}`;
+    const direct = joined.match(/(?:제)?(\d+)층/);
+    if (direct) return direct[1];
+    const room = joined.match(/(?:제)?(\d{1,3})호/);
+    if (room) return room[1];
+    return "";
   }
 
   // ---- Kakao Map ----
@@ -661,20 +722,6 @@
     return Number.isFinite(n) ? n : 0;
   }
 
-  function toAreaPy(v) {
-    if (v == null || v === "") return "";
-    const n = Number(String(v).replace(/[^0-9.-]/g, ""));
-    if (!Number.isFinite(n) || n <= 0) return "";
-
-    // m2면 평으로 변환(대략)
-    if (n > 200) {
-      const py = n / 3.3058;
-      return Math.round(py);
-    }
-
-    return Math.round(n);
-  }
-
   function formatMoneyEok(n) {
     const num = Number(n || 0);
     if (!Number.isFinite(num) || num <= 0) return "-";
@@ -701,6 +748,14 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
+  }
+
+  function escapeAttr(v) {
+    return escapeHtml(v);
+  }
+
+  function escapeAttr(v) {
+    return escapeHtml(v);
   }
 
   function debounce(fn, wait = 200) {

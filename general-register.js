@@ -34,32 +34,33 @@
     const address = readStr(fd, 'address');
     const assetType = readStr(fd, 'assetType');
     const priceMain = readNum(fd, 'priceMain');
-    const exclusiveArea = readNum(fd, 'exclusiveArea');
-    const commonArea = readNum(fd, 'commonArea');
-    const siteArea = readNum(fd, 'siteArea');
-    const useApproval = readStr(fd, 'useApproval') || null;
-    const sourceUrl = readStr(fd, 'sourceUrl') || null;
-    const memo = readStr(fd, 'memo') || null;
+    const commonArea = readNum(fd, 'commonarea');
+    const exclusiveArea = readNum(fd, 'exclusivearea');
+    const siteArea = readNum(fd, 'sitearea');
+    const floor = readStr(fd, 'floor') || null;
+    const totalFloor = readStr(fd, 'totalfloor') || null;
+    const useApproval = readStr(fd, 'useapproval') || null;
+    const opinion = readStr(fd, 'opinion') || null;
 
     let submitterName = '';
     let submitterPhone = '';
-    let brokerOfficeName = null;
-    let brokerName = null;
-    let brokerLicenseNo = null;
+    let realtorName = null;
+    let realtorPhone = null;
+    let realtorCell = null;
 
     if (submitterKind === 'realtor') {
-      brokerOfficeName = readStr(fd, 'brokerOfficeName');
-      brokerName = readStr(fd, 'brokerName');
-      brokerLicenseNo = readStr(fd, 'brokerLicenseNo') || null;
-      submitterPhone = readStr(fd, 'submitterPhoneRealtor');
-      submitterName = brokerName;
-      if (!brokerOfficeName || !brokerName || !submitterPhone) {
-        setMsg('공인중개사 등록은 중개사무소명/공인중개사명/연락처를 입력해 주세요.');
+      realtorName = readStr(fd, 'realtorname');
+      realtorPhone = readStr(fd, 'realtorphone') || null;
+      realtorCell = readStr(fd, 'realtorcell');
+      submitterPhone = realtorCell;
+      submitterName = realtorName;
+      if (!realtorName || !realtorCell) {
+        setMsg('중개 등록은 중개사무소명과 휴대폰번호를 입력해 주세요.');
         return;
       }
     } else {
-      submitterName = readStr(fd, 'submitterNameOwner');
-      submitterPhone = readStr(fd, 'submitterPhoneOwner');
+      submitterName = readStr(fd, 'submitterName');
+      submitterPhone = readStr(fd, 'submitterPhone');
       if (!submitterName || !submitterPhone) {
         setMsg('소유자/일반 등록은 이름과 연락처를 입력해 주세요.');
         return;
@@ -67,7 +68,7 @@
     }
 
     if (!address || !assetType || !priceMain) {
-      setMsg('주소/부동산유형/기준금액을 입력해 주세요.');
+      setMsg('주소/세부유형/매매가를 입력해 주세요.');
       return;
     }
 
@@ -77,17 +78,19 @@
       address,
       assetType,
       priceMain,
-      exclusiveArea,
+      floor,
+      totalFloor,
       commonArea,
+      exclusiveArea,
       siteArea,
       useApproval,
-      sourceUrl,
-      memo,
+      opinion,
       submitterName,
       submitterPhone,
-      brokerOfficeName,
-      brokerName,
-      brokerLicenseNo,
+      realtorName,
+      realtorPhone,
+      realtorCell,
+      opinion: opinion || null,
     };
 
     try {
@@ -105,15 +108,12 @@
           site_area: siteArea,
           use_approval: useApproval,
           price_main: priceMain,
-          source_url: sourceUrl,
-          memo,
+          memo: opinion,
           assignee_id: null,
           submitter_type: submitterType,
           submitter_name: submitterName,
           submitter_phone: submitterPhone,
-          broker_office_name: brokerOfficeName,
-          broker_name: brokerName,
-          broker_license_no: brokerLicenseNo,
+          broker_office_name: realtorName,
           raw: payload,
         };
 
