@@ -675,6 +675,17 @@ function bindEvents() {
     };
   }
 
+  function isSiteStaffRole(role) {
+    return String(role || "").trim().toLowerCase() === "staff";
+  }
+
+  function getStaffRoleLabel(role) {
+    const normalized = String(role || "").trim().toLowerCase();
+    if (normalized === "admin") return "관리자";
+    if (normalized === "other") return "기타";
+    return "담당자";
+  }
+
   function dedupeStaff(items) {
     const seenIds = new Set();
     const seenEmails = new Set();
@@ -743,7 +754,7 @@ function bindEvents() {
     if (els.sumRealtor) els.sumRealtor.textContent = String(props.filter(p => p.sourceType === "realtor").length);
     if (els.sumGeneral) els.sumGeneral.textContent = String(props.filter(p => p.sourceType === "general").length);
 
-    if (els.sumAgents) els.sumAgents.textContent = String(staff.filter(s => s.role !== "admin").length);
+    if (els.sumAgents) els.sumAgents.textContent = String(staff.filter((s) => isSiteStaffRole(s.role)).length);
     if (els.sumOffices) els.sumOffices.textContent = String(offices.length);
   }
 
@@ -899,7 +910,7 @@ function bindEvents() {
   function populateAssigneeSelect(selectedId) {
     const sel = els.aemForm?.elements["assigneeId"];
     if (!sel) return;
-    const staffRows = state.staff.filter((s) => s.role !== "admin");
+    const staffRows = state.staff.filter((s) => isSiteStaffRole(s.role));
     sel.innerHTML = `<option value="">미배정</option>` + staffRows.map((s) => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}</option>`).join("");
     sel.value = selectedId || "";
   }
@@ -1123,7 +1134,7 @@ function bindEvents() {
 
     state.staff.forEach((s) => {
       const tr = document.createElement("tr");
-      const roleLabel = s.role === "admin" ? "관리자" : "담당자";
+      const roleLabel = getStaffRoleLabel(s.role);
       tr.innerHTML = `
         <td>${escapeHtml(s.name)}</td>
         <td>${escapeHtml(roleLabel)}</td>
@@ -1171,7 +1182,7 @@ function bindEvents() {
   function renderAssignmentTable() {
     els.assignmentTableBody.innerHTML = "";
 
-    const agents = state.staff.filter((s) => s.role !== "admin");
+    const agents = state.staff.filter((s) => isSiteStaffRole(s.role));
     syncAgentCountInput(agents.length);
 
     if (!agents.length) {
@@ -1796,7 +1807,7 @@ function bindEvents() {
   }
 
   async function handleSuggestGrouping(options = {}) {
-    const agents = state.staff.filter((s) => s.role !== "admin");
+    const agents = state.staff.filter((s) => isSiteStaffRole(s.role));
     if (!agents.length) {
       if (!options.silent) alert("담당자 계정을 먼저 등록해 주세요.");
       return;
@@ -1845,7 +1856,7 @@ function bindEvents() {
   }
 
   async function handleSaveAssignments() {
-    const agents = state.staff.filter((s) => s.role !== "admin");
+    const agents = state.staff.filter((s) => isSiteStaffRole(s.role));
     if (!agents.length) return alert("담당자 계정이 없습니다.");
 
     const rows = [...els.assignmentTableBody.querySelectorAll(".assignment-editor")].map((editor) => {

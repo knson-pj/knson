@@ -221,6 +221,7 @@
     if (!s) return "";
     if (["admin", "관리자"].includes(s)) return "admin";
     if (["agent", "staff", "담당자"].includes(s)) return "staff";
+    if (["other", "기타"].includes(s)) return "other";
     return "";
   }
 
@@ -228,6 +229,7 @@
     const normalized = roles.map((v) => normalizeRoleValue(v)).filter(Boolean);
     if (normalized.includes("admin")) return "admin";
     if (normalized.includes("staff")) return "staff";
+    if (normalized.includes("other")) return "other";
     return "";
   }
 

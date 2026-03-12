@@ -27,7 +27,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./admin-styles.css?v=20260311-1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260305-1" />
 </head>
 <body>
   <div class="admin-shell">
@@ -36,14 +36,13 @@
         <div class="brand-dot"></div>
         <div>
           <h1>관리자 페이지</h1>
-          <p>물건 · 담당자 · 지역배정 관리</p>
+          <p>물건 · 담당자 · 지역배정 · 중개사무소 관리</p>
         </div>
       </div>
 
       <div class="top-actions">
         <span id="adminUserBadge" class="badge badge-muted">비로그인</span>
         <button id="btnAdminLoginOpen" class="btn btn-primary">로그인</button>
-        <button id="btnChangeMyPassword" class="btn btn-secondary hidden">내 비밀번호 변경</button>
         <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
       </div>
     </header>
@@ -60,6 +59,7 @@
           <div class="summary-card"><span>중개</span><strong id="sumRealtor">0</strong></div>
           <div class="summary-card"><span>일반</span><strong id="sumGeneral">0</strong></div>
           <div class="summary-card"><span>담당자 수</span><strong id="sumAgents">0</strong></div>
+          <div class="summary-card"><span>중개사무소 수</span><strong id="sumOffices">0</strong></div>
         </div>
       </section>
 
@@ -70,6 +70,7 @@
           <button class="tab" data-tab="csv">CSV 업로드</button>
           <button class="tab" data-tab="staff">담당자 관리</button>
           <button class="tab" data-tab="regions">담당자 지역 배정</button>
+          <button class="tab" data-tab="offices">중개사무소 정보</button>
         </div>
       </section>
 
@@ -187,35 +188,27 @@
         </div>
 
         <div class="sub-card">
-          <div class="sub-card-title">신규 Supabase 계정 생성</div>
           <form id="staffForm" class="staff-form">
             <input type="hidden" name="id" />
             <label class="field">
-              <span>로그인 이메일 *</span>
-              <input name="email" class="input" type="email" autocomplete="off" placeholder="예: staff01@knson.local" />
-            </label>
-            <label class="field">
               <span>이름 *</span>
               <input name="name" class="input" type="text" required />
+            </label>
+            <label class="field">
+              <span>비밀번호 *</span>
+              <input name="password" class="input" type="password" placeholder="신규/재설정 시 입력" />
             </label>
             <label class="field">
               <span>권한</span>
               <select name="role" class="select">
                 <option value="staff">담당자</option>
                 <option value="admin">관리자</option>
+                <option value="other">기타</option>
               </select>
             </label>
-            <label class="field">
-              <span>초기 비밀번호 *</span>
-              <input name="password" class="input" type="password" placeholder="신규 생성 시만 입력" autocomplete="new-password" />
-            </label>
-
-            <div id="staffFormHint" class="form-note muted small">
-              신규 생성 시에는 <strong>Supabase Auth 계정 + profiles</strong>가 함께 생성됩니다. 기존 계정은 여기서 <strong>이름 / 권한</strong>만 수정하고, 비밀번호는 본인 메뉴에서 직접 변경합니다.
-            </div>
 
             <div class="btn-row">
-              <button type="submit" id="btnStaffSave" class="btn btn-primary">계정 생성</button>
+              <button type="submit" class="btn btn-primary">저장</button>
               <button type="button" id="btnStaffReset" class="btn btn-ghost">초기화</button>
             </div>
           </form>
@@ -290,6 +283,73 @@
             <tbody></tbody>
           </table>
           <div id="assignmentEmpty" class="empty hidden">담당자 계정을 먼저 등록해 주세요.</div>
+        </div>
+      </section>
+
+      <!-- 중개사무소 정보 -->
+      <section id="tab-offices" class="panel tab-panel hidden">
+        <div class="panel-title-row">
+          <h2>중개사무소 정보</h2>
+        </div>
+
+        <div class="sub-card">
+          <div class="field-row">
+            <label class="field">
+              <span>기본정보 CSV 업로드</span>
+              <input id="officeCsvFileInput" class="input" type="file" accept=".csv,text/csv" />
+            </label>
+          </div>
+
+          <div class="hint-box">
+            <div class="hint-title">CSV 샘플 컬럼 (권장)</div>
+            <code>office_name,branch_name,address,region_gu,region_dong,manager_name,phone,memo</code>
+            <div class="muted small">
+              핸드폰번호는 아래 표에서 수정하면 자동 저장됩니다(서버 PATCH).
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button id="btnOfficeCsvPreview" class="btn btn-secondary">미리보기</button>
+            <button id="btnOfficeCsvUpload" class="btn btn-primary">서버 업로드</button>
+            <button id="btnReloadOffices" class="btn btn-ghost">목록 새로고침</button>
+          </div>
+
+          <div id="officeResultBox" class="result-box hidden"></div>
+
+          <div class="table-wrap slim">
+            <table class="table" id="officePreviewTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>사무소명</th>
+                  <th>주소</th>
+                  <th>구</th>
+                  <th>동</th>
+                  <th>담당자</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div id="officePreviewEmpty" class="empty">미리보기 데이터가 없습니다.</div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table" id="officeTable">
+            <thead>
+              <tr>
+                <th>사무소명</th>
+                <th>지점명</th>
+                <th>주소</th>
+                <th>구/동</th>
+                <th>담당자</th>
+                <th>핸드폰번호 (자동저장)</th>
+                <th>메모</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="officeEmpty" class="empty hidden">중개사무소 정보가 없습니다.</div>
         </div>
       </section>
     </main>
@@ -422,36 +482,8 @@
     </div>
   </div>
 
-
-  <!-- 내 비밀번호 변경 -->
-  <div id="passwordChangeModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card modal-card-sm">
-      <div class="modal-header">
-        <h3>내 비밀번호 변경</h3>
-        <button id="pwdModalClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <form id="passwordChangeForm" class="modal-body">
-        <label class="field">
-          <span>새 비밀번호</span>
-          <input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required />
-        </label>
-        <label class="field">
-          <span>새 비밀번호 확인</span>
-          <input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required />
-        </label>
-        <div class="muted small">현재 로그인한 본인 계정의 비밀번호만 변경됩니다. 관리자/담당자 공통 기능입니다.</div>
-        <div class="modal-actions">
-          <button id="pwdSave" class="btn btn-primary" type="submit">변경</button>
-          <button id="pwdCancel" class="btn btn-ghost" type="button">취소</button>
-        </div>
-        <div id="pwdMsg" class="note"></div>
-      </form>
-    </div>
-  </div>
-
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260310-1"></script>
-  <script src="./admin-app.js?v=20260311-1"></script>
+  <script src="./admin-app.js?v=20260310-1"></script>
 </body>
 </html>

@@ -18,12 +18,8 @@ module.exports = async function handler(req, res) {
     if (!session) return;
 
     if (req.method === 'GET') {
-      try {
-        const items = await listStaff();
-        return send(res, 200, { ok: true, items });
-      } catch (err) {
-        return send(res, err?.status || 500, { ok: false, message: err?.message || '담당자 목록 조회 실패' });
-      }
+      const items = await listStaff();
+      return send(res, 200, { ok: true, items });
     }
 
     if (req.method === 'POST') {
@@ -31,7 +27,7 @@ module.exports = async function handler(req, res) {
       const email = String(body.email || '').trim().toLowerCase();
       const name = String(body.name || '').trim();
       const password = String(body.password || '').trim();
-      const role = body.role === 'admin' ? 'admin' : 'staff';
+      const role = body.role === 'admin' ? 'admin' : (body.role === 'other' ? 'other' : 'staff');
 
       if (!email || !name || !password) {
         return send(res, 400, { ok: false, message: 'email, name, password는 필수입니다.' });
@@ -73,7 +69,7 @@ module.exports = async function handler(req, res) {
       ok: true,
       items: store.staff.map((u) => ({
         ...u,
-        role: u.role === 'admin' ? 'admin' : 'staff',
+        role: u.role === 'admin' ? 'admin' : (u.role === 'other' ? 'other' : 'staff'),
         assignedRegions: Array.isArray(u.regions) ? u.regions : [],
         password: undefined,
       })),
@@ -85,7 +81,7 @@ module.exports = async function handler(req, res) {
     const email = String(body.email || '').trim().toLowerCase();
     const name = String(body.name || '').trim();
     const password = String(body.password || '').trim();
-    const role = body.role === 'admin' ? 'admin' : 'staff';
+    const role = body.role === 'admin' ? 'admin' : (body.role === 'other' ? 'other' : 'staff');
 
     if (!name || !password || !email) {
       return send(res, 400, { ok: false, message: 'email, name, password는 필수입니다.' });
