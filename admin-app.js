@@ -345,6 +345,18 @@ function bindEvents() {
       resetStaffForm();
     });
 
+    if (els.regionUnitMode) els.regionUnitMode.addEventListener("change", () => {
+      if (state.session?.user?.role !== "admin") return;
+      renderAssignmentTable();
+      handleSuggestGrouping({ silent: true });
+    });
+    if (els.assignmentTableBody) els.assignmentTableBody.addEventListener("click", (e) => {
+      const btn = e.target.closest(".region-chip-btn");
+      if (!btn || state.session?.user?.role !== "admin") return;
+      const editor = btn.closest(".assignment-editor");
+      if (!editor) return;
+      toggleAssignmentRegion(editor, btn.dataset.region || "");
+    });
     if (els.btnSuggestGrouping) els.btnSuggestGrouping.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return;
       handleSuggestGrouping();
@@ -1160,22 +1172,31 @@ function bindEvents() {
     els.assignmentTableBody.innerHTML = "";
 
     const agents = state.staff.filter((s) => s.role !== "admin");
+    syncAgentCountInput(agents.length);
+
     if (!agents.length) {
       els.assignmentEmpty.classList.remove("hidden");
+      els.groupSuggestBox.innerHTML = "";
       return;
     }
     els.assignmentEmpty.classList.add("hidden");
 
-    const regionOptions = getRegionOptionsFromProperties();
+    const requestedCount = Math.max(1, agents.length);
+    const regionOptions = getRegionOptionsFromProperties(requestedCount, els.regionUnitMode?.value || "auto");
+    const hasSavedAssignments = agents.some((a) => Array.isArray(a.assignedRegions) && a.assignedRegions.length);
 
     const frag = document.createDocumentFragment();
     agents.forEach((a) => {
       const tr = document.createElement("tr");
+      const selected = Array.isArray(a.assignedRegions) ? a.assignedRegions : [];
       tr.innerHTML = `
         <td>${escapeHtml(a.name)}</td>
         <td>담당자</td>
         <td>
-          <select class="assignment-select" data-agent-id="${escapeAttr(a.id)}" multiple></select>
+          <div class="assignment-editor" data-agent-id="${escapeAttr(a.id)}" data-selected='${escapeAttr(JSON.stringify(selected))}'>
+            <div class="assignment-selected-badges"></div>
+            <div class="assignment-chip-grid"></div>
+          </div>
         </td>
       `;
       frag.appendChild(tr);
@@ -1183,19 +1204,16 @@ function bindEvents() {
 
     els.assignmentTableBody.appendChild(frag);
 
-    els.assignmentTableBody.querySelectorAll(".assignment-select").forEach((sel) => {
-      const agentId = sel.dataset.agentId;
-      const agent = agents.find((a) => a.id === agentId);
-      if (!agent) return;
-
-      regionOptions.forEach((r) => {
-        const opt = document.createElement("option");
-        opt.value = r;
-        opt.textContent = r;
-        opt.selected = agent.assignedRegions.includes(r);
-        sel.appendChild(opt);
-      });
+    els.assignmentTableBody.querySelectorAll(".assignment-editor").forEach((editor) => {
+      const selected = parseEditorSelected(editor);
+      renderAssignmentEditor(editor, regionOptions, selected);
     });
+
+    if (!hasSavedAssignments && regionOptions.length) {
+      handleSuggestGrouping({ silent: true });
+    } else if (!state.lastGroupSuggestion?.groups?.length) {
+      els.groupSuggestBox.innerHTML = `<div class="muted small">자동 그룹핑 제안을 누르면 현재 물건 분포 기준으로 지역을 자동 배정합니다.</div>`;
+    }
   }
 
   function renderOfficesTable() {
@@ -1654,26 +1672,145 @@ function bindEvents() {
   // Region Assignments
 
   // ---------------------------
-  function getRegionOptionsFromProperties() {
-    const set = new Set();
-    for (const p of state.properties) {
-      if (p.regionGu) set.add(p.regionGu);
-      if (p.regionDong) set.add(p.regionDong);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
+  function syncAgentCountInput(count) {
+    if (!els.agentCountInput) return;
+    const safe = Math.max(0, Number(count || 0));
+    els.agentCountInput.value = String(safe);
+    els.agentCountInput.readOnly = true;
+    els.agentCountInput.setAttribute("readonly", "readonly");
+    els.agentCountInput.setAttribute("aria-readonly", "true");
   }
 
-  async function handleSuggestGrouping() {
-    const agents = state.staff.filter((s) => s.role !== "admin");
-    if (!agents.length) return alert("담당자 계정을 먼저 등록해 주세요.");
+  function collectRegionBuckets(properties) {
+    const guMap = new Map();
+    const dongMap = new Map();
 
-    const requestedCount = Math.max(1, Number(els.agentCountInput.value || 1));
+    for (const p of Array.isArray(properties) ? properties : []) {
+      const parsed = extractGuDong(p.address || "");
+      const gu = String((p.regionGu || parsed.gu || "")).trim();
+      const dong = String((p.regionDong || parsed.dong || "")).trim();
+      if (!gu) continue;
+      guMap.set(gu, (guMap.get(gu) || 0) + 1);
+      if (dong) {
+        const dongLabel = `${gu} ${dong}`.trim();
+        dongMap.set(dongLabel, (dongMap.get(dongLabel) || 0) + 1);
+      }
+    }
+
+    return {
+      gu: [...guMap.entries()].map(([label, count]) => ({ label, count })),
+      dong: [...dongMap.entries()].map(([label, count]) => ({ label, count })),
+    };
+  }
+
+  function resolveEffectiveUnitMode(agentCount, unitMode) {
+    const buckets = collectRegionBuckets(state.properties);
+    if (unitMode !== "auto") return unitMode;
+    return agentCount > buckets.gu.length && buckets.dong.length ? "dong" : "gu";
+  }
+
+  function getRegionOptionsFromProperties(agentCount = 1, unitMode = "auto") {
+    const buckets = collectRegionBuckets(state.properties);
+    const mode = resolveEffectiveUnitMode(agentCount, unitMode);
+    const source = mode === "dong" && buckets.dong.length ? buckets.dong : buckets.gu;
+    return source
+      .slice()
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "ko"))
+      .map((item) => item.label);
+  }
+
+  function parseEditorSelected(editor) {
+    try {
+      const raw = JSON.parse(editor?.dataset?.selected || "[]");
+      return Array.isArray(raw) ? raw.filter(Boolean).map((v) => String(v)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function setEditorSelected(editor, regions) {
+    const normalized = Array.isArray(regions)
+      ? [...new Set(regions.filter(Boolean).map((v) => String(v).trim()).filter(Boolean))]
+      : [];
+    editor.dataset.selected = JSON.stringify(normalized);
+    renderSelectedRegionBadges(editor, normalized);
+    editor.querySelectorAll(".region-chip-btn").forEach((btn) => {
+      const active = normalized.includes(String(btn.dataset.region || ""));
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
+  function renderSelectedRegionBadges(editor, regions) {
+    const box = editor.querySelector(".assignment-selected-badges");
+    if (!box) return;
+    if (!regions.length) {
+      box.innerHTML = `<span class="cell-badge">미배정</span>`;
+      return;
+    }
+    box.innerHTML = regions
+      .slice()
+      .sort((a, b) => a.localeCompare(b, "ko"))
+      .map((region) => `<span class="assignment-region-badge">${escapeHtml(region)}</span>`)
+      .join("");
+  }
+
+  function renderAssignmentEditor(editor, regionOptions, selectedRegions) {
+    const chipGrid = editor.querySelector(".assignment-chip-grid");
+    if (!chipGrid) return;
+    chipGrid.innerHTML = "";
+
+    if (!regionOptions.length) {
+      chipGrid.innerHTML = `<div class="muted small">물건 주소에서 추출된 지역이 없어 자동 배정을 만들 수 없습니다.</div>`;
+      setEditorSelected(editor, []);
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    regionOptions.forEach((region) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "region-chip-btn";
+      btn.dataset.region = region;
+      btn.textContent = region;
+      frag.appendChild(btn);
+    });
+    chipGrid.appendChild(frag);
+    setEditorSelected(editor, selectedRegions);
+  }
+
+  function toggleAssignmentRegion(editor, region) {
+    const current = parseEditorSelected(editor);
+    const set = new Set(current);
+    if (set.has(region)) set.delete(region);
+    else set.add(region);
+    setEditorSelected(editor, [...set]);
+  }
+
+  function applyGroupedAssignmentsToEditors(grouped) {
+    const editors = [...els.assignmentTableBody.querySelectorAll(".assignment-editor")];
+    editors.forEach((editor, idx) => {
+      const regions = grouped?.groups?.[idx]?.regions || [];
+      setEditorSelected(editor, regions);
+    });
+  }
+
+  async function handleSuggestGrouping(options = {}) {
+    const agents = state.staff.filter((s) => s.role !== "admin");
+    if (!agents.length) {
+      if (!options.silent) alert("담당자 계정을 먼저 등록해 주세요.");
+      return;
+    }
+
+    syncAgentCountInput(agents.length);
+    const requestedCount = Math.max(1, agents.length);
     const unitMode = els.regionUnitMode.value; // auto|gu|dong
 
     const grouped = buildAutoRegionGrouping(state.properties, requestedCount, unitMode);
     state.lastGroupSuggestion = grouped;
 
     renderGroupSuggestion(grouped, agents);
+    applyGroupedAssignmentsToEditors(grouped);
   }
 
   function renderGroupSuggestion(grouped, agents) {
@@ -1687,7 +1824,7 @@ function bindEvents() {
     info.className = "hint-box";
     info.innerHTML = `
       <div><strong>제안 기준:</strong> ${escapeHtml(grouped.unitLabel)} / 총 지역 ${grouped.totalRegions}개 / 그룹 ${grouped.groups.length}개</div>
-      <div class="muted small">※ 제안 결과는 아래 [배정 저장] 전에 테이블에서 수정 가능합니다.</div>
+      <div class="muted small">※ 현재 화면에는 자동 그룹핑 제안값이 기본 반영되어 있으며, 아래 지역 배지에서 직접 수정할 수 있습니다.</div>
     `;
     els.groupSuggestBox.appendChild(info);
 
@@ -1699,30 +1836,21 @@ function bindEvents() {
       card.innerHTML = `
         <h4>그룹 ${idx + 1} (${escapeHtml(agentName)})</h4>
         <div class="group-chip-wrap">
-          ${g.regions.map(r => `<span class="group-chip">${escapeHtml(r)}</span>`).join("")}
+          ${g.regions.map(r => `<span class="group-chip">${escapeHtml(r)}</span>`).join("") || `<span class="cell-badge">미배정</span>`}
         </div>
       `;
       frag.appendChild(card);
     });
     els.groupSuggestBox.appendChild(frag);
-
-    // 실제 배정 테이블 반영(담당자 순서 기준)
-    const selects = [...els.assignmentTableBody.querySelectorAll(".assignment-select")];
-    selects.forEach((sel, idx) => {
-      const regions = grouped.groups[idx]?.regions || [];
-      [...sel.options].forEach((opt) => {
-        opt.selected = regions.includes(opt.value);
-      });
-    });
   }
 
   async function handleSaveAssignments() {
     const agents = state.staff.filter((s) => s.role !== "admin");
     if (!agents.length) return alert("담당자 계정이 없습니다.");
 
-    const rows = [...els.assignmentTableBody.querySelectorAll(".assignment-select")].map((sel) => {
-      const agentId = sel.dataset.agentId;
-      const assignedRegions = [...sel.selectedOptions].map((o) => o.value);
+    const rows = [...els.assignmentTableBody.querySelectorAll(".assignment-editor")].map((editor) => {
+      const agentId = editor.dataset.agentId;
+      const assignedRegions = parseEditorSelected(editor);
       return { agentId, assignedRegions };
     });
 
@@ -1733,7 +1861,11 @@ function bindEvents() {
         body: { assignments: rows },
       });
 
-      await loadStaff();
+      state.staff = state.staff.map((staff) => {
+        const found = rows.find((row) => row.agentId === staff.id);
+        return found ? { ...staff, assignedRegions: found.assignedRegions.slice() } : staff;
+      });
+      renderAssignmentTable();
       alert("담당자 지역 배정이 저장되었습니다.");
     } catch (err) {
       console.error(err);
@@ -1778,7 +1910,7 @@ function bindEvents() {
           continue;
         }
         dongs.sort((a, b) => a.localeCompare(b, "ko")).forEach((dong) => {
-          regionUnits.push({ key: dong, gu, weight: 1 });
+          regionUnits.push({ key: `${gu} ${dong}`.trim(), gu, weight: 1 });
         });
       }
     }
