@@ -78,6 +78,7 @@
         <div class="panel-title-row">
           <h2>물건 리스팅</h2>
           <button id="btnReloadProperties" class="btn btn-secondary">새로고침</button>
+          <button id="btnDeleteSelectedProperties" class="btn btn-danger">선택 삭제</button>
         </div>
 
         <div class="toolbar">
@@ -104,6 +105,7 @@
           <table class="table" id="propertiesTable">
             <thead>
               <tr>
+                <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /><span></span></label></th>
                 <th>물건번호</th>
                 <th>구분</th>
                 <th>주소</th>
@@ -479,6 +481,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260312-fix13"></script>
-  <script src="./admin-app.js?v=20260312-colfix2"></script>
+  <script src="./admin-app.js?v=20260312-v15"></script>
 </body>
 </html>

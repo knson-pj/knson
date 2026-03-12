@@ -38,6 +38,7 @@
     csvPreviewRows: [],
     officeCsvPreviewRows: [],
     lastGroupSuggestion: null,
+    selectedPropertyIds: new Set(),
   };
 
   const els = {};
@@ -110,6 +111,8 @@
 
       // properties table
       btnReloadProperties: $("#btnReloadProperties"),
+      btnDeleteSelectedProperties: $("#btnDeleteSelectedProperties"),
+      propSelectAll: $("#propSelectAll"),
       propSourceFilter: $("#propSourceFilter"),
       propStatusFilter: $("#propStatusFilter"),
       propKeyword: $("#propKeyword"),
@@ -309,6 +312,12 @@ function bindEvents() {
 
     // properties
     if (els.btnReloadProperties) els.btnReloadProperties.addEventListener("click", () => loadProperties().catch((e)=>handleAsyncError(e,"물건 로드 실패")));
+    if (els.btnDeleteSelectedProperties) els.btnDeleteSelectedProperties.addEventListener("click", () => {
+      deleteSelectedProperties().catch((e)=>handleAsyncError(e,"삭제 실패"));
+    });
+    if (els.propSelectAll) els.propSelectAll.addEventListener("change", (e) => {
+      toggleSelectAllProperties(!!e.target.checked);
+    });
     if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
       state.propertyFilters.source = String(e.target.value || "");
       renderPropertiesTable();
@@ -566,6 +575,7 @@ function bindEvents() {
       if (error) throw error;
 
       state.properties = Array.isArray(data) ? data.map(normalizeProperty) : [];
+      pruneSelectedPropertyIds();
       hydrateAssignedAgentNames();
       renderPropertiesTable();
       renderSummary();
@@ -576,6 +586,7 @@ function bindEvents() {
     const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });
     state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
+    pruneSelectedPropertyIds();
     hydrateAssignedAgentNames();
     renderPropertiesTable();
     renderSummary();
@@ -775,25 +786,100 @@ function bindEvents() {
     });
   }
 
+  function pruneSelectedPropertyIds() {
+    const valid = new Set(state.properties.map((p) => String(p.id || p.globalId || "")).filter(Boolean));
+    state.selectedPropertyIds = new Set([...state.selectedPropertyIds].filter((id) => valid.has(String(id))));
+    updatePropertySelectionControls();
+  }
+
+  function togglePropertySelection(id, checked) {
+    const key = String(id || "").trim();
+    if (!key) return;
+    if (checked) state.selectedPropertyIds.add(key);
+    else state.selectedPropertyIds.delete(key);
+    updatePropertySelectionControls();
+  }
+
+  function toggleSelectAllProperties(checked) {
+    const rows = getFilteredProperties();
+    rows.forEach((p) => {
+      const key = String(p.id || p.globalId || "").trim();
+      if (!key) return;
+      if (checked) state.selectedPropertyIds.add(key);
+      else state.selectedPropertyIds.delete(key);
+    });
+    renderPropertiesTable();
+  }
+
+  function updatePropertySelectionControls() {
+    const rows = getFilteredProperties();
+    const ids = rows.map((p) => String(p.id || p.globalId || "").trim()).filter(Boolean);
+    const selectedVisible = ids.filter((id) => state.selectedPropertyIds.has(id));
+    if (els.propSelectAll) {
+      els.propSelectAll.checked = ids.length > 0 && selectedVisible.length === ids.length;
+      els.propSelectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < ids.length;
+    }
+    if (els.btnDeleteSelectedProperties) {
+      const cnt = state.selectedPropertyIds.size;
+      els.btnDeleteSelectedProperties.disabled = cnt === 0;
+      els.btnDeleteSelectedProperties.textContent = cnt > 0 ? `선택 삭제 (${cnt})` : '선택 삭제';
+    }
+  }
+
+  async function deleteSelectedProperties() {
+    const ids = [...state.selectedPropertyIds].filter(Boolean);
+    if (!ids.length) {
+      alert('삭제할 물건을 먼저 선택해 주세요.');
+      return;
+    }
+    const ok = window.confirm(`선택한 ${ids.length}건의 물건을 삭제할까요?`);
+    if (!ok) return;
+
+    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+    if (sb) {
+      for (const chunk of chunkArray(ids, 100)) {
+        const pureIds = chunk.filter((v) => !String(v).includes(':'));
+        const globalIds = chunk.filter((v) => String(v).includes(':'));
+        if (pureIds.length) {
+          const { error } = await sb.from('properties').delete().in('id', pureIds);
+          if (error) throw error;
+        }
+        if (globalIds.length) {
+          const { error } = await sb.from('properties').delete().in('global_id', globalIds);
+          if (error) throw error;
+        }
+      }
+    } else {
+      await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
+    }
+
+    state.selectedPropertyIds.clear();
+    await loadProperties();
+  }
+
   function renderPropertiesTable() {
     const rows = getFilteredProperties();
     els.propertiesTableBody.innerHTML = "";
 
     if (!rows.length) {
       els.propertiesEmpty.classList.remove("hidden");
+      updatePropertySelectionControls();
       return;
     }
     els.propertiesEmpty.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
     for (const p of rows) {
+      const rowId = String(p.id || p.globalId || "").trim();
       const tr = document.createElement("tr");
+      if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
       const kindLabel = p.sourceType === "auction" ? "경매" : p.sourceType === "onbid" ? "공매" : p.sourceType === "realtor" ? "중개" : "일반";
       const moveLink = buildKakaoMapLink(p);
       const currentPrice = p.lowprice != null ? formatMoneyKRW(p.lowprice) : "-";
       const rate = formatPercent(p.priceMain, p.lowprice);
 
       tr.innerHTML = `
+        <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
         <td>${escapeHtml(p.itemNo || "-")}</td>
         <td>${escapeHtml(kindLabel)}</td>
         <td class="text-cell">${escapeHtml(p.address || "-")}</td>
@@ -816,10 +902,23 @@ function bindEvents() {
         <td class="text-cell opinion-cell">${escapeHtml(p.opinion || "-")}</td>
       `;
 
-      tr.addEventListener("click", () => openPropertyEditModal(p));
+      const checkbox = tr.querySelector('.prop-row-check');
+      if (checkbox) {
+        checkbox.addEventListener('click', (e) => e.stopPropagation());
+        checkbox.addEventListener('change', (e) => {
+          togglePropertySelection(rowId, !!e.target.checked);
+          tr.classList.toggle('row-selected', !!e.target.checked);
+        });
+      }
+
+      tr.addEventListener("click", (e) => {
+        if (e.target && e.target.closest('.check-wrap')) return;
+        openPropertyEditModal(p);
+      });
       frag.appendChild(tr);
     }
     els.propertiesTableBody.appendChild(frag);
+    updatePropertySelectionControls();
   }
 
   // ---------------------------
@@ -1059,7 +1158,7 @@ function bindEvents() {
         use_approval: patch.useapproval || null,
         status: patch.status,
         price_main: patch.priceMain,
-        low_price: patch.lowprice,
+        lowprice: patch.lowprice,
         date_main: patch.dateMain || null,
         source_url: patch.sourceUrl,
         broker_office_name: patch.realtorname,
@@ -1306,7 +1405,7 @@ function bindEvents() {
         method: "POST",
         auth: true,
         body: {
-          source,         // legacy
+          source: sourceType,
           sourceType,     // new
           csvText,
           dedupeKey: "address",
@@ -1369,10 +1468,12 @@ function bindEvents() {
     let address = "";
     let status = "";
     let priceMain = 0;
+    let lowprice = null;
     let latitude = null;
     let longitude = null;
 
     let assetType = "";
+    let totalfloor = null;
     let commonArea = null;
     let exclusiveArea = null;
     let siteArea = null;
@@ -1385,7 +1486,8 @@ function bindEvents() {
       itemNo = pick("사건번호", "itemNo", "caseNo", "물건번호");
       address = pick("주소(시군구동)", "주소", "소재지", "address");
       status = pick("진행상태", "상태", "status");
-      priceMain = toNum(pick("감정가", "감정가(원)", "최저가", "priceMain"));
+      priceMain = toNum(pick("감정가", "감정가(원)", "priceMain"));
+      lowprice = toNum(pick("최저가", "매각가", "lowprice")) || null;
       assetType = pick("종별", "부동산유형", "assetType");
       dateMain = toISO(pick("입찰일자", "입찰일", "dateMain")) || null;
       memo = pick("경매현황", "비고", "memo");
@@ -1396,7 +1498,8 @@ function bindEvents() {
       itemNo = pick("물건관리번호", "itemNo", "물건번호");
       address = pick("물건명", "소재지", "주소", "address");
       status = pick("물건상태", "상태", "status");
-      priceMain = toNum(pick("감정가(원)", "감정가", "최저입찰가(원)", "priceMain"));
+      priceMain = toNum(pick("감정가(원)", "감정가", "priceMain"));
+      lowprice = toNum(pick("최저입찰가(원)", "lowprice")) || null;
       assetType = pick("용도", "부동산유형", "assetType");
       dateMain = pick("입찰마감일시", "입찰마감", "dateMain") || null;
       memo = pick("물건명", "memo");
@@ -1440,6 +1543,8 @@ function bindEvents() {
       dateMain,
       sourceUrl,
       memo,
+      lowprice,
+      totalfloor,
     };
   }
 
@@ -1473,6 +1578,7 @@ function bindEvents() {
 
       address: String(m.address || ""),
       asset_type: (m.assetType || "") || null,
+      totalfloor: m.totalfloor || null,
       exclusive_area: toNullNum(m.exclusiveArea),
       common_area: toNullNum(m.commonArea),
       site_area: toNullNum(m.siteArea),
@@ -1480,7 +1586,7 @@ function bindEvents() {
       status: m.status || null,
 
       price_main: toNullNum(m.priceMain),
-      low_price: toNullNum(m.lowprice),
+      lowprice: toNullNum(m.lowprice),
       date_main: m.dateMain || null,
       source_url: m.sourceUrl || null,
       memo: m.memo || null,
