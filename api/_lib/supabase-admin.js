@@ -298,20 +298,35 @@ async function listStaff() {
 
   const profiles = needProfiles ? await safeListProfiles() : [];
   const profileMap = new Map((profiles || []).map((row) => [String(row.id), row]));
+  const seenIds = new Set();
+  const seenEmails = new Set();
   const items = [];
 
   for (const user of users) {
     const id = String(user?.id || '');
+    const emailKey = String(user?.email || '').trim().toLowerCase();
     if (!id) continue;
+    if (seenIds.has(id)) continue;
+    if (emailKey && seenEmails.has(emailKey)) continue;
+
     const role = mergeRoles(extractRoleCandidate(user));
     const name = pickDisplayName({ profile: null, user });
     const profile = (!role || !name) ? (profileMap.get(id) || null) : null;
     items.push(normalizeStaffItem({ profile, user }));
+
+    seenIds.add(id);
+    if (emailKey) seenEmails.add(emailKey);
     if (profile) profileMap.delete(id);
   }
 
-  for (const [id, profile] of profileMap.entries()) {
-    items.push(normalizeStaffItem({ profile, user: { id } }));
+  // profiles 테이블에 과거/고아 row가 남아 있어도 실제 로그인 가능한 계정(Auth user)이 아니면
+  // 담당자 목록에 다시 합치지 않습니다. 그렇지 않으면 동일 인물이 2번 보일 수 있습니다.
+  if (!items.length && profileMap.size) {
+    for (const [id, profile] of profileMap.entries()) {
+      if (!id || seenIds.has(id)) continue;
+      items.push(normalizeStaffItem({ profile, user: { id } }));
+      seenIds.add(id);
+    }
   }
 
   items.sort((a, b) => {
