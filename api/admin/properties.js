@@ -101,6 +101,14 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'DELETE') {
     const body = getJsonBody(req);
+    const ids = Array.isArray(body.ids) ? body.ids.map(v => String(v || '').trim()).filter(Boolean) : [];
+    if (ids.length) {
+      const before = store.properties.length;
+      store.properties = store.properties.filter((p) => !ids.includes(String(p.id || '')));
+      const removedCount = before - store.properties.length;
+      return send(res, 200, { ok: true, removedCount, removedIds: ids });
+    }
+
     const targetId = String(body.id || '').trim();
     const idx = store.properties.findIndex(p => p.id === targetId);
     if (idx < 0) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
