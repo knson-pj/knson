@@ -541,15 +541,26 @@ function bindEvents() {
     // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
     // (Vercel API 401/CORS 이슈와 무관하게 안정적으로 동작)
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    const user = state.session?.user;
 
     if (sb) {
-      try { await K.sbSyncLocalSession(); } catch {}
-      const uid = state.session?.user?.id;
+      const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
+      const currentSession = synced || loadSession() || state.session || null;
+      if (currentSession) state.session = currentSession;
+
+      const user = currentSession?.user || null;
+      const uid = String(user?.id || "").trim();
       const isAdmin = user?.role === "admin";
 
       let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).limit(5000);
-      if (!isAdmin) q = q.eq("assignee_id", uid);
+      if (!isAdmin) {
+        if (!uid) {
+          state.properties = [];
+          renderPropertiesTable();
+          renderSummary();
+          return;
+        }
+        q = q.eq("assignee_id", uid);
+      }
 
       const { data, error } = await q;
       if (error) throw error;
@@ -574,7 +585,7 @@ function bindEvents() {
     await syncSupabaseSessionIfNeeded();
 
     const res = await api("/admin/staff", { auth: true });
-    state.staff = Array.isArray(res?.items) ? res.items.map(normalizeStaff) : [];
+    state.staff = dedupeStaff(res?.items || []);
     renderStaffTable();
     renderAssignmentTable();
     renderSummary();
@@ -642,13 +653,33 @@ function bindEvents() {
   function normalizeStaff(item) {
     return {
       id: item.id || "",
-      name: item.name || "",
+      email: item.email || "",
+      name: item.name || item.email || "",
       role: item.role || "staff",
       assignedRegions: Array.isArray(item.assignedRegions)
         ? item.assignedRegions
         : (Array.isArray(item.assigned_regions) ? item.assigned_regions : []),
       createdAt: item.createdAt || item.created_at || "",
     };
+  }
+
+  function dedupeStaff(items) {
+    const seenIds = new Set();
+    const seenEmails = new Set();
+    const out = [];
+
+    for (const raw of Array.isArray(items) ? items : []) {
+      const item = normalizeStaff(raw);
+      const idKey = String(item.id || "").trim();
+      const emailKey = String(item.email || "").trim().toLowerCase();
+      if (idKey && seenIds.has(idKey)) continue;
+      if (emailKey && seenEmails.has(emailKey)) continue;
+      if (idKey) seenIds.add(idKey);
+      if (emailKey) seenEmails.add(emailKey);
+      out.push(item);
+    }
+
+    return out;
   }
 
   function getStaffNameById(id) {
@@ -1253,9 +1284,42 @@ function bindEvents() {
   function resetStaffForm() {
     if (!els.staffForm) return;
     els.staffForm.reset();
-    els.staffForm.elements.id.value = "";
-    els.staffForm.elements.role.value = "staff";
+
+    const idEl = els.staffForm.elements.id;
+    const emailEl = els.staffForm.elements.email;
+    const nameEl = els.staffForm.elements.name;
+    const roleEl = els.staffForm.elements.role;
+    const passwordEl = els.staffForm.elements.password;
+
+    if (idEl) idEl.value = "";
+    if (emailEl) {
+      emailEl.value = "";
+      emailEl.disabled = false;
+      emailEl.readOnly = false;
+    }
+    if (nameEl) {
+      nameEl.value = "";
+      nameEl.disabled = false;
+      nameEl.readOnly = false;
+    }
+    if (roleEl) {
+      roleEl.value = "staff";
+      roleEl.disabled = false;
+    }
+    if (passwordEl) {
+      passwordEl.value = "";
+      passwordEl.disabled = false;
+      passwordEl.readOnly = false;
+    }
+
     setStaffFormMode("create");
+
+    if (els.btnStaffSave) els.btnStaffSave.disabled = false;
+    if (els.btnStaffReset) els.btnStaffReset.disabled = false;
+
+    requestAnimationFrame(() => {
+      if (emailEl && typeof emailEl.focus === "function") emailEl.focus();
+    });
   }
 
   async function handleSaveStaff(e) {
@@ -1309,6 +1373,7 @@ function bindEvents() {
         await loadStaff();
       }
       alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
+      if (!id) resetStaffForm();
     } catch (err) {
       console.error(err);
       alert(err.message || "저장 실패");
