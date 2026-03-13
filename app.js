@@ -427,16 +427,41 @@
   async function loadStaffAssignments() {
     if (!isAdminUser(state.session?.user)) return [];
     try {
-      const res = await api('/admin/region-assignments', { auth: true });
-      const items = Array.isArray(res?.items) ? res.items : [];
-      return items
-        .filter((row) => normalizeRole(row?.role) === 'staff')
-        .map((row) => ({
-          id: String(row?.id || '').trim(),
-          name: String(row?.name || row?.email || '').trim(),
-          regions: normalizeAssignedRegions(row?.assignedRegions),
-        }))
-        .filter((row) => row.id && row.name);
+      const [staffSettled, assignSettled] = await Promise.allSettled([
+        api('/admin/staff', { auth: true }),
+        api('/admin/region-assignments', { auth: true }),
+      ]);
+
+      const map = new Map();
+      const upsert = (row, fromAssignments = false) => {
+        if (!row) return;
+        const role = normalizeRole(row?.role);
+        if (role !== 'staff') return;
+        const id = String(row?.id || '').trim();
+        if (!id) return;
+        const prev = map.get(id) || { id, name: '', email: '', regions: [] };
+        const merged = {
+          ...prev,
+          id,
+          email: String(row?.email || prev.email || '').trim(),
+          name: String(row?.name || row?.email || prev.name || prev.email || '').trim(),
+          regions: fromAssignments ? normalizeAssignedRegions(row?.assignedRegions || row?.regions) : prev.regions,
+        };
+        if (!merged.name) merged.name = merged.email || `담당자 ${map.size + 1}`;
+        map.set(id, merged);
+      };
+
+      if (staffSettled.status === 'fulfilled') {
+        const staffItems = Array.isArray(staffSettled.value?.items) ? staffSettled.value.items : [];
+        staffItems.forEach((row) => upsert(row, false));
+      }
+
+      if (assignSettled.status === 'fulfilled') {
+        const assignItems = Array.isArray(assignSettled.value?.items) ? assignSettled.value.items : [];
+        assignItems.forEach((row) => upsert(row, true));
+      }
+
+      return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     } catch (err) {
       console.warn('loadStaffAssignments failed', err);
       return [];
@@ -495,42 +520,53 @@
 
   function buildAgentChartEntries(rows) {
     const staff = Array.isArray(state.staffAssignments) ? state.staffAssignments : [];
-    const categories = ['auction', 'onbid', 'realtor', 'general'];
-    const fallbackByName = new Map();
+    const byName = new Map();
 
-    if (!staff.length) {
-      for (const row of rows) {
-        const name = String(row.assignedAgentName || '미배정').trim() || '미배정';
-        if (!fallbackByName.has(name)) {
-          fallbackByName.set(name, { id: name, name, regions: [], auction: 0, onbid: 0, realtor: 0, general: 0, total: 0 });
-        }
-        const item = fallbackByName.get(name);
-        item[row.source] = (item[row.source] || 0) + 1;
-        item.total += 1;
+    const ensureEntry = (id, name, regions = []) => {
+      const key = String(id || name || '').trim();
+      if (!key) return null;
+      if (!byName.has(key)) {
+        byName.set(key, {
+          id: String(id || key),
+          name: String(name || id || key).trim() || '담당자',
+          regions: normalizeAssignedRegions(regions),
+          auction: 0,
+          onbid: 0,
+          realtor: 0,
+          general: 0,
+          total: 0,
+        });
       }
-      return [...fallbackByName.values()].sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'ko'));
-    }
+      const item = byName.get(key);
+      if ((!item.regions || !item.regions.length) && Array.isArray(regions) && regions.length) {
+        item.regions = normalizeAssignedRegions(regions);
+      }
+      return item;
+    };
 
-    const entries = staff.map((staffRow) => ({ id: staffRow.id, name: staffRow.name, regions: staffRow.regions || [], auction: 0, onbid: 0, realtor: 0, general: 0, total: 0 }));
-    const byId = new Map(entries.map((entry) => [entry.id, entry]));
-    const byName = new Map(entries.map((entry) => [entry.name, entry]));
+    staff.forEach((staffRow) => ensureEntry(staffRow.id, staffRow.name, staffRow.regions || []));
 
     rows.forEach((row) => {
       let target = null;
       const tokens = getPropertyRegionTokens(row);
-      if (tokens.length) {
-        target = entries.find((entry) => entry.regions.some((region) => tokens.includes(region))) || null;
+      if (staff.length) {
+        target = staff.find((entry) => entry.regions?.length && entry.regions.some((region) => tokens.includes(region))) || null;
       }
       if (!target) {
         const name = String(row.assignedAgentName || '').trim();
-        if (name && byName.has(name)) target = byName.get(name);
+        if (name && name !== '-') {
+          target = ensureEntry(name, name, []);
+        }
       }
       if (!target) return;
-      target[row.source] = (target[row.source] || 0) + 1;
-      target.total += 1;
+      const entry = ensureEntry(target.id || target.name, target.name, target.regions || []);
+      if (!entry) return;
+      const src = ['auction', 'onbid', 'realtor', 'general'].includes(row.source) ? row.source : 'general';
+      entry[src] = (entry[src] || 0) + 1;
+      entry.total += 1;
     });
 
-    return entries.sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'ko'));
+    return [...byName.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
   }
 
   function renderAgentChart() {
@@ -555,39 +591,38 @@
     `;
     els.agentChart.appendChild(legend);
 
-    const list = document.createElement('div');
-    list.className = 'agent-chart-list';
+    const grid = document.createElement('div');
+    grid.className = 'agent-bench-grid';
     const max = Math.max(...entries.map((entry) => entry.total), 1);
+    const segPct = (count, total) => total ? ((count / total) * 100).toFixed(2) : '0';
 
-    entries.forEach((entry) => {
-      const row = document.createElement('div');
-      row.className = 'agent-row';
-      const totalPct = Math.max(entry.total ? 14 : 0, Math.round((entry.total / max) * 100));
-      const segPct = (count) => entry.total ? ((count / entry.total) * 100).toFixed(2) : '0';
-      row.innerHTML = `
-        <div class="agent-row-head">
-          <div class="agent-row-name" title="${escapeAttr(entry.name)}">${escapeHtml(entry.name)}</div>
-          <div class="agent-row-total">총 ${entry.total}건</div>
-        </div>
-        <div class="agent-row-bar-rail">
-          <div class="agent-row-bar" style="width:${totalPct}%">
-            ${entry.auction ? `<span class="agent-seg seg-auction" style="width:${segPct(entry.auction)}%" title="경매 ${entry.auction}건"></span>` : ''}
-            ${entry.onbid ? `<span class="agent-seg seg-onbid" style="width:${segPct(entry.onbid)}%" title="공매 ${entry.onbid}건"></span>` : ''}
-            ${entry.realtor ? `<span class="agent-seg seg-realtor" style="width:${segPct(entry.realtor)}%" title="중개 ${entry.realtor}건"></span>` : ''}
-            ${entry.general ? `<span class="agent-seg seg-general" style="width:${segPct(entry.general)}%" title="일반 ${entry.general}건"></span>` : ''}
+    entries.forEach((entry, idx) => {
+      const card = document.createElement('article');
+      card.className = 'agent-bench-card';
+      const fillPct = entry.total ? Math.max(14, Math.round((entry.total / max) * 100)) : 10;
+      card.innerHTML = `
+        <div class="agent-bench-score">${entry.total}건</div>
+        <div class="agent-bench-plot">
+          <div class="agent-bench-column" style="height:${fillPct}%">
+            ${entry.auction ? `<span class="agent-bench-seg seg-auction" style="height:${segPct(entry.auction, entry.total)}%" title="경매 ${entry.auction}건"></span>` : ''}
+            ${entry.onbid ? `<span class="agent-bench-seg seg-onbid" style="height:${segPct(entry.onbid, entry.total)}%" title="공매 ${entry.onbid}건"></span>` : ''}
+            ${entry.realtor ? `<span class="agent-bench-seg seg-realtor" style="height:${segPct(entry.realtor, entry.total)}%" title="중개 ${entry.realtor}건"></span>` : ''}
+            ${entry.general ? `<span class="agent-bench-seg seg-general" style="height:${segPct(entry.general, entry.total)}%" title="일반 ${entry.general}건"></span>` : ''}
           </div>
         </div>
-        <div class="agent-row-breakdown">
+        <div class="agent-bench-name" title="${escapeAttr(entry.name)}">${escapeHtml(entry.name)}</div>
+        <div class="agent-bench-rank">#${idx + 1}</div>
+        <div class="agent-bench-breakdown">
           <span>경매 ${entry.auction}</span>
           <span>공매 ${entry.onbid}</span>
           <span>중개 ${entry.realtor}</span>
           <span>일반 ${entry.general}</span>
         </div>
       `;
-      list.appendChild(row);
+      grid.appendChild(card);
     });
 
-    els.agentChart.appendChild(list);
+    els.agentChart.appendChild(grid);
     els.agentChart.classList.remove('hidden');
     els.agentChartEmpty.classList.add('hidden');
   }

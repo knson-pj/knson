@@ -34,7 +34,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./styles.css?v=20260313-ui1" />
+  <link rel="stylesheet" href="./styles.css?v=20260313-ui2" />
 </head>
 <body>
 
@@ -54,8 +54,12 @@
 
 
   <div class="page">
-    <!-- Top bar -->
-    <!-- KPI cards -->
+    <section class="page-hero" aria-label="대시보드 헤더">
+      <div class="page-hero-badge">• LIVE · PORTFOLIO · DASHBOARD</div>
+      <h1 class="page-hero-title">매입 부동산 관리 현황</h1>
+      <p class="page-hero-sub">누적 · 경매 · 공매 · 중개 · 일반 물건과 담당자 배당 현황을 한눈에 확인합니다.</p>
+    </section>
+
     <section class="kpi" aria-label="요약 카드">
       <button id="statTotalCard" class="kpi-card kpi-total" type="button">
         <div class="kpi-big" id="statTotal">0</div>
@@ -82,15 +86,7 @@
         <div class="kpi-num" id="statGeneral">0</div>
       </button>
     </section>
-<section id="filterPanel" class="filter-panel filter-panel-static" data-always-visible="true" aria-hidden="false">
-      <div class="filter-inner">
-        <div class="filter-row filter-row-single">
-          <input id="searchKeyword" class="input" type="text" placeholder="주소 / 담당자 / 지역 / 의견 검색" />
-        </div>
-      </div>
-    </section>
-
-    <section class="agent-chart-panel" aria-label="담당자 배당 물건수">
+<section class="agent-chart-panel" aria-label="담당자 배당 물건수">
       <div class="agent-chart-head">
         <h2>담당자 배당 물건수</h2>
         <span id="agentChartMeta" class="agent-chart-meta">0명</span>
@@ -99,16 +95,21 @@
       <div id="agentChartEmpty" class="agent-chart-empty hidden">표시할 담당자 배당 데이터가 없습니다.</div>
     </section>
 
-    <section class="viewbar" aria-label="보기 전환">
-      <div class="tabs" role="tablist" aria-label="텍스트/지도">
-        <button id="tabText" class="tab is-active" role="tab" aria-selected="true" type="button" title="텍스트 보기">
-          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span class="sr-only">텍스트 보기</span>
-        </button>
-        <button id="tabMap" class="tab" role="tab" aria-selected="false" type="button" title="지도 보기">
-          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20V6.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 4v13.5M15 6.5V20" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-          <span class="sr-only">지도 보기</span>
-        </button>
+    <section id="filterPanel" class="search-toolbar" data-always-visible="true" aria-hidden="false">
+      <div class="search-toolbar-search">
+        <input id="searchKeyword" class="input" type="text" placeholder="주소 / 담당자 / 지역 / 의견 검색" />
+      </div>
+      <div class="search-toolbar-view" aria-label="보기 전환">
+        <div class="tabs" role="tablist" aria-label="텍스트/지도">
+          <button id="tabText" class="tab is-active" role="tab" aria-selected="true" type="button" title="텍스트 보기">
+            <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <span class="sr-only">텍스트 보기</span>
+          </button>
+          <button id="tabMap" class="tab" role="tab" aria-selected="false" type="button" title="지도 보기">
+            <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20V6.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 4v13.5M15 6.5V20" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+            <span class="sr-only">지도 보기</span>
+          </button>
+        </div>
       </div>
     </section>
 
@@ -153,6 +154,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260310-1"></script>
-  <script src="./app.js?v=20260313-mainrefine1"></script>
+  <script src="./app.js?v=20260313-mainrefine2"></script>
 </body>
 </html>
