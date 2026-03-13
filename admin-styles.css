@@ -41,7 +41,7 @@ html[data-theme="dark"]{
   --shadow-md: 0 14px 28px rgba(2,8,23,.34);
 }
 *{box-sizing:border-box;}
-html,body{margin:0;padding:0;}
+html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden;}
 body{
   min-height:100vh;
   background:
@@ -54,10 +54,12 @@ body{
 .hidden{display:none !important;}
 
 .admin-shell{
-  max-width:var(--page-max);
+  max-width:min(var(--page-max), calc(100vw - (var(--page-pad) * 2)));
   margin:0 auto;
   padding:20px var(--page-pad) 40px;
+  overflow-x:hidden;
 }
+.panel,.sub-card,.toolbar,.panel-title-row{min-width:0;}
 .admin-topbar{
   display:flex;
   justify-content:space-between;
@@ -193,18 +195,23 @@ body{
 }
 .table-wrap{
   margin-top:14px;
+  width:100%;
+  max-width:100%;
   border:1px solid var(--line);
   border-radius:var(--radius-lg);
-  overflow:auto;
+  overflow-x:auto;
+  overflow-y:hidden;
   background:color-mix(in srgb, var(--surface) 90%, transparent);
 }
 .table-wrap.slim{max-height:360px;}
 .table{
-  width:100%;
-  min-width:2400px;
+  width:max-content;
+  min-width:100%;
   border-collapse:separate;
   border-spacing:0;
 }
+#propertiesTable{min-width:1740px;}
+#assignmentTable,#staffTable,#csvPreviewTable,#officeTable,#officePreviewTable{width:100%;min-width:100%;}
 .table th,.table td{
   text-align:left;
   padding:14px 12px;

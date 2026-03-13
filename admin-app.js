@@ -1158,7 +1158,6 @@ function bindEvents() {
         use_approval: patch.useapproval || null,
         status: patch.status,
         price_main: patch.priceMain,
-        lowprice: patch.lowprice,
         date_main: patch.dateMain || null,
         source_url: patch.sourceUrl,
         broker_office_name: patch.realtorname,
@@ -1563,7 +1562,6 @@ function bindEvents() {
       exclusiveArea: toNullNum(m.exclusiveArea),
       siteArea: toNullNum(m.siteArea),
       useapproval: m.useApproval || null,
-      lowprice: toNullNum(m.lowprice),
       dateMain: m.dateMain || null,
       sourceUrl: m.sourceUrl || null,
       opinion: m.memo || null,
@@ -1586,7 +1584,6 @@ function bindEvents() {
       status: m.status || null,
 
       price_main: toNullNum(m.priceMain),
-      lowprice: toNullNum(m.lowprice),
       date_main: m.dateMain || null,
       source_url: m.sourceUrl || null,
       memo: m.memo || null,
