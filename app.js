@@ -21,6 +21,7 @@
     geocoder: null,
     markers: [],
     geoCache: loadGeoCache(),
+    staffAssignments: [],
   };
 
   const els = {};
@@ -280,21 +281,27 @@
   async function loadProperties() {
     try {
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-      const user = state.session?.user;
+      let isAdmin = isAdminUser(state.session?.user);
+      let staffPromise = Promise.resolve([]);
 
       if (sb) {
         try { await K.sbSyncLocalSession(); } catch {}
         try { state.session = loadSession(); } catch {}
         const uid = state.session?.user?.id;
-        const isAdmin = isAdminUser(state.session?.user);
+        isAdmin = isAdminUser(state.session?.user);
+        if (isAdmin) staffPromise = loadStaffAssignments();
 
         const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
         state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
       } else {
-        const scope = isAdminUser(state.session.user) ? "all" : "mine";
+        isAdmin = isAdminUser(state.session?.user);
+        if (isAdmin) staffPromise = loadStaffAssignments();
+        const scope = isAdmin ? "all" : "mine";
         const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
         state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
       }
+
+      try { state.staffAssignments = await staffPromise; } catch { state.staffAssignments = []; }
 
       renderKPIs();
       renderAgentChart();
@@ -417,38 +424,172 @@
   }
 
 
+  async function loadStaffAssignments() {
+    if (!isAdminUser(state.session?.user)) return [];
+    try {
+      const res = await api('/admin/region-assignments', { auth: true });
+      const items = Array.isArray(res?.items) ? res.items : [];
+      return items
+        .filter((row) => normalizeRole(row?.role) === 'staff')
+        .map((row) => ({
+          id: String(row?.id || '').trim(),
+          name: String(row?.name || row?.email || '').trim(),
+          regions: normalizeAssignedRegions(row?.assignedRegions),
+        }))
+        .filter((row) => row.id && row.name);
+    } catch (err) {
+      console.warn('loadStaffAssignments failed', err);
+      return [];
+    }
+  }
+
+  function normalizeRole(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === '관리자' || v === 'admin') return 'admin';
+    if (v === '기타' || v === 'other') return 'other';
+    return 'staff';
+  }
+
+  function normalizeAssignedRegions(values) {
+    if (!Array.isArray(values)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const value of values) {
+      const token = normalizeRegionToken(value);
+      if (!token || seen.has(token)) continue;
+      seen.add(token);
+      out.push(token);
+    }
+    return out;
+  }
+
+  function normalizeRegionToken(value) {
+    const s = String(value || '').trim().replace(/\s+/g, ' ');
+    return s || '';
+  }
+
+  function extractAddressRegionParts(address) {
+    const text = String(address || '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return { gu: '', dong: '' };
+    const gu = (text.match(/[가-힣]+(?:구|군|시)/) || [])[0] || '';
+    const dong = (text.match(/[가-힣0-9]+(?:동|읍|면|가)/) || [])[0] || '';
+    return { gu, dong };
+  }
+
+  function getPropertyRegionTokens(row) {
+    const tokens = [];
+    const seen = new Set();
+    const add = (v) => {
+      const token = normalizeRegionToken(v);
+      if (!token || seen.has(token)) return;
+      seen.add(token);
+      tokens.push(token);
+    };
+    add(row.regionGu);
+    add(row.regionDong);
+    const addrParts = extractAddressRegionParts(row.address);
+    add(addrParts.gu);
+    add(addrParts.dong);
+    return tokens;
+  }
+
+  function buildAgentChartEntries(rows) {
+    const staff = Array.isArray(state.staffAssignments) ? state.staffAssignments : [];
+    const categories = ['auction', 'onbid', 'realtor', 'general'];
+    const fallbackByName = new Map();
+
+    if (!staff.length) {
+      for (const row of rows) {
+        const name = String(row.assignedAgentName || '미배정').trim() || '미배정';
+        if (!fallbackByName.has(name)) {
+          fallbackByName.set(name, { id: name, name, regions: [], auction: 0, onbid: 0, realtor: 0, general: 0, total: 0 });
+        }
+        const item = fallbackByName.get(name);
+        item[row.source] = (item[row.source] || 0) + 1;
+        item.total += 1;
+      }
+      return [...fallbackByName.values()].sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'ko'));
+    }
+
+    const entries = staff.map((staffRow) => ({ id: staffRow.id, name: staffRow.name, regions: staffRow.regions || [], auction: 0, onbid: 0, realtor: 0, general: 0, total: 0 }));
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    const byName = new Map(entries.map((entry) => [entry.name, entry]));
+
+    rows.forEach((row) => {
+      let target = null;
+      const tokens = getPropertyRegionTokens(row);
+      if (tokens.length) {
+        target = entries.find((entry) => entry.regions.some((region) => tokens.includes(region))) || null;
+      }
+      if (!target) {
+        const name = String(row.assignedAgentName || '').trim();
+        if (name && byName.has(name)) target = byName.get(name);
+      }
+      if (!target) return;
+      target[row.source] = (target[row.source] || 0) + 1;
+      target.total += 1;
+    });
+
+    return entries.sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'ko'));
+  }
+
   function renderAgentChart() {
     if (!els.agentChart || !els.agentChartEmpty) return;
     const rows = getFilteredRows();
-    const counts = new Map();
-    for (const row of rows) {
-      const name = String(row.assignedAgentName || "미배정").trim() || "미배정";
-      counts.set(name, (counts.get(name) || 0) + 1);
-    }
-    const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"));
-    els.agentChart.innerHTML = "";
+    const entries = buildAgentChartEntries(rows);
+    els.agentChart.innerHTML = '';
     if (els.agentChartMeta) els.agentChartMeta.textContent = `${entries.length}명`;
     if (!entries.length) {
-      els.agentChart.classList.add("hidden");
-      els.agentChartEmpty.classList.remove("hidden");
+      els.agentChart.classList.add('hidden');
+      els.agentChartEmpty.classList.remove('hidden');
       return;
     }
-    els.agentChart.classList.remove("hidden");
-    els.agentChartEmpty.classList.add("hidden");
-    const max = Math.max(...entries.map(([, v]) => v), 1);
-    const frag = document.createDocumentFragment();
-    entries.forEach(([name, count]) => {
-      const item = document.createElement("div");
-      item.className = "agent-bar";
-      const pct = Math.max(10, Math.round((count / max) * 100));
-      item.innerHTML = `
-        <div class="agent-bar-track"><div class="agent-bar-fill" style="height:${pct}%"></div></div>
-        <div class="agent-bar-label" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
-        <div class="agent-bar-value">${count}건</div>
+
+    const legend = document.createElement('div');
+    legend.className = 'agent-chart-legend';
+    legend.innerHTML = `
+      <span class="legend-item"><i class="legend-swatch legend-auction"></i>경매</span>
+      <span class="legend-item"><i class="legend-swatch legend-onbid"></i>공매</span>
+      <span class="legend-item"><i class="legend-swatch legend-realtor"></i>중개</span>
+      <span class="legend-item"><i class="legend-swatch legend-general"></i>일반</span>
+    `;
+    els.agentChart.appendChild(legend);
+
+    const list = document.createElement('div');
+    list.className = 'agent-chart-list';
+    const max = Math.max(...entries.map((entry) => entry.total), 1);
+
+    entries.forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'agent-row';
+      const totalPct = Math.max(entry.total ? 14 : 0, Math.round((entry.total / max) * 100));
+      const segPct = (count) => entry.total ? ((count / entry.total) * 100).toFixed(2) : '0';
+      row.innerHTML = `
+        <div class="agent-row-head">
+          <div class="agent-row-name" title="${escapeAttr(entry.name)}">${escapeHtml(entry.name)}</div>
+          <div class="agent-row-total">총 ${entry.total}건</div>
+        </div>
+        <div class="agent-row-bar-rail">
+          <div class="agent-row-bar" style="width:${totalPct}%">
+            ${entry.auction ? `<span class="agent-seg seg-auction" style="width:${segPct(entry.auction)}%" title="경매 ${entry.auction}건"></span>` : ''}
+            ${entry.onbid ? `<span class="agent-seg seg-onbid" style="width:${segPct(entry.onbid)}%" title="공매 ${entry.onbid}건"></span>` : ''}
+            ${entry.realtor ? `<span class="agent-seg seg-realtor" style="width:${segPct(entry.realtor)}%" title="중개 ${entry.realtor}건"></span>` : ''}
+            ${entry.general ? `<span class="agent-seg seg-general" style="width:${segPct(entry.general)}%" title="일반 ${entry.general}건"></span>` : ''}
+          </div>
+        </div>
+        <div class="agent-row-breakdown">
+          <span>경매 ${entry.auction}</span>
+          <span>공매 ${entry.onbid}</span>
+          <span>중개 ${entry.realtor}</span>
+          <span>일반 ${entry.general}</span>
+        </div>
       `;
-      frag.appendChild(item);
+      list.appendChild(row);
     });
-    els.agentChart.appendChild(frag);
+
+    els.agentChart.appendChild(list);
+    els.agentChart.classList.remove('hidden');
+    els.agentChartEmpty.classList.add('hidden');
   }
 
   function renderTable() {

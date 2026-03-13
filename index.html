@@ -82,21 +82,7 @@
         <div class="kpi-num" id="statGeneral">0</div>
       </button>
     </section>
-
-    <section class="viewbar" aria-label="보기 전환">
-      <div class="tabs" role="tablist" aria-label="텍스트/지도">
-        <button id="tabText" class="tab is-active" role="tab" aria-selected="true" type="button" title="텍스트 보기">
-          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span class="sr-only">텍스트 보기</span>
-        </button>
-        <button id="tabMap" class="tab" role="tab" aria-selected="false" type="button" title="지도 보기">
-          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20V6.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 4v13.5M15 6.5V20" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-          <span class="sr-only">지도 보기</span>
-        </button>
-      </div>
-    </section>
-
-    <section id="filterPanel" class="filter-panel filter-panel-static" data-always-visible="true" aria-hidden="false">
+<section id="filterPanel" class="filter-panel filter-panel-static" data-always-visible="true" aria-hidden="false">
       <div class="filter-inner">
         <div class="filter-row filter-row-single">
           <input id="searchKeyword" class="input" type="text" placeholder="주소 / 담당자 / 지역 / 의견 검색" />
@@ -111,6 +97,19 @@
       </div>
       <div id="agentChart" class="agent-chart"></div>
       <div id="agentChartEmpty" class="agent-chart-empty hidden">표시할 담당자 배당 데이터가 없습니다.</div>
+    </section>
+
+    <section class="viewbar" aria-label="보기 전환">
+      <div class="tabs" role="tablist" aria-label="텍스트/지도">
+        <button id="tabText" class="tab is-active" role="tab" aria-selected="true" type="button" title="텍스트 보기">
+          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="sr-only">텍스트 보기</span>
+        </button>
+        <button id="tabMap" class="tab" role="tab" aria-selected="false" type="button" title="지도 보기">
+          <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20V6.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 4v13.5M15 6.5V20" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          <span class="sr-only">지도 보기</span>
+        </button>
+      </div>
     </section>
 
     <!-- Text view -->
