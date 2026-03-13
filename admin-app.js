@@ -20,6 +20,13 @@
     return out;
   }
 
+  function normalizeRole(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === '관리자' || v === 'admin') return 'admin';
+    if (v === '기타' || v === 'other') return 'other';
+    return 'staff';
+  }
+
   const API_BASE = "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
 
