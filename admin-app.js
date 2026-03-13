@@ -1309,6 +1309,159 @@ function bindEvents() {
     }
   }
 
+
+  function renderStaffTable() {
+    if (!els.staffTableBody || !els.staffEmpty) return;
+    els.staffTableBody.innerHTML = "";
+
+    const rows = Array.isArray(state.staff) ? state.staff.slice() : [];
+    if (!rows.length) {
+      els.staffEmpty.classList.remove("hidden");
+      return;
+    }
+    els.staffEmpty.classList.add("hidden");
+
+    const roleLabelOf = (role) => {
+      const r = String(role || "staff").toLowerCase();
+      if (r === "admin") return "관리자";
+      if (r === "other") return "기타";
+      return "담당자";
+    };
+
+    const frag = document.createDocumentFragment();
+    rows.forEach((staff) => {
+      const tr = document.createElement("tr");
+      const assignedCount = Array.isArray(staff.assignedRegions) ? staff.assignedRegions.length : 0;
+      tr.innerHTML = `
+        <td>${escapeHtml(staff.name || staff.email || "-")}</td>
+        <td>${escapeHtml(roleLabelOf(staff.role))}</td>
+        <td>${assignedCount}</td>
+        <td>${escapeHtml(formatDate(staff.createdAt) || "-")}</td>
+        <td>
+          <div class="action-row">
+            <button class="btn btn-secondary btn-sm" data-act="edit" data-id="${escapeAttr(staff.id)}">수정</button>
+            <button class="btn btn-ghost btn-sm" data-act="delete" data-id="${escapeAttr(staff.id)}">삭제</button>
+          </div>
+        </td>
+      `;
+      frag.appendChild(tr);
+    });
+
+    els.staffTableBody.appendChild(frag);
+
+    els.staffTableBody.querySelectorAll("button[data-act]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const id = String(e.currentTarget.dataset.id || "");
+        const act = String(e.currentTarget.dataset.act || "");
+        const row = state.staff.find((staff) => String(staff.id) === id);
+        if (!row) return;
+
+        if (act === "edit") {
+          fillStaffForm(row);
+          setActiveTab("staff");
+          return;
+        }
+
+        if (act === "delete") {
+          if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
+          try {
+            await api(`/admin/staff/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+              auth: true,
+            });
+            state.staff = state.staff.filter((staff) => String(staff.id) !== id);
+            renderStaffTable();
+            renderAssignmentTable();
+            renderSummary();
+            hydrateAssignedAgentNames();
+            renderPropertiesTable();
+          } catch (err) {
+            console.error(err);
+            alert(err.message || "삭제 실패");
+          }
+        }
+      });
+    });
+  }
+
+  function renderAssignmentTable() {
+    if (!els.assignmentTableBody || !els.assignmentEmpty) return;
+    els.assignmentTableBody.innerHTML = "";
+
+    const agents = state.staff.filter((s) => String(s.role || "").toLowerCase() === "staff");
+    if (!agents.length) {
+      els.assignmentEmpty.classList.remove("hidden");
+      return;
+    }
+    els.assignmentEmpty.classList.add("hidden");
+
+    const regionOptions = getRegionOptionsFromProperties();
+    const frag = document.createDocumentFragment();
+
+    agents.forEach((agent) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(agent.name || agent.email || "-")}</td>
+        <td>담당자</td>
+        <td>
+          <select class="assignment-select" data-agent-id="${escapeAttr(agent.id)}" multiple></select>
+        </td>
+      `;
+      frag.appendChild(tr);
+    });
+
+    els.assignmentTableBody.appendChild(frag);
+
+    els.assignmentTableBody.querySelectorAll(".assignment-select").forEach((sel) => {
+      const agentId = String(sel.dataset.agentId || "");
+      const agent = agents.find((a) => String(a.id) === agentId);
+      if (!agent) return;
+      regionOptions.forEach((region) => {
+        const opt = document.createElement("option");
+        opt.value = region;
+        opt.textContent = region;
+        opt.selected = Array.isArray(agent.assignedRegions) && agent.assignedRegions.includes(region);
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  function renderOfficesTable() {
+    if (!els.officeTableBody || !els.officeEmpty) return;
+    els.officeTableBody.innerHTML = "";
+
+    if (!Array.isArray(state.offices) || !state.offices.length) {
+      els.officeEmpty.classList.remove("hidden");
+      return;
+    }
+    els.officeEmpty.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+    state.offices.forEach((office) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(office.officeName || "-")}</td>
+        <td>${escapeHtml(office.branchName || "-")}</td>
+        <td>${escapeHtml(office.address || "-")}</td>
+        <td>${escapeHtml([office.regionGu, office.regionDong].filter(Boolean).join(" / ") || "-")}</td>
+        <td>${escapeHtml(office.managerName || "-")}</td>
+        <td>
+          <input class="inline-input office-phone-input" data-id="${escapeAttr(office.id)}" type="text" value="${escapeAttr(formatPhoneDisplay(office.phone || ""))}" placeholder="01012345678" />
+          <div class="muted small" data-save-msg="${escapeAttr(office.id)}"></div>
+        </td>
+        <td>${escapeHtml(office.memo || "-")}</td>
+      `;
+      frag.appendChild(tr);
+    });
+    els.officeTableBody.appendChild(frag);
+
+    els.officeTableBody.querySelectorAll(".office-phone-input").forEach((input) => {
+      input.addEventListener("input", () => {
+        scheduleOfficePhoneSave(input.dataset.id, input.value);
+      });
+    });
+  }
+
   // ---------------------------
   // CSV Import (Properties)
   // ---------------------------
@@ -1472,6 +1625,7 @@ function bindEvents() {
     let longitude = null;
 
     let assetType = "";
+    let floor = null;
     let totalfloor = null;
     let commonArea = null;
     let exclusiveArea = null;
@@ -1514,6 +1668,8 @@ function bindEvents() {
       assetType = pick("세부유형", "부동산유형명", "부동산유형", "assetType");
       sourceUrl = pick("바로가기(엑셀)", "매물URL", "sourceUrl", "url");
       memo = pick("매물특징", "memo");
+      floor = pick("해당층", "층수", "floor") || null;
+      totalfloor = pick("총층", "전체층", "totalfloor") || null;
       const ex = pick("전용면적(평)", "전용면적", "exclusiveArea");
       const common = pick("공용면적(평)", "공급/계약면적(평)", "공급면적(평)", "commonArea");
       if (ex) exclusiveArea = toNum(ex);
@@ -1543,6 +1699,7 @@ function bindEvents() {
       sourceUrl,
       memo,
       lowprice,
+      floor,
       totalfloor,
     };
   }
