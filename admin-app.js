@@ -2417,6 +2417,8 @@ function bindEvents() {
 
   function mergePropertyRaw(item, patch) {
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
+    const assigneeId = patch.assigneeId ?? item?.assignedAgentId ?? currentRaw.assigneeId ?? currentRaw.assignedAgentId ?? null;
+    const assigneeName = assigneeId ? getStaffNameById(assigneeId) : '';
     return {
       ...currentRaw,
       itemNo: patch.itemNo ?? currentRaw.itemNo ?? null,
@@ -2438,6 +2440,10 @@ function bindEvents() {
       siteInspection: patch.siteInspection ?? currentRaw.siteInspection ?? null,
       opinion: patch.opinion ?? currentRaw.opinion ?? null,
       memo: patch.opinion ?? currentRaw.memo ?? null,
+      assigneeId,
+      assignedAgentId: assigneeId,
+      assigneeName: assigneeName || currentRaw.assigneeName || currentRaw.assignedAgentName || null,
+      assignedAgentName: assigneeName || currentRaw.assignedAgentName || currentRaw.assigneeName || null,
     };
   }
 

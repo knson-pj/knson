@@ -364,6 +364,7 @@
       currentPrice: lowprice,
       bidDate: firstText(p.dateMain, p.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], p.bidDate, p.bid_date, ""),
       createdAt: firstText(p.date, p.date_uploaded, p.createdAt, p.created_at, raw.date, raw.createdAt, ""),
+      assignedAgentId: firstText(p.assignedAgentId, p.assigneeId, p.assignee_id, p.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, ""),
       assignedAgentName: firstText(p.assignedAgentName, p.assigneeName, p.assignee_name, p.agentName, p.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "-"),
       rightsAnalysis: rightsAnalysisRaw || ((p.analysisDone ?? p.analysis_done) ? "완료" : ""),
       siteInspection: siteInspectionRaw || ((p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done) ? "완료" : ""),
@@ -520,15 +521,15 @@
 
   function buildAgentChartEntries(rows) {
     const staff = Array.isArray(state.staffAssignments) ? state.staffAssignments : [];
-    const byName = new Map();
+    const byId = new Map();
 
     const ensureEntry = (id, name, regions = []) => {
-      const key = String(id || name || '').trim();
+      const key = String(id || '').trim() || String(name || '').trim();
       if (!key) return null;
-      if (!byName.has(key)) {
-        byName.set(key, {
-          id: String(id || key),
-          name: String(name || id || key).trim() || '담당자',
+      if (!byId.has(key)) {
+        byId.set(key, {
+          id: key,
+          name: String(name || key).trim() || '담당자',
           regions: normalizeAssignedRegions(regions),
           auction: 0,
           onbid: 0,
@@ -537,36 +538,39 @@
           total: 0,
         });
       }
-      const item = byName.get(key);
-      if ((!item.regions || !item.regions.length) && Array.isArray(regions) && regions.length) {
-        item.regions = normalizeAssignedRegions(regions);
+      const entry = byId.get(key);
+      if ((!entry.name || entry.name === entry.id) && name) entry.name = String(name).trim() || entry.name;
+      if ((!entry.regions || !entry.regions.length) && Array.isArray(regions) && regions.length) {
+        entry.regions = normalizeAssignedRegions(regions);
       }
-      return item;
+      return entry;
     };
 
     staff.forEach((staffRow) => ensureEntry(staffRow.id, staffRow.name, staffRow.regions || []));
 
     rows.forEach((row) => {
-      let target = null;
-      const tokens = getPropertyRegionTokens(row);
-      if (staff.length) {
-        target = staff.find((entry) => entry.regions?.length && entry.regions.some((region) => tokens.includes(region))) || null;
+      let entry = null;
+      const assignedId = String(row.assignedAgentId || '').trim();
+      const assignedName = String(row.assignedAgentName || '').trim();
+      if (assignedId && byId.has(assignedId)) {
+        entry = byId.get(assignedId);
+      } else if (assignedName) {
+        const found = [...byId.values()].find((item) => item.name === assignedName);
+        if (found) entry = found;
+        else entry = ensureEntry(assignedName, assignedName, []);
       }
-      if (!target) {
-        const name = String(row.assignedAgentName || '').trim();
-        if (name && name !== '-') {
-          target = ensureEntry(name, name, []);
-        }
+      if (!entry) {
+        const tokens = getPropertyRegionTokens(row);
+        const matched = staff.find((item) => item.regions?.length && item.regions.some((region) => tokens.includes(region)));
+        if (matched) entry = ensureEntry(matched.id, matched.name, matched.regions || []);
       }
-      if (!target) return;
-      const entry = ensureEntry(target.id || target.name, target.name, target.regions || []);
       if (!entry) return;
       const src = ['auction', 'onbid', 'realtor', 'general'].includes(row.source) ? row.source : 'general';
       entry[src] = (entry[src] || 0) + 1;
       entry.total += 1;
     });
 
-    return [...byName.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
+    return [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
   }
 
   function renderAgentChart() {
@@ -581,25 +585,15 @@
       return;
     }
 
-    const legend = document.createElement('div');
-    legend.className = 'agent-chart-legend';
-    legend.innerHTML = `
-      <span class="legend-item"><i class="legend-swatch legend-auction"></i>경매</span>
-      <span class="legend-item"><i class="legend-swatch legend-onbid"></i>공매</span>
-      <span class="legend-item"><i class="legend-swatch legend-realtor"></i>중개</span>
-      <span class="legend-item"><i class="legend-swatch legend-general"></i>일반</span>
-    `;
-    els.agentChart.appendChild(legend);
-
     const grid = document.createElement('div');
     grid.className = 'agent-bench-grid';
     const max = Math.max(...entries.map((entry) => entry.total), 1);
     const segPct = (count, total) => total ? ((count / total) * 100).toFixed(2) : '0';
 
-    entries.forEach((entry, idx) => {
+    entries.forEach((entry) => {
       const card = document.createElement('article');
       card.className = 'agent-bench-card';
-      const fillPct = entry.total ? Math.max(14, Math.round((entry.total / max) * 100)) : 10;
+      const fillPct = entry.total ? Math.max(12, Math.round((entry.total / max) * 100)) : 8;
       card.innerHTML = `
         <div class="agent-bench-score">${entry.total}건</div>
         <div class="agent-bench-plot">
@@ -611,13 +605,6 @@
           </div>
         </div>
         <div class="agent-bench-name" title="${escapeAttr(entry.name)}">${escapeHtml(entry.name)}</div>
-        <div class="agent-bench-rank">#${idx + 1}</div>
-        <div class="agent-bench-breakdown">
-          <span>경매 ${entry.auction}</span>
-          <span>공매 ${entry.onbid}</span>
-          <span>중개 ${entry.realtor}</span>
-          <span>일반 ${entry.general}</span>
-        </div>
       `;
       grid.appendChild(card);
     });
@@ -674,7 +661,7 @@
       <td>${fitTextHtml(appraisal, 10, 16, 24)}</td>
       <td>${fitTextHtml(current, 10, 16, 24)}</td>
       <td>${fitTextHtml(rate, 8, 10, 14)}</td>
-      <td class="schedule-cell">${formatScheduleHtml(p)}</td>
+      <td class="schedule-cell"><div class="schedule-stack">${formatScheduleHtml(p)}</div></td>
       <td>${locationCell}</td>
       <td>${fitTextHtml(formatShortDate(p.createdAt) || "-")}</td>
       <td>${fitTextHtml(p.assignedAgentName || "-", 8, 14, 20)}</td>
