@@ -1576,7 +1576,6 @@ function bindEvents() {
 
       address: String(m.address || ""),
       asset_type: (m.assetType || "") || null,
-      totalfloor: m.totalfloor || null,
       exclusive_area: toNullNum(m.exclusiveArea),
       common_area: toNullNum(m.commonArea),
       site_area: toNullNum(m.siteArea),
