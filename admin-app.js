@@ -39,6 +39,8 @@
     officeCsvPreviewRows: [],
     lastGroupSuggestion: null,
     selectedPropertyIds: new Set(),
+    propertyPage: 1,
+    propertyPageSize: 30,
   };
 
   const els = {};
@@ -118,6 +120,7 @@
       propKeyword: $("#propKeyword"),
       propertiesTableBody: $("#propertiesTable tbody"),
       propertiesEmpty: $("#propertiesEmpty"),
+      adminPropertiesPagination: $("#adminPropertiesPagination"),
 
       // CSV import
       csvImportSource: $("#csvImportSource"),
@@ -320,16 +323,19 @@ function bindEvents() {
     });
     if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
       state.propertyFilters.source = String(e.target.value || "");
+      state.propertyPage = 1;
       renderPropertiesTable();
       renderSummary();
     });
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
       state.propertyFilters.status = String(e.target.value || "");
+      state.propertyPage = 1;
       renderPropertiesTable();
       renderSummary();
     });
     if (els.propKeyword) els.propKeyword.addEventListener("input", debounce((e) => {
       state.propertyFilters.keyword = String(e.target.value || "").toLowerCase();
+      state.propertyPage = 1;
       renderPropertiesTable();
       renderSummary();
     }, 150));
@@ -688,7 +694,7 @@ function bindEvents() {
       id: item.id || "",
       email: item.email || "",
       name: item.name || item.email || "",
-      role: item.role || "staff",
+      role: normalizeRole(item.role),
       assignedRegions: Array.isArray(item.assignedRegions)
         ? item.assignedRegions
         : (Array.isArray(item.assigned_regions) ? item.assigned_regions : []),
@@ -764,7 +770,7 @@ function bindEvents() {
     if (els.sumRealtor) els.sumRealtor.textContent = String(props.filter(p => p.sourceType === "realtor").length);
     if (els.sumGeneral) els.sumGeneral.textContent = String(props.filter(p => p.sourceType === "general").length);
 
-    if (els.sumAgents) els.sumAgents.textContent = String(staff.filter(s => s.role === "staff").length);
+    if (els.sumAgents) els.sumAgents.textContent = String(staff.filter(s => normalizeRole(s.role) === "staff").length);
     if (els.sumOffices) els.sumOffices.textContent = String(offices.length);
   }
 
@@ -798,6 +804,41 @@ function bindEvents() {
     });
   }
 
+
+  function getPagedProperties(rows) {
+    const totalPages = Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
+    if (state.propertyPage > totalPages) state.propertyPage = totalPages;
+    if (state.propertyPage < 1) state.propertyPage = 1;
+    const start = (state.propertyPage - 1) * state.propertyPageSize;
+    return { totalPages, rows: rows.slice(start, start + state.propertyPageSize) };
+  }
+
+  function renderAdminPropertiesPagination(totalPages) {
+    if (!els.adminPropertiesPagination) return;
+    els.adminPropertiesPagination.innerHTML = '';
+    if (totalPages <= 1) {
+      els.adminPropertiesPagination.classList.add('hidden');
+      return;
+    }
+    els.adminPropertiesPagination.classList.remove('hidden');
+    const frag = document.createDocumentFragment();
+    const addBtn = (label, page, disabled=false, active=false) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = active ? 'pager-num is-active' : (typeof label === 'number' ? 'pager-num' : 'pager-btn');
+      b.textContent = String(label);
+      b.disabled = disabled;
+      if (!disabled) b.addEventListener('click', () => { state.propertyPage = page; renderPropertiesTable(); window.scrollTo({ top: els.propertiesTableBody?.closest('.table-wrap')?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
+      frag.appendChild(b);
+    };
+    addBtn('이전', state.propertyPage - 1, state.propertyPage <= 1);
+    const start = Math.max(1, state.propertyPage - 2);
+    const end = Math.min(totalPages, start + 4);
+    for (let p = start; p <= end; p += 1) addBtn(p, p, false, p === state.propertyPage);
+    addBtn('다음', state.propertyPage + 1, state.propertyPage >= totalPages);
+    els.adminPropertiesPagination.appendChild(frag);
+  }
+
   function pruneSelectedPropertyIds() {
     const valid = new Set(state.properties.map((p) => String(p.id || p.globalId || "")).filter(Boolean));
     state.selectedPropertyIds = new Set([...state.selectedPropertyIds].filter((id) => valid.has(String(id))));
@@ -813,7 +854,7 @@ function bindEvents() {
   }
 
   function toggleSelectAllProperties(checked) {
-    const rows = getFilteredProperties();
+    const rows = getPagedProperties(getFilteredProperties()).rows;
     rows.forEach((p) => {
       const key = String(p.id || p.globalId || "").trim();
       if (!key) return;
@@ -824,7 +865,7 @@ function bindEvents() {
   }
 
   function updatePropertySelectionControls() {
-    const rows = getFilteredProperties();
+    const rows = getPagedProperties(getFilteredProperties()).rows;
     const ids = rows.map((p) => String(p.id || p.globalId || "").trim()).filter(Boolean);
     const selectedVisible = ids.filter((id) => state.selectedPropertyIds.has(id));
     if (els.propSelectAll) {
@@ -871,17 +912,19 @@ function bindEvents() {
 
   function renderPropertiesTable() {
     const rows = getFilteredProperties();
+    const pageData = getPagedProperties(rows);
     els.propertiesTableBody.innerHTML = "";
 
     if (!rows.length) {
       els.propertiesEmpty.classList.remove("hidden");
       updatePropertySelectionControls();
+      renderAdminPropertiesPagination(0);
       return;
     }
     els.propertiesEmpty.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
-    for (const p of rows) {
+    for (const p of pageData.rows) {
       const rowId = String(p.id || p.globalId || "").trim();
       const tr = document.createElement("tr");
       if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
@@ -931,6 +974,7 @@ function bindEvents() {
     }
     els.propertiesTableBody.appendChild(frag);
     updatePropertySelectionControls();
+    renderAdminPropertiesPagination(pageData.totalPages);
   }
 
   // ---------------------------
@@ -962,7 +1006,7 @@ function bindEvents() {
 
     setVal("itemNo", item.itemNo);
     setVal("sourceType", item.sourceType);
-    populateAssigneeSelect(item.assignedAgentId);
+    populateAssigneeSelect(item.assignedAgentId || item.assigneeId || item.assignee_id || "");
     setVal("submitterType", item.submitterType);
     setVal("address", item.address);
     setVal("assetType", item.assetType);
@@ -1034,8 +1078,8 @@ function bindEvents() {
   function populateAssigneeSelect(selectedId) {
     const sel = els.aemForm?.elements["assigneeId"];
     if (!sel) return;
-    const staffRows = state.staff.filter((s) => s.role === "staff");
-    sel.innerHTML = `<option value="">미배정</option>` + staffRows.map((s) => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}</option>`).join("");
+    const staffRows = state.staff.filter((s) => normalizeRole(s.role) === "staff").sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
+    sel.innerHTML = `<option value="">미배정</option>` + staffRows.map((s) => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name || s.email || '담당자')}</option>`).join("");
     sel.value = selectedId || "";
   }
 
@@ -1400,7 +1444,7 @@ function bindEvents() {
     if (!els.assignmentTableBody || !els.assignmentEmpty) return;
     els.assignmentTableBody.innerHTML = "";
 
-    const agents = state.staff.filter((s) => String(s.role || "").toLowerCase() === "staff");
+    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
     if (!agents.length) {
       els.assignmentEmpty.classList.remove("hidden");
       return;
@@ -1786,7 +1830,7 @@ function bindEvents() {
   }
 
   async function handleSuggestGrouping() {
-    const agents = state.staff.filter((s) => s.role === "staff");
+    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
     if (!agents.length) return alert("담당자 계정을 먼저 등록해 주세요.");
 
     const requestedCount = Math.max(1, Number(els.agentCountInput.value || 1));
@@ -1839,7 +1883,7 @@ function bindEvents() {
   }
 
   async function handleSaveAssignments() {
-    const agents = state.staff.filter((s) => s.role === "staff");
+    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
     if (!agents.length) return alert("담당자 계정이 없습니다.");
 
     const rows = [...els.assignmentTableBody.querySelectorAll(".assignment-select")].map((sel) => {

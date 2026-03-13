@@ -353,7 +353,7 @@ body{
   gap:10px;
 }
 .modal-header h3{margin:0;font-size:18px;}
-.modal-body{padding:18px;display:grid;gap:12px;overflow-x:hidden;overflow-y:visible;}
+.modal-body{padding:18px;display:grid;gap:12px;overflow-x:hidden;overflow-y:auto;max-height:calc(92vh - 120px);} 
 #aemForm input[name="address"]{max-width:100%;}
 .icon-btn{
   width:36px;height:36px;border-radius:999px;border:1px solid var(--line);
@@ -442,3 +442,8 @@ html[data-theme="dark"] .btn-danger{background:#ef4444;border-color:#ef4444;colo
 .check-wrap input{width:16px;height:16px;cursor:pointer;}
 .row-selected{background:rgba(99,102,241,.06);}
 .toolbar .btn-danger{white-space:nowrap;}
+
+.pager{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;padding:14px 8px 4px;}
+.pager-btn,.pager-num{min-width:38px;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb, var(--surface) 92%, transparent);color:var(--text);font-size:13px;font-weight:800;cursor:pointer;}
+.pager-num.is-active{background:linear-gradient(135deg, var(--accent), var(--accent-2));color:#fff;border-color:transparent;box-shadow:var(--shadow-md);}
+.pager-btn[disabled],.pager-num[disabled]{opacity:.45;cursor:default;}

@@ -22,6 +22,8 @@
     markers: [],
     geoCache: loadGeoCache(),
     staffAssignments: [],
+    page: 1,
+    pageSize: 30,
   };
 
   const els = {};
@@ -109,6 +111,7 @@
     els.agentChart = document.getElementById("agentChart");
     els.agentChartEmpty = document.getElementById("agentChartEmpty");
     els.agentChartMeta = document.getElementById("agentChartMeta");
+    els.mainPagination = document.getElementById("mainPagination");
   }
 
   function setupChrome() {
@@ -196,6 +199,7 @@
         "input",
         debounce((e) => {
           state.keyword = String(e.target.value || "").trim();
+          state.page = 1;
           renderKPIs();
           renderAgentChart();
           renderTable();
@@ -206,6 +210,7 @@
     if (els.filterStatus) {
       els.filterStatus.addEventListener("change", (e) => {
         state.status = String(e.target.value || "");
+        state.page = 1;
         renderKPIs();
         renderAgentChart();
         renderTable();
@@ -520,7 +525,7 @@
   }
 
   function buildAgentChartEntries(rows) {
-    const staff = Array.isArray(state.staffAssignments) ? state.staffAssignments : [];
+    const staff = (Array.isArray(state.staffAssignments) ? state.staffAssignments : []).filter((row) => normalizeRole(row?.role) === 'staff');
     const byId = new Map();
 
     const ensureEntry = (id, name, regions = []) => {
@@ -557,7 +562,6 @@
       } else if (assignedName) {
         const found = [...byId.values()].find((item) => item.name === assignedName);
         if (found) entry = found;
-        else entry = ensureEntry(assignedName, assignedName, []);
       }
       if (!entry) {
         const tokens = getPropertyRegionTokens(row);
@@ -614,13 +618,50 @@
     els.agentChartEmpty.classList.add('hidden');
   }
 
+
+  function getPagedRows(rows) {
+    const total = rows.length;
+    const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+    if (state.page > totalPages) state.page = totalPages;
+    if (state.page < 1) state.page = 1;
+    const start = (state.page - 1) * state.pageSize;
+    return { total, totalPages, page: state.page, rows: rows.slice(start, start + state.pageSize) };
+  }
+
+  function renderMainPagination(totalPages) {
+    if (!els.mainPagination) return;
+    els.mainPagination.innerHTML = '';
+    if (totalPages <= 1) {
+      els.mainPagination.classList.add('hidden');
+      return;
+    }
+    els.mainPagination.classList.remove('hidden');
+    const frag = document.createDocumentFragment();
+    const addBtn = (label, page, disabled=false, active=false) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = active ? 'pager-num is-active' : (typeof label === 'number' ? 'pager-num' : 'pager-btn');
+      b.textContent = String(label);
+      b.disabled = disabled;
+      if (!disabled) b.addEventListener('click', () => { state.page = page; renderTable(); window.scrollTo({ top: els.tableWrap?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
+      frag.appendChild(b);
+    };
+    addBtn('이전', state.page - 1, state.page <= 1);
+    const start = Math.max(1, state.page - 2);
+    const end = Math.min(totalPages, start + 4);
+    for (let p = start; p <= end; p += 1) addBtn(p, p, false, p === state.page);
+    addBtn('다음', state.page + 1, state.page >= totalPages);
+    els.mainPagination.appendChild(frag);
+  }
   function renderTable() {
     if (!els.tableBody) return;
 
     const rows = getFilteredRows();
+    const pageData = getPagedRows(rows);
     els.tableBody.innerHTML = "";
 
     if (!rows.length) {
+      renderMainPagination(0);
       if (els.tableWrap) els.tableWrap.classList.add("hidden");
       if (els.emptyState) {
         els.emptyState.classList.remove("hidden");
@@ -633,8 +674,9 @@
     if (els.emptyState) els.emptyState.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
-    for (const p of rows) frag.appendChild(renderRow(p));
+    for (const p of pageData.rows) frag.appendChild(renderRow(p));
     els.tableBody.appendChild(frag);
+    renderMainPagination(pageData.totalPages);
   }
 
   function renderRow(p) {

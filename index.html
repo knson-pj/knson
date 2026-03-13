@@ -88,8 +88,15 @@
     </section>
 <section class="agent-chart-panel" aria-label="담당자 배당 물건수">
       <div class="agent-chart-head">
-        <h2>담당자 배당 물건수</h2>
-        <span id="agentChartMeta" class="agent-chart-meta">0명</span>
+        <div class="agent-chart-head-right">
+          <div class="agent-chart-legend-head" aria-label="범례">
+            <span class="legend-item"><span class="legend-swatch legend-auction"></span>경매</span>
+            <span class="legend-item"><span class="legend-swatch legend-onbid"></span>공매</span>
+            <span class="legend-item"><span class="legend-swatch legend-realtor"></span>중개</span>
+            <span class="legend-item"><span class="legend-swatch legend-general"></span>일반</span>
+          </div>
+          <span id="agentChartMeta" class="agent-chart-meta-chip">0명</span>
+        </div>
       </div>
       <div id="agentChart" class="agent-chart"></div>
       <div id="agentChartEmpty" class="agent-chart-empty hidden">표시할 담당자 배당 데이터가 없습니다.</div>
@@ -145,6 +152,7 @@
             <tbody id="tableBody"></tbody>
           </table>
         </div>
+        <div id="mainPagination" class="pager"></div>
       </section>
 
       <!-- Map view -->
