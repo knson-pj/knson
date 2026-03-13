@@ -546,6 +546,24 @@ function bindEvents() {
       alert(err.message || "데이터 로드 실패");
     }
   }
+
+  async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
+    const pageSize = 1000;
+    const out = [];
+    let from = 0;
+    while (true) {
+      let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+      if (!isAdmin) q = q.eq("assignee_id", uid);
+      const { data, error } = await q;
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
+  }
+
   async function loadProperties() {
     // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
     // (Vercel API 401/CORS 이슈와 무관하게 안정적으로 동작)
@@ -560,20 +578,14 @@ function bindEvents() {
       const uid = String(user?.id || "").trim();
       const isAdmin = user?.role === "admin";
 
-      let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).limit(5000);
-      if (!isAdmin) {
-        if (!uid) {
-          state.properties = [];
-          renderPropertiesTable();
-          renderSummary();
-          return;
-        }
-        q = q.eq("assignee_id", uid);
+      if (!isAdmin && !uid) {
+        state.properties = [];
+        renderPropertiesTable();
+        renderSummary();
+        return;
       }
 
-      const { data, error } = await q;
-      if (error) throw error;
-
+      const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
       state.properties = Array.isArray(data) ? data.map(normalizeProperty) : [];
       pruneSelectedPropertyIds();
       hydrateAssignedAgentNames();

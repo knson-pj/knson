@@ -252,6 +252,24 @@
   }
 
   // ---- Data ----
+
+  async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
+    const pageSize = 1000;
+    const out = [];
+    let from = 0;
+    while (true) {
+      let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+      if (!isAdmin) q = q.eq("assignee_id", uid);
+      const { data, error } = await q;
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
+  }
+
   async function loadProperties() {
     try {
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
@@ -263,12 +281,7 @@
         const uid = state.session?.user?.id;
         const isAdmin = isAdminUser(state.session?.user);
 
-        let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).limit(5000);
-        if (!isAdmin) q = q.eq("assignee_id", uid);
-
-        const { data, error } = await q;
-        if (error) throw error;
-
+        const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
         state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
       } else {
         const scope = isAdminUser(state.session.user) ? "all" : "mine";
