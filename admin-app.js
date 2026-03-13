@@ -638,11 +638,11 @@ function bindEvents() {
 
     const latitude = toNullableNumber(item.latitude ?? item.lat ?? item.y ?? raw.latitude ?? raw.lat ?? "");
     const longitude = toNullableNumber(item.longitude ?? item.lng ?? item.x ?? raw.longitude ?? raw.lng ?? "");
-    const priceMain = toNullableNumber(item.priceMain ?? item.price_main ?? raw.priceMain ?? raw.price_main ?? item.salePrice ?? item.price ?? item.appraisalPrice);
+    const priceMain = toNullableNumber(item.priceMain ?? item.price_main ?? raw.priceMain ?? raw.price_main ?? raw["감정가"] ?? raw["감정가(원)"] ?? item.salePrice ?? item.price ?? item.appraisalPrice);
     const lowprice =
       sourceType === "realtor" || sourceType === "general"
         ? null
-        : toNullableNumber(item.lowprice ?? item.low_price ?? raw.lowprice ?? raw.low_price ?? item.currentPrice ?? item.current_price);
+        : toNullableNumber(item.lowprice ?? item.low_price ?? raw.lowprice ?? raw.low_price ?? raw["최저가"] ?? raw["최저입찰가(원)"] ?? raw["매각가"] ?? item.currentPrice ?? item.current_price);
 
     return {
       id: String(item.id || item._id || item.globalId || item.global_id || ""),
@@ -652,8 +652,8 @@ function bindEvents() {
       isGeneral: Boolean(item.isGeneral || item.is_general || item.origin === "general" || sourceType === "general"),
       address,
       assetType: firstText(item.assetType, item.asset_type, item.type, item.propertyType, item.kind, raw.assetType, raw['세부유형'], "-"),
-      floor: firstText(item.floor, item.floor_text, raw.floor, raw.floorText, extractFloorText(address, raw["물건명"], raw.address)),
-      totalfloor: firstText(item.totalfloor, item.total_floor, raw.totalfloor, raw.total_floor, raw.totalFloor, ""),
+      floor: firstText(item.floor, item.floor_text, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
+      totalfloor: firstText(item.totalfloor, item.total_floor, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
       priceMain,
       lowprice,
       status: firstText(item.status, raw.status, ""),
@@ -669,8 +669,8 @@ function bindEvents() {
       exclusivearea: toNullableNumber(item.exclusivearea ?? item.exclusive_area ?? item.exclusiveArea ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"]),
       commonarea: toNullableNumber(item.commonarea ?? item.common_area ?? item.commonArea ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"]),
       sitearea: toNullableNumber(item.sitearea ?? item.site_area ?? item.siteArea ?? raw.sitearea ?? raw.siteArea ?? raw["토지면적(평)"]),
-      useapproval: firstText(item.useapproval, item.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, ""),
-      dateMain: firstText(item.dateMain, item.date_main, raw.dateMain, raw.date_main, ""),
+      useapproval: firstText(item.useapproval, item.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, raw["사용승인일"], ""),
+      dateMain: firstText(item.dateMain, item.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], ""),
       sourceUrl: firstText(item.sourceUrl, item.source_url, raw.sourceUrl, raw.source_url, ""),
       submitterType: firstText(item.submitterType, item.submitter_type, raw.submitterType, ""),
       realtorname: firstText(item.realtorname, item.realtor_name, raw.realtorname, raw.realtorName, item.brokerOfficeName, item.broker_office_name, ""),
@@ -888,7 +888,7 @@ function bindEvents() {
       const kindLabel = p.sourceType === "auction" ? "경매" : p.sourceType === "onbid" ? "공매" : p.sourceType === "realtor" ? "중개" : "일반";
       const moveLink = buildKakaoMapLink(p);
       const currentPrice = p.lowprice != null ? formatMoneyKRW(p.lowprice) : "-";
-      const rate = formatPercent(p.priceMain, p.lowprice);
+      const rate = formatPercent(p.priceMain, p.lowprice, p._raw || {});
 
       tr.innerHTML = `
         <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
@@ -904,7 +904,7 @@ function bindEvents() {
         <td>${p.priceMain != null ? formatMoneyKRW(p.priceMain) : "-"}</td>
         <td>${escapeHtml(currentPrice)}</td>
         <td>${escapeHtml(rate)}</td>
-        <td>${escapeHtml(formatDate(p.dateMain) || "-")}</td>
+        <td class="schedule-cell">${formatScheduleHtml(p)}</td>
         <td>${escapeHtml(statusLabel(p.status) || p.status || "-")}</td>
         <td>${moveLink ? `<a class="map-link" href="${escapeAttr(moveLink)}" target="_blank" rel="noopener noreferrer">이동</a>` : "-"}</td>
         <td>${escapeHtml(formatDate(p.createdAt) || "-")}</td>
@@ -1735,6 +1735,8 @@ function bindEvents() {
       sourceUrl: m.sourceUrl || null,
       opinion: m.memo || null,
       memo: m.memo || null,
+      lowprice: toNullNum(m.lowprice),
+      currentPrice: toNullNum(m.lowprice),
     };
 
     const row = {
@@ -2364,11 +2366,13 @@ function bindEvents() {
     return `${num.toLocaleString("ko-KR")}원`;
   }
 
-  function formatPercent(base, current) {
+  function formatPercent(base, current, raw = null) {
     const b = Number(base || 0);
     const c = Number(current || 0);
-    if (!Number.isFinite(b) || !Number.isFinite(c) || b <= 0 || c <= 0) return "-";
-    return `${((c / b) * 100).toFixed(1)}%`;
+    if (Number.isFinite(b) && Number.isFinite(c) && b > 0 && c > 0) return `${((c / b) * 100).toFixed(1)}%`;
+    const rawRate = raw && (raw["최저입찰가율(%)"] || raw.bidRate || raw.rate);
+    if (rawRate != null && String(rawRate).trim() !== "") return String(rawRate).trim();
+    return "-";
   }
 
   function formatAreaPyeong(v) {
@@ -2437,10 +2441,42 @@ function bindEvents() {
     };
   }
 
+  function parseFlexibleDate(value) {
+    const s = String(value || "").trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+    if (m) return new Date(2000 + Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function computeDdayLabel(value) {
+    const d = parseFlexibleDate(value);
+    if (!d) return "";
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diff = Math.round((target - startToday) / 86400000);
+    if (diff === 0) return "D-Day";
+    if (diff > 0) return `D-${diff}`;
+    return `D+${Math.abs(diff)}`;
+  }
+
+  function formatScheduleHtml(p) {
+    const rawObj = p?._raw?.raw && typeof p._raw.raw === 'object' ? p._raw.raw : (p?._raw || {});
+    const rawValue = p?.dateMain || rawObj["입찰일자"] || rawObj["입찰마감일시"] || "";
+    const display = formatDate(rawValue);
+    if (!display || display === "-") return "-";
+    const dday = computeDdayLabel(rawValue);
+    return `<span class="schedule-date">${escapeHtml(display)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : ""}`;
+  }
+
   function formatDate(v) {
     if (!v) return "-";
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return "-";
+    const d = parseFlexibleDate(v);
+    if (!d) return String(v || "-");
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   }
 

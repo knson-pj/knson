@@ -177,9 +177,11 @@ body{
 .toolbar{
   margin-top:12px;
   display:grid;
-  grid-template-columns:180px 180px minmax(300px,1fr);
+  grid-template-columns:160px 160px minmax(240px, 420px);
   gap:10px;
+  justify-content:start;
 }
+#propKeyword{max-width:420px;}
 .input,.select,.textarea,.assignment-select,.inline-input{
   width:100%;
   border:1px solid var(--line);
@@ -211,6 +213,7 @@ body{
   border-spacing:0;
 }
 #propertiesTable{min-width:1740px;}
+#propertiesTable th,#propertiesTable td{font-size:12px;}
 #assignmentTable,#staffTable,#csvPreviewTable,#officeTable,#officePreviewTable{width:100%;min-width:100%;}
 .table th,.table td{
   text-align:left;
@@ -223,10 +226,14 @@ body{
 .table td.text-cell{
   white-space:normal;
   min-width:180px;
+  word-break:keep-all;
 }
 .table td.opinion-cell{
   min-width:240px;
 }
+.schedule-cell{display:grid;gap:2px;justify-items:center;white-space:normal;}
+.schedule-date{font-weight:700;}
+.schedule-dday{font-size:10px;color:var(--accent);font-weight:800;}
 .map-link{
   display:inline-flex;
   align-items:center;
@@ -343,7 +350,8 @@ body{
   gap:10px;
 }
 .modal-header h3{margin:0;font-size:18px;}
-.modal-body{padding:18px;display:grid;gap:12px;}
+.modal-body{padding:18px;display:grid;gap:12px;overflow-x:hidden;}
+#aemForm input[name="address"]{max-width:100%;}
 .icon-btn{
   width:36px;height:36px;border-radius:999px;border:1px solid var(--line);
   background:var(--surface);color:var(--text);cursor:pointer;

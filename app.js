@@ -105,6 +105,9 @@
     els.searchKeyword = document.getElementById("searchKeyword");
     els.filterStatus = document.getElementById("filterStatus");
     els.btnRefresh = document.getElementById("btnRefresh");
+    els.agentChart = document.getElementById("agentChart");
+    els.agentChartEmpty = document.getElementById("agentChartEmpty");
+    els.agentChartMeta = document.getElementById("agentChartMeta");
   }
 
   function setupChrome() {
@@ -193,6 +196,7 @@
         debounce((e) => {
           state.keyword = String(e.target.value || "").trim();
           renderKPIs();
+          renderAgentChart();
           renderTable();
         }, 120)
       );
@@ -202,6 +206,7 @@
       els.filterStatus.addEventListener("change", (e) => {
         state.status = String(e.target.value || "");
         renderKPIs();
+        renderAgentChart();
         renderTable();
       });
     }
@@ -240,6 +245,7 @@
 
   function openFilter() {
     if (!els.filterPanel) return;
+    if (els.filterPanel.dataset.alwaysVisible === "true") return;
     els.filterPanel.classList.remove("hidden");
     els.filterPanel.setAttribute("aria-hidden", "false");
     if (els.searchKeyword) els.searchKeyword.focus();
@@ -247,6 +253,7 @@
 
   function closeFilter() {
     if (!els.filterPanel) return;
+    if (els.filterPanel.dataset.alwaysVisible === "true") return;
     els.filterPanel.classList.add("hidden");
     els.filterPanel.setAttribute("aria-hidden", "true");
   }
@@ -290,6 +297,7 @@
       }
 
       renderKPIs();
+      renderAgentChart();
       renderTable();
 
       if (state.view === "map") {
@@ -301,6 +309,7 @@
       console.error(err);
       state.items = [];
       renderKPIs();
+      renderAgentChart();
       renderTable();
       alert(err?.message || "목록을 불러오지 못했습니다.");
     }
@@ -320,13 +329,13 @@
     const lng = toNullableNumber(p.longitude ?? p.lng ?? raw.longitude ?? raw.lng ?? "");
     const address = firstText(p.address, p.location, raw.address, raw.location, "");
     const priceMain = toNullableNumber(
-      p.priceMain ?? p.price_main ?? raw.priceMain ?? raw.price_main ?? p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price
+      p.priceMain ?? p.price_main ?? raw.priceMain ?? raw.price_main ?? raw["감정가"] ?? raw["감정가(원)"] ?? p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price
     );
     const lowprice =
       source === "realtor" || source === "general"
         ? null
         : toNullableNumber(
-            p.lowprice ?? p.low_price ?? raw.lowprice ?? raw.low_price ?? p.currentPrice ?? p.current_price ?? raw.currentPrice ?? raw.current_price
+            p.lowprice ?? p.low_price ?? raw.lowprice ?? raw.low_price ?? raw["최저가"] ?? raw["최저입찰가(원)"] ?? raw["매각가"] ?? p.currentPrice ?? p.current_price ?? raw.currentPrice ?? raw.current_price
           );
 
     const rightsAnalysisRaw = firstText(p.rightsAnalysis, p.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "");
@@ -339,14 +348,14 @@
       status: firstText(p.status, raw.status, ""),
       address,
       type: firstText(p.assetType, p.asset_type, p.type, p.propertyType, p.kind, raw.assetType, raw.asset_type, raw["세부유형"], "-"),
-      floor: firstText(p.floor, p.floor_text, raw.floor, raw.floorText, extractFloorText(address, raw["물건명"], raw.address)),
-      totalFloor: firstText(p.totalfloor, p.total_floor, raw.totalfloor, raw.total_floor, raw.totalFloor, ""),
-      useapproval: firstText(p.useapproval, p.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, ""),
-      exclusivearea: toNullableNumber(p.exclusivearea ?? p.exclusive_area ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"] ?? p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
-      commonarea: toNullableNumber(p.commonarea ?? p.common_area ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"]),
+      floor: firstText(p.floor, p.floor_text, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
+      totalFloor: firstText(p.totalfloor, p.total_floor, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
+      useapproval: firstText(p.useapproval, p.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, raw["사용승인일"], ""),
+      exclusivearea: toNullableNumber(p.exclusivearea ?? p.exclusive_area ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"] ?? raw["전용면적"] ?? p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
+      commonarea: toNullableNumber(p.commonarea ?? p.common_area ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"] ?? raw["공급/계약면적(평)"] ?? raw["공급면적(평)"]),
       appraisalPrice: priceMain,
       currentPrice: lowprice,
-      bidDate: firstText(p.dateMain, p.date_main, raw.dateMain, raw.date_main, p.bidDate, p.bid_date, ""),
+      bidDate: firstText(p.dateMain, p.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], p.bidDate, p.bid_date, ""),
       createdAt: firstText(p.date, p.date_uploaded, p.createdAt, p.created_at, raw.date, raw.createdAt, ""),
       assignedAgentName: firstText(p.assignedAgentName, p.assigneeName, p.assignee_name, p.agentName, p.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "-"),
       rightsAnalysis: rightsAnalysisRaw || ((p.analysisDone ?? p.analysis_done) ? "완료" : ""),
@@ -407,6 +416,41 @@
     setActive(els.statGeneralCard, state.source === "general");
   }
 
+
+  function renderAgentChart() {
+    if (!els.agentChart || !els.agentChartEmpty) return;
+    const rows = getFilteredRows();
+    const counts = new Map();
+    for (const row of rows) {
+      const name = String(row.assignedAgentName || "미배정").trim() || "미배정";
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"));
+    els.agentChart.innerHTML = "";
+    if (els.agentChartMeta) els.agentChartMeta.textContent = `${entries.length}명`;
+    if (!entries.length) {
+      els.agentChart.classList.add("hidden");
+      els.agentChartEmpty.classList.remove("hidden");
+      return;
+    }
+    els.agentChart.classList.remove("hidden");
+    els.agentChartEmpty.classList.add("hidden");
+    const max = Math.max(...entries.map(([, v]) => v), 1);
+    const frag = document.createDocumentFragment();
+    entries.forEach(([name, count]) => {
+      const item = document.createElement("div");
+      item.className = "agent-bar";
+      const pct = Math.max(10, Math.round((count / max) * 100));
+      item.innerHTML = `
+        <div class="agent-bar-track"><div class="agent-bar-fill" style="height:${pct}%"></div></div>
+        <div class="agent-bar-label" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
+        <div class="agent-bar-value">${count}건</div>
+      `;
+      frag.appendChild(item);
+    });
+    els.agentChart.appendChild(frag);
+  }
+
   function renderTable() {
     if (!els.tableBody) return;
 
@@ -436,31 +480,31 @@
     const kindLabel = p.source === "auction" ? "경매" : p.source === "onbid" ? "공매" : p.source === "realtor" ? "중개" : "일반";
     const appraisal = p.appraisalPrice != null ? formatMoneyEok(p.appraisalPrice) : "-";
     const current = p.currentPrice != null ? formatMoneyEok(p.currentPrice) : "-";
-    const rate = calcRate(p.appraisalPrice, p.currentPrice);
+    const rate = calcRate(p.appraisalPrice, p.currentPrice, p.raw);
     const moveLink = buildKakaoMapLink(p);
     const locationCell = moveLink
       ? `<a class="map-link" href="${escapeAttr(moveLink)}" target="_blank" rel="noopener noreferrer">이동</a>`
       : "-";
 
     tr.innerHTML = `
-      <td class="kind-chip ${kindClass}">${escapeHtml(kindLabel)}</td>
-      <td>${escapeHtml(p.statusLabel || "-")}</td>
-      <td class="text-cell">${escapeHtml(p.address || "-")}</td>
-      <td>${escapeHtml(p.type || "-")}</td>
-      <td>${escapeHtml(String(p.floor || "-"))}</td>
-      <td>${escapeHtml(String(p.totalFloor || "-"))}</td>
-      <td>${escapeHtml(formatShortDate(p.useapproval) || "-")}</td>
-      <td>${p.exclusivearea != null ? escapeHtml(formatAreaPyeong(p.exclusivearea)) : "-"}</td>
-      <td>${escapeHtml(appraisal)}</td>
-      <td>${escapeHtml(current)}</td>
-      <td>${escapeHtml(rate)}</td>
-      <td>${escapeHtml(formatShortDate(p.bidDate) || "-")}</td>
+      <td><span class="kind-text ${kindClass}">${escapeHtml(kindLabel)}</span></td>
+      <td>${fitTextHtml(p.statusLabel || "-")}</td>
+      <td class="text-cell">${fitTextHtml(p.address || "-", 22, 40, 62)}</td>
+      <td>${fitTextHtml(p.type || "-", 10, 16, 24)}</td>
+      <td>${fitTextHtml(String(p.floor || "-"), 8, 12, 18)}</td>
+      <td>${fitTextHtml(String(p.totalFloor || "-"), 8, 12, 18)}</td>
+      <td>${fitTextHtml(formatShortDate(p.useapproval) || "-")}</td>
+      <td>${p.exclusivearea != null ? fitTextHtml(formatAreaPyeong(p.exclusivearea), 8, 12, 16) : "-"}</td>
+      <td>${fitTextHtml(appraisal, 10, 16, 24)}</td>
+      <td>${fitTextHtml(current, 10, 16, 24)}</td>
+      <td>${fitTextHtml(rate, 8, 10, 14)}</td>
+      <td class="schedule-cell">${formatScheduleHtml(p)}</td>
       <td>${locationCell}</td>
-      <td>${escapeHtml(formatShortDate(p.createdAt) || "-")}</td>
-      <td>${escapeHtml(p.assignedAgentName || "-")}</td>
-      <td class="text-cell">${escapeHtml(p.rightsAnalysis || "-")}</td>
-      <td class="text-cell">${escapeHtml(p.siteInspection || "-")}</td>
-      <td class="text-cell opinion-cell">${escapeHtml(p.opinion || "-")}</td>
+      <td>${fitTextHtml(formatShortDate(p.createdAt) || "-")}</td>
+      <td>${fitTextHtml(p.assignedAgentName || "-", 8, 14, 20)}</td>
+      <td class="text-cell">${fitTextHtml(p.rightsAnalysis || "-", 12, 20, 30)}</td>
+      <td class="text-cell">${fitTextHtml(p.siteInspection || "-", 12, 20, 30)}</td>
+      <td class="text-cell opinion-cell">${fitTextHtml(p.opinion || "-", 18, 32, 48)}</td>
     `;
 
     return tr;
@@ -476,11 +520,13 @@
     return p.address || "";
   }
 
-  function calcRate(appraisal, current) {
+  function calcRate(appraisal, current, raw = null) {
     const a = Number(appraisal || 0);
     const c = Number(current || 0);
-    if (!Number.isFinite(a) || !Number.isFinite(c) || a <= 0 || c <= 0) return "-";
-    return `${((c / a) * 100).toFixed(1)}%`;
+    if (Number.isFinite(a) && Number.isFinite(c) && a > 0 && c > 0) return `${((c / a) * 100).toFixed(1)}%`;
+    const rawRate = raw && (raw["최저입찰가율(%)"] || raw.bidRate || raw.rate);
+    if (rawRate != null && String(rawRate).trim() !== "") return String(rawRate).trim();
+    return "-";
   }
 
   function statusLabel(v) {
@@ -738,16 +784,56 @@
   function formatMoneyEok(n) {
     const num = Number(n || 0);
     if (!Number.isFinite(num) || num <= 0) return "-";
-    // 단순: 1억=100,000,000
     const eok = num / 100000000;
-    const fixed = eok >= 10 ? eok.toFixed(2) : eok.toFixed(2);
+    const fixed = eok.toFixed(2);
     return `${fixed.replace(/\.00$/, "")} 억원`;
+  }
+
+  function fitTextHtml(value, sm = 10, xs = 18, micro = 30) {
+    const text = String(value == null ? "-" : value);
+    const len = text.replace(/\s+/g, "").length;
+    let cls = "fit-text";
+    if (len >= micro) cls += " fit-micro";
+    else if (len >= xs) cls += " fit-xs";
+    else if (len >= sm) cls += " fit-sm";
+    return `<span class="${cls}">${escapeHtml(text)}</span>`;
+  }
+
+  function formatScheduleHtml(p) {
+    const rawValue = p?.bidDate || p?.raw?.["입찰일자"] || p?.raw?.["입찰마감일시"] || "";
+    const display = formatShortDate(rawValue) || String(rawValue || "").trim();
+    if (!display) return "-";
+    const dday = computeDdayLabel(rawValue);
+    return `<span class="schedule-date">${escapeHtml(display)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : ""}`;
+  }
+
+  function computeDdayLabel(value) {
+    const d = parseFlexibleDate(value);
+    if (!d) return "";
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diff = Math.round((target - startToday) / 86400000);
+    if (diff === 0) return "D-Day";
+    if (diff > 0) return `D-${diff}`;
+    return `D+${Math.abs(diff)}`;
+  }
+
+  function parseFlexibleDate(value) {
+    const s = String(value || "").trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+    if (m) return new Date(2000 + Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
   function formatShortDate(v) {
     if (!v) return "";
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return String(v);
+    const d = parseFlexibleDate(v);
+    if (!d) return String(v);
     const yy = String(d.getFullYear()).slice(2);
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
@@ -761,10 +847,6 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
-  }
-
-  function escapeAttr(v) {
-    return escapeHtml(v);
   }
 
   function escapeAttr(v) {
