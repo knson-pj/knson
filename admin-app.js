@@ -46,6 +46,9 @@
     officeCsvPreviewRows: [],
     lastGroupSuggestion: null,
     selectedPropertyIds: new Set(),
+    propertySummary: { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 },
+    propertyTotalRows: 0,
+    propertyTotalPages: 1,
     propertyPage: 1,
     propertyPageSize: 30,
   };
@@ -331,20 +334,17 @@ function bindEvents() {
     if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
       state.propertyFilters.source = String(e.target.value || "");
       state.propertyPage = 1;
-      renderPropertiesTable();
-      renderSummary();
+      void loadProperties().catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
       state.propertyFilters.status = String(e.target.value || "");
       state.propertyPage = 1;
-      renderPropertiesTable();
-      renderSummary();
+      void loadProperties().catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
     if (els.propKeyword) els.propKeyword.addEventListener("input", debounce((e) => {
       state.propertyFilters.keyword = String(e.target.value || "").toLowerCase();
       state.propertyPage = 1;
-      renderPropertiesTable();
-      renderSummary();
+      void loadProperties().catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     }, 150));
 
     // CSV import (관리자만)
@@ -574,81 +574,154 @@ function bindEvents() {
       .some((v) => String(v || '').trim() === target);
   }
 
-  async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
-    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
-    if (isAdmin) {
-      const { data, error } = await queryBase();
-      if (error) throw error;
-      return Array.isArray(data) ? data : [];
-    }
-    const filters = [
-      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
-      `assignee_id.eq.${uid}`,
-    ];
-    let lastError = null;
-    for (const filter of filters) {
-      const { data, error } = await queryBase().or(filter);
-      if (!error) {
-        const rows = Array.isArray(data) ? data : [];
-        return rows.filter((row) => rowAssignedToUid(row, uid));
-      }
-      lastError = error;
-    }
-    throw lastError;
+  
+function getAdminListSelectClause() {
+  return [
+    "id",
+    "global_id",
+    "item_no",
+    "source_type",
+    "status",
+    "address",
+    "latitude",
+    "longitude",
+    "assignee_id",
+    "date_uploaded",
+    "date",
+    "raw",
+  ].join(",");
+}
+
+function escapeLike(value) {
+  return String(value || "").replace(/[%_]/g, "");
+}
+
+function applyAdminScopeFilter(query, { isAdmin, uid }) {
+  if (isAdmin) return query;
+  return query.or(`assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`);
+}
+
+function applyAdminListFilters(query, filters) {
+  const source = String(filters?.source || "").trim();
+  const status = String(filters?.status || "").trim();
+  const keyword = String(filters?.keyword || "").trim();
+  if (source) query = query.eq("source_type", source);
+  if (status) query = query.ilike("status", `%${escapeLike(status)}%`);
+  if (keyword) {
+    const q = `%${escapeLike(keyword)}%`;
+    query = query.or(`address.ilike.${q},item_no.ilike.${q},status.ilike.${q}`);
   }
+  return query;
+}
 
-  async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
-    const pageSize = 1000;
-    const out = [];
-    let from = 0;
-    while (true) {
-      const rows = await fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid });
-      out.push(...rows);
-      if (rows.length < pageSize) break;
-      from += pageSize;
-    }
-    return out;
-  }
+async function fetchAdminPropertySummary(sb, scope) {
+  const mk = async (source) => {
+    let q = sb.from("properties").select("id", { count: "exact", head: true });
+    q = applyAdminScopeFilter(q, scope);
+    if (source) q = q.eq("source_type", source);
+    const { count, error } = await q;
+    if (error) throw error;
+    return Number(count || 0);
+  };
+  const [total, auction, onbid, realtor, general] = await Promise.all([
+    mk(""), mk("auction"), mk("onbid"), mk("realtor"), mk("general")
+  ]);
+  return { total, auction, onbid, realtor, general };
+}
 
-  async function loadProperties() {
-    // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
-    // (Vercel API 401/CORS 이슈와 무관하게 안정적으로 동작)
-    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+async function fetchAdminPropertyPage(sb, scope, filters, page, pageSize) {
+  let countQuery = sb.from("properties").select("id", { count: "exact", head: true });
+  countQuery = applyAdminScopeFilter(countQuery, scope);
+  countQuery = applyAdminListFilters(countQuery, filters);
+  const { count, error: countError } = await countQuery;
+  if (countError) throw countError;
+  const totalRows = Number(count || 0);
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+  const from = (safePage - 1) * pageSize;
+  const to = from + pageSize - 1;
+  let dataQuery = sb.from("properties").select(getAdminListSelectClause()).order("date_uploaded", { ascending: false }).range(from, to);
+  dataQuery = applyAdminScopeFilter(dataQuery, scope);
+  dataQuery = applyAdminListFilters(dataQuery, filters);
+  const { data, error } = await dataQuery;
+  if (error) throw error;
+  return { totalRows, totalPages, page: safePage, items: Array.isArray(data) ? data : [] };
+}
 
-    if (sb) {
-      const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
-      const currentSession = synced || loadSession() || state.session || null;
-      if (currentSession) state.session = currentSession;
+async function loadProperties() {
+  const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
 
-      const user = currentSession?.user || null;
-      const uid = String(user?.id || "").trim();
-      const isAdmin = user?.role === "admin";
+  if (sb) {
+    const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
+    const currentSession = synced || loadSession() || state.session || null;
+    if (currentSession) state.session = currentSession;
 
-      if (!isAdmin && !uid) {
-        state.properties = [];
-        renderPropertiesTable();
-        renderSummary();
-        return;
-      }
+    const user = currentSession?.user || null;
+    const uid = String(user?.id || "").trim();
+    const isAdmin = user?.role === "admin";
 
-      const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
-      state.properties = Array.isArray(data) ? data.map(normalizeProperty) : [];
-      pruneSelectedPropertyIds();
-      hydrateAssignedAgentNames();
+    if (!isAdmin && !uid) {
+      state.properties = [];
+      state.propertySummary = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+      state.propertyTotalRows = 0;
+      state.propertyTotalPages = 1;
+      state.selectedPropertyIds.clear();
       renderPropertiesTable();
       renderSummary();
       return;
     }
 
-    const isAdmin = user?.role === "admin";
-    const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
-    const res = await api(path, { auth: true });
-    state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
-    pruneSelectedPropertyIds();
+    const scope = { isAdmin, uid };
+    const filters = { ...state.propertyFilters };
+    const [summary, pageData] = await Promise.all([
+      fetchAdminPropertySummary(sb, scope),
+      fetchAdminPropertyPage(sb, scope, filters, state.propertyPage, state.propertyPageSize),
+    ]);
+
+    state.propertySummary = summary;
+    state.propertyTotalRows = pageData.totalRows;
+    state.propertyTotalPages = pageData.totalPages;
+    state.propertyPage = pageData.page;
+    state.properties = pageData.items.map(normalizeProperty);
+    state.selectedPropertyIds.clear();
     hydrateAssignedAgentNames();
     renderPropertiesTable();
     renderSummary();
+    return;
   }
+
+  const user = state.session?.user || null;
+  const isAdmin = user?.role === "admin";
+  const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
+  const res = await api(path, { auth: true });
+  const all = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
+  state.propertySummary = {
+    total: all.length,
+    auction: all.filter((p) => p.sourceType === "auction").length,
+    onbid: all.filter((p) => p.sourceType === "onbid").length,
+    realtor: all.filter((p) => p.sourceType === "realtor").length,
+    general: all.filter((p) => p.sourceType === "general").length,
+  };
+  const filtered = all.filter((p) => {
+    if (state.propertyFilters.source && p.sourceType !== state.propertyFilters.source) return false;
+    if (state.propertyFilters.status && !String(p.status || "").includes(state.propertyFilters.status)) return false;
+    if (state.propertyFilters.keyword) {
+      const q = state.propertyFilters.keyword.toLowerCase();
+      const hay = [p.itemNo, p.address, p.assetType, p.status].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  state.propertyTotalRows = filtered.length;
+  state.propertyTotalPages = Math.max(1, Math.ceil(filtered.length / state.propertyPageSize));
+  state.propertyPage = Math.min(Math.max(1, state.propertyPage), state.propertyTotalPages);
+  const start = (state.propertyPage - 1) * state.propertyPageSize;
+  state.properties = filtered.slice(start, start + state.propertyPageSize);
+  state.selectedPropertyIds.clear();
+  hydrateAssignedAgentNames();
+  renderPropertiesTable();
+  renderSummary();
+}
 
   async function loadStaff() {
     await syncSupabaseSessionIfNeeded();
@@ -800,57 +873,26 @@ function bindEvents() {
   }
 
   function renderSummary() {
-    const props = state.properties;
+    const props = state.propertySummary || { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
     const staff = state.staff;
     const offices = state.offices;
 
-    if (els.sumTotal) els.sumTotal.textContent = String(props.length);
-    if (els.sumAuction) els.sumAuction.textContent = String(props.filter(p => p.sourceType === "auction").length);
-    if (els.sumGongmae) els.sumGongmae.textContent = String(props.filter(p => p.sourceType === "onbid").length);
-    if (els.sumRealtor) els.sumRealtor.textContent = String(props.filter(p => p.sourceType === "realtor").length);
-    if (els.sumGeneral) els.sumGeneral.textContent = String(props.filter(p => p.sourceType === "general").length);
+    if (els.sumTotal) els.sumTotal.textContent = String(props.total || 0);
+    if (els.sumAuction) els.sumAuction.textContent = String(props.auction || 0);
+    if (els.sumGongmae) els.sumGongmae.textContent = String(props.onbid || 0);
+    if (els.sumRealtor) els.sumRealtor.textContent = String(props.realtor || 0);
+    if (els.sumGeneral) els.sumGeneral.textContent = String(props.general || 0);
 
     if (els.sumAgents) els.sumAgents.textContent = String(staff.filter(s => normalizeRole(s.role) === "staff").length);
     if (els.sumOffices) els.sumOffices.textContent = String(offices.length);
   }
 
   function getFilteredProperties() {
-    const f = state.propertyFilters;
-    const kw = (f.keyword || "").toLowerCase().trim();
-
-    return state.properties.filter((p) => {
-      if (f.source && p.sourceType !== f.source) return false;
-      if (f.status) {
-        if ((p.status || "") !== f.status && !(p.status || "").includes(f.status)) return false;
-      }
-      if (kw) {
-        const hay = [
-          p.itemNo,
-          p.address,
-          p.assetType,
-          p.floor,
-          p.totalfloor,
-          p.rightsAnalysis,
-          p.siteInspection,
-          p.opinion,
-          (p.assignedAgentName || getStaffNameById(p.assignedAgentId)),
-          p.regionGu,
-          p.regionDong,
-          p.status,
-        ].filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(kw)) return false;
-      }
-      return true;
-    });
+    return Array.isArray(state.properties) ? state.properties : [];
   }
 
-
   function getPagedProperties(rows) {
-    const totalPages = Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
-    if (state.propertyPage > totalPages) state.propertyPage = totalPages;
-    if (state.propertyPage < 1) state.propertyPage = 1;
-    const start = (state.propertyPage - 1) * state.propertyPageSize;
-    return { totalPages, rows: rows.slice(start, start + state.propertyPageSize) };
+    return { totalPages: state.propertyTotalPages || 1, rows: Array.isArray(rows) ? rows : [] };
   }
 
   function renderAdminPropertiesPagination(totalPages) {
@@ -868,7 +910,7 @@ function bindEvents() {
       b.className = active ? 'pager-num is-active' : (typeof label === 'number' ? 'pager-num' : 'pager-btn');
       b.textContent = String(label);
       b.disabled = disabled;
-      if (!disabled) b.addEventListener('click', () => { state.propertyPage = page; renderPropertiesTable(); window.scrollTo({ top: els.propertiesTableBody?.closest('.table-wrap')?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
+      if (!disabled) b.addEventListener('click', () => { state.propertyPage = page; void loadProperties().catch((e)=>handleAsyncError(e,'물건 로드 실패')); window.scrollTo({ top: els.propertiesTableBody?.closest('.table-wrap')?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
       frag.appendChild(b);
     };
     addBtn('이전', state.propertyPage - 1, state.propertyPage <= 1);
@@ -880,9 +922,7 @@ function bindEvents() {
   }
 
   function pruneSelectedPropertyIds() {
-    const valid = new Set(state.properties.map((p) => String(p.id || p.globalId || "")).filter(Boolean));
-    state.selectedPropertyIds = new Set([...state.selectedPropertyIds].filter((id) => valid.has(String(id))));
-    updatePropertySelectionControls();
+    if (!(state.selectedPropertyIds instanceof Set)) state.selectedPropertyIds = new Set();
   }
 
   function togglePropertySelection(id, checked) {
