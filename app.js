@@ -22,12 +22,6 @@
     markers: [],
     geoCache: loadGeoCache(),
     staffAssignments: [],
-    summaryCounts: { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 },
-    totalRows: 0,
-    totalPages: 1,
-    chartRows: [],
-    chartLoadReq: 0,
-    chartLoadTimer: null,
     page: 1,
     pageSize: 30,
   };
@@ -162,9 +156,9 @@
       if (!el) return;
       el.addEventListener("click", () => {
         state.source = source;
-        state.page = 1;
         renderKPIs();
-        void loadProperties();
+        renderTable();
+        if (state.view === "map") renderKakaoMarkers();
       });
       el.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -206,7 +200,9 @@
         debounce((e) => {
           state.keyword = String(e.target.value || "").trim();
           state.page = 1;
-          void loadProperties()
+          renderKPIs();
+          renderAgentChart();
+          renderTable();
         }, 120)
       );
     }
@@ -215,7 +211,9 @@
       els.filterStatus.addEventListener("change", (e) => {
         state.status = String(e.target.value || "");
         state.page = 1;
-        void loadProperties()
+        renderKPIs();
+        renderAgentChart();
+        renderTable();
       });
     }
 
@@ -276,223 +274,87 @@
       .some((v) => String(v || '').trim() === target);
   }
 
-  
-function getListSelectClause() {
-  return [
-    "id",
-    "source_type",
-    "status",
-    "address",
-    "latitude",
-    "longitude",
-    "assignee_id",
-    "raw",
-  ].join(",");
-}
+  async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
+    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+    if (isAdmin) {
+      const { data, error } = await queryBase();
+      if (error) throw error;
+      return Array.isArray(data) ? data : [];
+    }
 
-function getChartSelectClause() {
-  return [
-    "id",
-    "source_type",
-    "address",
-    "assignee_id",
-    "raw",
-  ].join(",");
-}
+    const filters = [
+      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
+      `assignee_id.eq.${uid}`,
+    ];
 
-function escapeLike(value) {
-  return String(value || "").replace(/[%_]/g, "");
-}
-
-function applyScopeFilter(query, { isAdmin, uid }) {
-  if (isAdmin) return query;
-  return query.or(`assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`);
-}
-
-function applyListFilters(query, filters) {
-  const source = String(filters?.source || "").trim();
-  const status = String(filters?.status || "").trim();
-  const keyword = String(filters?.keyword || "").trim();
-  if (source && source !== "all") query = query.eq("source_type", source);
-  if (status) query = query.ilike("status", `%${escapeLike(status)}%`);
-  if (keyword) {
-    const q = `%${escapeLike(keyword)}%`;
-    query = query.or(`address.ilike.${q},status.ilike.${q}`);
+    let lastError = null
+    for (const filter of filters) {
+      const { data, error } = await queryBase().or(filter)
+      if (!error) {
+        const rows = Array.isArray(data) ? data : [];
+        return rows.filter((row) => rowAssignedToUid(row, uid));
+      }
+      lastError = error;
+    }
+    throw lastError;
   }
-  return query;
-}
 
-async function fetchSummaryCounts(sb, scope) {
-  const mk = async (source) => {
-    let q = sb.from("properties").select("id", { count: "exact", head: true });
-    q = applyScopeFilter(q, scope);
-    if (source) q = q.eq("source_type", source);
-    const { count, error } = await q;
-    if (error) throw error;
-    return Number(count || 0);
-  };
-  const [total, auction, onbid, realtor, general] = await Promise.all([
-    mk(""),
-    mk("auction"),
-    mk("onbid"),
-    mk("realtor"),
-    mk("general"),
-  ]);
-  return { total, auction, onbid, realtor, general };
-}
-
-async function fetchPropertyPage(sb, scope, filters, page, pageSize) {
-  let countQuery = sb.from("properties").select("id", { count: "exact", head: true });
-  countQuery = applyScopeFilter(countQuery, scope);
-  countQuery = applyListFilters(countQuery, filters);
-  const { count, error: countError } = await countQuery;
-  if (countError) throw countError;
-
-  const totalRows = Number(count || 0);
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-  const safePage = Math.min(Math.max(1, Number(page || 1)), totalPages);
-  const from = (safePage - 1) * pageSize;
-  const to = from + pageSize - 1;
-
-  let dataQuery = sb.from("properties").select(getListSelectClause()).order("id", { ascending: false }).range(from, to);
-  dataQuery = applyScopeFilter(dataQuery, scope);
-  dataQuery = applyListFilters(dataQuery, filters);
-  const { data, error } = await dataQuery;
-  if (error) throw error;
-  return { totalRows, totalPages, page: safePage, items: Array.isArray(data) ? data : [] };
-}
-
-async function fetchChartRowsLight(sb, scope, filters) {
-  const out = [];
-  const pageSize = 500;
-  let from = 0;
-  while (true) {
-    let q = sb.from("properties").select(getChartSelectClause()).order("id", { ascending: false }).range(from, from + pageSize - 1);
-    q = applyScopeFilter(q, scope);
-    q = applyListFilters(q, filters);
-    const { data, error } = await q;
-    if (error) throw error;
-    const rows = Array.isArray(data) ? data : [];
-    out.push(...rows.map(normalizeItem));
-    if (rows.length < pageSize) break;
-    from += pageSize;
+  async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
+    const pageSize = 1000;
+    const out = [];
+    let from = 0;
+    while (true) {
+      const rows = await fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid });
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
   }
-  return out;
-}
 
-function scheduleAgentChartLoad(sb, scope, filters) {
-  state.chartLoadReq += 1;
-  const reqId = state.chartLoadReq;
-  if (state.chartLoadTimer) {
-    try { clearTimeout(state.chartLoadTimer); } catch {}
-  }
-  state.chartRows = [];
-  renderAgentChart();
-  state.chartLoadTimer = setTimeout(async () => {
+  async function loadProperties() {
     try {
-      const staffPromise = isAdminUser(state.session?.user) ? loadStaffAssignments() : Promise.resolve([]);
-      const [rows, staffAssignments] = await Promise.all([
-        fetchChartRowsLight(sb, scope, filters),
-        staffPromise,
-      ]);
-      if (reqId !== state.chartLoadReq) return;
-      state.staffAssignments = Array.isArray(staffAssignments) ? staffAssignments : [];
-      state.chartRows = rows;
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+      let isAdmin = isAdminUser(state.session?.user);
+      let staffPromise = Promise.resolve([]);
+
+      if (sb) {
+        try { await K.sbSyncLocalSession(); } catch {}
+        try { state.session = loadSession(); } catch {}
+        const uid = state.session?.user?.id;
+        isAdmin = isAdminUser(state.session?.user);
+        if (isAdmin) staffPromise = loadStaffAssignments();
+
+        const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
+        state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
+      } else {
+        isAdmin = isAdminUser(state.session?.user);
+        if (isAdmin) staffPromise = loadStaffAssignments();
+        const scope = isAdmin ? "all" : "mine";
+        const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
+        state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
+      }
+
+      try { state.staffAssignments = await staffPromise; } catch { state.staffAssignments = []; }
+
+      renderKPIs();
       renderAgentChart();
+      renderTable();
+
+      if (state.view === "map") {
+        await ensureKakaoMap();
+        await renderKakaoMarkers();
+      }
+      closeFilter();
     } catch (err) {
-      if (reqId !== state.chartLoadReq) return;
-      console.warn("chart load failed", err);
-      state.chartRows = [];
+      console.error(err);
+      state.items = [];
+      renderKPIs();
       renderAgentChart();
+      renderTable();
+      alert(err?.message || "목록을 불러오지 못했습니다.");
     }
-  }, 220);
-}
-
-async function loadProperties() {
-  const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-  let isAdmin = isAdminUser(state.session?.user);
-
-  try {
-    if (sb) {
-      try { await K.sbSyncLocalSession(); } catch {}
-      try { state.session = loadSession(); } catch {}
-      isAdmin = isAdminUser(state.session?.user);
-    }
-
-    const uid = String(state.session?.user?.id || "").trim();
-
-    // 관리자만 안전한 서버 페이지네이션을 사용하고,
-    // 담당자는 기존 /properties?scope=mine 경로를 유지해 배정 누락을 방지한다.
-    if (sb && isAdmin) {
-      try {
-        const scope = { isAdmin: true, uid };
-        const filters = { source: state.source, status: state.status, keyword: state.keyword };
-        const [summary, pageData] = await Promise.all([
-          fetchSummaryCounts(sb, scope),
-          fetchPropertyPage(sb, scope, filters, state.page, state.pageSize),
-        ]);
-        state.summaryCounts = summary;
-        state.totalRows = pageData.totalRows;
-        state.totalPages = pageData.totalPages;
-        state.page = pageData.page;
-        state.items = pageData.items.map(normalizeItem);
-        renderKPIs();
-        renderTable();
-        if (state.view === "map") {
-          await ensureKakaoMap();
-          await renderKakaoMarkers();
-        }
-        scheduleAgentChartLoad(sb, scope, filters);
-        closeFilter();
-        return;
-      } catch (directErr) {
-        console.warn("direct admin paging fallback", directErr);
-      }
-    }
-
-    const scopeName = isAdmin ? "all" : "mine";
-    const res = await api(`/properties?scope=${encodeURIComponent(scopeName)}`, { auth: true });
-    const all = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
-    state.summaryCounts = {
-      total: all.length,
-      auction: all.filter((p) => p.source === "auction").length,
-      onbid: all.filter((p) => p.source === "onbid").length,
-      realtor: all.filter((p) => p.source === "realtor").length,
-      general: all.filter((p) => p.source === "general").length,
-    };
-    const filtered = all.filter((row) => {
-      if (state.source !== "all" && row.source !== state.source) return false;
-      if (state.status && String(row.status || "") !== state.status) return false;
-      if (state.keyword) {
-        const q = state.keyword.toLowerCase();
-        const hay = [row.address, row.type, row.status, row.itemNo].join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-    state.totalRows = filtered.length;
-    state.totalPages = Math.max(1, Math.ceil(filtered.length / state.pageSize));
-    state.page = Math.min(Math.max(1, state.page), state.totalPages);
-    const start = (state.page - 1) * state.pageSize;
-    state.items = filtered.slice(start, start + state.pageSize);
-    renderKPIs();
-    renderTable();
-    state.chartRows = filtered;
-    renderAgentChart();
-    closeFilter();
-  } catch (err) {
-    console.error(err);
-    state.items = [];
-    state.summaryCounts = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
-    state.totalRows = 0;
-    state.totalPages = 1;
-    state.chartRows = [];
-    renderKPIs();
-    renderTable();
-    renderAgentChart();
-    alert(err?.message || "목록을 불러오지 못했습니다.");
   }
-}
 
   function normalizeItem(p) {
     const raw = p?.raw && typeof p.raw === "object" ? p.raw : {};
@@ -576,13 +438,13 @@ async function loadProperties() {
   }
 
   function renderKPIs() {
-    const all = state.summaryCounts || { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+    const all = state.items;
 
-    if (els.statTotal) els.statTotal.textContent = String(all.total || 0);
-    if (els.statAuction) els.statAuction.textContent = String(all.auction || 0);
-    if (els.statGongmae) els.statGongmae.textContent = String(all.onbid || 0);
-    if (els.statRealtor) els.statRealtor.textContent = String(all.realtor || 0);
-    if (els.statGeneral) els.statGeneral.textContent = String(all.general || 0);
+    if (els.statTotal) els.statTotal.textContent = String(all.length);
+    if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => p.source === "auction").length);
+    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => p.source === "onbid").length);
+    if (els.statRealtor) els.statRealtor.textContent = String(all.filter((p) => p.source === "realtor").length);
+    if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => p.source === "general").length);
 
     const setActive = (card, on) => {
       if (!card) return;
@@ -742,14 +604,13 @@ async function loadProperties() {
 
   function renderAgentChart() {
     if (!els.agentChart || !els.agentChartEmpty) return;
-    const rows = Array.isArray(state.chartRows) ? state.chartRows : [];
+    const rows = getFilteredRows();
     const entries = buildAgentChartEntries(rows);
     els.agentChart.innerHTML = '';
     if (els.agentChartMeta) els.agentChartMeta.textContent = `${entries.length}명`;
     if (!entries.length) {
       els.agentChart.classList.add('hidden');
       els.agentChartEmpty.classList.remove('hidden');
-      els.agentChartEmpty.textContent = rows.length ? '담당자 차트를 불러오는 중입니다.' : '배정된 담당자가 없습니다.';
       return;
     }
 
@@ -783,6 +644,15 @@ async function loadProperties() {
   }
 
 
+  function getPagedRows(rows) {
+    const total = rows.length;
+    const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+    if (state.page > totalPages) state.page = totalPages;
+    if (state.page < 1) state.page = 1;
+    const start = (state.page - 1) * state.pageSize;
+    return { total, totalPages, page: state.page, rows: rows.slice(start, start + state.pageSize) };
+  }
+
   function renderMainPagination(totalPages) {
     if (!els.mainPagination) return;
     els.mainPagination.innerHTML = '';
@@ -798,7 +668,7 @@ async function loadProperties() {
       b.className = active ? 'pager-num is-active' : (typeof label === 'number' ? 'pager-num' : 'pager-btn');
       b.textContent = String(label);
       b.disabled = disabled;
-      if (!disabled) b.addEventListener('click', () => { state.page = page; void loadProperties(); window.scrollTo({ top: els.tableWrap?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
+      if (!disabled) b.addEventListener('click', () => { state.page = page; renderTable(); window.scrollTo({ top: els.tableWrap?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
       frag.appendChild(b);
     };
     addBtn('이전', state.page - 1, state.page <= 1);
@@ -811,7 +681,8 @@ async function loadProperties() {
   function renderTable() {
     if (!els.tableBody) return;
 
-    const rows = Array.isArray(state.items) ? state.items : [];
+    const rows = getFilteredRows();
+    const pageData = getPagedRows(rows);
     els.tableBody.innerHTML = "";
 
     if (!rows.length) {
@@ -828,9 +699,9 @@ async function loadProperties() {
     if (els.emptyState) els.emptyState.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
-    for (const p of rows) frag.appendChild(renderRow(p));
+    for (const p of pageData.rows) frag.appendChild(renderRow(p));
     els.tableBody.appendChild(frag);
-    renderMainPagination(state.totalPages || 1);
+    renderMainPagination(pageData.totalPages);
   }
 
   function renderRow(p) {
