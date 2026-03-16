@@ -744,17 +744,37 @@ function bindEvents() {
 
 
   function sanitizeOnbidOpinion(opinion, memo, address) {
-    const explicit = String(opinion || "").trim();
-    if (explicit) return explicit;
-    const memoText = String(memo || "").trim();
-    if (!memoText) return "";
     const addressText = String(address || "").trim();
-    if (!addressText) return memoText;
-    const compactMemo = memoText.replace(/\s+/g, "");
-    const compactAddress = addressText.replace(/\s+/g, "");
-    if (compactMemo === compactAddress) return "";
-    if (compactMemo.includes(compactAddress) || compactAddress.includes(compactMemo)) return "";
-    return memoText;
+
+    const cleanCandidate = (value) => {
+      let text = String(value || "").trim();
+      if (!text) return "";
+      if (!addressText) return text;
+
+      const compactText = text.replace(/\s+/g, "");
+      const compactAddress = addressText.replace(/\s+/g, "");
+      if (!compactAddress) return text;
+      if (compactText === compactAddress) return "";
+      if (compactText.includes(compactAddress) || compactAddress.includes(compactText)) {
+        const escaped = addressText
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("\\s*");
+        if (escaped) {
+          text = text
+            .replace(new RegExp(escaped, "gi"), "")
+            .replace(/^[\s,;:/|·-]+|[\s,;:/|·-]+$/g, "")
+            .trim();
+        }
+        if (!text) return "";
+      }
+      return text;
+    };
+
+    const explicit = cleanCandidate(opinion);
+    if (explicit) return explicit;
+    return cleanCandidate(memo);
   }
 
   function normalizeStaff(item) {
@@ -1857,7 +1877,7 @@ function bindEvents() {
       useapproval: m.useApproval || null,
       dateMain: m.dateMain || null,
       sourceUrl: m.sourceUrl || null,
-      opinion: m.memo || null,
+      opinion: sanitizeOnbidOpinion(sourceType === "onbid" ? null : m.memo, m.memo, m.address) || null,
       memo: m.memo || null,
       lowprice: toNullNum(m.lowprice),
       currentPrice: toNullNum(m.lowprice),
