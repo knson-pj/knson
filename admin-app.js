@@ -424,7 +424,7 @@ function bindEvents() {
     // 담당자: properties만
     if (user.role !== "admin") {
       setActiveTab("properties");
-      await Promise.all([loadStaff().catch(()=>{}), loadProperties()]);
+      await Promise.all([loadStaff().catch(()=>{}), loadProperties().catch((e)=>handleAsyncError(e, '물건 로드 실패'))]);
       return;
     }
 
@@ -578,16 +578,12 @@ function bindEvents() {
 function getAdminListSelectClause() {
   return [
     "id",
-    "global_id",
-    "item_no",
     "source_type",
     "status",
     "address",
     "latitude",
     "longitude",
     "assignee_id",
-    "date_uploaded",
-    "date",
     "raw",
   ].join(",");
 }
@@ -609,7 +605,7 @@ function applyAdminListFilters(query, filters) {
   if (status) query = query.ilike("status", `%${escapeLike(status)}%`);
   if (keyword) {
     const q = `%${escapeLike(keyword)}%`;
-    query = query.or(`address.ilike.${q},item_no.ilike.${q},status.ilike.${q}`);
+    query = query.or(`address.ilike.${q},status.ilike.${q}`);
   }
   return query;
 }
@@ -640,7 +636,7 @@ async function fetchAdminPropertyPage(sb, scope, filters, page, pageSize) {
   const safePage = Math.min(Math.max(1, Number(page || 1)), totalPages);
   const from = (safePage - 1) * pageSize;
   const to = from + pageSize - 1;
-  let dataQuery = sb.from("properties").select(getAdminListSelectClause()).order("date_uploaded", { ascending: false }).range(from, to);
+  let dataQuery = sb.from("properties").select(getAdminListSelectClause()).order("id", { ascending: false }).range(from, to);
   dataQuery = applyAdminScopeFilter(dataQuery, scope);
   dataQuery = applyAdminListFilters(dataQuery, filters);
   const { data, error } = await dataQuery;
@@ -651,76 +647,84 @@ async function fetchAdminPropertyPage(sb, scope, filters, page, pageSize) {
 async function loadProperties() {
   const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
 
-  if (sb) {
-    const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
-    const currentSession = synced || loadSession() || state.session || null;
-    if (currentSession) state.session = currentSession;
+  try {
+    if (sb) {
+      const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
+      const currentSession = synced || loadSession() || state.session || null;
+      if (currentSession) state.session = currentSession;
 
-    const user = currentSession?.user || null;
-    const uid = String(user?.id || "").trim();
-    const isAdmin = user?.role === "admin";
+      const user = currentSession?.user || null;
+      const uid = String(user?.id || "").trim();
+      const isAdmin = user?.role === "admin";
 
-    if (!isAdmin && !uid) {
-      state.properties = [];
-      state.propertySummary = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
-      state.propertyTotalRows = 0;
-      state.propertyTotalPages = 1;
-      state.selectedPropertyIds.clear();
-      renderPropertiesTable();
-      renderSummary();
-      return;
+      // 관리자만 안전한 서버 페이지네이션 사용
+      if (isAdmin) {
+        try {
+          const scope = { isAdmin: true, uid };
+          const filters = { ...state.propertyFilters };
+          const [summary, pageData] = await Promise.all([
+            fetchAdminPropertySummary(sb, scope),
+            fetchAdminPropertyPage(sb, scope, filters, state.propertyPage, state.propertyPageSize),
+          ]);
+
+          state.propertySummary = summary;
+          state.propertyTotalRows = pageData.totalRows;
+          state.propertyTotalPages = pageData.totalPages;
+          state.propertyPage = pageData.page;
+          state.properties = pageData.items.map(normalizeProperty);
+          state.selectedPropertyIds.clear();
+          hydrateAssignedAgentNames();
+          renderPropertiesTable();
+          renderSummary();
+          return;
+        } catch (directErr) {
+          console.warn("direct admin property paging fallback", directErr);
+        }
+      }
     }
 
-    const scope = { isAdmin, uid };
-    const filters = { ...state.propertyFilters };
-    const [summary, pageData] = await Promise.all([
-      fetchAdminPropertySummary(sb, scope),
-      fetchAdminPropertyPage(sb, scope, filters, state.propertyPage, state.propertyPageSize),
-    ]);
-
-    state.propertySummary = summary;
-    state.propertyTotalRows = pageData.totalRows;
-    state.propertyTotalPages = pageData.totalPages;
-    state.propertyPage = pageData.page;
-    state.properties = pageData.items.map(normalizeProperty);
+    const user = state.session?.user || null;
+    const isAdmin = user?.role === "admin";
+    const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
+    const res = await api(path, { auth: true });
+    const all = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
+    state.propertySummary = {
+      total: all.length,
+      auction: all.filter((p) => p.sourceType === "auction").length,
+      onbid: all.filter((p) => p.sourceType === "onbid").length,
+      realtor: all.filter((p) => p.sourceType === "realtor").length,
+      general: all.filter((p) => p.sourceType === "general").length,
+    };
+    const filtered = all.filter((p) => {
+      if (state.propertyFilters.source && p.sourceType !== state.propertyFilters.source) return false;
+      if (state.propertyFilters.status && !String(p.status || "").includes(state.propertyFilters.status)) return false;
+      if (state.propertyFilters.keyword) {
+        const q = state.propertyFilters.keyword.toLowerCase();
+        const hay = [p.itemNo, p.address, p.assetType, p.status].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    state.propertyTotalRows = filtered.length;
+    state.propertyTotalPages = Math.max(1, Math.ceil(filtered.length / state.propertyPageSize));
+    state.propertyPage = Math.min(Math.max(1, state.propertyPage), state.propertyTotalPages);
+    const start = (state.propertyPage - 1) * state.propertyPageSize;
+    state.properties = filtered.slice(start, start + state.propertyPageSize);
     state.selectedPropertyIds.clear();
     hydrateAssignedAgentNames();
     renderPropertiesTable();
     renderSummary();
-    return;
+  } catch (err) {
+    console.error(err);
+    state.properties = [];
+    state.propertySummary = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+    state.propertyTotalRows = 0;
+    state.propertyTotalPages = 1;
+    state.selectedPropertyIds.clear();
+    renderPropertiesTable();
+    renderSummary();
+    throw err;
   }
-
-  const user = state.session?.user || null;
-  const isAdmin = user?.role === "admin";
-  const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
-  const res = await api(path, { auth: true });
-  const all = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
-  state.propertySummary = {
-    total: all.length,
-    auction: all.filter((p) => p.sourceType === "auction").length,
-    onbid: all.filter((p) => p.sourceType === "onbid").length,
-    realtor: all.filter((p) => p.sourceType === "realtor").length,
-    general: all.filter((p) => p.sourceType === "general").length,
-  };
-  const filtered = all.filter((p) => {
-    if (state.propertyFilters.source && p.sourceType !== state.propertyFilters.source) return false;
-    if (state.propertyFilters.status && !String(p.status || "").includes(state.propertyFilters.status)) return false;
-    if (state.propertyFilters.keyword) {
-      const q = state.propertyFilters.keyword.toLowerCase();
-      const hay = [p.itemNo, p.address, p.assetType, p.status].join(" ").toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
-  state.propertyTotalRows = filtered.length;
-  state.propertyTotalPages = Math.max(1, Math.ceil(filtered.length / state.propertyPageSize));
-  state.propertyPage = Math.min(Math.max(1, state.propertyPage), state.propertyTotalPages);
-  const start = (state.propertyPage - 1) * state.propertyPageSize;
-  state.properties = filtered.slice(start, start + state.propertyPageSize);
-  state.selectedPropertyIds.clear();
-  hydrateAssignedAgentNames();
-  renderPropertiesTable();
-  renderSummary();
 }
 
   async function loadStaff() {

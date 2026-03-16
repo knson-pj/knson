@@ -280,16 +280,12 @@
 function getListSelectClause() {
   return [
     "id",
-    "global_id",
-    "item_no",
     "source_type",
     "status",
     "address",
     "latitude",
     "longitude",
     "assignee_id",
-    "date_uploaded",
-    "date",
     "raw",
   ].join(",");
 }
@@ -321,7 +317,7 @@ function applyListFilters(query, filters) {
   if (status) query = query.ilike("status", `%${escapeLike(status)}%`);
   if (keyword) {
     const q = `%${escapeLike(keyword)}%`;
-    query = query.or(`address.ilike.${q},item_no.ilike.${q},status.ilike.${q}`);
+    query = query.or(`address.ilike.${q},status.ilike.${q}`);
   }
   return query;
 }
@@ -358,7 +354,7 @@ async function fetchPropertyPage(sb, scope, filters, page, pageSize) {
   const from = (safePage - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let dataQuery = sb.from("properties").select(getListSelectClause()).order("date_uploaded", { ascending: false }).range(from, to);
+  let dataQuery = sb.from("properties").select(getListSelectClause()).order("id", { ascending: false }).range(from, to);
   dataQuery = applyScopeFilter(dataQuery, scope);
   dataQuery = applyListFilters(dataQuery, filters);
   const { data, error } = await dataQuery;
@@ -371,7 +367,7 @@ async function fetchChartRowsLight(sb, scope, filters) {
   const pageSize = 500;
   let from = 0;
   while (true) {
-    let q = sb.from("properties").select(getChartSelectClause()).order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+    let q = sb.from("properties").select(getChartSelectClause()).order("id", { ascending: false }).range(from, from + pageSize - 1);
     q = applyScopeFilter(q, scope);
     q = applyListFilters(q, filters);
     const { data, error } = await q;
@@ -413,63 +409,76 @@ function scheduleAgentChartLoad(sb, scope, filters) {
 }
 
 async function loadProperties() {
-  try {
-    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    let isAdmin = isAdminUser(state.session?.user);
+  const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+  let isAdmin = isAdminUser(state.session?.user);
 
+  try {
     if (sb) {
       try { await K.sbSyncLocalSession(); } catch {}
       try { state.session = loadSession(); } catch {}
-      const uid = String(state.session?.user?.id || "").trim();
       isAdmin = isAdminUser(state.session?.user);
-      const scope = { isAdmin, uid };
-      const filters = { source: state.source, status: state.status, keyword: state.keyword };
-      const [summary, pageData] = await Promise.all([
-        fetchSummaryCounts(sb, scope),
-        fetchPropertyPage(sb, scope, filters, state.page, state.pageSize),
-      ]);
-      state.summaryCounts = summary;
-      state.totalRows = pageData.totalRows;
-      state.totalPages = pageData.totalPages;
-      state.page = pageData.page;
-      state.items = pageData.items.map(normalizeItem);
-      renderKPIs();
-      renderTable();
-      if (state.view === "map") {
-        await ensureKakaoMap();
-        await renderKakaoMarkers();
-      }
-      scheduleAgentChartLoad(sb, scope, filters);
-    } else {
-      const res = await api(`/properties?scope=${encodeURIComponent(isAdmin ? "all" : "mine")}`, { auth: true });
-      const all = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
-      state.summaryCounts = {
-        total: all.length,
-        auction: all.filter((p) => p.source === "auction").length,
-        onbid: all.filter((p) => p.source === "onbid").length,
-        realtor: all.filter((p) => p.source === "realtor").length,
-        general: all.filter((p) => p.source === "general").length,
-      };
-      const filtered = all.filter((row) => {
-        if (state.source !== "all" && row.source !== state.source) return false;
-        if (state.status && String(row.status || "") !== state.status) return false;
-        if (state.keyword) {
-          const q = state.keyword.toLowerCase();
-          const hay = [row.address, row.type, row.status, row.itemNo].join(" ").toLowerCase();
-          if (!hay.includes(q)) return false;
-        }
-        return true;
-      });
-      state.totalRows = filtered.length;
-      state.totalPages = Math.max(1, Math.ceil(filtered.length / state.pageSize));
-      state.page = Math.min(Math.max(1, state.page), state.totalPages);
-      const start = (state.page - 1) * state.pageSize;
-      state.items = filtered.slice(start, start + state.pageSize);
-      renderKPIs();
-      renderTable();
-      state.chartRows = filtered;
-      renderAgentChart();
     }
+
+    const uid = String(state.session?.user?.id || "").trim();
+
+    // 관리자만 안전한 서버 페이지네이션을 사용하고,
+    // 담당자는 기존 /properties?scope=mine 경로를 유지해 배정 누락을 방지한다.
+    if (sb && isAdmin) {
+      try {
+        const scope = { isAdmin: true, uid };
+        const filters = { source: state.source, status: state.status, keyword: state.keyword };
+        const [summary, pageData] = await Promise.all([
+          fetchSummaryCounts(sb, scope),
+          fetchPropertyPage(sb, scope, filters, state.page, state.pageSize),
+        ]);
+        state.summaryCounts = summary;
+        state.totalRows = pageData.totalRows;
+        state.totalPages = pageData.totalPages;
+        state.page = pageData.page;
+        state.items = pageData.items.map(normalizeItem);
+        renderKPIs();
+        renderTable();
+        if (state.view === "map") {
+          await ensureKakaoMap();
+          await renderKakaoMarkers();
+        }
+        scheduleAgentChartLoad(sb, scope, filters);
+        closeFilter();
+        return;
+      } catch (directErr) {
+        console.warn("direct admin paging fallback", directErr);
+      }
+    }
+
+    const scopeName = isAdmin ? "all" : "mine";
+    const res = await api(`/properties?scope=${encodeURIComponent(scopeName)}`, { auth: true });
+    const all = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
+    state.summaryCounts = {
+      total: all.length,
+      auction: all.filter((p) => p.source === "auction").length,
+      onbid: all.filter((p) => p.source === "onbid").length,
+      realtor: all.filter((p) => p.source === "realtor").length,
+      general: all.filter((p) => p.source === "general").length,
+    };
+    const filtered = all.filter((row) => {
+      if (state.source !== "all" && row.source !== state.source) return false;
+      if (state.status && String(row.status || "") !== state.status) return false;
+      if (state.keyword) {
+        const q = state.keyword.toLowerCase();
+        const hay = [row.address, row.type, row.status, row.itemNo].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    state.totalRows = filtered.length;
+    state.totalPages = Math.max(1, Math.ceil(filtered.length / state.pageSize));
+    state.page = Math.min(Math.max(1, state.page), state.totalPages);
+    const start = (state.page - 1) * state.pageSize;
+    state.items = filtered.slice(start, start + state.pageSize);
+    renderKPIs();
+    renderTable();
+    state.chartRows = filtered;
+    renderAgentChart();
     closeFilter();
   } catch (err) {
     console.error(err);
