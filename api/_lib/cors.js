@@ -1,9 +1,24 @@
 const DEFAULT_ALLOWLIST = [
   'https://knson-pj.github.io',
+  'https://knson.vercel.app',
   'http://localhost:3000',
   'http://127.0.0.1:5500',
   'http://localhost:5500',
 ];
+
+function isAllowedOrigin(origin, allowlist) {
+  if (!origin) return false;
+  if (allowlist.includes('*') || allowlist.includes(origin)) return true;
+  try {
+    const { hostname, protocol } = new URL(origin);
+    const isLocal = protocol === 'http:' && (hostname === 'localhost' || hostname === '127.0.0.1');
+    const isGithubPages = protocol === 'https:' && hostname.endsWith('.github.io');
+    const isVercelPreview = protocol === 'https:' && hostname.endsWith('.vercel.app');
+    return isLocal || isGithubPages || isVercelPreview;
+  } catch {
+    return false;
+  }
+}
 
 function applyCors(req, res) {
   const origin = req.headers.origin;
@@ -11,7 +26,7 @@ function applyCors(req, res) {
     ? process.env.CORS_ALLOWLIST.split(',').map(v => v.trim()).filter(Boolean)
     : DEFAULT_ALLOWLIST;
 
-  if (origin && (allowlist.includes(origin) || allowlist.includes('*'))) {
+  if (origin && isAllowedOrigin(origin, allowlist)) {
     res.setHeader('Access-Control-Allow-Origin', allowlist.includes('*') ? '*' : origin);
   }
 
