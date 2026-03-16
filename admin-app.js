@@ -453,7 +453,10 @@ function bindEvents() {
 
     const titleEl = document.querySelector('.brand h1');
     const descEl = document.querySelector('.brand p');
-    if (user.role === "admin") {
+    const isAdminRole = String(user.role || '').trim().toLowerCase() === "admin" || String(user.role || '').trim() === "관리자";
+    document.body.classList.toggle('role-admin', !!isAdminRole);
+    document.body.classList.toggle('role-staff', !isAdminRole);
+    if (isAdminRole) {
       els.adminUserBadge.textContent = `관리자: ${user.name}`;
       els.adminUserBadge.className = "badge badge-admin";
       if (titleEl) titleEl.textContent = '관리자 페이지';
@@ -466,7 +469,7 @@ function bindEvents() {
     }
 
     // 탭 권한/레이아웃: 담당자는 물건 목록만 바로 노출
-    const isAdmin = user.role === "admin";
+    const isAdmin = isAdminRole;
     document.querySelectorAll("[data-tab]").forEach((btn) => {
       const key = btn.getAttribute("data-tab");
       if (!key) return;
@@ -965,7 +968,7 @@ function bindEvents() {
       tr.innerHTML = `
         <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
         <td>${escapeHtml(p.itemNo || "-")}</td>
-        <td>${escapeHtml(kindLabel)}</td>
+        <td><span class="kind-text ${escapeAttr(p.sourceType === "auction" ? "kind-auction" : p.sourceType === "onbid" ? "kind-gongmae" : p.sourceType === "realtor" ? "kind-realtor" : "kind-general")}">${escapeHtml(kindLabel)}</span></td>
         <td class="text-cell"><button type="button" class="address-trigger">${escapeHtml(p.address || "-")}</button></td>
         <td>${escapeHtml(p.assetType || "-")}</td>
         <td>${escapeHtml(String(p.floor || "-"))}</td>

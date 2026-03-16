@@ -160,6 +160,14 @@ body{
   color:#fff;
   opacity:.95;
 }
+.msg.is-warning{
+  color:#ff7a1a;
+  font-weight:900;
+  text-shadow:0 1px 0 rgba(255,255,255,.35);
+}
+.msg.is-error{
+  color:#fff;
+}
 
 .sr-only{
   position:absolute;

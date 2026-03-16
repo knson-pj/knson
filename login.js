@@ -35,21 +35,21 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
           history.replaceState({}, "", urlObj.pathname + (urlObj.searchParams.toString() ? ("?" + urlObj.searchParams.toString()) : ""));
         }
       } catch {}
-      setMsg("로그아웃되었습니다. 다시 로그인해 주세요.");
+      setMsg("로그아웃 되었습니다", "warning");
       return;
     }
     if (sbEnabled) {
       try {
         const synced = await K.sbSyncLocalSession();
         if (synced?.token && synced?.user) {
-          location.replace(nextUrl);
+          location.replace(resolvePostLoginUrl(synced));
           return;
         }
       } catch {}
     } else {
       const existing = loadSession();
       if (existing?.token && existing?.user) {
-        location.replace(nextUrl);
+        location.replace(resolvePostLoginUrl(existing));
         return;
       }
     }
@@ -67,17 +67,17 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
     const password = String(fd.get("password") || "");
 
     if (!name || !password) {
-      setMsg("아이디/비밀번호를 입력해 주세요.");
+      setMsg("아이디/비밀번호를 입력해 주세요.", "error");
       return;
     }
 
     try {
       setBusy(true);
-      setMsg("");
+      setMsg("", "error");
 
       if (sbEnabled) {
-        await K.sbSignIn({ name, password });
-        location.replace(nextUrl);
+        const session = await K.sbSignIn({ name, password });
+        location.replace(resolvePostLoginUrl(session));
         return;
       }
 
@@ -88,10 +88,11 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
 
       if (!res?.token || !res?.user) throw new Error("로그인에 실패했습니다.");
 
-      saveSession({ token: res.token, user: res.user, at: Date.now(), backend: "vercel" });
-      location.replace(nextUrl);
+      const session = { token: res.token, user: res.user, at: Date.now(), backend: "vercel" };
+      saveSession(session);
+      location.replace(resolvePostLoginUrl(session));
     } catch (err) {
-      setMsg(err?.message || "로그인에 실패했습니다.");
+      setMsg(err?.message || "로그인에 실패했습니다.", "error");
     } finally {
       setBusy(false);
     }
@@ -103,9 +104,11 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
     btnLogin.textContent = b ? "SIGNING..." : "SIGN IN";
   }
 
-  function setMsg(msg) {
+  function setMsg(msg, type = "error") {
     msgEl.textContent = msg || "";
     msgEl.classList.toggle("show", !!msg);
+    msgEl.classList.toggle("is-warning", !!msg && type === "warning");
+    msgEl.classList.toggle("is-error", !!msg && type !== "warning");
   }
 
   function saveSession(session) {
@@ -134,6 +137,14 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
     try { data = text ? JSON.parse(text) : null; } catch {}
     if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
     return data;
+  }
+
+  function resolvePostLoginUrl(session) {
+    const role = String(session?.user?.role || "").trim().toLowerCase();
+    if (role === "staff" || role === "담당자" || role === "agent") {
+      return "./admin-index.html";
+    }
+    return nextUrl;
   }
 
   function getNextUrl() {

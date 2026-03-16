@@ -27,7 +27,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./admin-styles.css?v=20260313-adminrefine1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260316-ui2" />
 </head>
 <body>
   <div class="admin-shell">
@@ -52,19 +52,19 @@
 
     <main class="admin-main">
       <!-- 대시보드 요약 -->
-      <section class="panel summary-panel">
+      <section id="summaryPanel" class="panel summary-panel">
         <div class="summary-grid">
-          <div class="summary-card"><span>전체 물건</span><strong id="sumTotal">0</strong></div>
-          <div class="summary-card"><span>경매</span><strong id="sumAuction">0</strong></div>
-          <div class="summary-card"><span>공매</span><strong id="sumGongmae">0</strong></div>
-          <div class="summary-card"><span>중개</span><strong id="sumRealtor">0</strong></div>
-          <div class="summary-card"><span>일반</span><strong id="sumGeneral">0</strong></div>
-          <div class="summary-card"><span>담당자 수</span><strong id="sumAgents">0</strong></div>
+          <div class="summary-card summary-total"><span>전체 물건</span><strong id="sumTotal">0</strong></div>
+          <div class="summary-card summary-auction"><span>경매</span><strong id="sumAuction">0</strong></div>
+          <div class="summary-card summary-gongmae"><span>공매</span><strong id="sumGongmae">0</strong></div>
+          <div class="summary-card summary-realtor"><span>중개</span><strong id="sumRealtor">0</strong></div>
+          <div class="summary-card summary-general"><span>일반</span><strong id="sumGeneral">0</strong></div>
+          <div id="sumAgentsCard" class="summary-card summary-agents"><span>담당자 수</span><strong id="sumAgents">0</strong></div>
         </div>
       </section>
 
       <!-- 탭 -->
-      <section class="panel">
+      <section id="tabsPanel" class="panel">
         <div class="tabs" id="adminTabs">
           <button class="tab is-active" data-tab="properties">물건 관리</button>
           <button class="tab" data-tab="csv">CSV 업로드</button>
@@ -160,38 +160,11 @@
             </label>
           </div>
 
-          <div class="hint-box">
-            <div class="hint-title">CSV 샘플 컬럼 (권장)</div>
-            <code>address,sale_price,appraisal_price,status,region_gu,region_dong,case_no,memo</code>
-            <div class="muted small">
-              한글 헤더(주소, 매각가, 감정가, 상태, 구, 동, 사건번호, 비고)도 허용하도록 매핑 처리됨.
-            </div>
-          </div>
-
           <div class="btn-row">
-            <button id="btnCsvPreview" class="btn btn-secondary">미리보기</button>
             <button id="btnCsvUpload" class="btn btn-primary">서버 업로드</button>
           </div>
 
           <div id="csvResultBox" class="result-box hidden"></div>
-
-          <div class="table-wrap slim">
-            <table class="table" id="csvPreviewTable">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>물건번호</th>
-                  <th>주소</th>
-                  <th>기준금액</th>
-                  <th>상태</th>
-                  <th>위도</th>
-                  <th>경도</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-            <div id="csvPreviewEmpty" class="empty">미리보기 데이터가 없습니다.</div>
-          </div>
         </div>
       </section>
 
@@ -483,7 +456,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./knson-core.js?v=20260312-fix13"></script>
-  <script src="./admin-app.js?v=20260313-adminrefine1"></script>
+  <script src="./knson-core.js?v=20260316-ui2"></script>
+  <script src="./admin-app.js?v=20260316-ui2"></script>
 </body>
 </html>

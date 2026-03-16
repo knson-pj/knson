@@ -604,7 +604,7 @@
 
   function renderAgentChart() {
     if (!els.agentChart || !els.agentChartEmpty) return;
-    const rows = getFilteredRows();
+    const rows = Array.isArray(state.items) ? state.items.slice() : [];
     const entries = buildAgentChartEntries(rows);
     els.agentChart.innerHTML = '';
     if (els.agentChartMeta) els.agentChartMeta.textContent = `${entries.length}명`;
