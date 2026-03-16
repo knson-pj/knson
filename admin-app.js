@@ -42,7 +42,6 @@
       status: "",
       keyword: "",
     },
-    csvPreviewRows: [],
     officeCsvPreviewRows: [],
     lastGroupSuggestion: null,
     selectedPropertyIds: new Set(),
@@ -109,6 +108,9 @@
       sumRealtor: $("#sumRealtor"),
       sumGeneral: $("#sumGeneral"),
       sumAgents: $("#sumAgents"),
+      sumAgentsCard: $("#sumAgentsCard"),
+      summaryPanel: $("#summaryPanel"),
+      tabsPanel: $("#tabsPanel"),
       sumOffices: $("#sumOffices"),
 
       // panels
@@ -132,10 +134,7 @@
       // CSV import
       csvImportSource: $("#csvImportSource"),
       csvFileInput: $("#csvFileInput"),
-      btnCsvPreview: $("#btnCsvPreview"),
       btnCsvUpload: $("#btnCsvUpload"),
-      csvPreviewTableBody: $("#csvPreviewTable tbody"),
-      csvPreviewEmpty: $("#csvPreviewEmpty"),
       csvResultBox: $("#csvResultBox"),
 
       // staff
@@ -181,15 +180,6 @@
   function setupChrome() {
     if (K && typeof K.initTheme === "function") {
       K.initTheme({ container: document.querySelector(".top-actions"), className: "theme-toggle" });
-    }
-
-    const actions = document.querySelector(".top-actions");
-    if (actions && !actions.querySelector(".top-link")) {
-      const mainLink = document.createElement("a");
-      mainLink.className = "btn btn-secondary top-link";
-      mainLink.href = "./index.html";
-      mainLink.textContent = "메인으로";
-      actions.prepend(mainLink);
     }
   }
 
@@ -348,10 +338,6 @@ function bindEvents() {
     }, 150));
 
     // CSV import (관리자만)
-    if (els.btnCsvPreview) els.btnCsvPreview.addEventListener("click", () => {
-      if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
-      handleCsvPreview();
-    });
     if (els.btnCsvUpload) els.btnCsvUpload.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
       handleCsvUpload().catch((e)=>handleAsyncError(e,"업로드 실패"));
@@ -479,13 +465,16 @@ function bindEvents() {
       if (descEl) descEl.textContent = '배정된 물건을 관리하는 페이지 입니다';
     }
 
-    // 탭 권한: 담당자는 properties만
+    // 탭 권한/레이아웃: 담당자는 물건 목록만 바로 노출
     const isAdmin = user.role === "admin";
     document.querySelectorAll("[data-tab]").forEach((btn) => {
       const key = btn.getAttribute("data-tab");
       if (!key) return;
       btn.classList.toggle("hidden", !isAdmin && key !== "properties");
     });
+    if (els.tabsPanel) els.tabsPanel.classList.toggle("hidden", !isAdmin);
+    if (els.summaryPanel) els.summaryPanel.classList.toggle("hidden", !isAdmin);
+    if (els.sumAgentsCard) els.sumAgentsCard.classList.toggle("hidden", !isAdmin);
   }
 
   function openLoginModal(){ goLoginPage(); }
@@ -640,7 +629,6 @@ function bindEvents() {
       return;
     }
 
-    const user = state.session?.user || null;
     const isAdmin = user?.role === "admin";
     const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });
@@ -978,7 +966,7 @@ function bindEvents() {
         <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
         <td>${escapeHtml(p.itemNo || "-")}</td>
         <td>${escapeHtml(kindLabel)}</td>
-        <td class="text-cell">${escapeHtml(p.address || "-")}</td>
+        <td class="text-cell"><button type="button" class="address-trigger">${escapeHtml(p.address || "-")}</button></td>
         <td>${escapeHtml(p.assetType || "-")}</td>
         <td>${escapeHtml(String(p.floor || "-"))}</td>
         <td>${escapeHtml(String(p.totalfloor || "-"))}</td>
@@ -1007,10 +995,14 @@ function bindEvents() {
         });
       }
 
-      tr.addEventListener("click", (e) => {
-        if (e.target && e.target.closest('.check-wrap')) return;
-        void openPropertyEditModal(p);
-      });
+      const addressTrigger = tr.querySelector('.address-trigger');
+      if (addressTrigger) {
+        addressTrigger.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void openPropertyEditModal(p);
+        });
+      }
       frag.appendChild(tr);
     }
     els.propertiesTableBody.appendChild(frag);
@@ -1617,48 +1609,6 @@ function bindEvents() {
   // ---------------------------
   // CSV Import (Properties)
   // ---------------------------
-  async function handleCsvPreview() {
-    try {
-      const file = els.csvFileInput.files?.[0];
-      if (!file) return alert("CSV 파일을 선택해 주세요.");
-      const sourceType = String(els.csvImportSource.value || "auction"); // auction|onbid|realtor
-
-      const text = await readCsvFileText(file, sourceType);
-      const rows = parseCsv(text);
-      state.csvPreviewRows = rows.map((r) => mapPropertyCsvRow(r, sourceType)).filter(Boolean);
-
-      renderCsvPreviewTable();
-      showResultBox(els.csvResultBox, `미리보기 완료: ${state.csvPreviewRows.length}행`);
-    } catch (err) {
-      console.error(err);
-      showResultBox(els.csvResultBox, `미리보기 실패: ${err.message}`, true);
-    }
-  }
-
-  function renderCsvPreviewTable() {
-    els.csvPreviewTableBody.innerHTML = "";
-    if (!state.csvPreviewRows.length) {
-      els.csvPreviewEmpty.classList.remove("hidden");
-      return;
-    }
-    els.csvPreviewEmpty.classList.add("hidden");
-
-    const frag = document.createDocumentFragment();
-    state.csvPreviewRows.slice(0, 200).forEach((r, idx) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td>${escapeHtml(r.itemNo || "-")}</td>
-        <td>${escapeHtml(r.address || "-")}</td>
-        <td>${r.priceMain ? formatMoneyKRW(r.priceMain) : "-"}</td>
-        <td>${escapeHtml(r.status || "-")}</td>
-        <td>${r.latitude != null ? escapeHtml(String(r.latitude)) : "-"}</td>
-        <td>${r.longitude != null ? escapeHtml(String(r.longitude)) : "-"}</td>
-      `;
-      frag.appendChild(tr);
-    });
-    els.csvPreviewTableBody.appendChild(frag);
-  }
   async function handleCsvUpload() {
     try {
       const file = els.csvFileInput.files?.[0];
@@ -2638,8 +2588,10 @@ function bindEvents() {
   }
 
   function showResultBox(el, text, isError = false) {
+    if (!el) return;
     el.classList.remove("hidden");
-    el.style.borderColor = isError ? "rgba(255,109,109,.28)" : "#2b3a4c";
+    el.classList.toggle("is-error", !!isError);
+    el.classList.toggle("is-success", !isError);
     el.textContent = text;
   }
 
