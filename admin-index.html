@@ -191,19 +191,16 @@
                 <option value="other">기타</option>
               </select>
             </label>
-            <label class="field">
+            <label class="field field-password-inline full">
               <span>초기 비밀번호 *</span>
-              <input name="password" class="input" type="password" placeholder="신규 생성 시만 입력" autocomplete="new-password" />
+              <div class="input-action-inline">
+                <input name="password" class="input" type="password" placeholder="신규 생성 시만 입력" autocomplete="new-password" />
+                <div class="btn-row inline-btn-row">
+                  <button type="submit" id="btnStaffSave" class="btn btn-primary">계정 생성</button>
+                  <button type="button" id="btnStaffReset" class="btn btn-ghost">초기화</button>
+                </div>
+              </div>
             </label>
-
-            <div id="staffFormHint" class="form-note muted small">
-              신규 생성 시에는 <strong>Supabase Auth 계정 + profiles</strong>가 함께 생성됩니다. 기존 계정은 여기서 <strong>이름 / 권한</strong>만 수정하고, 비밀번호는 본인 메뉴에서 직접 변경합니다.
-            </div>
-
-            <div class="btn-row">
-              <button type="submit" id="btnStaffSave" class="btn btn-primary">계정 생성</button>
-              <button type="button" id="btnStaffReset" class="btn btn-ghost">초기화</button>
-            </div>
           </form>
         </div>
 

@@ -698,6 +698,11 @@ function bindEvents() {
         ? null
         : toNullableNumber(item.lowprice ?? item.low_price ?? raw.lowprice ?? raw.low_price ?? raw["최저가"] ?? raw["최저입찰가(원)"] ?? raw["매각가"] ?? item.currentPrice ?? item.current_price);
 
+    const memoText = firstText(item.memo, raw.memo, "");
+    const opinionText = sourceType === "onbid"
+      ? sanitizeOnbidOpinion(firstText(item.opinion, raw.opinion, ""), memoText, address)
+      : firstText(item.opinion, raw.opinion, memoText, "");
+
     return {
       id: String(item.id || item._id || item.globalId || item.global_id || ""),
       globalId: String(item.globalId || item.global_id || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")),
@@ -719,7 +724,7 @@ function bindEvents() {
       duplicateFlag: !!item.duplicateFlag,
       regionGu: firstText(item.regionGu, item.region_gu, raw.regionGu, raw.region_gu, ""),
       regionDong: firstText(item.regionDong, item.region_dong, raw.regionDong, raw.region_dong, ""),
-      memo: firstText(item.memo, raw.memo, ""),
+      memo: memoText,
       exclusivearea: toNullableNumber(item.exclusivearea ?? item.exclusive_area ?? item.exclusiveArea ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"]),
       commonarea: toNullableNumber(item.commonarea ?? item.common_area ?? item.commonArea ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"]),
       sitearea: toNullableNumber(item.sitearea ?? item.site_area ?? item.siteArea ?? raw.sitearea ?? raw.siteArea ?? raw["토지면적(평)"]),
@@ -732,9 +737,24 @@ function bindEvents() {
       realtorcell: firstText(item.realtorcell, item.realtor_cell, raw.realtorcell, raw.realtorCell, item.submitterPhone, item.submitter_phone, ""),
       rightsAnalysis: firstText(item.rightsAnalysis, item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, ""),
       siteInspection: firstText(item.siteInspection, item.site_inspection, raw.siteInspection, raw.site_inspection, ""),
-      opinion: firstText(item.opinion, raw.opinion, item.memo, raw.memo, ""),
+      opinion: opinionText,
       _raw: item,
     };
+  }
+
+
+  function sanitizeOnbidOpinion(opinion, memo, address) {
+    const explicit = String(opinion || "").trim();
+    if (explicit) return explicit;
+    const memoText = String(memo || "").trim();
+    if (!memoText) return "";
+    const addressText = String(address || "").trim();
+    if (!addressText) return memoText;
+    const compactMemo = memoText.replace(/\s+/g, "");
+    const compactAddress = addressText.replace(/\s+/g, "");
+    if (compactMemo === compactAddress) return "";
+    if (compactMemo.includes(compactAddress) || compactAddress.includes(compactMemo)) return "";
+    return memoText;
   }
 
   function normalizeStaff(item) {
@@ -1388,11 +1408,6 @@ function bindEvents() {
       }
     }
     if (els.btnStaffSave) els.btnStaffSave.textContent = editing ? "프로필 저장" : "계정 생성";
-    if (els.staffFormHint) {
-      els.staffFormHint.innerHTML = editing
-        ? '선택한 계정의 <strong>이름 / 권한</strong>만 수정합니다. 비밀번호는 상단의 <strong>내 비밀번호 변경</strong>으로 처리합니다.'
-        : '신규 생성 시에는 <strong>Supabase Auth 계정 + profiles</strong>가 함께 생성됩니다. 기존 계정은 여기서 <strong>이름 / 권한</strong>만 수정하고, 비밀번호는 본인 메뉴에서 직접 변경합니다.';
-    }
   }
 
   function fillStaffForm(staff) {
@@ -1770,13 +1785,13 @@ function bindEvents() {
       siteArea = area.site;
     } else if (sourceType === "onbid") {
       itemNo = pick("물건관리번호", "itemNo", "물건번호");
-      address = pick("물건명", "소재지", "주소", "address");
+      address = pick("소재지", "주소", "address", "물건명");
       status = pick("물건상태", "상태", "status");
       priceMain = toNum(pick("감정가(원)", "감정가", "priceMain"));
       lowprice = toNum(pick("최저입찰가(원)", "lowprice")) || null;
       assetType = pick("용도", "부동산유형", "assetType");
       dateMain = pick("입찰마감일시", "입찰마감", "dateMain") || null;
-      memo = pick("물건명", "memo");
+      memo = pick("비고", "특이사항", "메모", "memo");
       const bM2 = pick("건물 면적(㎡)", "건물 면적(m²)", "건물 면적(m2)", "건물면적(㎡)");
       const tM2 = pick("토지 면적(㎡)", "토지 면적(m²)", "토지 면적(m2)", "토지면적(㎡)");
       if (bM2) exclusiveArea = m2ToPyeong(bM2);

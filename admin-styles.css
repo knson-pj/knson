@@ -338,6 +338,11 @@ body.role-staff .admin-main{gap:14px;}
 .grid2{grid-template-columns:repeat(2,minmax(0,1fr));}
 .grid3{grid-template-columns:repeat(3,minmax(0,1fr));}
 .btn-row,.action-row{display:flex;gap:8px;flex-wrap:wrap;}
+.field-password-inline{grid-column:1/-1;}
+.input-action-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;}
+.inline-btn-row{justify-content:flex-end;flex-wrap:nowrap;}
+.inline-btn-row .btn{white-space:nowrap;}
+
 
 .result-box.is-success{
   border-color:rgba(72, 187, 120, .55);
@@ -511,6 +516,8 @@ body.role-staff .admin-main{gap:14px;}
   .admin-topbar{flex-direction:column;align-items:flex-start;}
   .top-actions{width:100%;}
   .toolbar,.field-row,.grid2,.grid3,.staff-form{grid-template-columns:1fr;}
+  .input-action-inline{grid-template-columns:1fr;}
+  .inline-btn-row{justify-content:stretch;flex-wrap:wrap;}
 }
 @media (max-width: 680px){
   .csv-upload-toolbar{grid-template-columns:1fr;}

@@ -381,6 +381,10 @@
 
     const rightsAnalysisRaw = firstText(p.rightsAnalysis, p.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "");
     const siteInspectionRaw = firstText(p.siteInspection, p.site_inspection, raw.siteInspection, raw.site_inspection, "");
+    const memoText = firstText(p.memo, raw.memo, "");
+    const opinionText = source === "onbid"
+      ? sanitizeOnbidOpinion(firstText(p.opinion, raw.opinion, ""), memoText, address)
+      : firstText(p.opinion, raw.opinion, memoText, p.comment, "");
 
     return {
       id: p.id || p.global_id || "",
@@ -402,7 +406,7 @@
       assignedAgentName: firstText(p.assignedAgentName, p.assigneeName, p.assignee_name, p.agentName, p.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "-"),
       rightsAnalysis: rightsAnalysisRaw || ((p.analysisDone ?? p.analysis_done) ? "완료" : ""),
       siteInspection: siteInspectionRaw || ((p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done) ? "완료" : ""),
-      opinion: firstText(p.opinion, raw.opinion, p.memo, raw.memo, p.comment, ""),
+      opinion: opinionText,
       statusLabel: statusLabel(firstText(p.status, raw.status, "")),
       regionGu: firstText(p.regionGu, p.region_gu, raw.regionGu, raw.region_gu, ""),
       regionDong: firstText(p.regionDong, p.region_dong, raw.regionDong, raw.region_dong, ""),

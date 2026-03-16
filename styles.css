@@ -228,10 +228,10 @@ body{
 .kpi-gongmae{background:linear-gradient(180deg, var(--kpi-gongmae), var(--surface));}
 .kpi-realtor{background:linear-gradient(180deg, var(--kpi-realtor), var(--surface));}
 .kpi-general{background:linear-gradient(180deg, var(--kpi-general), var(--surface));}
-.kpi-big{font-size:48px;font-weight:900;line-height:1;letter-spacing:-.04em;margin-bottom:4px;}
+.kpi-big{font-size:48px;font-weight:900;line-height:1;letter-spacing:-.04em;margin-bottom:4px;color:var(--text);}
 .kpi-sub{font-size:14px;font-weight:800;color:var(--muted);}
 .kpi-label{font-size:13px;font-weight:800;color:var(--muted);margin-bottom:8px;}
-.kpi-num{font-size:28px;font-weight:900;line-height:1;letter-spacing:-.03em;}
+.kpi-num{font-size:28px;font-weight:900;line-height:1;letter-spacing:-.03em;color:var(--text);}
 .kpi-card.is-selected{
   border-color:color-mix(in srgb, var(--accent) 36%, var(--line));
   box-shadow:0 0 0 4px var(--accent-soft), var(--shadow-md);

@@ -112,6 +112,8 @@ body{
 }
 .full{grid-column:1/-1;}
 .row{display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap;}
+.form-actions-row{justify-content:space-between;}
+.btn-back-inline{min-width:92px;}
 .msg{grid-column:1/-1;min-height:18px;color:var(--muted);font-size:13px;}
 .done{
   display:grid;place-items:center;text-align:center;gap:8px;min-height:320px;
@@ -126,6 +128,8 @@ body{
   .form{grid-template-columns:1fr;}
   .row{justify-content:stretch;}
   .row .btn{flex:1;}
+  .form-actions-row{justify-content:stretch;}
+  .form-actions-row .btn-back-inline{max-width:120px;}
 }
 
 
