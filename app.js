@@ -2,7 +2,7 @@
   "use strict";
 
   // ---- Config ----
-  const API_BASE = "https://knson.vercel.app/api";
+  const API_BASE = (window.KNSN && typeof window.KNSN.getApiBase === "function") ? window.KNSN.getApiBase() : "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
   const GEO_CACHE_KEY = "knson_geo_cache_v1";
 

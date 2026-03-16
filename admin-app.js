@@ -27,7 +27,7 @@
     return 'staff';
   }
 
-  const API_BASE = "https://knson.vercel.app/api";
+  const API_BASE = (window.KNSN && typeof window.KNSN.getApiBase === "function") ? window.KNSN.getApiBase() : "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
 
   const state = {
@@ -640,6 +640,7 @@ function bindEvents() {
       return;
     }
 
+    const user = state.session?.user || null;
     const isAdmin = user?.role === "admin";
     const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });

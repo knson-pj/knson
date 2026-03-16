@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const API_BASE = "https://knson.vercel.app/api";
+  const API_BASE = (window.KNSN && typeof window.KNSN.getApiBase === "function") ? window.KNSN.getApiBase() : "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
 
   const form = document.getElementById("loginForm");

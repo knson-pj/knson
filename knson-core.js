@@ -2,6 +2,7 @@
   "use strict";
 
   const API_BASE_FALLBACK = "https://knson.vercel.app/api";
+  const API_BASE_KEY = "knson_api_base_v1";
   const SESSION_KEY = "knson_bms_session_v1";
   const KEEP_SESSION_KEY = "knson_nav_keep_session";
   const THEME_KEY = "knson_theme_v1";
@@ -92,6 +93,64 @@
   function getMeta(name) {
     const el = document.querySelector(`meta[name="${name}"]`);
     return el ? String(el.getAttribute("content") || "").trim() : "";
+  }
+
+  function normalizeApiBase(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    return raw.replace(/\/+$/, "");
+  }
+
+  function getStoredApiBase() {
+    try {
+      return normalizeApiBase(localStorage.getItem(API_BASE_KEY) || "");
+    } catch {
+      return "";
+    }
+  }
+
+  function storeApiBase(value) {
+    const next = normalizeApiBase(value);
+    if (!next) return;
+    try { localStorage.setItem(API_BASE_KEY, next); } catch {}
+  }
+
+  function resolveApiBase() {
+    const metaApiBase = normalizeApiBase(getMeta("api-base"));
+    if (metaApiBase) {
+      storeApiBase(metaApiBase);
+      return metaApiBase;
+    }
+
+    const storedApiBase = getStoredApiBase();
+
+    try {
+      const loc = window.location;
+      const origin = normalizeApiBase(loc.origin || "");
+      const host = String(loc.hostname || "").toLowerCase();
+      const isLocal = host === "localhost" || host === "127.0.0.1";
+      const isGithubPages = host.endsWith("github.io");
+      const isFile = String(loc.protocol || "") === "file:";
+      const isVercel = host.endsWith(".vercel.app");
+
+      if (isLocal || isGithubPages || isFile) {
+        return storedApiBase || API_BASE_FALLBACK;
+      }
+
+      if (origin) {
+        const sameOriginApi = `${origin}/api`;
+        storeApiBase(sameOriginApi);
+        return sameOriginApi;
+      }
+
+      if (isVercel) return storedApiBase || API_BASE_FALLBACK;
+    } catch {}
+
+    return storedApiBase || API_BASE_FALLBACK;
+  }
+
+  function getApiBase() {
+    return resolveApiBase();
   }
 
   function getStoredSupabaseConfig() {
@@ -260,7 +319,7 @@
     }
 
     try {
-      const res = await fetch(`${API_BASE_FALLBACK}/auth/me`, {
+      const res = await fetch(`${getApiBase()}/auth/me`, {
         method: "GET",
         headers: {
           Accept: "application/json",
@@ -467,6 +526,7 @@
 
   window.KNSN = {
     API_BASE_FALLBACK,
+    API_BASE_KEY,
     SESSION_KEY,
     KEEP_SESSION_KEY,
     THEME_KEY,
@@ -481,6 +541,7 @@
     toISODate,
     chunk,
 
+    getApiBase,
     getStoredTheme,
     applyTheme,
     toggleTheme,
