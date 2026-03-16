@@ -340,8 +340,12 @@ body.role-staff .admin-main{gap:14px;}
 .btn-row,.action-row{display:flex;gap:8px;flex-wrap:wrap;}
 .field-password-inline{grid-column:1/-1;}
 .input-action-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;}
-.inline-btn-row{justify-content:flex-end;flex-wrap:nowrap;}
+.inline-btn-row{justify-content:flex-start;flex-wrap:nowrap;}
 .inline-btn-row .btn{white-space:nowrap;}
+.staff-password-field{min-width:0;}
+.staff-actions-field{display:grid;align-content:end;}
+.staff-actions-field > .field-spacer{display:block;visibility:hidden;line-height:1;font-size:13px;}
+.staff-action-row{align-items:center;gap:10px;}
 
 
 .result-box.is-success{
@@ -403,7 +407,7 @@ body.role-staff .admin-main{gap:14px;}
 .cell-badge.danger{color:var(--danger);}
 .staff-form{
   display:grid;
-  grid-template-columns:1.1fr 1fr 180px 1fr auto;
+  grid-template-columns:minmax(220px,1.15fr) minmax(180px,.8fr) 160px minmax(220px,1fr) auto;
   gap:10px;
   align-items:end;
 }
@@ -518,6 +522,8 @@ body.role-staff .admin-main{gap:14px;}
   .toolbar,.field-row,.grid2,.grid3,.staff-form{grid-template-columns:1fr;}
   .input-action-inline{grid-template-columns:1fr;}
   .inline-btn-row{justify-content:stretch;flex-wrap:wrap;}
+  .staff-actions-field > .field-spacer{display:none;}
+  .staff-action-row .btn{flex:1 1 auto;}
 }
 @media (max-width: 680px){
   .csv-upload-toolbar{grid-template-columns:1fr;}

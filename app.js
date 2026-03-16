@@ -416,6 +416,20 @@
     };
   }
 
+  function sanitizeOnbidOpinion(opinion, memo, address) {
+    const explicit = String(opinion || "").trim();
+    if (explicit) return explicit;
+    const memoText = String(memo || "").trim();
+    if (!memoText) return "";
+    const addressText = String(address || "").trim();
+    if (!addressText) return memoText;
+    const compactMemo = memoText.replace(/\s+/g, "");
+    const compactAddress = addressText.replace(/\s+/g, "");
+    if (compactMemo === compactAddress) return "";
+    if (compactMemo.includes(compactAddress) || compactAddress.includes(compactMemo)) return "";
+    return memoText;
+  }
+
   // ---- Render ----
   function getFilteredRows() {
     let list = state.items.slice();
