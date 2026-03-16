@@ -465,12 +465,18 @@ function bindEvents() {
       return;
     }
 
+    const titleEl = document.querySelector('.brand h1');
+    const descEl = document.querySelector('.brand p');
     if (user.role === "admin") {
       els.adminUserBadge.textContent = `관리자: ${user.name}`;
       els.adminUserBadge.className = "badge badge-admin";
+      if (titleEl) titleEl.textContent = '관리자 페이지';
+      if (descEl) descEl.textContent = '물건 · 담당자 · 지역배정 관리';
     } else {
       els.adminUserBadge.textContent = `담당자: ${user.name}`;
       els.adminUserBadge.className = "badge badge-agent";
+      if (titleEl) titleEl.textContent = '담당자 페이지';
+      if (descEl) descEl.textContent = '배정된 물건을 관리하는 페이지 입니다';
     }
 
     // 탭 권한: 담당자는 properties만
@@ -560,16 +566,43 @@ function bindEvents() {
     }
   }
 
+  function rowAssignedToUid(row, uid) {
+    const target = String(uid || '').trim();
+    if (!target) return false;
+    const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+    return [row?.assignee_id, row?.assigneeId, row?.assignedAgentId, raw.assignee_id, raw.assigneeId, raw.assignedAgentId]
+      .some((v) => String(v || '').trim() === target);
+  }
+
+  async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
+    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+    if (isAdmin) {
+      const { data, error } = await queryBase();
+      if (error) throw error;
+      return Array.isArray(data) ? data : [];
+    }
+    const filters = [
+      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
+      `assignee_id.eq.${uid}`,
+    ];
+    let lastError = null;
+    for (const filter of filters) {
+      const { data, error } = await queryBase().or(filter);
+      if (!error) {
+        const rows = Array.isArray(data) ? data : [];
+        return rows.filter((row) => rowAssignedToUid(row, uid));
+      }
+      lastError = error;
+    }
+    throw lastError;
+  }
+
   async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
     const pageSize = 1000;
     const out = [];
     let from = 0;
     while (true) {
-      let q = sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
-      if (!isAdmin) q = q.eq("assignee_id", uid);
-      const { data, error } = await q;
-      if (error) throw error;
-      const rows = Array.isArray(data) ? data : [];
+      const rows = await fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid });
       out.push(...rows);
       if (rows.length < pageSize) break;
       from += pageSize;
@@ -1053,7 +1086,7 @@ function bindEvents() {
     setVal("totalfloor", item.totalfloor ?? "");
     setVal("commonarea", formatModalAreaValue(item.sourceType, item.commonarea ?? ""));
     setVal("exclusivearea", formatModalAreaValue(item.sourceType, item.exclusivearea ?? ""));
-    setVal("sitearea", item.sitearea ?? "");
+    setVal("sitearea", formatModalAreaValue(item.sourceType, item.sitearea ?? ""));
     setVal("useapproval", item.useapproval ?? "");
     setVal("status", item.status ?? "");
     setVal("priceMain", item.priceMain ?? "");
