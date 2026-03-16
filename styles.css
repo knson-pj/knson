@@ -381,7 +381,8 @@ body{
 .schedule-cell{vertical-align:middle !important;}
 .schedule-stack{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:70px;line-height:1.2;}
 .schedule-date{font-weight:700;}
-.schedule-dday{font-size:10px;color:var(--accent);font-weight:800;}
+.schedule-dday{font-size:10px;color:var(--accent);font-weight:800;min-height:12px;}
+.schedule-dday-empty{visibility:hidden;}
 
 .agent-chart-panel{margin-top:16px;border:1px solid var(--line);border-radius:28px;background:color-mix(in srgb, var(--surface) 92%, transparent);box-shadow:var(--shadow-lg);padding:18px 18px 20px;overflow:hidden;}
 .agent-chart-head{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-bottom:10px;}

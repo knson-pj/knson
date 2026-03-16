@@ -975,7 +975,7 @@ function bindEvents() {
 
       tr.addEventListener("click", (e) => {
         if (e.target && e.target.closest('.check-wrap')) return;
-        openPropertyEditModal(p);
+        void openPropertyEditModal(p);
       });
       frag.appendChild(tr);
     }
@@ -987,7 +987,35 @@ function bindEvents() {
   // ---------------------------
   // Property Edit Modal
   // ---------------------------
-  function openPropertyEditModal(item) {
+  async function ensureStaffForPropertyModal() {
+    try {
+      await syncSupabaseSessionIfNeeded();
+      const res = await api("/admin/staff", { auth: true });
+      state.staff = dedupeStaff(res?.items || []);
+      renderSummary();
+    } catch (err) {
+      console.warn("ensureStaffForPropertyModal failed", err);
+    }
+  }
+
+  function formatModalAreaValue(sourceType, value) {
+    if (value == null || value === "") return "";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    if (String(sourceType || "") === "onbid") return n.toFixed(2);
+    return Number.isInteger(n) ? String(n) : String(n).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  }
+
+  function toggleBrokerFieldsBySource(sourceType) {
+    const hide = ["auction", "onbid"].includes(String(sourceType || ""));
+    ["realtorname", "realtorphone", "realtorcell"].forEach((name) => {
+      const el = els.aemForm?.elements?.[name];
+      const field = el?.closest?.('.field');
+      if (field) field.classList.toggle('hidden', hide);
+    });
+  }
+
+  async function openPropertyEditModal(item) {
     if (!els.propertyEditModalAdmin || !els.aemForm) return;
 
     const user = state.session?.user;
@@ -1004,6 +1032,10 @@ function bindEvents() {
 
     state.editingProperty = item;
 
+    if (isAdmin) {
+      await ensureStaffForPropertyModal();
+    }
+
     const f = els.aemForm;
     const setVal = (name, v) => {
       const el = f.elements[name];
@@ -1019,8 +1051,8 @@ function bindEvents() {
     setVal("assetType", item.assetType);
     setVal("floor", item.floor ?? "");
     setVal("totalfloor", item.totalfloor ?? "");
-    setVal("commonarea", item.commonarea ?? "");
-    setVal("exclusivearea", item.exclusivearea ?? "");
+    setVal("commonarea", formatModalAreaValue(item.sourceType, item.commonarea ?? ""));
+    setVal("exclusivearea", formatModalAreaValue(item.sourceType, item.exclusivearea ?? ""));
     setVal("sitearea", item.sitearea ?? "");
     setVal("useapproval", item.useapproval ?? "");
     setVal("status", item.status ?? "");
@@ -1037,6 +1069,12 @@ function bindEvents() {
     setVal("opinion", item.opinion ?? "");
     setVal("latitude", item.latitude ?? "");
     setVal("longitude", item.longitude ?? "");
+    toggleBrokerFieldsBySource(item.sourceType);
+
+    const sourceTypeEl = f.elements["sourceType"];
+    if (sourceTypeEl) {
+      sourceTypeEl.onchange = () => toggleBrokerFieldsBySource(sourceTypeEl.value);
+    }
 
     const hasText = (v) => v != null && String(v).trim() !== "";
     const hasNum = (v) => v != null && String(v).trim() !== "" && !Number.isNaN(Number(v));
@@ -1085,8 +1123,25 @@ function bindEvents() {
   function populateAssigneeSelect(selectedId) {
     const sel = els.aemForm?.elements["assigneeId"];
     if (!sel) return;
-    const staffRows = state.staff.filter((s) => normalizeRole(s.role) === "staff").sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
-    sel.innerHTML = `<option value="">미배정</option>` + staffRows.map((s) => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name || s.email || '담당자')}</option>`).join("");
+    const seen = new Set();
+    const staffRows = state.staff
+      .map((s) => normalizeStaff(s))
+      .filter((s) => normalizeRole(s.role) === "staff" && String(s.id || '').trim())
+      .filter((s) => {
+        const key = String(s.id || '').trim();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
+    const options = ['<option value="">미배정</option>'];
+    staffRows.forEach((s) => {
+      options.push(`<option value="${escapeAttr(s.id)}">${escapeHtml(s.name || s.email || '담당자')}</option>`);
+    });
+    if (selectedId && !staffRows.some((s) => String(s.id) === String(selectedId))) {
+      options.push(`<option value="${escapeAttr(selectedId)}">${escapeHtml(getStaffNameById(selectedId) || '담당자')}</option>`);
+    }
+    sel.innerHTML = options.join('');
     sel.value = selectedId || "";
   }
 
@@ -2525,9 +2580,9 @@ function bindEvents() {
     const rawObj = p?._raw?.raw && typeof p._raw.raw === 'object' ? p._raw.raw : (p?._raw || {});
     const rawValue = p?.dateMain || rawObj["입찰일자"] || rawObj["입찰마감일시"] || "";
     const display = formatDate(rawValue);
-    if (!display || display === "-") return "-";
     const dday = computeDdayLabel(rawValue);
-    return `<span class="schedule-date">${escapeHtml(display)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : ""}`;
+    const dateText = (!display || display === "-") ? "-" : display;
+    return `<span class="schedule-stack"><span class="schedule-date">${escapeHtml(dateText)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : `<span class="schedule-dday schedule-dday-empty"></span>`}</span>`;
   }
 
   function formatDate(v) {

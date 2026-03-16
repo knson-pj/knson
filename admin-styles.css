@@ -232,9 +232,11 @@ body{
 .table td.opinion-cell{
   min-width:240px;
 }
-.schedule-cell{display:grid;gap:2px;justify-items:center;white-space:normal;}
+.schedule-cell{display:grid;justify-items:center;white-space:normal;vertical-align:middle;}
+.schedule-stack{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:72px;line-height:1.2;}
 .schedule-date{font-weight:700;}
-.schedule-dday{font-size:10px;color:var(--accent);font-weight:800;}
+.schedule-dday{font-size:10px;color:var(--accent);font-weight:800;min-height:12px;}
+.schedule-dday-empty{visibility:hidden;}
 .map-link{
   display:inline-flex;
   align-items:center;

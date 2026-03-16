@@ -439,33 +439,29 @@
       ]);
 
       const map = new Map();
-      const upsert = (row, fromAssignments = false) => {
-        if (!row) return;
+      const staffItems = staffSettled.status === 'fulfilled' && Array.isArray(staffSettled.value?.items)
+        ? staffSettled.value.items
+        : [];
+      const assignItems = assignSettled.status === 'fulfilled' && Array.isArray(assignSettled.value?.items)
+        ? assignSettled.value.items
+        : [];
+      const assignById = new Map(assignItems.map((row) => [String(row?.id || '').trim(), row]));
+
+      staffItems.forEach((row) => {
         const role = normalizeRole(row?.role);
         if (role !== 'staff') return;
         const id = String(row?.id || '').trim();
         if (!id) return;
-        const prev = map.get(id) || { id, name: '', email: '', regions: [] };
-        const merged = {
-          ...prev,
+        const assignRow = assignById.get(id);
+        const name = String(row?.name || row?.email || '').trim() || `담당자 ${map.size + 1}`;
+        map.set(id, {
           id,
-          email: String(row?.email || prev.email || '').trim(),
-          name: String(row?.name || row?.email || prev.name || prev.email || '').trim(),
-          regions: fromAssignments ? normalizeAssignedRegions(row?.assignedRegions || row?.regions) : prev.regions,
-        };
-        if (!merged.name) merged.name = merged.email || `담당자 ${map.size + 1}`;
-        map.set(id, merged);
-      };
-
-      if (staffSettled.status === 'fulfilled') {
-        const staffItems = Array.isArray(staffSettled.value?.items) ? staffSettled.value.items : [];
-        staffItems.forEach((row) => upsert(row, false));
-      }
-
-      if (assignSettled.status === 'fulfilled') {
-        const assignItems = Array.isArray(assignSettled.value?.items) ? assignSettled.value.items : [];
-        assignItems.forEach((row) => upsert(row, true));
-      }
+          role: 'staff',
+          email: String(row?.email || '').trim(),
+          name,
+          regions: normalizeAssignedRegions(assignRow?.assignedRegions || assignRow?.regions || row?.assignedRegions || row?.regions || row?.assigned_regions),
+        });
+      });
 
       return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     } catch (err) {
@@ -1007,9 +1003,9 @@
   function formatScheduleHtml(p) {
     const rawValue = p?.bidDate || p?.raw?.["입찰일자"] || p?.raw?.["입찰마감일시"] || "";
     const display = formatShortDate(rawValue) || String(rawValue || "").trim();
-    if (!display) return "-";
     const dday = computeDdayLabel(rawValue);
-    return `<span class="schedule-date">${escapeHtml(display)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : ""}`;
+    const dateText = display || '-';
+    return `<span class="schedule-stack"><span class="schedule-date">${escapeHtml(dateText)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : `<span class="schedule-dday schedule-dday-empty"></span>`}</span>`;
   }
 
   function computeDdayLabel(value) {
