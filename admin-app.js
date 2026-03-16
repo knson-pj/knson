@@ -541,8 +541,24 @@ function bindEvents() {
 
   async function loadAllCoreData() {
     try {
-      // 초기 진입에서는 "물건 리스트"만 먼저 로드해서 관리자 페이지가 바로 usable 하게.
-      // (staff/offices 등 /admin/* 는 탭 진입 시 온디맨드 로드)
+      const user = state.session?.user;
+      const isAdmin = normalizeRole(user?.role) === "admin";
+
+      if (isAdmin) {
+        const [staffResult, propsResult] = await Promise.allSettled([
+          loadStaff(),
+          loadProperties(),
+        ]);
+
+        if (staffResult.status === "rejected") {
+          console.warn("초기 담당자 로드 실패", staffResult.reason);
+        }
+        if (propsResult.status === "rejected") {
+          throw propsResult.reason;
+        }
+        return;
+      }
+
       await loadProperties();
     } catch (err) {
       console.error(err);
@@ -554,7 +570,7 @@ function bindEvents() {
         setGlobalMsg("세션이 만료되었거나 인증이 필요합니다. 다시 로그인해 주세요.");
         return;
       }
-      alert(err.message || "데이터 로드 실패");
+      alert(err?.message || "데이터 로드 실패");
     }
   }
 

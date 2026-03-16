@@ -678,6 +678,17 @@
     addBtn('다음', state.page + 1, state.page >= totalPages);
     els.mainPagination.appendChild(frag);
   }
+
+  function renderHoverCheckCell(value) {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+    return `
+      <div class="hover-note-cell">
+        <span class="hover-check" tabindex="0" aria-label="입력 내용 있음">✓</span>
+        <span class="hover-note-popup" role="tooltip">${escapeHtml(text).replace(/\n/g, '<br />')}</span>
+      </div>
+    `;
+  }
   function renderTable() {
     if (!els.tableBody) return;
 
@@ -732,8 +743,8 @@
       <td>${locationCell}</td>
       <td>${fitTextHtml(formatShortDate(p.createdAt) || "-")}</td>
       <td>${fitTextHtml(p.assignedAgentName || "-", 8, 14, 20)}</td>
-      <td class="text-cell">${fitTextHtml(p.rightsAnalysis || "-", 12, 20, 30)}</td>
-      <td class="text-cell">${fitTextHtml(p.siteInspection || "-", 12, 20, 30)}</td>
+      <td class="note-check-cell">${renderHoverCheckCell(p.rightsAnalysis)}</td>
+      <td class="note-check-cell">${renderHoverCheckCell(p.siteInspection)}</td>
       <td class="text-cell opinion-cell">${fitTextHtml(p.opinion || "-", 18, 32, 48)}</td>
     `;
 
