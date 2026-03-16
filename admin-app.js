@@ -476,7 +476,7 @@ function bindEvents() {
       btn.classList.toggle("hidden", !isAdmin && key !== "properties");
     });
     if (els.tabsPanel) els.tabsPanel.classList.toggle("hidden", !isAdmin);
-    if (els.summaryPanel) els.summaryPanel.classList.toggle("hidden", !isAdmin);
+    if (els.summaryPanel) els.summaryPanel.classList.remove("hidden");
     if (els.sumAgentsCard) els.sumAgentsCard.classList.toggle("hidden", !isAdmin);
   }
 

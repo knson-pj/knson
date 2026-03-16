@@ -175,9 +175,9 @@ body{
 .kind-gongmae{color:#2563eb;}
 .kind-realtor{color:#047857;}
 .kind-general{color:#b45309;}
-body.role-staff #summaryPanel,
 body.role-staff #tabsPanel,
-body.role-staff #sumAgentsCard{display:none !important;}
+body.role-staff #sumAgentsCard,
+body.role-staff #btnBackToMain{display:none !important;}
 body.role-staff .admin-main{gap:14px;}
 .summary-mini{color:var(--muted);font-size:12px;font-style:normal;}
 .panel-title-row{
@@ -312,6 +312,26 @@ body.role-staff .admin-main{gap:14px;}
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:10px;
 }
+.csv-upload-card{padding:18px 16px 16px;}
+.csv-upload-toolbar{
+  display:grid;
+  grid-template-columns:minmax(150px, 170px) minmax(180px, 280px) auto minmax(220px, 1fr);
+  gap:16px;
+  align-items:end;
+}
+.csv-upload-field{margin:0;}
+.csv-upload-field > span{margin-bottom:6px;}
+.csv-upload-action{display:flex;align-items:flex-end;justify-content:flex-start;min-height:100%;}
+.csv-upload-action .btn{min-width:124px;}
+.csv-result-inline{
+  min-height:62px;
+  margin:0;
+  display:flex;
+  align-items:center;
+  padding:0 16px;
+  font-weight:800;
+}
+.csv-result-inline.hidden{display:none !important;}
 .field{display:grid;gap:6px;}
 .field > span{font-size:13px;color:var(--muted);font-weight:700;}
 .grid2,.grid3{display:grid;gap:10px;}
@@ -320,9 +340,9 @@ body.role-staff .admin-main{gap:14px;}
 .btn-row,.action-row{display:flex;gap:8px;flex-wrap:wrap;}
 
 .result-box.is-success{
-  border-color:rgba(72, 187, 120, .45);
-  background:rgba(72, 187, 120, .10);
-  color:#b9f5c9;
+  border-color:rgba(72, 187, 120, .55);
+  background:rgba(72, 187, 120, .16);
+  color:var(--text);
 }
 .result-box.is-error{
   border-color:rgba(255, 107, 107, .45);
@@ -482,11 +502,19 @@ body.role-staff .admin-main{gap:14px;}
 @media (max-width: 1280px){
   .summary-grid{grid-template-columns:repeat(3, minmax(0,1fr));}
 }
+@media (max-width: 1100px){
+  .csv-upload-toolbar{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .csv-upload-action,.csv-result-inline{grid-column:1 / -1;}
+}
 @media (max-width: 980px){
   .admin-shell{padding:14px;}
   .admin-topbar{flex-direction:column;align-items:flex-start;}
   .top-actions{width:100%;}
   .toolbar,.field-row,.grid2,.grid3,.staff-form{grid-template-columns:1fr;}
+}
+@media (max-width: 680px){
+  .csv-upload-toolbar{grid-template-columns:1fr;}
+  .csv-upload-action,.csv-result-inline{grid-column:auto;}
 }
 @media (max-width: 680px){
   .summary-grid{grid-template-columns:repeat(2, minmax(0,1fr));}

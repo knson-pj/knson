@@ -27,7 +27,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./admin-styles.css?v=20260316-ui2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260316-ui3" />
 </head>
 <body>
   <div class="admin-shell">
@@ -41,6 +41,7 @@
       </div>
 
       <div class="top-actions">
+        <a id="btnBackToMain" class="top-link" href="./index.html">메인으로</a>
         <span id="adminUserBadge" class="badge badge-muted">비로그인</span>
         <button id="btnAdminLoginOpen" class="btn btn-primary">로그인</button>
         <button id="btnChangeMyPassword" class="btn btn-secondary hidden">내 비밀번호 변경</button>
@@ -139,13 +140,9 @@
 
       <!-- CSV 업로드 -->
       <section id="tab-csv" class="panel tab-panel hidden">
-        <div class="panel-title-row">
-          <h2>경매 / 공매 CSV 업로드</h2>
-        </div>
-
-        <div class="sub-card">
-          <div class="field-row">
-            <label class="field">
+        <div class="sub-card csv-upload-card">
+          <div class="csv-upload-toolbar">
+            <label class="field csv-upload-field csv-source-field">
               <span>업로드 대상</span>
               <select id="csvImportSource" class="select">
                 <option value="auction">경매 CSV</option>
@@ -154,17 +151,17 @@
               </select>
             </label>
 
-            <label class="field">
+            <label class="field csv-upload-field csv-file-field">
               <span>CSV 파일</span>
               <input id="csvFileInput" class="input" type="file" accept=".csv,text/csv" />
             </label>
-          </div>
 
-          <div class="btn-row">
-            <button id="btnCsvUpload" class="btn btn-primary">서버 업로드</button>
-          </div>
+            <div class="csv-upload-action">
+              <button id="btnCsvUpload" class="btn btn-primary">서버 업로드</button>
+            </div>
 
-          <div id="csvResultBox" class="result-box hidden"></div>
+            <div id="csvResultBox" class="result-box hidden csv-result-inline"></div>
+          </div>
         </div>
       </section>
 
@@ -457,6 +454,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260316-ui2"></script>
-  <script src="./admin-app.js?v=20260316-ui2"></script>
+  <script src="./admin-app.js?v=20260316-ui3"></script>
 </body>
 </html>
