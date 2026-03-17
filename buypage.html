@@ -165,6 +165,9 @@
       cursor: pointer;
       transition: transform .2s, box-shadow .2s;
       border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .btn-primary:hover {
       transform: translateY(-2px);
@@ -638,7 +641,7 @@
       <div class="logo-mark">H</div>
       <div class="logo-text">내 부동산 초고속 매각, <span>부직센</span></div>
     </div>
-    <ul class="https://knson-pj.github.io/knson/general-register.html">
+    <ul class="nav-links">
       <li><a href="https://knson-pj.github.io/knson/general-register.html" class="active">부직센에 매각하기</a></li>
     </ul>
   </nav>
@@ -655,11 +658,17 @@
       매각 정보유출에 안심하세요~<br />
     </p>
     <div class="hero-btns fade-up delay-3">
-      <button class="btn-primary">부직센에 매각하기</button>
+      <button
+        class="btn-primary"
+        type="button"
+        onclick="window.location.href='https://knson-pj.github.io/knson/general-register.html'"
+      >
+        부직센에 매각하기
+      </button>
     </div>
   </section>
 
-<!-- STEPS SECTION -->
+  <!-- STEPS SECTION -->
   <section class="steps-section">
     <div class="steps-inner">
       <div class="steps-header">
@@ -751,9 +760,14 @@
       <span class="section-tag">GET STARTED</span>
       <h2>급급매 부동산<br /><em>초고속 매입, 부직센</em></h2>
       <p>어디서나 간편하고 정보는 안전하게<br />중개수수료 없는 부직센.</p>
-      <button class="btn-primary" style="font-size:16px; padding:18px 40px;">
+      <button
+        class="btn-primary"
+        type="button"
+        style="font-size:16px; padding:18px 40px;"
+        onclick="window.location.href='https://knson-pj.github.io/knson/general-register.html'"
+      >
         부직센에 매각하기
-      </div>
+      </button>
     </div>
   </section>
 
@@ -775,7 +789,7 @@
             <ul>
               <li><a href="https://knson-pj.github.io/knson/general-register.html">부직센에 매각하기</a></li>
               <li><a href="#">공유창고</a></li>
-           </ul>
+            </ul>
           </div>
           <div class="footer-col">
             <h5>회사</h5>
@@ -785,13 +799,13 @@
               <li><a href="#">인재채용 ↗</a></li>
             </ul>
           </div>
+        </div>
       </div>
       <div class="footer-bottom">
         <p>
           에이치엠케이스토리지㈜ | 대표자 김성룡 | 229-87-03308<br />
           Copyright ⓒ 2026 부직센 All rights reserved.<br />
         </p>
-      </div>
         <div class="footer-legal">
           <a href="#">이용약관</a>
           <a href="#">개인정보처리방침</a>
