@@ -648,6 +648,7 @@ function bindEvents() {
       return;
     }
 
+    const user = state.session?.user || null;
     const isAdmin = user?.role === "admin";
     const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });
@@ -1402,8 +1403,49 @@ function bindEvents() {
     throw lastErr || new Error("저장 실패");
   }
 
+  async function handleDeleteProperty() {
+    const item = state.editingProperty;
+    if (!item) return;
+
+    const targetId = String(item.id || item.globalId || "").trim();
+    if (!targetId) {
+      setAemMsg("삭제 실패: 물건 식별자(id)가 없습니다.");
+      return;
+    }
+
+    const label = item.address || item.itemNo || targetId;
+    if (!window.confirm(`물건 '${label}'을(를) 삭제할까요?`)) return;
+
+    try {
+      if (els.aemDelete) els.aemDelete.disabled = true;
+      setAemMsg("");
+
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+      if (sb) {
+        const isPureId = !String(targetId).includes(":");
+        if (isPureId) {
+          const { error } = await sb.from("properties").delete().eq("id", targetId);
+          if (error) throw error;
+        } else {
+          const { error } = await sb.from("properties").delete().eq("global_id", targetId);
+          if (error) throw error;
+        }
+      } else {
+        await api("/admin/properties", { method: "DELETE", auth: true, body: { ids: [targetId] } });
+      }
+
+      state.selectedPropertyIds.delete(targetId);
+      closePropertyEditModal();
+      await loadProperties();
+    } catch (err) {
+      console.error(err);
+      setAemMsg(err?.message || "삭제 실패");
+    } finally {
+      if (els.aemDelete) els.aemDelete.disabled = false;
+    }
+  }
+
   // ---------------------------
-  // Staff  // ---------------------------
   // Staff CRUD
   // ---------------------------
   function setStaffFormMode(mode = "create") {
@@ -2215,7 +2257,7 @@ function bindEvents() {
         setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
         goLoginPage(true);
       }
-      showResultBox(els.officeCsvResultBox, `업로드 실패: ${err.message}`, true);
+      showResultBox(els.officeResultBox, `업로드 실패: ${err.message}`, true);
     }
   }
 
@@ -2284,11 +2326,20 @@ function bindEvents() {
   function readCsvFileText(file, sourceType) {
     return file.arrayBuffer().then((buf) => {
       const bytes = new Uint8Array(buf);
+      // BOM이 있으면 UTF-8 확정
+      if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+        return new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+      }
       const preferred = sourceType === "realtor" ? "utf-8" : "euc-kr";
       try {
-        return new TextDecoder(preferred).decode(bytes).replace(/^﻿/, "");
+        const decoded = new TextDecoder(preferred, { fatal: true }).decode(bytes);
+        return decoded.replace(/^\uFEFF/, "");
       } catch (_) {
-        return new TextDecoder("utf-8").decode(bytes).replace(/^﻿/, "");
+        try {
+          return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, "");
+        } catch (_2) {
+          return new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+        }
       }
     });
   }

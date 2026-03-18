@@ -84,7 +84,6 @@
       exclusiveArea,
       siteArea,
       useApproval,
-      opinion,
       submitterName,
       submitterPhone,
       realtorName,
