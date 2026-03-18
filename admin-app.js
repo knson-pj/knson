@@ -47,6 +47,7 @@
     selectedPropertyIds: new Set(),
     propertyPage: 1,
     propertyPageSize: 30,
+    geocodeRunning: false,
   };
 
   const els = {};
@@ -172,6 +173,18 @@
       aemSave: $("#aemSave"),
       aemDelete: $("#aemDelete"),
       aemMsg: $("#aemMsg"),
+
+      // geocoding
+      geocodeBar: $("#geocodeBar"),
+      geocodePending: $("#geocodePending"),
+      geocodeOk: $("#geocodeOk"),
+      geocodeFailed: $("#geocodeFailed"),
+      geocodeIcon: $("#geocodeIcon"),
+      geocodeProgress: $("#geocodeProgress"),
+      geocodeProgressBar: $("#geocodeProgressBar"),
+      geocodeRunningText: $("#geocodeRunningText"),
+      btnGeocodeRun: $("#btnGeocodeRun"),
+      btnGeocodeRetryFailed: $("#btnGeocodeRetryFailed"),
 
     });
   }
@@ -392,6 +405,16 @@ function bindEvents() {
     }
     if (els.aemDelete) els.aemDelete.addEventListener("click", () => {
       handleDeleteProperty().catch((e)=>handleAsyncError(e,"삭제 실패"));
+    });
+
+    // geocoding
+    if (els.btnGeocodeRun) els.btnGeocodeRun.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      runGeocoding(false).catch((e) => handleAsyncError(e, "지오코딩 실패"));
+    });
+    if (els.btnGeocodeRetryFailed) els.btnGeocodeRetryFailed.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return;
+      runGeocoding(true).catch((e) => handleAsyncError(e, "지오코딩 재시도 실패"));
     });
   }
 
@@ -645,6 +668,7 @@ function bindEvents() {
       hydrateAssignedAgentNames();
       renderPropertiesTable();
       renderSummary();
+      updateGeocodeStatusBar();
       return;
     }
 
@@ -657,6 +681,7 @@ function bindEvents() {
     hydrateAssignedAgentNames();
     renderPropertiesTable();
     renderSummary();
+    updateGeocodeStatusBar();
   }
 
   async function loadStaff() {
@@ -739,6 +764,8 @@ function bindEvents() {
       rightsAnalysis: firstText(item.rightsAnalysis, item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, ""),
       siteInspection: firstText(item.siteInspection, item.site_inspection, raw.siteInspection, raw.site_inspection, ""),
       opinion: opinionText,
+      geocodeStatus: firstText(item.geocode_status, item.geocodeStatus, raw.geocode_status, ""),
+      geocodedAt: firstText(item.geocoded_at, item.geocodedAt, ""),
       _raw: item,
     };
   }
@@ -1951,6 +1978,10 @@ function bindEvents() {
         ? "ok"
         : (sourceType === "realtor" ? null : "pending"),
 
+      geocoded_at: (m.latitude != null && m.longitude != null)
+        ? new Date().toISOString()
+        : null,
+
       raw: normalizedRaw,
     };
 
@@ -2506,6 +2537,248 @@ function bindEvents() {
       throw err;
     }
     return data;
+  }
+
+  // ---------------------------
+  // Geocoding
+  // ---------------------------
+  function getGeocodeStats() {
+    const props = state.properties;
+    let pending = 0, ok = 0, failed = 0, noCoords = 0;
+    for (const p of props) {
+      const raw = p._raw || p;
+      const status = String(raw.geocode_status || raw.geocodeStatus || "").trim().toLowerCase();
+      const hasCoords = (p.latitude != null && p.longitude != null);
+
+      if (status === "ok" || (hasCoords && status !== "failed")) { ok++; }
+      else if (status === "failed") { failed++; }
+      else if (status === "pending") { pending++; }
+      else if (!hasCoords && p.address) { noCoords++; }
+    }
+    // noCoords (status가 없고 좌표도 없는 건) = 사실상 pending과 동일
+    return { pending: pending + noCoords, ok, failed, total: props.length };
+  }
+
+  function updateGeocodeStatusBar() {
+    if (!els.geocodeBar) return;
+    const user = state.session?.user;
+    if (!user || user.role !== "admin") {
+      els.geocodeBar.classList.add("hidden");
+      return;
+    }
+
+    const stats = getGeocodeStats();
+    const hasGeocodable = stats.pending > 0 || stats.failed > 0 || stats.ok > 0;
+    els.geocodeBar.classList.toggle("hidden", !hasGeocodable && stats.total === 0);
+
+    if (els.geocodePending) els.geocodePending.textContent = String(stats.pending);
+    if (els.geocodeOk) els.geocodeOk.textContent = String(stats.ok);
+    if (els.geocodeFailed) els.geocodeFailed.textContent = String(stats.failed);
+
+    if (els.btnGeocodeRun) {
+      els.btnGeocodeRun.disabled = stats.pending === 0 || state.geocodeRunning;
+      els.btnGeocodeRun.textContent = state.geocodeRunning ? "실행 중..." : "지오코딩 실행";
+    }
+    if (els.btnGeocodeRetryFailed) {
+      els.btnGeocodeRetryFailed.classList.toggle("hidden", stats.failed === 0);
+      els.btnGeocodeRetryFailed.disabled = stats.failed === 0 || state.geocodeRunning;
+    }
+    if (els.geocodeIcon) {
+      els.geocodeIcon.textContent = state.geocodeRunning ? "⏳" : (stats.pending > 0 ? "📍" : "✅");
+    }
+  }
+
+  function normalizeAddressForGeocode(rawAddress) {
+    let addr = String(rawAddress || "").trim();
+    if (!addr) return "";
+    // 괄호 안 부가정보 제거
+    addr = addr.replace(/\([^)]*\)/g, "").trim();
+    // "외 N필지" 제거
+    addr = addr.replace(/\s*외\s*\d*\s*필지?/g, "").trim();
+    // 동/호수 제거 (건물 내 위치는 지오코딩에 불필요)
+    addr = addr.replace(/\s+\d{1,5}동\s*\d{1,5}호\s*$/g, "").trim();
+    // 층수 표기 제거
+    addr = addr.replace(/\s+(지하\s*)?\d{1,3}층.*$/g, "").trim();
+    // 끝 쉼표/세미콜론 정리
+    addr = addr.replace(/[,;·\s]+$/, "").trim();
+    return addr;
+  }
+
+  function getKakaoRestApiKey() {
+    const meta = document.querySelector('meta[name="kakao-app-key"]');
+    return String(meta?.getAttribute("content") || "").trim();
+  }
+
+  async function geocodeSingleKakao(address, apiKey) {
+    const cleaned = normalizeAddressForGeocode(address);
+    if (!cleaned) return null;
+
+    const url = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(cleaned)}&analyze_type=similar`;
+    const res = await fetch(url, {
+      headers: { Authorization: `KakaoAK ${apiKey}` },
+    });
+
+    if (!res.ok) {
+      if (res.status === 429) throw new Error("RATE_LIMIT");
+      return null;
+    }
+
+    const data = await res.json();
+    const docs = data?.documents;
+    if (!Array.isArray(docs) || docs.length === 0) return null;
+
+    const best = docs[0];
+    const lat = Number(best.y);
+    const lng = Number(best.x);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    return { lat, lng, matchedAddress: best.address_name || cleaned };
+  }
+
+  async function saveGeocodeResult(propertyId, result, status) {
+    const sb = isSupabaseMode() ? K.initSupabase() : null;
+    if (!sb) return;
+
+    const patch = {
+      geocode_status: status,
+      geocoded_at: new Date().toISOString(),
+    };
+
+    if (result && status === "ok") {
+      patch.latitude = result.lat;
+      patch.longitude = result.lng;
+    }
+
+    const col = String(propertyId).includes(":") ? "global_id" : "id";
+    const { error } = await sb.from("properties").update(patch).eq(col, propertyId);
+    if (error) console.warn("saveGeocodeResult error:", propertyId, error.message);
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function runGeocoding(retryFailed = false) {
+    if (state.geocodeRunning) return;
+    if (!isSupabaseMode()) {
+      alert("Supabase 연동이 필요합니다.");
+      return;
+    }
+
+    const apiKey = getKakaoRestApiKey();
+    if (!apiKey) {
+      alert("카카오 REST API 키가 설정되지 않았습니다. admin-index.html의 meta[name='kakao-app-key']를 확인하세요.");
+      return;
+    }
+
+    state.geocodeRunning = true;
+    updateGeocodeStatusBar();
+
+    if (els.geocodeProgress) els.geocodeProgress.classList.remove("hidden");
+    if (els.geocodeRunningText) els.geocodeRunningText.classList.remove("hidden");
+
+    try {
+      // DB에서 대상 건 직접 조회 (state.properties는 정규화된 데이터라 원본 geocode_status가 소실될 수 있음)
+      const sb = K.initSupabase();
+      let query = sb.from("properties").select("id,global_id,address,latitude,longitude,geocode_status");
+
+      if (retryFailed) {
+        query = query.eq("geocode_status", "failed");
+      } else {
+        // pending이거나, geocode_status가 null이면서 좌표가 없는 건
+        query = query.or("geocode_status.eq.pending,and(geocode_status.is.null,latitude.is.null)");
+      }
+
+      query = query.not("address", "is", null)
+                    .order("date_uploaded", { ascending: false })
+                    .limit(200);
+
+      const { data: targets, error: fetchErr } = await query;
+      if (fetchErr) throw fetchErr;
+
+      const items = Array.isArray(targets) ? targets.filter((r) => String(r.address || "").trim()) : [];
+
+      if (!items.length) {
+        alert(retryFailed ? "재시도할 실패 건이 없습니다." : "지오코딩 대상이 없습니다.");
+        return;
+      }
+
+      let processed = 0;
+      let okCount = 0;
+      let failCount = 0;
+      const total = items.length;
+
+      for (const item of items) {
+        const propId = item.id || item.global_id;
+        if (!propId) continue;
+
+        // 이미 좌표가 있고 ok가 아닌 상태면 (retryFailed가 아닌 경우) 스킵
+        if (!retryFailed && item.latitude != null && item.longitude != null) {
+          await saveGeocodeResult(propId, { lat: item.latitude, lng: item.longitude }, "ok");
+          okCount++;
+          processed++;
+          continue;
+        }
+
+        try {
+          const result = await geocodeSingleKakao(item.address, apiKey);
+
+          if (result) {
+            await saveGeocodeResult(propId, result, "ok");
+            okCount++;
+          } else {
+            await saveGeocodeResult(propId, null, "failed");
+            failCount++;
+          }
+        } catch (err) {
+          if (err?.message === "RATE_LIMIT") {
+            // Rate limit → 2초 대기 후 재시도 1회
+            await sleep(2000);
+            try {
+              const retryResult = await geocodeSingleKakao(item.address, apiKey);
+              if (retryResult) {
+                await saveGeocodeResult(propId, retryResult, "ok");
+                okCount++;
+              } else {
+                await saveGeocodeResult(propId, null, "failed");
+                failCount++;
+              }
+            } catch {
+              await saveGeocodeResult(propId, null, "failed");
+              failCount++;
+            }
+          } else {
+            await saveGeocodeResult(propId, null, "failed");
+            failCount++;
+          }
+        }
+
+        processed++;
+
+        // 진행률 업데이트
+        const pct = Math.round((processed / total) * 100);
+        if (els.geocodeProgressBar) els.geocodeProgressBar.style.width = `${pct}%`;
+        if (els.geocodeRunningText) els.geocodeRunningText.textContent = `${processed}/${total} (성공 ${okCount}, 실패 ${failCount})`;
+
+        // Rate limiting: 요청 간 120ms 딜레이
+        if (processed < total) await sleep(120);
+      }
+
+      alert(`지오코딩 완료: 총 ${total}건 중 성공 ${okCount}건, 실패 ${failCount}건`);
+
+      // 물건 목록 새로고침
+      await loadProperties();
+
+    } catch (err) {
+      console.error("runGeocoding error:", err);
+      alert(err?.message || "지오코딩 중 오류가 발생했습니다.");
+    } finally {
+      state.geocodeRunning = false;
+      if (els.geocodeProgress) els.geocodeProgress.classList.add("hidden");
+      if (els.geocodeRunningText) els.geocodeRunningText.classList.add("hidden");
+      if (els.geocodeProgressBar) els.geocodeProgressBar.style.width = "0%";
+      updateGeocodeStatusBar();
+    }
   }
 
   // ---------------------------

@@ -6,6 +6,7 @@
   <title>부동산 물건 관리 시스템 | 관리자</title>
   <meta name="supabase-url" content="" />
   <meta name="supabase-anon-key" content="" />
+  <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
   
   <style>html{visibility:hidden;}</style>
   <script>
@@ -102,6 +103,28 @@
           </select>
 
           <input id="propKeyword" class="input" type="text" placeholder="주소 / 담당자 검색" />
+        </div>
+
+        <!-- 지오코딩 상태 바 -->
+        <div id="geocodeBar" class="geocode-bar hidden">
+          <div class="geocode-bar-left">
+            <span class="geocode-status-icon" id="geocodeIcon">📍</span>
+            <span class="geocode-status-text">
+              지오코딩 대기: <strong id="geocodePending">0</strong>건
+              <span class="geocode-sep">|</span>
+              완료: <strong id="geocodeOk">0</strong>건
+              <span class="geocode-sep">|</span>
+              실패: <strong id="geocodeFailed">0</strong>건
+            </span>
+          </div>
+          <div class="geocode-bar-right">
+            <div id="geocodeProgress" class="geocode-progress hidden">
+              <div class="geocode-progress-bar" id="geocodeProgressBar" style="width:0%"></div>
+            </div>
+            <span id="geocodeRunningText" class="geocode-running-text hidden">처리 중...</span>
+            <button id="btnGeocodeRun" class="btn btn-primary btn-sm">지오코딩 실행</button>
+            <button id="btnGeocodeRetryFailed" class="btn btn-secondary btn-sm hidden">실패 건 재시도</button>
+          </div>
         </div>
 
         <div class="table-wrap">
