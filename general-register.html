@@ -21,9 +21,7 @@
         <div class="brand-sub">당사는 중개업체가 아닙니다. 부동산을 직접 매입합니다.</div>
       </div>
     </div>
-    <nav class="actions">
-      <button id="themeToggle" class="btn btn-secondary" title="테마 전환" aria-label="테마 전환">🌙 다크</button>
-    </nav>
+    <nav class="actions"></nav>
   </header>
 
   <main class="wrap">
@@ -170,30 +168,9 @@
   <script src="./knson-core.js?v=20260316-ui1"></script>
   <script src="./general-register.js?v=20260316-ui1"></script>
 
-  <!-- ── 테마 토글 ── -->
+  <!-- ── 다크모드 고정 ── -->
   <script>
-  (() => {
-    const html   = document.documentElement;
-    const btn    = document.getElementById('themeToggle');
-    const DARK   = 'dark';
-    const LS_KEY = 'bujiksen-theme';
-
-    // 저장된 테마 또는 시스템 선호도로 초기화
-    const saved = localStorage.getItem(LS_KEY);
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const initDark = saved ? saved === DARK : prefersDark;
-
-    function apply(isDark) {
-      html.setAttribute('data-theme', isDark ? 'dark' : 'light');
-      btn.textContent = isDark ? '☀️ 라이트' : '🌙 다크';
-      localStorage.setItem(LS_KEY, isDark ? 'dark' : 'light');
-    }
-
-    apply(initDark);
-    btn.addEventListener('click', () => {
-      apply(html.getAttribute('data-theme') !== DARK);
-    });
-  })();
+    document.documentElement.setAttribute('data-theme', 'dark');
   </script>
 
   <!-- ── 빅데이터 네트워크 캔버스 배경 ── -->
@@ -202,7 +179,7 @@
     const canvas = document.getElementById('bgCanvas');
     const ctx    = canvas.getContext('2d');
     const NODE_COUNT = 72;
-    const CONNECT_DIST = 160;
+    const CONNECT_DIST = 240;
     const nodes = [];
 
     function resize() {
@@ -224,7 +201,7 @@
         y:  Math.random() * window.innerHeight,
         vx: (Math.random() - 0.5) * 0.35,
         vy: (Math.random() - 0.5) * 0.35,
-        r:  Math.random() * 2.2 + 1.2,
+        r:  Math.random() * 3.3 + 1.8,
         // 일부 노드는 숫자/텍스트 레이블
         label: Math.random() < 0.22
           ? ['AI', 'ML', 'DB', '₩', '%', '↑', '→'][Math.floor(Math.random()*7)]
@@ -264,7 +241,7 @@
             ctx.moveTo(nodes[i].x, nodes[i].y);
             ctx.lineTo(nodes[j].x, nodes[j].y);
             ctx.strokeStyle = lineCol.replace(/[\d.]+\)$/, `${(alpha * (isDark?0.18:0.12)).toFixed(3)})`);
-            ctx.lineWidth   = alpha * 1.1;
+            ctx.lineWidth   = alpha * 1.65;
             ctx.stroke();
           }
         }
@@ -273,11 +250,11 @@
       // 노드
       nodes.forEach(n => {
         // glow
-        const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 6);
+        const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 9);
         grd.addColorStop(0, glowCol);
         grd.addColorStop(1, 'transparent');
         ctx.beginPath();
-        ctx.arc(n.x, n.y, n.r * 6, 0, Math.PI * 2);
+        ctx.arc(n.x, n.y, n.r * 9, 0, Math.PI * 2);
         ctx.fillStyle = grd;
         ctx.fill();
 
