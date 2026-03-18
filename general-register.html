@@ -3,30 +3,38 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title> 부직센 | 부동산 통합 관리 시스템</title>
+  <title>부직센 | 매물 정보 입력</title>
   <meta name="supabase-url" content="" />
   <meta name="supabase-anon-key" content="" />
   <link rel="stylesheet" href="./general-register.css?v=20260316-ui1" />
 </head>
 <body>
+
   <header class="topbar">
     <div class="brand">
-      <div class="dot"></div>
+      <!-- buypage 로고마크와 동일한 스타일 -->
+      <div class="dot">부</div>
       <div>
         <div class="brand-title">부동산 직매입 센터 | 부직센</div>
         <div class="brand-sub">당사는 중개업체가 아닙니다. 부동산을 직접 매입합니다.</div>
       </div>
     </div>
-
     <nav class="actions"></nav>
   </header>
 
   <main class="wrap">
+
+    <!-- ── 입력 폼 ── -->
     <section id="viewForm" class="card">
       <h1 class="h1">매물 정보 입력</h1>
-      <p class="muted">당사는 중개업체가 아닙니다. <strong>직접 매입</strong>하기에 등록하신 매물 정보는 절대 <strong>유출</strong>되지 않습니다.</p>
+      <p class="muted">
+        당사는 중개업체가 아닙니다.
+        <strong>직접 매입</strong>하기에 등록하신 매물 정보는 절대 <strong>유출</strong>되지 않습니다.
+      </p>
 
-            <form id="generalForm" class="form">
+      <form id="generalForm" class="form">
+
+        <!-- 등록자 유형 -->
         <div class="field full type-switch" role="radiogroup" aria-label="등록자 유형">
           <span>등록자 유형 *</span>
           <div class="type-options">
@@ -43,11 +51,13 @@
           </div>
         </div>
 
+        <!-- 주소 -->
         <label class="field full">
           <span>주소 *</span>
           <input name="address" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
         </label>
 
+        <!-- 세부유형 / 매매가 -->
         <div class="grid2 full">
           <label class="field">
             <span>세부유형 *</span>
@@ -59,6 +69,7 @@
           </label>
         </div>
 
+        <!-- 층 / 사용승인일 -->
         <div class="grid3 full">
           <label class="field">
             <span>해당층</span>
@@ -74,6 +85,7 @@
           </label>
         </div>
 
+        <!-- 면적 -->
         <div class="grid3 full">
           <label class="field">
             <span>공용면적(평)</span>
@@ -89,6 +101,7 @@
           </label>
         </div>
 
+        <!-- 중개사 정보 -->
         <section class="sub-section full" id="realtorFields">
           <h2>중개사 정보</h2>
           <div class="grid2">
@@ -101,7 +114,7 @@
               <input name="realtorphone" type="tel" placeholder="예: 02-1234-5678" />
             </label>
           </div>
-          <div class="grid2">
+          <div class="grid2" style="margin-top:14px;">
             <label class="field">
               <span>휴대폰번호 *</span>
               <input name="realtorcell" type="tel" placeholder="010-0000-0000" />
@@ -109,6 +122,7 @@
           </div>
         </section>
 
+        <!-- 소유자 / 일반 -->
         <section class="sub-section full hidden" id="ownerFields">
           <h2>소유자 / 일반 등록자 정보</h2>
           <div class="grid2">
@@ -123,11 +137,13 @@
           </div>
         </section>
 
+        <!-- 의견 -->
         <label class="field full">
           <span>의견</span>
           <textarea name="opinion" rows="4" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
         </label>
 
+        <!-- 액션 버튼 -->
         <div class="row full form-actions-row">
           <a class="btn btn-ghost btn-back-inline" href="./buypage.html">&lt; 이전</a>
           <button id="btnSubmit" type="submit" class="btn btn-primary">등록 요청하기</button>
@@ -137,11 +153,13 @@
       </form>
     </section>
 
+    <!-- ── 완료 화면 ── -->
     <section id="viewDone" class="card done hidden">
       <div class="check">✓</div>
       <h2>등록이 접수되었습니다</h2>
-      <p>검토후 연락드리겠습니다.</p>
+      <p style="color:var(--muted);font-size:14px;">검토 후 연락드리겠습니다.</p>
     </section>
+
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
