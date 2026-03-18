@@ -10,6 +10,8 @@
 </head>
 <body>
 
+<canvas id="bgCanvas"></canvas>
+
   <header class="topbar">
     <div class="brand">
       <!-- buypage 로고마크와 동일한 스타일 -->
@@ -19,7 +21,9 @@
         <div class="brand-sub">당사는 중개업체가 아닙니다. 부동산을 직접 매입합니다.</div>
       </div>
     </div>
-    <nav class="actions"></nav>
+    <nav class="actions">
+      <button id="themeToggle" class="btn btn-secondary" title="테마 전환" aria-label="테마 전환">🌙 다크</button>
+    </nav>
   </header>
 
   <main class="wrap">
@@ -165,5 +169,145 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260316-ui1"></script>
   <script src="./general-register.js?v=20260316-ui1"></script>
+
+  <!-- ── 테마 토글 ── -->
+  <script>
+  (() => {
+    const html   = document.documentElement;
+    const btn    = document.getElementById('themeToggle');
+    const DARK   = 'dark';
+    const LS_KEY = 'bujiksen-theme';
+
+    // 저장된 테마 또는 시스템 선호도로 초기화
+    const saved = localStorage.getItem(LS_KEY);
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initDark = saved ? saved === DARK : prefersDark;
+
+    function apply(isDark) {
+      html.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      btn.textContent = isDark ? '☀️ 라이트' : '🌙 다크';
+      localStorage.setItem(LS_KEY, isDark ? 'dark' : 'light');
+    }
+
+    apply(initDark);
+    btn.addEventListener('click', () => {
+      apply(html.getAttribute('data-theme') !== DARK);
+    });
+  })();
+  </script>
+
+  <!-- ── 빅데이터 네트워크 캔버스 배경 ── -->
+  <script>
+  (() => {
+    const canvas = document.getElementById('bgCanvas');
+    const ctx    = canvas.getContext('2d');
+    const NODE_COUNT = 72;
+    const CONNECT_DIST = 160;
+    const nodes = [];
+
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // CSS 변수로 색상 읽기 (테마 전환 반영)
+    function getCSSVar(v) {
+      return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    }
+
+    // 노드 초기화
+    for (let i = 0; i < NODE_COUNT; i++) {
+      nodes.push({
+        x:  Math.random() * window.innerWidth,
+        y:  Math.random() * window.innerHeight,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: (Math.random() - 0.5) * 0.35,
+        r:  Math.random() * 2.2 + 1.2,
+        // 일부 노드는 숫자/텍스트 레이블
+        label: Math.random() < 0.22
+          ? ['AI', 'ML', 'DB', '₩', '%', '↑', '→'][Math.floor(Math.random()*7)]
+          : null,
+      });
+    }
+
+    // 헥스 → rgba 변환 헬퍼
+    function hexToRgba(hex, a) {
+      hex = hex.replace('#','');
+      if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+      const r = parseInt(hex.slice(0,2),16);
+      const g = parseInt(hex.slice(2,4),16);
+      const b = parseInt(hex.slice(4,6),16);
+      return `rgba(${r},${g},${b},${a})`;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 테마에 따른 색상
+      const isDark   = document.documentElement.getAttribute('data-theme') === 'dark';
+      const nodeCol  = isDark ? 'rgba(232,87,26,0.55)'  : 'rgba(232,87,26,0.40)';
+      const lineCol  = isDark ? 'rgba(232,87,26,0.13)'  : 'rgba(232,87,26,0.10)';
+      const glowCol  = isDark ? 'rgba(232,87,26,0.18)'  : 'rgba(232,87,26,0.12)';
+      const labelCol = isDark ? 'rgba(245,200,170,0.45)': 'rgba(140,60,10,0.35)';
+
+      // 엣지(연결선)
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const d  = Math.sqrt(dx*dx + dy*dy);
+          if (d < CONNECT_DIST) {
+            const alpha = (1 - d / CONNECT_DIST);
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x, nodes[i].y);
+            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.strokeStyle = lineCol.replace(/[\d.]+\)$/, `${(alpha * (isDark?0.18:0.12)).toFixed(3)})`);
+            ctx.lineWidth   = alpha * 1.1;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 노드
+      nodes.forEach(n => {
+        // glow
+        const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 6);
+        grd.addColorStop(0, glowCol);
+        grd.addColorStop(1, 'transparent');
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r * 6, 0, Math.PI * 2);
+        ctx.fillStyle = grd;
+        ctx.fill();
+
+        // 코어
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fillStyle = nodeCol;
+        ctx.fill();
+
+        // 레이블
+        if (n.label) {
+          ctx.font = `700 10px 'Montserrat', sans-serif`;
+          ctx.fillStyle = labelCol;
+          ctx.fillText(n.label, n.x + n.r + 3, n.y + 4);
+        }
+      });
+
+      // 위치 업데이트 + 벽 반사
+      nodes.forEach(n => {
+        n.x += n.vx;
+        n.y += n.vy;
+        if (n.x < 0 || n.x > canvas.width)  n.vx *= -1;
+        if (n.y < 0 || n.y > canvas.height) n.vy *= -1;
+      });
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  })();
+  </script>
 </body>
 </html>

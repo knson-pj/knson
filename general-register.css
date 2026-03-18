@@ -4,39 +4,43 @@
   --page-max: 1120px;
   --radius-lg: 20px;
   --radius-md: 14px;
-  --shadow-lg: 0 24px 56px rgba(0,0,0,.45);
-  --shadow-md: 0 14px 28px rgba(0,0,0,.35);
 
-  /* ── Hermès dark palette (buypage 통일) ── */
-  --bg:       #0d0b09;
-  --surface:  #181411;
-  --surface-2:#1c1915;
-  --surface-3:#211e1a;
-  --text:     #f5f0eb;
-  --muted:    #9a8f85;
-  --line:     rgba(255,255,255,0.08);
-  --accent:   #E8571A;
-  --accent-2: #c4441a;
-  --accent-soft: rgba(232,87,26,0.12);
+  /* ── Light mode (default) ── */
+  --bg:          #fdf8f4;
+  --surface:     #ffffff;
+  --surface-2:   #fef4ee;
+  --surface-3:   #fde8da;
+  --text:        #1a1108;
+  --muted:       #7a6a5e;
+  --line:        rgba(0,0,0,0.09);
+  --accent:      #E8571A;
+  --accent-2:    #c4441a;
+  --accent-soft: rgba(232,87,26,0.10);
+  --shadow-lg:   0 24px 56px rgba(60,20,0,.12);
+  --shadow-md:   0 14px 28px rgba(60,20,0,.08);
+  --canvas-node: rgba(232,87,26,0.35);
+  --canvas-line: rgba(232,87,26,0.12);
 
   --font-ko: 'Noto Sans KR', sans-serif;
   --font-en: 'Montserrat', sans-serif;
 }
 
-/* dark-theme 토글이 있을 경우도 동일 팔레트 유지 */
+/* ── Dark mode ── */
 html[data-theme="dark"] {
-  --bg:       #0d0b09;
-  --surface:  #181411;
-  --surface-2:#1c1915;
-  --surface-3:#211e1a;
-  --text:     #f5f0eb;
-  --muted:    #9a8f85;
-  --line:     rgba(255,255,255,0.08);
-  --accent:   #E8571A;
-  --accent-2: #c4441a;
+  --bg:          #0d0b09;
+  --surface:     #181411;
+  --surface-2:   #1c1915;
+  --surface-3:   #211e1a;
+  --text:        #f5f0eb;
+  --muted:       #9a8f85;
+  --line:        rgba(255,255,255,0.08);
+  --accent:      #E8571A;
+  --accent-2:    #c4441a;
   --accent-soft: rgba(232,87,26,0.12);
-  --shadow-lg: 0 24px 56px rgba(0,0,0,.55);
-  --shadow-md: 0 14px 28px rgba(0,0,0,.45);
+  --shadow-lg:   0 24px 56px rgba(0,0,0,.55);
+  --shadow-md:   0 14px 28px rgba(0,0,0,.45);
+  --canvas-node: rgba(232,87,26,0.55);
+  --canvas-line: rgba(232,87,26,0.18);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -45,13 +49,23 @@ html, body { margin: 0; padding: 0; }
 body {
   min-height: 100vh;
   font-family: var(--font-ko);
-  background:
-    radial-gradient(ellipse 60% 40% at 10% 0%, rgba(232,87,26,.06) 0%, transparent 50%),
-    radial-gradient(ellipse 50% 35% at 90% 100%, rgba(196,68,26,.04) 0%, transparent 50%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+  transition: background .3s, color .3s;
 }
+
+/* ── BG CANVAS ── */
+#bgCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* topbar, wrap 위로 올리기 */
+.topbar, .wrap { position: relative; z-index: 1; }
 
 .hidden { display: none !important; }
 
@@ -64,7 +78,7 @@ body {
   gap: 12px;
   justify-content: space-between;
   align-items: center;
-  background: rgba(24,20,17,0.85);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
@@ -155,7 +169,7 @@ body {
 /* ── CARD ── */
 .card {
   width: min(820px, 100%);
-  background: rgba(24,20,17,0.88);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 32px 28px;
