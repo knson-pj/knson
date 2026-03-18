@@ -12,17 +12,7 @@
 
 <canvas id="bgCanvas"></canvas>
 
-  <header class="topbar">
-    <div class="brand">
-      <!-- buypage 로고마크와 동일한 스타일 -->
-      <div class="dot">부</div>
-      <div>
-        <div class="brand-title">부동산 직매입 센터 | 부직센</div>
-        <div class="brand-sub">당사는 중개업체가 아닙니다. 부동산을 직접 매입합니다.</div>
-      </div>
-    </div>
-    <nav class="actions"></nav>
-  </header>
+
 
   <main class="wrap">
 
@@ -171,6 +161,39 @@
   <!-- ── 다크모드 고정 ── -->
   <script>
     document.documentElement.setAttribute('data-theme', 'dark');
+  </script>
+
+  <!-- ── 페이지 진입 애니메이션 ── -->
+  <style>
+    /* 카드 슬라이드인 (from=buy 파라미터일 때 자동 적용) */
+    @keyframes cardSlideIn {
+      0%   { opacity: 0; transform: translateY(48px) scale(0.98); }
+      100% { opacity: 1; transform: translateY(0)    scale(1);    }
+    }
+    .card-enter {
+      animation: cardSlideIn 0.55s cubic-bezier(.2,.8,.3,1) both;
+    }
+    /* 페이지 진입 시 전체 페이지 페이드인 */
+    @keyframes pageFadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    body { animation: pageFadeIn 0.3s ease both; }
+
+    /* topbar 없으므로 wrap 상단 여백 조정 */
+    .wrap { margin-top: 40px; }
+    @media (max-width: 760px) { .wrap { margin-top: 24px; } }
+  </style>
+  <script>
+  (() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from') === 'buy') {
+      document.addEventListener('DOMContentLoaded', () => {
+        const card = document.getElementById('viewForm');
+        if (card) card.classList.add('card-enter');
+      });
+    }
+  })();
   </script>
 
   <!-- ── 빅데이터 네트워크 캔버스 배경 ── -->

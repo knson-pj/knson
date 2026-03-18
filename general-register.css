@@ -172,7 +172,7 @@ body {
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 32px 28px;
+  padding: 32px 28px 24px;
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(12px);
 }
@@ -249,9 +249,10 @@ body {
   justify-content: flex-end;
   align-items: center;
   flex-wrap: wrap;
+  margin-top: 6px;  /* 의견 textarea와의 균형 여백 */
 }
 
-.form-actions-row { justify-content: space-between; }
+.form-actions-row { justify-content: space-between; margin-top: 4px; }
 .btn-back-inline  { min-width: 92px; }
 
 .msg {

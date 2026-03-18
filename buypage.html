@@ -661,7 +661,7 @@
       <button
         class="btn-primary"
         type="button"
-        onclick="window.location.href='https://knson-pj.github.io/knson/general-register.html'"
+        id="sellBtn"
       >
         부직센에 매각하기
       </button>
@@ -780,7 +780,7 @@
           <p>
             <strong style="color:var(--text-sub);">에이치엠케이스토리지 주식회사</strong><br />
             서울 강남구 봉은사로 129-1, 751빌딩 3층<br />
-            Tel : 1555-5334 | Mail : hmkholdings7@gmail.com
+            Tel : 1555-5334 | Mail : <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="680005030007040c01060f1b5f280f05090104460b0705">[email&#160;protected]</a>
           </p>
         </div>
         <div class="footer-links">
@@ -805,14 +805,44 @@
         <p>
           에이치엠케이스토리지㈜ | 대표자 김성룡 | 229-87-03308<br />
           Copyright ⓒ 2026 부직센 All rights reserved.<br />
-        </p>
-        <div class="footer-legal">
-          <a href="#">이용약관</a>
           <a href="#">개인정보처리방침</a>
         </div>
       </div>
     </div>
   </footer>
 
+  <!-- ── 페이지 전환 애니메이션 스크립트 ── -->
+  <style>
+    .hero-exit {
+      animation: heroSlideUp 0.55s cubic-bezier(.4,0,.2,1) forwards;
+    }
+    @keyframes heroSlideUp {
+      0%   { opacity:1; transform:translateY(0); }
+      100% { opacity:0; transform:translateY(-60px); }
+    }
+    .page-out {
+      animation: pageFadeOut 0.3s ease 0.4s forwards;
+    }
+    @keyframes pageFadeOut {
+      to { opacity:0; }
+    }
+  </style>
+  <script>
+  (() => {
+    const btn = document.getElementById('sellBtn');
+    if (!btn) return;
+    const DEST = 'https://knson-pj.github.io/knson/general-register.html';
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      const hero = document.querySelector('.hero');
+      const nav  = document.querySelector('nav');
+      if (hero) hero.classList.add('hero-exit');
+      if (nav)  nav.style.transition = 'opacity .4s';
+      if (nav)  nav.style.opacity = '0';
+      document.body.classList.add('page-out');
+      setTimeout(() => { window.location.href = DEST + '?from=buy'; }, 680);
+    });
+  })();
+  </script>
 </body>
 </html>
