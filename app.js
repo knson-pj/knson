@@ -757,7 +757,7 @@
 
     function buildBreakdown(targetItems, label) {
       const regionCount = { "\uC11C\uC6B8": 0, "\uACBD\uAE30": 0, "\uC778\uCC9C": 0, "\uAE30\uD0C0": 0 };
-      const sourceCount = { "\uACBD\uB9E4": 0, "\uACF5\uB9E4": 0, "CSV \uC911\uAC1C": 0, "\uBD80\uC9C1\uC13C \uC911\uAC1C": 0, "\uC77C\uBC18": 0 };
+      const sourceCount = { "\uACBD\uB9E4": 0, "\uACF5\uB9E4": 0, "\uB124\uC774\uBC84\uC911\uAC1C": 0, "\uC77C\uBC18\uC911\uAC1C": 0, "\uC77C\uBC18": 0 };
 
       targetItems.forEach((p) => {
         const addr = String(p.address || "");
@@ -769,8 +769,8 @@
         if (p.source === "auction") sourceCount["\uACBD\uB9E4"]++;
         else if (p.source === "onbid") sourceCount["\uACF5\uB9E4"]++;
         else if (p.source === "realtor") {
-          if (p.submitterType === "realtor") sourceCount["\uBD80\uC9C1\uC13C \uC911\uAC1C"]++;
-          else sourceCount["CSV \uC911\uAC1C"]++;
+          if (p.submitterType === "realtor") sourceCount["\uC77C\uBC18\uC911\uAC1C"]++;
+          else sourceCount["\uB124\uC774\uBC84\uC911\uAC1C"]++;
         }
         else sourceCount["\uC77C\uBC18"]++;
       });
@@ -784,8 +784,8 @@
       const sourceChips = [
         { label: "\uACBD\uB9E4", val: sourceCount["\uACBD\uB9E4"], color: "#D778F7" },
         { label: "\uACF5\uB9E4", val: sourceCount["\uACF5\uB9E4"], color: "#59A7FF" },
-        { label: "CSV \uC911\uAC1C", val: sourceCount["CSV \uC911\uAC1C"], color: "#4AD8BA" },
-        { label: "\uBD80\uC9C1\uC13C \uC911\uAC1C", val: sourceCount["\uBD80\uC9C1\uC13C \uC911\uAC1C"], color: "#0FA68B" },
+        { label: "\uB124\uC774\uBC84\uC911\uAC1C", val: sourceCount["\uB124\uC774\uBC84\uC911\uAC1C"], color: "#4AD8BA" },
+        { label: "\uC77C\uBC18\uC911\uAC1C", val: sourceCount["\uC77C\uBC18\uC911\uAC1C"], color: "#0FA68B" },
         { label: "\uC77C\uBC18", val: sourceCount["\uC77C\uBC18"], color: "#F6B04A" },
       ];
 
@@ -793,13 +793,15 @@
         '<span class="inflow-bd-chip"><span class="dot" style="background:' + c.color + '"></span><span class="label">' + escapeHtml(c.label) + '</span><span class="val">' + c.val.toLocaleString() + '</span></span>'
       ).join("");
 
+      const titleSuffix = label ? ' (' + escapeHtml(label) + ')' : '';
+
       return '<div class="inflow-breakdown">' +
         '<div class="inflow-bd-group">' +
-          '<div class="inflow-bd-title">\uC9C0\uC5ED\uBCC4 (' + escapeHtml(label) + ')</div>' +
+          '<div class="inflow-bd-title">\uC9C0\uC5ED\uBCC4' + titleSuffix + '</div>' +
           '<div class="inflow-bd-items">' + chipHtml(regionChips) + '</div>' +
         '</div>' +
         '<div class="inflow-bd-group">' +
-          '<div class="inflow-bd-title">\uAD6C\uBD84\uBCC4 (' + escapeHtml(label) + ')</div>' +
+          '<div class="inflow-bd-title">\uAD6C\uBD84\uBCC4' + titleSuffix + '</div>' +
           '<div class="inflow-bd-items">' + chipHtml(sourceChips) + '</div>' +
         '</div>' +
       '</div>';
@@ -825,7 +827,7 @@
         breakdownLabel = formatLabel(selectedKey);
       } else {
         breakdownItems = sliced.flatMap(([, arr]) => arr);
-        const periodLabel = period === "day" ? "\uCD5C\uADFC 30\uC77C" : period === "week" ? "\uCD5C\uADFC 16\uC8FC" : period === "month" ? "\uCD5C\uADFC 12\uAC1C\uC6D4" : "\uC804\uCCB4";
+        const periodLabel = period === "day" ? "" : period === "week" ? "\uCD5C\uADFC 16\uC8FC" : period === "month" ? "\uCD5C\uADFC 12\uAC1C\uC6D4" : "\uC804\uCCB4";
         breakdownLabel = periodLabel;
       }
 
@@ -924,8 +926,8 @@
     if (!el) return;
     const counter = new Map();
     state.items.forEach((p) => {
-      const gu = p.regionGu || extractAddressGu(p.address);
-      if (gu) counter.set(gu, (counter.get(gu) || 0) + 1);
+      const region = extractAddressRegion(p.address);
+      if (region) counter.set(region, (counter.get(region) || 0) + 1);
     });
     const sorted = [...counter.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
     if (!sorted.length) { el.innerHTML = '<div class="stat-empty">지역 데이터가 없습니다.</div>'; return; }
@@ -942,9 +944,29 @@
       '</div>';
   }
 
-  function extractAddressGu(address) {
-    const m = String(address || "").match(/([가-힣]+(?:구|군|시))/);
-    return m ? m[1] : "";
+  function extractAddressRegion(address) {
+    const a = String(address || "").trim();
+    if (!a) return "";
+    if (a.match(/^서울|서울특별시/)) return "서울";
+    if (a.match(/^경기|경기도/) || a.match(/^(수원|성남|고양|용인|화성|안산|안양|평택|시흥|파주|김포|광명|하남|과천|의왕|군포|오산|이천|양평|여주|동두천|구리|남양주|의정부|포천|양주|광주시|부천)/)) return "경기";
+    if (a.match(/^인천|인천광역시/)) return "인천";
+    if (a.match(/^부산|부산광역시/)) return "부산";
+    if (a.match(/^대구|대구광역시/)) return "대구";
+    if (a.match(/^대전|대전광역시/)) return "대전";
+    if (a.match(/^광주광역시|^광주시/)) return "광주";
+    if (a.match(/^울산|울산광역시/)) return "울산";
+    if (a.match(/^세종|세종특별자치시/)) return "세종";
+    if (a.match(/^충청북도|^충북|^청주|^충주|^제천/)) return "충북";
+    if (a.match(/^충청남도|^충남|^천안|^아산|^논산|^당진|^서산/)) return "충남";
+    if (a.match(/^전라북도|^전북|^전주|^익산|^군산/)) return "전북";
+    if (a.match(/^전라남도|^전남|^목포|^순천|^여수/)) return "전남";
+    if (a.match(/^경상북도|^경북|^포항|^경주|^구미|^안동/)) return "경북";
+    if (a.match(/^경상남도|^경남|^창원|^김해|^진주|^양산/)) return "경남";
+    if (a.match(/^강원|^강원도|^춘천|^원주|^강릉/)) return "강원";
+    if (a.match(/^제주|^제주특별자치도/)) return "제주";
+    // fallback: 첫 시/도 추출
+    const m = a.match(/^([가-힣]{2,4}(?:특별시|광역시|특별자치시|특별자치도|도))/);
+    return m ? m[1].replace(/특별시|광역시|특별자치시|특별자치도/, "").replace(/도$/, "") || m[1] : "";
   }
 
   function renderTypeDistChart() {
