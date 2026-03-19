@@ -1978,10 +1978,6 @@ function bindEvents() {
         ? "ok"
         : (sourceType === "realtor" ? null : "pending"),
 
-      geocoded_at: (m.latitude != null && m.longitude != null)
-        ? new Date().toISOString()
-        : null,
-
       raw: normalizedRaw,
     };
 
@@ -2660,17 +2656,26 @@ function bindEvents() {
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
   async function saveGeocodeResult(sb, propertyId, coords, status) {
-    const patch = {
-      geocode_status: status,
-      geocoded_at: new Date().toISOString(),
-    };
+    const basePatch = { geocode_status: status };
     if (coords && status === "ok") {
-      patch.latitude = coords.lat;
-      patch.longitude = coords.lng;
+      basePatch.latitude = coords.lat;
+      basePatch.longitude = coords.lng;
     }
     const col = String(propertyId).includes(":") ? "global_id" : "id";
-    const { error } = await sb.from("properties").update(patch).eq(col, propertyId);
-    if (error) console.warn("saveGeocodeResult error:", propertyId, error.message);
+
+    // 1차: geocoded_at 포함 시도
+    const fullPatch = { ...basePatch, geocoded_at: new Date().toISOString() };
+    const { error } = await sb.from("properties").update(fullPatch).eq(col, propertyId);
+
+    if (error) {
+      // geocoded_at 컬럼이 없으면 해당 컬럼 제외하고 재시도
+      if (String(error.message || "").includes("geocoded_at")) {
+        const { error: retryErr } = await sb.from("properties").update(basePatch).eq(col, propertyId);
+        if (retryErr) console.warn("saveGeocodeResult error:", propertyId, retryErr.message);
+      } else {
+        console.warn("saveGeocodeResult error:", propertyId, error.message);
+      }
+    }
   }
 
   async function runGeocoding(retryFailed) {
@@ -2697,23 +2702,26 @@ function bindEvents() {
     if (els.geocodeRunningText) els.geocodeRunningText.classList.remove("hidden");
 
     try {
-      // 2. DB에서 대상 건 조회
-      let query = sb.from("properties")
-        .select("id,global_id,address,latitude,longitude,geocode_status")
-        .not("address", "is", null)
-        .order("date_uploaded", { ascending: false })
-        .limit(200);
-
-      if (retryFailed) {
-        query = query.eq("geocode_status", "failed");
-      } else {
-        query = query.eq("geocode_status", "pending");
+      // 2. DB에서 대상 건 전체 조회 (1000건씩 페이징)
+      const statusFilter = retryFailed ? "failed" : "pending";
+      const allItems = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error: fetchErr } = await sb.from("properties")
+          .select("id,global_id,address,latitude,longitude,geocode_status")
+          .eq("geocode_status", statusFilter)
+          .not("address", "is", null)
+          .order("date_uploaded", { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (fetchErr) throw fetchErr;
+        const rows = Array.isArray(data) ? data : [];
+        allItems.push(...rows);
+        if (rows.length < pageSize) break;
+        from += pageSize;
       }
 
-      const { data: targets, error: fetchErr } = await query;
-      if (fetchErr) throw fetchErr;
-
-      const items = Array.isArray(targets) ? targets.filter((r) => String(r.address || "").trim()) : [];
+      const items = allItems.filter((r) => String(r.address || "").trim());
       if (!items.length) {
         alert(retryFailed ? "재시도할 실패 건이 없습니다." : "지오코딩 대상이 없습니다.");
         return;
