@@ -706,6 +706,7 @@
   function renderStatCharts() {
     renderInflowChart("day");
     renderSourceDistChart();
+    renderStatusDistChart();
     renderRegionDistChart();
     renderTypeDistChart();
     renderPriceDistChart();
@@ -766,27 +767,71 @@
       '</div>';
   }
 
+  function renderDonutSVG(data, total, centerLabel) {
+    if (!data.length || !total) return '<div class="stat-empty">데이터가 없습니다.</div>';
+    const R = 60, STROKE = 20, C = 2 * Math.PI * R;
+    let offset = 0;
+    const arcs = data.map((d) => {
+      const pct = d.count / total;
+      const len = pct * C;
+      const html = '<circle cx="80" cy="80" r="' + R + '" fill="none" stroke="' + d.color + '" ' +
+        'stroke-width="' + STROKE + '" stroke-dasharray="' + len.toFixed(2) + ' ' + (C - len).toFixed(2) + '" ' +
+        'stroke-dashoffset="' + (-offset).toFixed(2) + '"/>';
+      offset += len;
+      return html;
+    });
+
+    const legend = data.map((d) => {
+      const pct = Math.round((d.count / total) * 100);
+      return '<div class="donut-legend-item">' +
+        '<span class="donut-legend-dot" style="background:' + d.color + '"></span>' +
+        '<span>' + escapeHtml(d.label) + '</span>' +
+        '<span class="donut-legend-pct">' + d.count.toLocaleString() + ' (' + pct + '%)</span>' +
+        '</div>';
+    }).join("");
+
+    return '<div class="donut-wrap">' +
+      '<div class="donut-svg-wrap">' +
+        '<svg viewBox="0 0 160 160">' + arcs.join("") + '</svg>' +
+        '<div class="donut-center"><div class="donut-center-num">' + total.toLocaleString() + '</div><div class="donut-center-label">' + escapeHtml(centerLabel) + '</div></div>' +
+      '</div>' +
+      '<div class="donut-legend">' + legend + '</div>' +
+      '</div>';
+  }
+
   function renderSourceDistChart() {
     const el = els.sourceDistChart || document.getElementById("sourceDistChart");
     if (!el) return;
     const items = state.items;
     const data = [
-      { label: "경매", count: items.filter((p) => p.source === "auction").length, cls: "c-auction" },
-      { label: "공매", count: items.filter((p) => p.source === "onbid").length, cls: "c-onbid" },
-      { label: "중개", count: items.filter((p) => p.source === "realtor").length, cls: "c-realtor" },
-      { label: "일반", count: items.filter((p) => p.source === "general").length, cls: "c-general" },
+      { label: "경매", count: items.filter((p) => p.source === "auction").length, color: "#D778F7" },
+      { label: "공매", count: items.filter((p) => p.source === "onbid").length, color: "#59A7FF" },
+      { label: "중개", count: items.filter((p) => p.source === "realtor").length, color: "#4AD8BA" },
+      { label: "일반", count: items.filter((p) => p.source === "general").length, color: "#F6B04A" },
     ];
-    const total = Math.max(items.length, 1);
-    el.innerHTML = '<div class="hbar-chart">' +
-      data.map((d) => {
-        const pct = Math.max(2, Math.round((d.count / total) * 100));
-        return '<div class="hbar-row">' +
-          '<div class="hbar-label">' + d.label + '</div>' +
-          '<div class="hbar-track"><div class="hbar-fill ' + d.cls + '" style="width:' + pct + '%">' + pct + '%</div></div>' +
-          '<div class="hbar-count">' + d.count.toLocaleString() + '</div>' +
-          '</div>';
-      }).join("") +
-      '</div>';
+    el.innerHTML = renderDonutSVG(data, items.length, "전체 물건");
+  }
+
+  function renderStatusDistChart() {
+    const el = document.getElementById("statusDistChart");
+    if (!el) return;
+    const items = state.items;
+    const statusMap = { active: "진행중", hold: "보류", closed: "종결", review: "검토중" };
+    const colors = { active: "#2ECC71", hold: "#F39C12", closed: "#9A8E82", review: "#3498DB" };
+    const counter = new Map();
+    items.forEach((p) => {
+      const st = String(p.statusLabel || "").trim();
+      const key = Object.entries(statusMap).find(([, v]) => v === st)?.[0] || "etc";
+      counter.set(key, (counter.get(key) || 0) + 1);
+    });
+    const data = [];
+    for (const [key, label] of Object.entries(statusMap)) {
+      const count = counter.get(key) || 0;
+      if (count > 0) data.push({ label, count, color: colors[key] || "#9A8E82" });
+    }
+    const etcCount = counter.get("etc") || 0;
+    if (etcCount > 0) data.push({ label: "기타", count: etcCount, color: "#645A50" });
+    el.innerHTML = renderDonutSVG(data, items.length, "진행상태");
   }
 
   function renderRegionDistChart() {

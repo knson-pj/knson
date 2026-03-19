@@ -110,6 +110,7 @@
     <main class="content">
       <section id="textView" class="stats-view">
 
+        <!-- 신규 유입현황 (full width) -->
         <div class="stat-panel">
           <div class="stat-panel-head">
             <h3 class="stat-panel-title">신규 유입현황</h3>
@@ -123,11 +124,20 @@
           <div class="stat-chart-area" id="inflowChart"></div>
         </div>
 
+        <!-- 도넛 차트 행: 구분별 + 진행상태별 -->
         <div class="stat-grid">
           <div class="stat-panel">
             <h3 class="stat-panel-title">구분별</h3>
             <div id="sourceDistChart" class="stat-chart-area"></div>
           </div>
+          <div class="stat-panel">
+            <h3 class="stat-panel-title">진행상태별</h3>
+            <div id="statusDistChart" class="stat-chart-area"></div>
+          </div>
+        </div>
+
+        <!-- 수평 바 차트 행 -->
+        <div class="stat-grid">
           <div class="stat-panel">
             <h3 class="stat-panel-title">지역별 (상위 10)</h3>
             <div id="regionDistChart" class="stat-chart-area"></div>
@@ -136,6 +146,9 @@
             <h3 class="stat-panel-title">유형별 (상위 8)</h3>
             <div id="typeDistChart" class="stat-chart-area"></div>
           </div>
+        </div>
+
+        <div class="stat-grid">
           <div class="stat-panel">
             <h3 class="stat-panel-title">가격대별</h3>
             <div id="priceDistChart" class="stat-chart-area"></div>
