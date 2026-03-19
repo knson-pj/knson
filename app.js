@@ -432,6 +432,7 @@
       regionDong: firstText(p.regionDong, p.region_dong, raw.regionDong, raw.region_dong, ""),
       latitude: lat,
       longitude: lng,
+      submitterType: firstText(p.submitterType, p.submitter_type, raw.submitterType, raw.submitter_type, ""),
       raw,
     };
   }
@@ -713,52 +714,40 @@
     renderAreaDistChart();
   }
 
+  let _inflowSelectedBar = null; // 일간모드 선택된 바 key
+
   function renderInflowChart(period) {
     const el = els.inflowChart || document.getElementById("inflowChart");
     if (!el) return;
 
+    _inflowSelectedBar = null; // 탭 변경 시 선택 해제
     const items = state.items;
     if (!items.length) { el.innerHTML = '<div class="stat-empty">데이터가 없습니다.</div>'; return; }
 
-    const buckets = new Map();
-    const now = new Date();
-
-    // 현재 기간의 시작일 계산
-    let periodStart = new Date(0);
-    if (period === "day") {
-      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-    } else if (period === "week") {
-      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 112);
-    } else if (period === "month") {
-      periodStart = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    // 기간별 키 생성 함수
+    function makeKey(d) {
+      if (period === "day") return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+      if (period === "week") { const sw = new Date(d); sw.setDate(d.getDate() - d.getDay()); return sw.getFullYear() + "-" + String(sw.getMonth()+1).padStart(2,"0") + "-" + String(sw.getDate()).padStart(2,"0"); }
+      if (period === "month") return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+      return String(d.getFullYear());
     }
 
-    const periodItems = []; // 현재 표시 기간에 해당하는 아이템
-
+    // 아이템별 키 매핑
+    const itemsByKey = new Map();
     items.forEach((p) => {
       const d = parseFlexibleDate(p.createdAt);
       if (!d) return;
-      let key = "";
-      if (period === "day") {
-        key = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-      } else if (period === "week") {
-        const sw = new Date(d); sw.setDate(d.getDate() - d.getDay());
-        key = sw.getFullYear() + "-" + String(sw.getMonth()+1).padStart(2,"0") + "-" + String(sw.getDate()).padStart(2,"0");
-      } else if (period === "month") {
-        key = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
-      } else {
-        key = String(d.getFullYear());
-      }
-      buckets.set(key, (buckets.get(key) || 0) + 1);
-      if (d >= periodStart) periodItems.push(p);
+      const key = makeKey(d);
+      if (!itemsByKey.has(key)) itemsByKey.set(key, []);
+      itemsByKey.get(key).push(p);
     });
 
-    const sorted = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const sorted = [...itemsByKey.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     const maxCount = period === "day" ? 30 : period === "week" ? 16 : period === "month" ? 12 : 10;
     const sliced = sorted.slice(-maxCount);
     if (!sliced.length) { el.innerHTML = '<div class="stat-empty">표시할 데이터가 없습니다.</div>'; return; }
 
-    const maxVal = Math.max(...sliced.map((s) => s[1]), 1);
+    const maxVal = Math.max(...sliced.map((s) => s[1].length), 1);
     const formatLabel = (key) => {
       if (period === "day") return key.slice(5);
       if (period === "week") return key.slice(5) + "~";
@@ -766,65 +755,101 @@
       return key;
     };
 
-    // 지역별 집계
-    const regionCount = { "서울": 0, "경기": 0, "인천": 0, "기타": 0 };
-    periodItems.forEach((p) => {
-      const addr = String(p.address || "");
-      if (addr.includes("서울")) regionCount["서울"]++;
-      else if (addr.includes("경기") || addr.includes("수원") || addr.includes("성남") || addr.includes("고양") || addr.includes("용인") || addr.includes("화성") || addr.includes("안산") || addr.includes("안양") || addr.includes("평택") || addr.includes("시흥") || addr.includes("파주") || addr.includes("김포") || addr.includes("광명") || addr.includes("하남") || addr.includes("과천") || addr.includes("의왕") || addr.includes("군포") || addr.includes("오산") || addr.includes("이천") || addr.includes("양평") || addr.includes("여주") || addr.includes("동두천") || addr.includes("구리") || addr.includes("남양주") || addr.includes("의정부") || addr.includes("포천") || addr.includes("양주")) regionCount["경기"]++;
-      else if (addr.includes("인천")) regionCount["인천"]++;
-      else regionCount["기타"]++;
-    });
+    function buildBreakdown(targetItems, label) {
+      const regionCount = { "\uC11C\uC6B8": 0, "\uACBD\uAE30": 0, "\uC778\uCC9C": 0, "\uAE30\uD0C0": 0 };
+      const sourceCount = { "\uACBD\uB9E4": 0, "\uACF5\uB9E4": 0, "CSV \uC911\uAC1C": 0, "\uBD80\uC9C1\uC13C \uC911\uAC1C": 0, "\uC77C\uBC18": 0 };
 
-    // 구분별 집계
-    const sourceCount = { "경매": 0, "공매": 0, "중개": 0, "일반": 0 };
-    periodItems.forEach((p) => {
-      if (p.source === "auction") sourceCount["경매"]++;
-      else if (p.source === "onbid") sourceCount["공매"]++;
-      else if (p.source === "realtor") sourceCount["중개"]++;
-      else sourceCount["일반"]++;
-    });
+      targetItems.forEach((p) => {
+        const addr = String(p.address || "");
+        if (addr.includes("\uC11C\uC6B8")) regionCount["\uC11C\uC6B8"]++;
+        else if (addr.match(/\uACBD\uAE30|\uC218\uC6D0|\uC131\uB0A8|\uACE0\uC591|\uC6A9\uC778|\uD654\uC131|\uC548\uC0B0|\uC548\uC591|\uD3C9\uD0DD|\uC2DC\uD765|\uD30C\uC8FC|\uAE40\uD3EC|\uAD11\uBA85|\uD558\uB0A8|\uACFC\uCC9C|\uC758\uC655|\uAD70\uD3EC|\uC624\uC0B0|\uC774\uCC9C|\uC591\uD3C9|\uC5EC\uC8FC|\uB3D9\uB450\uCC9C|\uAD6C\uB9AC|\uB0A8\uC591\uC8FC|\uC758\uC815\uBD80|\uD3EC\uCC9C|\uC591\uC8FC/)) regionCount["\uACBD\uAE30"]++;
+        else if (addr.includes("\uC778\uCC9C")) regionCount["\uC778\uCC9C"]++;
+        else regionCount["\uAE30\uD0C0"]++;
 
-    const periodLabel = period === "day" ? "최근 30일" : period === "week" ? "최근 16주" : period === "month" ? "최근 12개월" : "전체";
+        if (p.source === "auction") sourceCount["\uACBD\uB9E4"]++;
+        else if (p.source === "onbid") sourceCount["\uACF5\uB9E4"]++;
+        else if (p.source === "realtor") {
+          if (p.submitterType === "realtor") sourceCount["\uBD80\uC9C1\uC13C \uC911\uAC1C"]++;
+          else sourceCount["CSV \uC911\uAC1C"]++;
+        }
+        else sourceCount["\uC77C\uBC18"]++;
+      });
 
-    const regionChips = [
-      { label: "서울", val: regionCount["서울"], color: "#F37022" },
-      { label: "경기", val: regionCount["경기"], color: "#3498DB" },
-      { label: "인천", val: regionCount["인천"], color: "#2ECC71" },
-      { label: "기타", val: regionCount["기타"], color: "#9A8E82" },
-    ];
-    const sourceChips = [
-      { label: "경매", val: sourceCount["경매"], color: "#D778F7" },
-      { label: "공매", val: sourceCount["공매"], color: "#59A7FF" },
-      { label: "중개", val: sourceCount["중개"], color: "#4AD8BA" },
-      { label: "일반", val: sourceCount["일반"], color: "#F6B04A" },
-    ];
+      const regionChips = [
+        { label: "\uC11C\uC6B8", val: regionCount["\uC11C\uC6B8"], color: "#F37022" },
+        { label: "\uACBD\uAE30", val: regionCount["\uACBD\uAE30"], color: "#3498DB" },
+        { label: "\uC778\uCC9C", val: regionCount["\uC778\uCC9C"], color: "#2ECC71" },
+        { label: "\uAE30\uD0C0", val: regionCount["\uAE30\uD0C0"], color: "#9A8E82" },
+      ];
+      const sourceChips = [
+        { label: "\uACBD\uB9E4", val: sourceCount["\uACBD\uB9E4"], color: "#D778F7" },
+        { label: "\uACF5\uB9E4", val: sourceCount["\uACF5\uB9E4"], color: "#59A7FF" },
+        { label: "CSV \uC911\uAC1C", val: sourceCount["CSV \uC911\uAC1C"], color: "#4AD8BA" },
+        { label: "\uBD80\uC9C1\uC13C \uC911\uAC1C", val: sourceCount["\uBD80\uC9C1\uC13C \uC911\uAC1C"], color: "#0FA68B" },
+        { label: "\uC77C\uBC18", val: sourceCount["\uC77C\uBC18"], color: "#F6B04A" },
+      ];
 
-    const chipHtml = (chips) => chips.map((c) =>
-      '<span class="inflow-bd-chip"><span class="dot" style="background:' + c.color + '"></span><span class="label">' + c.label + '</span><span class="val">' + c.val.toLocaleString() + '</span></span>'
-    ).join("");
+      const chipHtml = (chips) => chips.filter((c) => c.val > 0).map((c) =>
+        '<span class="inflow-bd-chip"><span class="dot" style="background:' + c.color + '"></span><span class="label">' + escapeHtml(c.label) + '</span><span class="val">' + c.val.toLocaleString() + '</span></span>'
+      ).join("");
 
-    el.innerHTML =
-      '<div class="inflow-chart">' +
-        sliced.map(([key, count]) => {
-          const pct = Math.max(4, Math.round((count / maxVal) * 100));
-          return '<div class="inflow-bar-col">' +
-            '<div class="inflow-bar-val">' + count.toLocaleString() + '</div>' +
-            '<div class="inflow-bar" style="height:' + pct + '%"></div>' +
-            '<div class="inflow-bar-label">' + escapeHtml(formatLabel(key)) + '</div>' +
-            '</div>';
-        }).join("") +
-      '</div>' +
-      '<div class="inflow-breakdown">' +
+      return '<div class="inflow-breakdown">' +
         '<div class="inflow-bd-group">' +
-          '<div class="inflow-bd-title">지역별 (' + escapeHtml(periodLabel) + ')</div>' +
+          '<div class="inflow-bd-title">\uC9C0\uC5ED\uBCC4 (' + escapeHtml(label) + ')</div>' +
           '<div class="inflow-bd-items">' + chipHtml(regionChips) + '</div>' +
         '</div>' +
         '<div class="inflow-bd-group">' +
-          '<div class="inflow-bd-title">구분별 (' + escapeHtml(periodLabel) + ')</div>' +
+          '<div class="inflow-bd-title">\uAD6C\uBD84\uBCC4 (' + escapeHtml(label) + ')</div>' +
           '<div class="inflow-bd-items">' + chipHtml(sourceChips) + '</div>' +
         '</div>' +
       '</div>';
+    }
+
+    function renderBars(selectedKey) {
+      return sliced.map(([key, arr]) => {
+        const count = arr.length;
+        const pct = Math.max(4, Math.round((count / maxVal) * 100));
+        const isSelected = selectedKey === key;
+        return '<div class="inflow-bar-col' + (isSelected ? ' is-selected' : '') + '" data-bar-key="' + key + '">' +
+          '<div class="inflow-bar-val">' + count.toLocaleString() + '</div>' +
+          '<div class="inflow-bar' + (isSelected ? ' is-selected' : '') + '" style="height:' + pct + '%"></div>' +
+          '<div class="inflow-bar-label">' + escapeHtml(formatLabel(key)) + '</div>' +
+          '</div>';
+      }).join("");
+    }
+
+    function fullRender(selectedKey) {
+      let breakdownItems, breakdownLabel;
+      if (selectedKey && itemsByKey.has(selectedKey)) {
+        breakdownItems = itemsByKey.get(selectedKey);
+        breakdownLabel = formatLabel(selectedKey);
+      } else {
+        breakdownItems = sliced.flatMap(([, arr]) => arr);
+        const periodLabel = period === "day" ? "\uCD5C\uADFC 30\uC77C" : period === "week" ? "\uCD5C\uADFC 16\uC8FC" : period === "month" ? "\uCD5C\uADFC 12\uAC1C\uC6D4" : "\uC804\uCCB4";
+        breakdownLabel = periodLabel;
+      }
+
+      el.innerHTML =
+        '<div class="inflow-chart">' + renderBars(selectedKey) + '</div>' +
+        buildBreakdown(breakdownItems, breakdownLabel);
+
+      // 바 클릭 이벤트 바인딩
+      el.querySelectorAll(".inflow-bar-col").forEach((col) => {
+        col.style.cursor = "pointer";
+        col.addEventListener("click", () => {
+          const barKey = col.dataset.barKey;
+          if (_inflowSelectedBar === barKey) {
+            _inflowSelectedBar = null;
+            fullRender(null);
+          } else {
+            _inflowSelectedBar = barKey;
+            fullRender(barKey);
+          }
+        });
+      });
+    }
+
+    fullRender(null);
   }
 
   function renderDonutSVG(data, total, centerLabel) {
