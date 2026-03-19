@@ -709,6 +709,7 @@
     renderRegionDistChart();
     renderTypeDistChart();
     renderPriceDistChart();
+    renderAreaDistChart();
   }
 
   function renderInflowChart(period) {
@@ -857,6 +858,39 @@
       if (!price) return;
       for (let i = 0; i < ranges.length; i++) {
         if (price >= ranges[i].min && price < ranges[i].max) { counts[i]++; break; }
+      }
+    });
+    const maxVal = Math.max(...counts, 1);
+    el.innerHTML = '<div class="hbar-chart">' +
+      ranges.map((r, i) => {
+        const pct = Math.max(2, Math.round((counts[i] / maxVal) * 100));
+        return '<div class="hbar-row">' +
+          '<div class="hbar-label">' + r.label + '</div>' +
+          '<div class="hbar-track"><div class="hbar-fill c-accent" style="width:' + pct + '%"></div></div>' +
+          '<div class="hbar-count">' + counts[i].toLocaleString() + '</div>' +
+          '</div>';
+      }).join("") +
+      '</div>';
+  }
+
+  function renderAreaDistChart() {
+    const el = document.getElementById("areaDistChart");
+    if (!el) return;
+    const ranges = [
+      { label: "5평 미만", min: 0, max: 5 },
+      { label: "5~10평", min: 5, max: 10 },
+      { label: "10~20평", min: 10, max: 20 },
+      { label: "20~30평", min: 20, max: 30 },
+      { label: "30~50평", min: 30, max: 50 },
+      { label: "50~100평", min: 50, max: 100 },
+      { label: "100평 이상", min: 100, max: Infinity },
+    ];
+    const counts = ranges.map(() => 0);
+    state.items.forEach((p) => {
+      const area = p.exclusivearea;
+      if (area == null || area <= 0) return;
+      for (let i = 0; i < ranges.length; i++) {
+        if (area >= ranges[i].min && area < ranges[i].max) { counts[i]++; break; }
       }
     });
     const maxVal = Math.max(...counts, 1);

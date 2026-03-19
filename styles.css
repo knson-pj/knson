@@ -109,7 +109,7 @@ body{
   line-height:1.04;
   letter-spacing:-.05em;
   font-weight:900;
-  background:linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent-2) 72%, var(--accent)) 60%, var(--text));
+  background:linear-gradient(135deg, #F37022, #D4611E 60%, #5C3D2E);
   -webkit-background-clip:text;
   background-clip:text;
   color:transparent;
@@ -503,7 +503,7 @@ html[data-theme="dark"] .live-dot{
   display:flex;
   justify-content:center;
   gap:0;
-  margin-top:18px;
+  margin-top:36px;
   border-bottom:2px solid var(--line);
 }
 .stat-menu-item{
@@ -523,15 +523,15 @@ html[data-theme="dark"] .live-dot{
 .stat-menu-item svg{opacity:.6;transition:opacity .15s;}
 .stat-menu-item:hover{color:var(--text);}
 .stat-menu-item:hover svg{opacity:.9;}
-.stat-menu-item.is-active{color:var(--accent);}
-.stat-menu-item.is-active svg{opacity:1;stroke:var(--accent);}
+.stat-menu-item.is-active{color:#F37022;}
+.stat-menu-item.is-active svg{opacity:1;stroke:#F37022;}
 .stat-menu-item.is-active::after{
   content:"";
   position:absolute;
   bottom:-2px;
   left:0;right:0;
   height:2px;
-  background:linear-gradient(90deg, var(--accent), var(--accent-2));
+  background:#F37022;
   border-radius:2px 2px 0 0;
 }
 
