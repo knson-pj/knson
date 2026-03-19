@@ -108,6 +108,9 @@
     els.regionDistChart = document.getElementById("regionDistChart");
     els.typeDistChart = document.getElementById("typeDistChart");
     els.priceDistChart = document.getElementById("priceDistChart");
+    els.statMenu = document.getElementById("statMenu");
+    els.statTabProperties = document.getElementById("statTabProperties");
+    els.statTabAgents = document.getElementById("statTabAgents");
 
     // Map view
     els.mvPropertyList = document.getElementById("mvPropertyList");
@@ -196,6 +199,19 @@
         els.inflowTabs.querySelectorAll(".stat-period-tab").forEach((b) => b.classList.remove("is-active"));
         btn.classList.add("is-active");
         renderInflowChart(btn.dataset.period || "day");
+      });
+    }
+
+    // Stat menu tabs (매물현황 / 담당자현황)
+    if (els.statMenu) {
+      els.statMenu.addEventListener("click", (e) => {
+        const btn = e.target.closest(".stat-menu-item");
+        if (!btn) return;
+        els.statMenu.querySelectorAll(".stat-menu-item").forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        const tab = btn.dataset.statTab;
+        if (els.statTabProperties) els.statTabProperties.classList.toggle("hidden", tab !== "properties");
+        if (els.statTabAgents) els.statTabAgents.classList.toggle("hidden", tab !== "agents");
       });
     }
 

@@ -65,60 +65,54 @@
   <div class="page">
     <section class="page-hero" aria-label="대시보드 헤더">
       <div class="page-hero-live"><span class="live-dot"></span> LIVE</div>
-      <h1 class="page-hero-title">DB통계</h1>
+      <h1 class="page-hero-title">Statistical Data</h1>
       <p class="page-hero-sub">저장·입력된 데이터를 통계로 확인합니다.</p>
+
+      <!-- 통계 메뉴바 -->
+      <nav class="stat-menu" id="statMenu">
+        <button class="stat-menu-item is-active" data-stat-tab="properties" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span>매물현황</span>
+        </button>
+        <button class="stat-menu-item" data-stat-tab="agents" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          <span>담당자현황</span>
+        </button>
+      </nav>
     </section>
 
-    <section class="kpi" aria-label="요약 카드">
-      <button id="statTotalCard" class="kpi-card kpi-total" type="button">
-        <div class="kpi-big" id="statTotal">0</div>
-        <div class="kpi-sub">누적</div>
-      </button>
-
-      <button id="statAuctionCard" class="kpi-card kpi-auction" type="button">
-        <div class="kpi-label">경매</div>
-        <div class="kpi-num" id="statAuction">0</div>
-      </button>
-
-      <button id="statGongmaeCard" class="kpi-card kpi-gongmae" type="button">
-        <div class="kpi-label">공매</div>
-        <div class="kpi-num" id="statGongmae">0</div>
-      </button>
-
-      <button id="statRealtorCard" class="kpi-card kpi-realtor" type="button">
-        <div class="kpi-label">중개</div>
-        <div class="kpi-num" id="statRealtor">0</div>
-      </button>
-
-      <button id="statGeneralCard" class="kpi-card kpi-general" type="button">
-        <div class="kpi-label">일반</div>
-        <div class="kpi-num" id="statGeneral">0</div>
-      </button>
-    </section>
-<section class="agent-chart-panel" aria-label="담당자 배당 물건수">
-      <div class="agent-chart-head">
-        <div class="agent-chart-head-right">
-          <div class="agent-chart-legend-head" aria-label="범례">
-            <span class="legend-item"><span class="legend-swatch legend-auction"></span>경매</span>
-            <span class="legend-item"><span class="legend-swatch legend-onbid"></span>공매</span>
-            <span class="legend-item"><span class="legend-swatch legend-realtor"></span>중개</span>
-            <span class="legend-item"><span class="legend-swatch legend-general"></span>일반</span>
-          </div>
-          <span id="agentChartMeta" class="agent-chart-meta-chip">0명</span>
-        </div>
-      </div>
-      <div id="agentChart" class="agent-chart"></div>
-      <div id="agentChartEmpty" class="agent-chart-empty hidden">표시할 담당자 배당 데이터가 없습니다.</div>
-    </section>
+    <!-- ── 매물현황 탭 ── -->
+    <div id="statTabProperties" class="stat-tab-content">
+      <section class="kpi" aria-label="요약 카드">
+        <button id="statTotalCard" class="kpi-card kpi-total" type="button">
+          <div class="kpi-big" id="statTotal">0</div>
+          <div class="kpi-sub">누적</div>
+        </button>
+        <button id="statAuctionCard" class="kpi-card kpi-auction" type="button">
+          <div class="kpi-label">경매</div>
+          <div class="kpi-num" id="statAuction">0</div>
+        </button>
+        <button id="statGongmaeCard" class="kpi-card kpi-gongmae" type="button">
+          <div class="kpi-label">공매</div>
+          <div class="kpi-num" id="statGongmae">0</div>
+        </button>
+        <button id="statRealtorCard" class="kpi-card kpi-realtor" type="button">
+          <div class="kpi-label">중개</div>
+          <div class="kpi-num" id="statRealtor">0</div>
+        </button>
+        <button id="statGeneralCard" class="kpi-card kpi-general" type="button">
+          <div class="kpi-label">일반</div>
+          <div class="kpi-num" id="statGeneral">0</div>
+        </button>
+      </section>
 
     <!-- Stats / Map views -->
     <main class="content">
       <section id="textView" class="stats-view">
 
-        <!-- 물건 DB 유입 현황 -->
         <div class="stat-panel">
           <div class="stat-panel-head">
-            <h3 class="stat-panel-title">물건 DB 유입 현황</h3>
+            <h3 class="stat-panel-title">신규 유입현황</h3>
             <div class="stat-period-tabs" id="inflowTabs">
               <button class="stat-period-tab is-active" data-period="day" type="button">일간</button>
               <button class="stat-period-tab" data-period="week" type="button">주간</button>
@@ -129,27 +123,46 @@
           <div class="stat-chart-area" id="inflowChart"></div>
         </div>
 
-        <!-- 분포 차트 그리드 -->
         <div class="stat-grid">
           <div class="stat-panel">
-            <h3 class="stat-panel-title">구분별 분포</h3>
+            <h3 class="stat-panel-title">구분별</h3>
             <div id="sourceDistChart" class="stat-chart-area"></div>
           </div>
           <div class="stat-panel">
-            <h3 class="stat-panel-title">지역별 분포 (상위 10)</h3>
+            <h3 class="stat-panel-title">지역별 (상위 10)</h3>
             <div id="regionDistChart" class="stat-chart-area"></div>
           </div>
           <div class="stat-panel">
-            <h3 class="stat-panel-title">유형별 분포 (상위 8)</h3>
+            <h3 class="stat-panel-title">유형별 (상위 8)</h3>
             <div id="typeDistChart" class="stat-chart-area"></div>
           </div>
           <div class="stat-panel">
-            <h3 class="stat-panel-title">가격대별 분포</h3>
+            <h3 class="stat-panel-title">가격대별</h3>
             <div id="priceDistChart" class="stat-chart-area"></div>
           </div>
         </div>
 
       </section>
+    </div><!-- /statTabProperties -->
+
+    <!-- ── 담당자현황 탭 ── -->
+    <div id="statTabAgents" class="stat-tab-content hidden">
+      <section class="agent-chart-panel" aria-label="담당자 배당 물건수">
+        <div class="agent-chart-head">
+          <div class="agent-chart-head-right">
+            <div class="agent-chart-legend-head" aria-label="범례">
+              <span class="legend-item"><span class="legend-swatch legend-auction"></span>경매</span>
+              <span class="legend-item"><span class="legend-swatch legend-onbid"></span>공매</span>
+              <span class="legend-item"><span class="legend-swatch legend-realtor"></span>중개</span>
+              <span class="legend-item"><span class="legend-swatch legend-general"></span>일반</span>
+            </div>
+            <span id="agentChartMeta" class="agent-chart-meta-chip">0명</span>
+          </div>
+        </div>
+        <div id="agentChart" class="agent-chart"></div>
+        <div id="agentChartEmpty" class="agent-chart-empty hidden">표시할 담당자 배당 데이터가 없습니다.</div>
+      </section>
+    </div><!-- /statTabAgents -->
 
       <!-- Map view -->
       <section id="mapView" class="map-view hidden">

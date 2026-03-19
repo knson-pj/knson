@@ -2,6 +2,7 @@
 body.is-map-view .page-hero,
 body.is-map-view .kpi,
 body.is-map-view .agent-chart-panel,
+body.is-map-view .stat-tab-content,
 body.is-map-view #filterPanel{display:none !important;}
 body.is-map-view .page{max-width:100%;padding:0;}
 body.is-map-view .content{padding:0;}
