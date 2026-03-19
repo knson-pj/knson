@@ -2540,23 +2540,94 @@ function bindEvents() {
   }
 
   // ---------------------------
-  // Geocoding
+  // Geocoding (Kakao Maps JS SDK)
   // ---------------------------
+  let _geocodeKakaoReady = null;
+  let _geocoder = null;
+
+  function getKakaoAppKey() {
+    const meta = document.querySelector('meta[name="kakao-app-key"]');
+    return String(meta?.getAttribute("content") || "").trim();
+  }
+
+  function loadKakaoMapsSDK(appKey) {
+    return new Promise((resolve, reject) => {
+      if (window.kakao?.maps?.services?.Geocoder) {
+        resolve();
+        return;
+      }
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve());
+        return;
+      }
+      const s = document.createElement("script");
+      s.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=" + encodeURIComponent(appKey) + "&autoload=false&libraries=services";
+      s.async = true;
+      s.onload = () => {
+        if (!window.kakao?.maps?.load) {
+          reject(new Error("Kakao SDK 로드 실패"));
+          return;
+        }
+        window.kakao.maps.load(() => resolve());
+      };
+      s.onerror = () => reject(new Error("Kakao SDK 네트워크 오류"));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensureKakaoGeocoder() {
+    if (_geocoder) return _geocoder;
+    const appKey = getKakaoAppKey();
+    if (!appKey) throw new Error("카카오 JavaScript 키가 설정되지 않았습니다.");
+    if (!_geocodeKakaoReady) {
+      _geocodeKakaoReady = loadKakaoMapsSDK(appKey);
+    }
+    await _geocodeKakaoReady;
+    _geocoder = new kakao.maps.services.Geocoder();
+    return _geocoder;
+  }
+
+  function geocodeOneAddress(geocoder, address) {
+    return new Promise((resolve) => {
+      geocoder.addressSearch(address, (result, status) => {
+        if (status !== kakao.maps.services.Status.OK || !result?.length) {
+          resolve(null);
+          return;
+        }
+        const best = result[0];
+        const lat = Number(best.y);
+        const lng = Number(best.x);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          resolve(null);
+          return;
+        }
+        resolve({ lat, lng });
+      });
+    });
+  }
+
+  function normalizeAddressForGeocode(rawAddress) {
+    let addr = String(rawAddress || "").trim();
+    if (!addr) return "";
+    addr = addr.replace(/\([^)]*\)/g, "").trim();
+    addr = addr.replace(/\s*외\s*\d*\s*필지?/g, "").trim();
+    addr = addr.replace(/\s+\d{1,5}동\s*\d{1,5}호\s*$/g, "").trim();
+    addr = addr.replace(/\s+(지하\s*)?\d{1,3}층.*$/g, "").trim();
+    addr = addr.replace(/[,;·\s]+$/, "").trim();
+    return addr;
+  }
+
   function getGeocodeStats() {
     const props = state.properties;
-    let pending = 0, ok = 0, failed = 0, noCoords = 0;
+    let pending = 0, ok = 0, failed = 0;
     for (const p of props) {
-      const raw = p._raw || p;
-      const status = String(raw.geocode_status || raw.geocodeStatus || "").trim().toLowerCase();
+      const st = String(p.geocodeStatus || "").toLowerCase();
       const hasCoords = (p.latitude != null && p.longitude != null);
-
-      if (status === "ok" || (hasCoords && status !== "failed")) { ok++; }
-      else if (status === "failed") { failed++; }
-      else if (status === "pending") { pending++; }
-      else if (!hasCoords && p.address) { noCoords++; }
+      if (st === "ok" || (hasCoords && st !== "failed" && st !== "pending")) { ok++; }
+      else if (st === "failed") { failed++; }
+      else if (st === "pending" || (!hasCoords && p.address)) { pending++; }
     }
-    // noCoords (status가 없고 좌표도 없는 건) = 사실상 pending과 동일
-    return { pending: pending + noCoords, ok, failed, total: props.length };
+    return { pending, ok, failed, total: props.length };
   }
 
   function updateGeocodeStatusBar() {
@@ -2566,10 +2637,8 @@ function bindEvents() {
       els.geocodeBar.classList.add("hidden");
       return;
     }
-
     const stats = getGeocodeStats();
-    const hasGeocodable = stats.pending > 0 || stats.failed > 0 || stats.ok > 0;
-    els.geocodeBar.classList.toggle("hidden", !hasGeocodable && stats.total === 0);
+    els.geocodeBar.classList.toggle("hidden", stats.total === 0);
 
     if (els.geocodePending) els.geocodePending.textContent = String(stats.pending);
     if (els.geocodeOk) els.geocodeOk.textContent = String(stats.ok);
@@ -2584,189 +2653,121 @@ function bindEvents() {
       els.btnGeocodeRetryFailed.disabled = stats.failed === 0 || state.geocodeRunning;
     }
     if (els.geocodeIcon) {
-      els.geocodeIcon.textContent = state.geocodeRunning ? "⏳" : (stats.pending > 0 ? "📍" : "✅");
+      els.geocodeIcon.textContent = state.geocodeRunning ? "\u23F3" : (stats.pending > 0 ? "\uD83D\uDCCD" : "\u2705");
     }
   }
 
-  function normalizeAddressForGeocode(rawAddress) {
-    let addr = String(rawAddress || "").trim();
-    if (!addr) return "";
-    // 괄호 안 부가정보 제거
-    addr = addr.replace(/\([^)]*\)/g, "").trim();
-    // "외 N필지" 제거
-    addr = addr.replace(/\s*외\s*\d*\s*필지?/g, "").trim();
-    // 동/호수 제거 (건물 내 위치는 지오코딩에 불필요)
-    addr = addr.replace(/\s+\d{1,5}동\s*\d{1,5}호\s*$/g, "").trim();
-    // 층수 표기 제거
-    addr = addr.replace(/\s+(지하\s*)?\d{1,3}층.*$/g, "").trim();
-    // 끝 쉼표/세미콜론 정리
-    addr = addr.replace(/[,;·\s]+$/, "").trim();
-    return addr;
-  }
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-  function getKakaoRestApiKey() {
-    const meta = document.querySelector('meta[name="kakao-app-key"]');
-    return String(meta?.getAttribute("content") || "").trim();
-  }
-
-  async function geocodeSingleKakao(address, apiKey) {
-    const cleaned = normalizeAddressForGeocode(address);
-    if (!cleaned) return null;
-
-    const url = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(cleaned)}&analyze_type=similar`;
-    const res = await fetch(url, {
-      headers: { Authorization: `KakaoAK ${apiKey}` },
-    });
-
-    if (!res.ok) {
-      if (res.status === 429) throw new Error("RATE_LIMIT");
-      return null;
-    }
-
-    const data = await res.json();
-    const docs = data?.documents;
-    if (!Array.isArray(docs) || docs.length === 0) return null;
-
-    const best = docs[0];
-    const lat = Number(best.y);
-    const lng = Number(best.x);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-
-    return { lat, lng, matchedAddress: best.address_name || cleaned };
-  }
-
-  async function saveGeocodeResult(propertyId, result, status) {
-    const sb = isSupabaseMode() ? K.initSupabase() : null;
-    if (!sb) return;
-
+  async function saveGeocodeResult(sb, propertyId, coords, status) {
     const patch = {
       geocode_status: status,
       geocoded_at: new Date().toISOString(),
     };
-
-    if (result && status === "ok") {
-      patch.latitude = result.lat;
-      patch.longitude = result.lng;
+    if (coords && status === "ok") {
+      patch.latitude = coords.lat;
+      patch.longitude = coords.lng;
     }
-
     const col = String(propertyId).includes(":") ? "global_id" : "id";
     const { error } = await sb.from("properties").update(patch).eq(col, propertyId);
     if (error) console.warn("saveGeocodeResult error:", propertyId, error.message);
   }
 
-  function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  async function runGeocoding(retryFailed = false) {
+  async function runGeocoding(retryFailed) {
     if (state.geocodeRunning) return;
-    if (!isSupabaseMode()) {
+
+    const sb = isSupabaseMode() ? K.initSupabase() : null;
+    if (!sb) {
       alert("Supabase 연동이 필요합니다.");
       return;
     }
 
-    const apiKey = getKakaoRestApiKey();
-    if (!apiKey) {
-      alert("카카오 REST API 키가 설정되지 않았습니다. admin-index.html의 meta[name='kakao-app-key']를 확인하세요.");
+    // 1. 카카오 Maps JS SDK 로드 + Geocoder 준비
+    let geocoder;
+    try {
+      geocoder = await ensureKakaoGeocoder();
+    } catch (err) {
+      alert("카카오 SDK 로드 실패: " + (err.message || "알 수 없는 오류"));
       return;
     }
 
     state.geocodeRunning = true;
     updateGeocodeStatusBar();
-
     if (els.geocodeProgress) els.geocodeProgress.classList.remove("hidden");
     if (els.geocodeRunningText) els.geocodeRunningText.classList.remove("hidden");
 
     try {
-      // DB에서 대상 건 직접 조회 (state.properties는 정규화된 데이터라 원본 geocode_status가 소실될 수 있음)
-      const sb = K.initSupabase();
-      let query = sb.from("properties").select("id,global_id,address,latitude,longitude,geocode_status");
+      // 2. DB에서 대상 건 조회
+      let query = sb.from("properties")
+        .select("id,global_id,address,latitude,longitude,geocode_status")
+        .not("address", "is", null)
+        .order("date_uploaded", { ascending: false })
+        .limit(200);
 
       if (retryFailed) {
         query = query.eq("geocode_status", "failed");
       } else {
-        // pending이거나, geocode_status가 null이면서 좌표가 없는 건
-        query = query.or("geocode_status.eq.pending,and(geocode_status.is.null,latitude.is.null)");
+        query = query.eq("geocode_status", "pending");
       }
-
-      query = query.not("address", "is", null)
-                    .order("date_uploaded", { ascending: false })
-                    .limit(200);
 
       const { data: targets, error: fetchErr } = await query;
       if (fetchErr) throw fetchErr;
 
       const items = Array.isArray(targets) ? targets.filter((r) => String(r.address || "").trim()) : [];
-
       if (!items.length) {
         alert(retryFailed ? "재시도할 실패 건이 없습니다." : "지오코딩 대상이 없습니다.");
         return;
       }
 
-      let processed = 0;
-      let okCount = 0;
-      let failCount = 0;
+      // 3. 순차 처리
+      let processed = 0, okCount = 0, failCount = 0;
       const total = items.length;
 
       for (const item of items) {
         const propId = item.id || item.global_id;
-        if (!propId) continue;
+        if (!propId) { processed++; continue; }
 
-        // 이미 좌표가 있고 ok가 아닌 상태면 (retryFailed가 아닌 경우) 스킵
-        if (!retryFailed && item.latitude != null && item.longitude != null) {
-          await saveGeocodeResult(propId, { lat: item.latitude, lng: item.longitude }, "ok");
-          okCount++;
+        const rawAddr = String(item.address || "").trim();
+        const cleaned = normalizeAddressForGeocode(rawAddr);
+
+        if (!cleaned) {
+          await saveGeocodeResult(sb, propId, null, "failed");
+          failCount++;
           processed++;
           continue;
         }
 
-        try {
-          const result = await geocodeSingleKakao(item.address, apiKey);
+        // 카카오 Maps JS SDK Geocoder 호출
+        const coords = await geocodeOneAddress(geocoder, cleaned);
 
-          if (result) {
-            await saveGeocodeResult(propId, result, "ok");
-            okCount++;
-          } else {
-            await saveGeocodeResult(propId, null, "failed");
-            failCount++;
-          }
-        } catch (err) {
-          if (err?.message === "RATE_LIMIT") {
-            // Rate limit → 2초 대기 후 재시도 1회
-            await sleep(2000);
-            try {
-              const retryResult = await geocodeSingleKakao(item.address, apiKey);
-              if (retryResult) {
-                await saveGeocodeResult(propId, retryResult, "ok");
-                okCount++;
-              } else {
-                await saveGeocodeResult(propId, null, "failed");
-                failCount++;
-              }
-            } catch {
-              await saveGeocodeResult(propId, null, "failed");
-              failCount++;
-            }
-          } else {
-            await saveGeocodeResult(propId, null, "failed");
-            failCount++;
-          }
+        // 첫 시도 실패 시 원본 주소로 재시도
+        let finalCoords = coords;
+        if (!finalCoords && cleaned !== rawAddr) {
+          finalCoords = await geocodeOneAddress(geocoder, rawAddr);
+        }
+
+        if (finalCoords) {
+          await saveGeocodeResult(sb, propId, finalCoords, "ok");
+          okCount++;
+        } else {
+          await saveGeocodeResult(sb, propId, null, "failed");
+          failCount++;
         }
 
         processed++;
 
         // 진행률 업데이트
         const pct = Math.round((processed / total) * 100);
-        if (els.geocodeProgressBar) els.geocodeProgressBar.style.width = `${pct}%`;
-        if (els.geocodeRunningText) els.geocodeRunningText.textContent = `${processed}/${total} (성공 ${okCount}, 실패 ${failCount})`;
+        if (els.geocodeProgressBar) els.geocodeProgressBar.style.width = pct + "%";
+        if (els.geocodeRunningText) {
+          els.geocodeRunningText.textContent = processed + "/" + total + " (성공 " + okCount + ", 실패 " + failCount + ")";
+        }
 
-        // Rate limiting: 요청 간 120ms 딜레이
-        if (processed < total) await sleep(120);
+        // 카카오 SDK는 콜백 기반이라 Rate Limit이 REST보다 관대하지만 안전하게 150ms 간격 유지
+        if (processed < total) await sleep(150);
       }
 
-      alert(`지오코딩 완료: 총 ${total}건 중 성공 ${okCount}건, 실패 ${failCount}건`);
-
-      // 물건 목록 새로고침
+      alert("지오코딩 완료: 총 " + total + "건 중 성공 " + okCount + "건, 실패 " + failCount + "건");
       await loadProperties();
 
     } catch (err) {
