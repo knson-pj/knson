@@ -56,7 +56,7 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   })();
 
   btnPublicRegister.addEventListener("click", () => {
-    location.href = "./general-register.html";
+    location.href = "./buypage.html";
   });
 
   form.addEventListener("submit", async (e) => {
