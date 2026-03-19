@@ -723,22 +723,34 @@
     const buckets = new Map();
     const now = new Date();
 
+    // 현재 기간의 시작일 계산
+    let periodStart = new Date(0);
+    if (period === "day") {
+      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+    } else if (period === "week") {
+      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 112);
+    } else if (period === "month") {
+      periodStart = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    }
+
+    const periodItems = []; // 현재 표시 기간에 해당하는 아이템
+
     items.forEach((p) => {
       const d = parseFlexibleDate(p.createdAt);
       if (!d) return;
       let key = "";
       if (period === "day") {
-        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+        key = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
       } else if (period === "week") {
-        const startOfWeek = new Date(d);
-        startOfWeek.setDate(d.getDate() - d.getDay());
-        key = `${startOfWeek.getFullYear()}-${String(startOfWeek.getMonth()+1).padStart(2,"0")}-${String(startOfWeek.getDate()).padStart(2,"0")}`;
+        const sw = new Date(d); sw.setDate(d.getDate() - d.getDay());
+        key = sw.getFullYear() + "-" + String(sw.getMonth()+1).padStart(2,"0") + "-" + String(sw.getDate()).padStart(2,"0");
       } else if (period === "month") {
-        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+        key = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
       } else {
         key = String(d.getFullYear());
       }
       buckets.set(key, (buckets.get(key) || 0) + 1);
+      if (d >= periodStart) periodItems.push(p);
     });
 
     const sorted = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]));
@@ -747,7 +759,6 @@
     if (!sliced.length) { el.innerHTML = '<div class="stat-empty">표시할 데이터가 없습니다.</div>'; return; }
 
     const maxVal = Math.max(...sliced.map((s) => s[1]), 1);
-
     const formatLabel = (key) => {
       if (period === "day") return key.slice(5);
       if (period === "week") return key.slice(5) + "~";
@@ -755,15 +766,64 @@
       return key;
     };
 
-    el.innerHTML = '<div class="inflow-chart">' +
-      sliced.map(([key, count]) => {
-        const pct = Math.max(4, Math.round((count / maxVal) * 100));
-        return '<div class="inflow-bar-col">' +
-          '<div class="inflow-bar-val">' + count + '</div>' +
-          '<div class="inflow-bar" style="height:' + pct + '%"></div>' +
-          '<div class="inflow-bar-label">' + escapeHtml(formatLabel(key)) + '</div>' +
-          '</div>';
-      }).join("") +
+    // 지역별 집계
+    const regionCount = { "서울": 0, "경기": 0, "인천": 0, "기타": 0 };
+    periodItems.forEach((p) => {
+      const addr = String(p.address || "");
+      if (addr.includes("서울")) regionCount["서울"]++;
+      else if (addr.includes("경기") || addr.includes("수원") || addr.includes("성남") || addr.includes("고양") || addr.includes("용인") || addr.includes("화성") || addr.includes("안산") || addr.includes("안양") || addr.includes("평택") || addr.includes("시흥") || addr.includes("파주") || addr.includes("김포") || addr.includes("광명") || addr.includes("하남") || addr.includes("과천") || addr.includes("의왕") || addr.includes("군포") || addr.includes("오산") || addr.includes("이천") || addr.includes("양평") || addr.includes("여주") || addr.includes("동두천") || addr.includes("구리") || addr.includes("남양주") || addr.includes("의정부") || addr.includes("포천") || addr.includes("양주")) regionCount["경기"]++;
+      else if (addr.includes("인천")) regionCount["인천"]++;
+      else regionCount["기타"]++;
+    });
+
+    // 구분별 집계
+    const sourceCount = { "경매": 0, "공매": 0, "중개": 0, "일반": 0 };
+    periodItems.forEach((p) => {
+      if (p.source === "auction") sourceCount["경매"]++;
+      else if (p.source === "onbid") sourceCount["공매"]++;
+      else if (p.source === "realtor") sourceCount["중개"]++;
+      else sourceCount["일반"]++;
+    });
+
+    const periodLabel = period === "day" ? "최근 30일" : period === "week" ? "최근 16주" : period === "month" ? "최근 12개월" : "전체";
+
+    const regionChips = [
+      { label: "서울", val: regionCount["서울"], color: "#F37022" },
+      { label: "경기", val: regionCount["경기"], color: "#3498DB" },
+      { label: "인천", val: regionCount["인천"], color: "#2ECC71" },
+      { label: "기타", val: regionCount["기타"], color: "#9A8E82" },
+    ];
+    const sourceChips = [
+      { label: "경매", val: sourceCount["경매"], color: "#D778F7" },
+      { label: "공매", val: sourceCount["공매"], color: "#59A7FF" },
+      { label: "중개", val: sourceCount["중개"], color: "#4AD8BA" },
+      { label: "일반", val: sourceCount["일반"], color: "#F6B04A" },
+    ];
+
+    const chipHtml = (chips) => chips.map((c) =>
+      '<span class="inflow-bd-chip"><span class="dot" style="background:' + c.color + '"></span><span class="label">' + c.label + '</span><span class="val">' + c.val.toLocaleString() + '</span></span>'
+    ).join("");
+
+    el.innerHTML =
+      '<div class="inflow-chart">' +
+        sliced.map(([key, count]) => {
+          const pct = Math.max(4, Math.round((count / maxVal) * 100));
+          return '<div class="inflow-bar-col">' +
+            '<div class="inflow-bar-val">' + count.toLocaleString() + '</div>' +
+            '<div class="inflow-bar" style="height:' + pct + '%"></div>' +
+            '<div class="inflow-bar-label">' + escapeHtml(formatLabel(key)) + '</div>' +
+            '</div>';
+        }).join("") +
+      '</div>' +
+      '<div class="inflow-breakdown">' +
+        '<div class="inflow-bd-group">' +
+          '<div class="inflow-bd-title">지역별 (' + escapeHtml(periodLabel) + ')</div>' +
+          '<div class="inflow-bd-items">' + chipHtml(regionChips) + '</div>' +
+        '</div>' +
+        '<div class="inflow-bd-group">' +
+          '<div class="inflow-bd-title">구분별 (' + escapeHtml(periodLabel) + ')</div>' +
+          '<div class="inflow-bd-items">' + chipHtml(sourceChips) + '</div>' +
+        '</div>' +
       '</div>';
   }
 

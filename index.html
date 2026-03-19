@@ -110,50 +110,54 @@
     <main class="content">
       <section id="textView" class="stats-view">
 
-        <!-- 신규 유입현황 (full width) -->
-        <div class="stat-panel">
-          <div class="stat-panel-head">
-            <h3 class="stat-panel-title">신규 유입현황</h3>
-            <div class="stat-period-tabs" id="inflowTabs">
-              <button class="stat-period-tab is-active" data-period="day" type="button">일간</button>
-              <button class="stat-period-tab" data-period="week" type="button">주간</button>
-              <button class="stat-period-tab" data-period="month" type="button">월간</button>
-              <button class="stat-period-tab" data-period="year" type="button">연간</button>
+        <!-- 대시보드 그리드 -->
+        <div class="stat-dashboard">
+          <!-- 신규 유입현황 (좌측 넓게) -->
+          <div class="stat-panel sd-inflow">
+            <div class="stat-panel-head">
+              <h3 class="stat-panel-title">신규 유입현황</h3>
+              <div class="stat-period-tabs" id="inflowTabs">
+                <button class="stat-period-tab is-active" data-period="day" type="button">일간</button>
+                <button class="stat-period-tab" data-period="week" type="button">주간</button>
+                <button class="stat-period-tab" data-period="month" type="button">월간</button>
+                <button class="stat-period-tab" data-period="year" type="button">연간</button>
+              </div>
             </div>
+            <div class="stat-chart-area" id="inflowChart"></div>
           </div>
-          <div class="stat-chart-area" id="inflowChart"></div>
-        </div>
 
-        <!-- 도넛 차트 행: 구분별 + 진행상태별 -->
-        <div class="stat-grid">
-          <div class="stat-panel">
+          <!-- 구분별 도넛 -->
+          <div class="stat-panel sd-source">
             <h3 class="stat-panel-title">구분별</h3>
             <div id="sourceDistChart" class="stat-chart-area"></div>
           </div>
-          <div class="stat-panel">
+
+          <!-- 진행상태별 도넛 -->
+          <div class="stat-panel sd-status">
             <h3 class="stat-panel-title">진행상태별</h3>
             <div id="statusDistChart" class="stat-chart-area"></div>
           </div>
-        </div>
 
-        <!-- 수평 바 차트 행 -->
-        <div class="stat-grid">
-          <div class="stat-panel">
+          <!-- 지역별 -->
+          <div class="stat-panel sd-region">
             <h3 class="stat-panel-title">지역별 (상위 10)</h3>
             <div id="regionDistChart" class="stat-chart-area"></div>
           </div>
-          <div class="stat-panel">
+
+          <!-- 유형별 -->
+          <div class="stat-panel sd-type">
             <h3 class="stat-panel-title">유형별 (상위 8)</h3>
             <div id="typeDistChart" class="stat-chart-area"></div>
           </div>
-        </div>
 
-        <div class="stat-grid">
-          <div class="stat-panel">
+          <!-- 가격대별 -->
+          <div class="stat-panel sd-price">
             <h3 class="stat-panel-title">가격대별</h3>
             <div id="priceDistChart" class="stat-chart-area"></div>
           </div>
-          <div class="stat-panel">
+
+          <!-- 면적별 -->
+          <div class="stat-panel sd-area">
             <h3 class="stat-panel-title">면적별 (전용, 평)</h3>
             <div id="areaDistChart" class="stat-chart-area"></div>
           </div>
