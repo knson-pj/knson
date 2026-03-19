@@ -34,7 +34,8 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./styles.css?v=20260313-ui2" />
+  <link rel="stylesheet" href="./styles.css?v=20260319-map" />
+  <link rel="stylesheet" href="./map-view.css?v=20260319-map" />
 </head>
 <body>
 
@@ -156,7 +157,68 @@
       </section>
 
       <!-- Map view -->
-      <section id="mapView" class="map-view hidden"></section>
+      <section id="mapView" class="map-view hidden">
+        <!-- Sidebar -->
+        <aside class="mv-sidebar" id="mvSidebar">
+          <div class="mv-sb-head">
+            <div class="mv-sb-search">
+              <input id="mvKeyword" class="mv-input" type="text" placeholder="주소 / 담당자 / 지역 검색" />
+            </div>
+            <div class="mv-sb-filters">
+              <select id="mvSourceFilter" class="mv-sel">
+                <option value="">전체 구분</option>
+                <option value="auction">경매</option>
+                <option value="onbid">공매</option>
+                <option value="realtor">중개</option>
+                <option value="general">일반</option>
+              </select>
+              <select id="mvStatusFilter" class="mv-sel">
+                <option value="">전체 상태</option>
+                <option value="active">진행중</option>
+                <option value="hold">보류</option>
+                <option value="closed">종결</option>
+                <option value="review">검토중</option>
+              </select>
+            </div>
+          </div>
+          <div class="mv-sb-list" id="mvPropertyList"></div>
+          <div class="mv-sb-summary" id="mvSummary"></div>
+        </aside>
+
+        <!-- Map area -->
+        <div class="mv-map-area">
+          <div id="kakaoMap" class="mv-kakao-map"></div>
+          <div id="mapHint" class="map-hint hidden"></div>
+
+          <!-- Legend -->
+          <div class="mv-legend">
+            <div class="mv-legend-section">
+              <div class="mv-legend-title">구분</div>
+              <div class="mv-legend-items">
+                <span class="mv-legend-item"><span class="mv-legend-cir" style="background:#D778F7"></span>경매</span>
+                <span class="mv-legend-item"><span class="mv-legend-cir" style="background:#59A7FF"></span>공매</span>
+                <span class="mv-legend-item"><span class="mv-legend-cir" style="background:#4AD8BA"></span>중개</span>
+                <span class="mv-legend-item"><span class="mv-legend-cir" style="background:#F6B04A"></span>일반</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zoom -->
+          <div class="mv-zoom">
+            <button class="mv-zoom-btn" id="mvZoomIn" type="button">+</button>
+            <button class="mv-zoom-btn" id="mvZoomOut" type="button">−</button>
+          </div>
+        </div>
+
+        <!-- Detail popup -->
+        <div class="mv-detail hidden" id="mvDetail">
+          <div class="mv-detail-head">
+            <div class="mv-detail-grade" id="mvDetailGrade"></div>
+            <button class="mv-detail-close" id="mvDetailClose" type="button">✕</button>
+          </div>
+          <div class="mv-detail-body" id="mvDetailBody"></div>
+        </div>
+      </section>
     </main>
   </div>
 

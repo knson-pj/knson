@@ -112,6 +112,19 @@
     els.agentChartEmpty = document.getElementById("agentChartEmpty");
     els.agentChartMeta = document.getElementById("agentChartMeta");
     els.mainPagination = document.getElementById("mainPagination");
+
+    // Map view
+    els.mvPropertyList = document.getElementById("mvPropertyList");
+    els.mvSummary = document.getElementById("mvSummary");
+    els.mvKeyword = document.getElementById("mvKeyword");
+    els.mvSourceFilter = document.getElementById("mvSourceFilter");
+    els.mvStatusFilter = document.getElementById("mvStatusFilter");
+    els.mvDetail = document.getElementById("mvDetail");
+    els.mvDetailClose = document.getElementById("mvDetailClose");
+    els.mvDetailGrade = document.getElementById("mvDetailGrade");
+    els.mvDetailBody = document.getElementById("mvDetailBody");
+    els.mvZoomIn = document.getElementById("mvZoomIn");
+    els.mvZoomOut = document.getElementById("mvZoomOut");
   }
 
   function setupChrome() {
@@ -221,6 +234,38 @@
       els.btnRefresh.addEventListener("click", () => loadProperties());
     }
 
+    // Map sidebar filters
+    if (els.mvKeyword) {
+      els.mvKeyword.addEventListener("input", debounce((e) => {
+        state.keyword = String(e.target.value || "").trim();
+        state.page = 1;
+        renderKPIs(); renderAgentChart(); renderTable();
+        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
+      }, 150));
+    }
+    if (els.mvSourceFilter) {
+      els.mvSourceFilter.addEventListener("change", (e) => {
+        state.source = String(e.target.value || "") || "all";
+        renderKPIs(); renderTable();
+        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
+      });
+    }
+    if (els.mvStatusFilter) {
+      els.mvStatusFilter.addEventListener("change", (e) => {
+        state.status = String(e.target.value || "");
+        state.page = 1;
+        renderKPIs(); renderAgentChart(); renderTable();
+        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
+      });
+    }
+
+    // Map zoom
+    if (els.mvZoomIn) els.mvZoomIn.addEventListener("click", () => { if (state.map) state.map.setLevel(state.map.getLevel() - 1); });
+    if (els.mvZoomOut) els.mvZoomOut.addEventListener("click", () => { if (state.map) state.map.setLevel(state.map.getLevel() + 1); });
+
+    // Map detail close
+    if (els.mvDetailClose) els.mvDetailClose.addEventListener("click", closeMapDetail);
+
     // map view에서 창 크기 바뀌면 리레이아웃
     window.addEventListener(
       "resize",
@@ -236,17 +281,36 @@
 
   function setView(view) {
     state.view = view;
+    const isMap = view === "map";
+
+    // Body class for CSS overrides
+    document.body.classList.toggle("is-map-view", isMap);
+
     if (els.tabText) {
-      els.tabText.classList.toggle("is-active", view === "text");
-      els.tabText.setAttribute("aria-selected", view === "text" ? "true" : "false");
+      els.tabText.classList.toggle("is-active", !isMap);
+      els.tabText.setAttribute("aria-selected", !isMap ? "true" : "false");
     }
     if (els.tabMap) {
-      els.tabMap.classList.toggle("is-active", view === "map");
-      els.tabMap.setAttribute("aria-selected", view === "map" ? "true" : "false");
+      els.tabMap.classList.toggle("is-active", isMap);
+      els.tabMap.setAttribute("aria-selected", isMap ? "true" : "false");
     }
 
-    if (els.textView) els.textView.classList.toggle("hidden", view !== "text");
-    if (els.mapView) els.mapView.classList.toggle("hidden", view !== "map");
+    if (els.textView) els.textView.classList.toggle("hidden", isMap);
+    if (els.mapView) {
+      els.mapView.classList.toggle("hidden", !isMap);
+      els.mapView.classList.toggle("is-active", isMap);
+    }
+
+    // Sync sidebar filters with main state
+    if (isMap) {
+      if (els.mvKeyword) els.mvKeyword.value = state.keyword || "";
+      if (els.mvSourceFilter) els.mvSourceFilter.value = state.source === "all" ? "" : (state.source || "");
+      if (els.mvStatusFilter) els.mvStatusFilter.value = state.status || "";
+      renderMapSidebar();
+    } else {
+      // Sync back
+      if (els.searchKeyword) els.searchKeyword.value = state.keyword || "";
+    }
   }
 
   function openFilter() {
@@ -857,26 +921,36 @@
     return "";
   }
 
-  // ---- Kakao Map ----
+  // ---- Kakao Map (Enhanced) ----
+  const SOURCE_COLORS = {
+    auction: { bg: "rgba(215,120,247,0.88)", border: "rgba(215,120,247,0.4)", solid: "#D778F7", label: "경매", short: "경" },
+    onbid:   { bg: "rgba(89,167,255,0.88)", border: "rgba(89,167,255,0.4)", solid: "#59A7FF", label: "공매", short: "공" },
+    realtor: { bg: "rgba(74,216,186,0.88)", border: "rgba(74,216,186,0.4)", solid: "#4AD8BA", label: "중개", short: "중" },
+    general: { bg: "rgba(246,176,74,0.88)", border: "rgba(246,176,74,0.4)", solid: "#F6B04A", label: "일반", short: "일" },
+  };
+
+  function getSourceStyle(source) { return SOURCE_COLORS[source] || SOURCE_COLORS.general; }
+
+  function shortType(type) {
+    const t = String(type || "").trim();
+    if (!t || t === "-") return "매물";
+    if (t.length <= 4) return t;
+    if (t.includes("오피스텔")) return "오피스텔";
+    if (t.includes("근린") || t.includes("근생")) return "근생";
+    if (t.includes("사무")) return "사무실";
+    if (t.includes("상가")) return "상가";
+    if (t.includes("공장")) return "공장";
+    if (t.includes("토지") || t.includes("대지")) return "토지";
+    if (t.includes("빌딩") || t.includes("건물")) return "빌딩";
+    return t.slice(0, 4);
+  }
+
   function ensureMapDom() {
     if (!els.mapView) return { mapEl: null, hintEl: null };
-
-    let mapEl = document.getElementById("kakaoMap");
-    let hintEl = document.getElementById("mapHint");
-
-    // 기존 placeholder 제거하고 실제 컨테이너 삽입
-    if (!mapEl) {
-      els.mapView.innerHTML = `
-        <div class="map-wrap">
-          <div id="mapHint" class="map-hint hidden"></div>
-          <div id="kakaoMap" class="kakao-map"></div>
-        </div>
-      `;
-      mapEl = document.getElementById("kakaoMap");
-      hintEl = document.getElementById("mapHint");
-    }
-
-    return { mapEl, hintEl };
+    return {
+      mapEl: document.getElementById("kakaoMap"),
+      hintEl: document.getElementById("mapHint"),
+    };
   }
 
   async function ensureKakaoMap() {
@@ -887,7 +961,7 @@
     if (!key) {
       if (hintEl) {
         hintEl.classList.remove("hidden");
-        hintEl.textContent = "카카오 JavaScript 키가 필요합니다. index.html의 <meta name=\"kakao-app-key\">에 키를 넣어주세요.";
+        hintEl.textContent = "카카오 JavaScript 키가 필요합니다.";
       }
       return;
     }
@@ -895,52 +969,283 @@
     if (!state.kakaoReady) {
       state.kakaoReady = loadKakaoSdk(key);
     }
-
     await state.kakaoReady;
 
-    // 이미 생성돼 있으면 종료
-    if (state.map && state.geocoder) return;
+    if (state.map && state.geocoder) {
+      state.map.relayout();
+      return;
+    }
 
-    const center = new kakao.maps.LatLng(37.5665, 126.9780); // Seoul
-    state.map = new kakao.maps.Map(mapEl, {
-      center,
-      level: 6,
+    const center = new kakao.maps.LatLng(37.5665, 126.9780);
+    state.map = new kakao.maps.Map(mapEl, { center, level: 8 });
+    state.geocoder = new kakao.maps.services.Geocoder();
+
+    // 맵 이동/줌 완료 시 마커 재렌더링 (뷰포트 기반)
+    kakao.maps.event.addListener(state.map, "idle", debounce(() => {
+      if (state.view === "map") renderKakaoMarkers();
+    }, 300));
+  }
+
+  function clearMapMarkers() {
+    for (const m of state.markers) { try { m.setMap(null); } catch {} }
+    state.markers = [];
+  }
+
+  function createMarkerOverlay(item, position) {
+    const src = getSourceStyle(item.source);
+
+    const el = document.createElement("div");
+    el.className = "mv-marker";
+    el.setAttribute("data-id", item.id || "");
+    el.innerHTML =
+      '<div class="mv-marker-body" style="background:' + src.bg + ';border-color:' + src.border + '">' +
+        '<div class="mv-marker-stripe" style="background:' + src.solid + '"></div>' +
+        '<div class="mv-marker-src" style="background:' + src.solid + '">' + escapeHtml(src.short) + '</div>' +
+        '<div class="mv-marker-type">' + escapeHtml(shortType(item.type)) + '</div>' +
+      '</div>' +
+      '<div class="mv-marker-arrow" style="border-top-color:' + src.bg + '"></div>';
+
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openMapDetail(item);
+      // 선택 마커 강조
+      document.querySelectorAll(".mv-marker.is-active").forEach((m) => m.classList.remove("is-active"));
+      el.classList.add("is-active");
+      // 사이드바 선택 동기화
+      highlightSidebarCard(item.id);
     });
 
-    state.geocoder = new kakao.maps.services.Geocoder();
+    return new kakao.maps.CustomOverlay({
+      position,
+      content: el,
+      yAnchor: 1.3,
+      zIndex: 3,
+    });
   }
 
   async function renderKakaoMarkers() {
     if (state.view !== "map") return;
-    if (!state.map || !state.geocoder || !window.kakao?.maps) return;
+    if (!state.map || !window.kakao?.maps) return;
 
-    // clear markers
-    for (const m of state.markers) m.setMap(null);
-    state.markers = [];
+    clearMapMarkers();
 
     const rows = getFilteredRows();
-    const valid = rows.filter((r) => (r.address || "").trim().length > 0 || (r.latitude != null && r.longitude != null));
-    if (!valid.length) return;
+    // 좌표 있는 건만 (지오코딩 완료건)
+    const withCoords = rows.filter((r) => r.latitude != null && r.longitude != null);
+    if (!withCoords.length) return;
 
-    let firstPos = null;
+    // 현재 맵 bounds 기준 뷰포트 내 항목만 렌더링 (최대 500)
+    const bounds = state.map.getBounds();
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const inBounds = withCoords.filter((r) =>
+      r.latitude >= sw.getLat() && r.latitude <= ne.getLat() &&
+      r.longitude >= sw.getLng() && r.longitude <= ne.getLng()
+    );
 
-    for (const it of valid.slice(0, 200)) {
-      const pos = (it.latitude != null && it.longitude != null) ? { lat: it.latitude, lng: it.longitude } : await geocodeCached(it.address);
-      if (!pos) continue;
+    const target = inBounds.length > 0 ? inBounds.slice(0, 500) : withCoords.slice(0, 100);
 
-      if (!firstPos) firstPos = pos;
-
-      const marker = new kakao.maps.Marker({
-        position: new kakao.maps.LatLng(pos.lat, pos.lng),
-        map: state.map,
-      });
-
-      state.markers.push(marker);
+    for (const it of target) {
+      const pos = new kakao.maps.LatLng(it.latitude, it.longitude);
+      const overlay = createMarkerOverlay(it, pos);
+      overlay.setMap(state.map);
+      state.markers.push(overlay);
     }
 
-    if (firstPos) {
-      state.map.setCenter(new kakao.maps.LatLng(firstPos.lat, firstPos.lng));
+    // 사이드바도 업데이트
+    renderMapSidebar();
+  }
+
+  function renderMapSidebar() {
+    if (!els.mvPropertyList) return;
+
+    const rows = getFilteredRows();
+    const withCoords = rows.filter((r) => r.latitude != null && r.longitude != null);
+
+    els.mvPropertyList.innerHTML = "";
+    if (!withCoords.length) {
+      els.mvPropertyList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">표시할 매물이 없습니다.</div>';
+      renderMapSummary(0);
+      return;
     }
+
+    const frag = document.createDocumentFragment();
+    const max = Math.min(withCoords.length, 300);
+    for (let i = 0; i < max; i++) {
+      const p = withCoords[i];
+      frag.appendChild(createSidebarCard(p));
+    }
+    els.mvPropertyList.appendChild(frag);
+    renderMapSummary(withCoords.length);
+  }
+
+  function createSidebarCard(p) {
+    const src = getSourceStyle(p.source);
+    const kindLabel = src.label;
+    const appraisal = p.appraisalPrice != null ? formatMoneyEok(p.appraisalPrice) : "";
+    const current = p.currentPrice != null ? formatMoneyEok(p.currentPrice) : "";
+    const rate = calcRate(p.appraisalPrice, p.currentPrice, p.raw);
+
+    const card = document.createElement("div");
+    card.className = "mv-card";
+    card.setAttribute("data-id", p.id || "");
+
+    let priceHtml = "";
+    if (p.source === "auction" || p.source === "onbid") {
+      priceHtml = '<div class="mv-card-price">' +
+        (appraisal ? '<span>감정가</span><strong>' + escapeHtml(appraisal) + '</strong>' : '') +
+        (current ? '<span>현재가</span><strong>' + escapeHtml(current) + '</strong>' : '') +
+        '</div>';
+      if (rate && rate !== "-") priceHtml += '<div class="mv-card-gap">비율 ' + escapeHtml(rate) + '</div>';
+    } else {
+      priceHtml = '<div class="mv-card-price">' +
+        (appraisal ? '<span>매매가</span><strong>' + escapeHtml(appraisal) + '</strong>' : '') +
+        '</div>';
+    }
+
+    card.innerHTML =
+      '<div class="mv-card-top">' +
+        '<span class="mv-badge mv-badge-' + p.source + '">' + escapeHtml(kindLabel) + '</span>' +
+      '</div>' +
+      '<div class="mv-card-addr">' + escapeHtml(p.address || "-") + '</div>' +
+      '<div class="mv-card-info">' + escapeHtml((p.type || "") + (p.floor ? " · " + p.floor + "층" : "") + (p.exclusivearea != null ? " · 전용 " + formatAreaPyeong(p.exclusivearea) + "평" : "")) + '</div>' +
+      priceHtml;
+
+    card.addEventListener("click", () => {
+      openMapDetail(p);
+      highlightSidebarCard(p.id);
+      // 지도 중심 이동
+      if (state.map && p.latitude != null && p.longitude != null) {
+        state.map.panTo(new kakao.maps.LatLng(p.latitude, p.longitude));
+      }
+      // 마커 강조
+      document.querySelectorAll(".mv-marker.is-active").forEach((m) => m.classList.remove("is-active"));
+      const markerEl = document.querySelector('.mv-marker[data-id="' + (p.id || "") + '"]');
+      if (markerEl) markerEl.classList.add("is-active");
+    });
+
+    return card;
+  }
+
+  function highlightSidebarCard(id) {
+    document.querySelectorAll(".mv-card.is-selected").forEach((c) => c.classList.remove("is-selected"));
+    const card = els.mvPropertyList?.querySelector('.mv-card[data-id="' + (id || "") + '"]');
+    if (card) {
+      card.classList.add("is-selected");
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function renderMapSummary(total) {
+    if (!els.mvSummary) return;
+    const rows = state.items;
+    const auction = rows.filter((r) => r.source === "auction").length;
+    const onbid = rows.filter((r) => r.source === "onbid").length;
+    const realtor = rows.filter((r) => r.source === "realtor").length;
+    const general = rows.filter((r) => r.source === "general").length;
+    els.mvSummary.innerHTML =
+      '<span>전체 <strong>' + total + '</strong>건</span>' +
+      '<span>경매 <strong>' + auction + '</strong></span>' +
+      '<span>공매 <strong>' + onbid + '</strong></span>' +
+      '<span>중개 <strong>' + realtor + '</strong></span>' +
+      '<span>일반 <strong>' + general + '</strong></span>';
+  }
+
+  // ---- Map Detail Popup ----
+  function openMapDetail(item) {
+    if (!els.mvDetail || !els.mvDetailGrade || !els.mvDetailBody) return;
+
+    const src = getSourceStyle(item.source);
+    els.mvDetailGrade.innerHTML =
+      '<span class="mv-detail-source-badge mv-badge-' + item.source + '" style="font-size:12px;padding:3px 10px;">' + escapeHtml(src.label) + '</span>';
+
+    const appraisal = item.appraisalPrice != null ? formatMoneyEok(item.appraisalPrice) : "-";
+    const current = item.currentPrice != null ? formatMoneyEok(item.currentPrice) : "-";
+    const rate = calcRate(item.appraisalPrice, item.currentPrice, item.raw);
+    const bidDate = formatShortDate(item.bidDate) || "-";
+    const dday = computeDdayLabel(item.bidDate);
+
+    // 감정가대비 계산 (경매/공매만)
+    let appraisalGapHtml = "";
+    if ((item.source === "auction" || item.source === "onbid") && item.appraisalPrice && item.currentPrice) {
+      const gap = ((item.currentPrice - item.appraisalPrice) / item.appraisalPrice * 100).toFixed(1);
+      appraisalGapHtml =
+        '<div class="mv-detail-dual-sep"></div>' +
+        '<div class="mv-detail-dual-item">' +
+          '<span class="label">감정가대비</span>' +
+          '<span class="val" style="color:#59A7FF">' + gap + '%</span>' +
+        '</div>';
+    }
+
+    let body = '';
+
+    // 기본 정보
+    body += '<div class="mv-detail-addr">' + escapeHtml(item.address || "-") + '</div>';
+    body += '<div class="mv-detail-sub">' +
+      escapeHtml((item.type || "-") + (item.floor ? " · " + item.floor + "층" : "") + (item.totalFloor ? "/" + item.totalFloor + "층" : "") +
+        (item.exclusivearea != null ? " · 전용 " + formatAreaPyeong(item.exclusivearea) + "평" : "")) + '<br/>' +
+      escapeHtml("감정가 " + appraisal + (current !== "-" ? " → 현재가 " + current : "") + (rate !== "-" ? " (" + rate + ")" : "")) +
+      (dday ? " · " + escapeHtml(dday) : "") + '<br/>' +
+      escapeHtml("담당자: " + (item.assignedAgentName || "-")) +
+      '</div>';
+
+    // A. 가격 분석
+    body += '<div class="mv-detail-section">';
+    body += '<div class="mv-detail-stitle">A. 가격 분석</div>';
+    if (appraisalGapHtml) {
+      body += '<div class="mv-detail-dual">' +
+        '<div class="mv-detail-dual-item"><span class="label">비율</span><span class="val" style="color:#F37022">' + escapeHtml(rate) + '</span></div>' +
+        appraisalGapHtml +
+        '</div>';
+    }
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">감정가(매각가)</span><span class="mv-detail-rv">' + escapeHtml(appraisal) + '</span></div>';
+    if (item.source === "auction" || item.source === "onbid") {
+      body += '<div class="mv-detail-row"><span class="mv-detail-rl">현재가격</span><span class="mv-detail-rv">' + escapeHtml(current) + '</span></div>';
+    }
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">주요일정</span><span class="mv-detail-rv">' + escapeHtml(bidDate) + (dday ? ' <span style="color:#F37022;font-size:10px;">' + escapeHtml(dday) + '</span>' : '') + '</span></div>';
+    body += '</div>';
+
+    // B. 물건 정보
+    body += '<div class="mv-detail-section">';
+    body += '<div class="mv-detail-stitle">B. 물건 정보</div>';
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">유형</span><span class="mv-detail-rv">' + escapeHtml(item.type || "-") + '</span></div>';
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">층수</span><span class="mv-detail-rv">' + escapeHtml((item.floor || "-") + (item.totalFloor ? " / " + item.totalFloor + "층" : "")) + '</span></div>';
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">전용면적</span><span class="mv-detail-rv">' + (item.exclusivearea != null ? escapeHtml(formatAreaPyeong(item.exclusivearea) + " 평") : "-") + '</span></div>';
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">사용승인일</span><span class="mv-detail-rv">' + escapeHtml(formatShortDate(item.useapproval) || "-") + '</span></div>';
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">진행상태</span><span class="mv-detail-rv">' + escapeHtml(item.statusLabel || "-") + '</span></div>';
+    body += '</div>';
+
+    // C. 권리분석/현장실사/의견
+    body += '<div class="mv-detail-section">';
+    body += '<div class="mv-detail-stitle">C. 검토 현황</div>';
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">권리분석</span><span class="mv-detail-rv">' + (item.rightsAnalysis ? '<span class="positive">✓ 완료</span>' : '-') + '</span></div>';
+    body += '<div class="mv-detail-row"><span class="mv-detail-rl">현장실사</span><span class="mv-detail-rv">' + (item.siteInspection ? '<span class="positive">✓ 완료</span>' : '-') + '</span></div>';
+    if (item.opinion) {
+      body += '<div style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.5;word-break:keep-all;">' +
+        '<strong style="color:var(--text)">의견:</strong> ' + escapeHtml(item.opinion) + '</div>';
+    }
+    body += '</div>';
+
+    // D. 위치
+    if (item.latitude != null && item.longitude != null) {
+      const mapLink = buildKakaoMapLink(item);
+      body += '<div class="mv-detail-section">';
+      body += '<div class="mv-detail-stitle">D. 위치</div>';
+      body += '<div class="mv-detail-row"><span class="mv-detail-rl">좌표</span><span class="mv-detail-rv">' + Number(item.latitude).toFixed(5) + ', ' + Number(item.longitude).toFixed(5) + '</span></div>';
+      if (mapLink) {
+        body += '<div style="margin-top:6px;"><a href="' + escapeAttr(mapLink) + '" target="_blank" rel="noopener noreferrer" style="color:#F37022;font-size:11px;font-weight:700;text-decoration:none;">카카오맵에서 보기 →</a></div>';
+      }
+      body += '</div>';
+    }
+
+    els.mvDetailBody.innerHTML = body;
+    els.mvDetail.classList.remove("hidden");
+  }
+
+  function closeMapDetail() {
+    if (els.mvDetail) els.mvDetail.classList.add("hidden");
+    document.querySelectorAll(".mv-marker.is-active").forEach((m) => m.classList.remove("is-active"));
+    document.querySelectorAll(".mv-card.is-selected").forEach((c) => c.classList.remove("is-selected"));
   }
 
   function getKakaoKey() {
@@ -951,20 +1256,15 @@
 
   function loadKakaoSdk(appKey) {
     return new Promise((resolve, reject) => {
-      // 이미 로드됨
       if (window.kakao?.maps?.load) {
         window.kakao.maps.load(() => resolve());
         return;
       }
-
       const s = document.createElement("script");
       s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false&libraries=services`;
       s.async = true;
       s.onload = () => {
-        if (!window.kakao?.maps?.load) {
-          reject(new Error("Kakao SDK 로드 실패"));
-          return;
-        }
+        if (!window.kakao?.maps?.load) { reject(new Error("Kakao SDK 로드 실패")); return; }
         window.kakao.maps.load(() => resolve());
       };
       s.onerror = () => reject(new Error("Kakao SDK 네트워크 오류"));
@@ -975,18 +1275,11 @@
   async function geocodeCached(address) {
     const a = String(address || "").trim();
     if (!a) return null;
-
     const key = normalizeAddressKey(a);
     const cached = state.geoCache[key];
-    if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lng)) {
-      return cached;
-    }
-
+    if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lng)) return cached;
     const pos = await geocodeAddress(a);
-    if (pos) {
-      state.geoCache[key] = pos;
-      saveGeoCache(state.geoCache);
-    }
+    if (pos) { state.geoCache[key] = pos; saveGeoCache(state.geoCache); }
     return pos;
   }
 
@@ -1003,11 +1296,7 @@
   }
 
   function normalizeAddressKey(v) {
-    return String(v || "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .replace(/[(),]/g, "")
-      .trim();
+    return String(v || "").toLowerCase().replace(/\s+/g, " ").replace(/[(),]/g, "").trim();
   }
 
   // ---- API (GET preflight 최소화) ----
