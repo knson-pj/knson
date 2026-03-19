@@ -194,8 +194,8 @@
     btns.forEach((btn) => {
       btn.setAttribute("aria-pressed", next === "dark" ? "true" : "false");
       btn.innerHTML = next === "dark"
-        ? '<span class="theme-icon">☀</span><span>라이트</span>'
-        : '<span class="theme-icon">☾</span><span>다크</span>';
+        ? '<span class="theme-icon">☀</span>'
+        : '<span class="theme-icon">☾</span>';
     });
     return next;
   }

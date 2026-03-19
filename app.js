@@ -96,22 +96,18 @@
     els.textView = document.getElementById("textView");
     els.mapView = document.getElementById("mapView");
 
-    // Table
-    els.tableWrap = document.querySelector(".table-wrap");
-    els.tableBody = document.getElementById("tableBody");
-    els.emptyState = document.getElementById("emptyState");
-
-    // Filters
-    els.btnFilter = document.getElementById("btnFilter");
-    els.filterPanel = document.getElementById("filterPanel");
-    els.btnFilterClose = document.getElementById("btnFilterClose");
-    els.searchKeyword = document.getElementById("searchKeyword");
-    els.filterStatus = document.getElementById("filterStatus");
-    els.btnRefresh = document.getElementById("btnRefresh");
+    // Filters (map sidebar only)
     els.agentChart = document.getElementById("agentChart");
     els.agentChartEmpty = document.getElementById("agentChartEmpty");
     els.agentChartMeta = document.getElementById("agentChartMeta");
-    els.mainPagination = document.getElementById("mainPagination");
+
+    // Stats charts
+    els.inflowChart = document.getElementById("inflowChart");
+    els.inflowTabs = document.getElementById("inflowTabs");
+    els.sourceDistChart = document.getElementById("sourceDistChart");
+    els.regionDistChart = document.getElementById("regionDistChart");
+    els.typeDistChart = document.getElementById("typeDistChart");
+    els.priceDistChart = document.getElementById("priceDistChart");
 
     // Map view
     els.mvPropertyList = document.getElementById("mvPropertyList");
@@ -164,20 +160,13 @@
       });
     }
 
-    // KPI 카드 클릭 → 소스 필터
+    // KPI 카드 클릭 → 소스 필터 (지도 뷰에서만 작동)
     const bindCard = (el, source) => {
       if (!el) return;
       el.addEventListener("click", () => {
         state.source = source;
         renderKPIs();
-        renderTable();
-        if (state.view === "map") renderKakaoMarkers();
-      });
-      el.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          el.click();
-        }
+        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
       });
     };
 
@@ -199,62 +188,34 @@
       });
     }
 
-    // 필터 패널
-    if (els.btnFilter && els.filterPanel) {
-      els.btnFilter.addEventListener("click", () => openFilter());
-    }
-    if (els.btnFilterClose && els.filterPanel) {
-      els.btnFilterClose.addEventListener("click", () => closeFilter());
-    }
-
-    if (els.searchKeyword) {
-      els.searchKeyword.addEventListener(
-        "input",
-        debounce((e) => {
-          state.keyword = String(e.target.value || "").trim();
-          state.page = 1;
-          renderKPIs();
-          renderAgentChart();
-          renderTable();
-        }, 120)
-      );
-    }
-
-    if (els.filterStatus) {
-      els.filterStatus.addEventListener("change", (e) => {
-        state.status = String(e.target.value || "");
-        state.page = 1;
-        renderKPIs();
-        renderAgentChart();
-        renderTable();
+    // Inflow chart period tabs
+    if (els.inflowTabs) {
+      els.inflowTabs.addEventListener("click", (e) => {
+        const btn = e.target.closest(".stat-period-tab");
+        if (!btn) return;
+        els.inflowTabs.querySelectorAll(".stat-period-tab").forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        renderInflowChart(btn.dataset.period || "day");
       });
-    }
-
-    if (els.btnRefresh) {
-      els.btnRefresh.addEventListener("click", () => loadProperties());
     }
 
     // Map sidebar filters
     if (els.mvKeyword) {
       els.mvKeyword.addEventListener("input", debounce((e) => {
         state.keyword = String(e.target.value || "").trim();
-        state.page = 1;
-        renderKPIs(); renderAgentChart(); renderTable();
         if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
       }, 150));
     }
     if (els.mvSourceFilter) {
       els.mvSourceFilter.addEventListener("change", (e) => {
         state.source = String(e.target.value || "") || "all";
-        renderKPIs(); renderTable();
+        renderKPIs();
         if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
       });
     }
     if (els.mvStatusFilter) {
       els.mvStatusFilter.addEventListener("change", (e) => {
         state.status = String(e.target.value || "");
-        state.page = 1;
-        renderKPIs(); renderAgentChart(); renderTable();
         if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
       });
     }
@@ -275,8 +236,6 @@
         }
       }, 150)
     );
-    // 브라우저 종료 시에는 sessionStorage 기반 세션이 자동으로 종료됩니다.
-    // 내부 이동/새로고침 시 예기치 않은 로그아웃을 막기 위해 pagehide 강제 로그아웃은 사용하지 않습니다.
   }
 
   function setView(view) {
@@ -307,25 +266,7 @@
       if (els.mvSourceFilter) els.mvSourceFilter.value = state.source === "all" ? "" : (state.source || "");
       if (els.mvStatusFilter) els.mvStatusFilter.value = state.status || "";
       renderMapSidebar();
-    } else {
-      // Sync back
-      if (els.searchKeyword) els.searchKeyword.value = state.keyword || "";
     }
-  }
-
-  function openFilter() {
-    if (!els.filterPanel) return;
-    if (els.filterPanel.dataset.alwaysVisible === "true") return;
-    els.filterPanel.classList.remove("hidden");
-    els.filterPanel.setAttribute("aria-hidden", "false");
-    if (els.searchKeyword) els.searchKeyword.focus();
-  }
-
-  function closeFilter() {
-    if (!els.filterPanel) return;
-    if (els.filterPanel.dataset.alwaysVisible === "true") return;
-    els.filterPanel.classList.add("hidden");
-    els.filterPanel.setAttribute("aria-hidden", "true");
   }
 
   // ---- Data ----
@@ -403,19 +344,18 @@
 
       renderKPIs();
       renderAgentChart();
-      renderTable();
+      renderStatCharts();
 
       if (state.view === "map") {
         await ensureKakaoMap();
         await renderKakaoMarkers();
       }
-      closeFilter();
     } catch (err) {
       console.error(err);
       state.items = [];
       renderKPIs();
       renderAgentChart();
-      renderTable();
+      renderStatCharts();
       alert(err?.message || "목록을 불러오지 못했습니다.");
     }
   }
@@ -746,111 +686,174 @@
   }
 
 
-  function getPagedRows(rows) {
-    const total = rows.length;
-    const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
-    if (state.page > totalPages) state.page = totalPages;
-    if (state.page < 1) state.page = 1;
-    const start = (state.page - 1) * state.pageSize;
-    return { total, totalPages, page: state.page, rows: rows.slice(start, start + state.pageSize) };
+  // ---- Statistics Charts ----
+  function renderStatCharts() {
+    renderInflowChart("day");
+    renderSourceDistChart();
+    renderRegionDistChart();
+    renderTypeDistChart();
+    renderPriceDistChart();
   }
 
-  function renderMainPagination(totalPages) {
-    if (!els.mainPagination) return;
-    els.mainPagination.innerHTML = '';
-    if (totalPages <= 1) {
-      els.mainPagination.classList.add('hidden');
-      return;
-    }
-    els.mainPagination.classList.remove('hidden');
-    const frag = document.createDocumentFragment();
-    const addBtn = (label, page, disabled=false, active=false) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = active ? 'pager-num is-active' : (typeof label === 'number' ? 'pager-num' : 'pager-btn');
-      b.textContent = String(label);
-      b.disabled = disabled;
-      if (!disabled) b.addEventListener('click', () => { state.page = page; renderTable(); window.scrollTo({ top: els.tableWrap?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
-      frag.appendChild(b);
-    };
-    addBtn('이전', state.page - 1, state.page <= 1);
-    const start = Math.max(1, state.page - 2);
-    const end = Math.min(totalPages, start + 4);
-    for (let p = start; p <= end; p += 1) addBtn(p, p, false, p === state.page);
-    addBtn('다음', state.page + 1, state.page >= totalPages);
-    els.mainPagination.appendChild(frag);
-  }
+  function renderInflowChart(period) {
+    const el = els.inflowChart || document.getElementById("inflowChart");
+    if (!el) return;
 
-  function renderHoverCheckCell(value) {
-    const text = String(value || '').trim();
-    if (!text) return '-';
-    return `
-      <div class="hover-note-cell">
-        <span class="hover-check" tabindex="0" aria-label="입력 내용 있음">✓</span>
-        <span class="hover-note-popup" role="tooltip">${escapeHtml(text).replace(/\n/g, '<br />')}</span>
-      </div>
-    `;
-  }
-  function renderTable() {
-    if (!els.tableBody) return;
+    const items = state.items;
+    if (!items.length) { el.innerHTML = '<div class="stat-empty">데이터가 없습니다.</div>'; return; }
 
-    const rows = getFilteredRows();
-    const pageData = getPagedRows(rows);
-    els.tableBody.innerHTML = "";
+    const buckets = new Map();
+    const now = new Date();
 
-    if (!rows.length) {
-      renderMainPagination(0);
-      if (els.tableWrap) els.tableWrap.classList.add("hidden");
-      if (els.emptyState) {
-        els.emptyState.classList.remove("hidden");
-        els.emptyState.textContent = "등록된 물건이 없습니다.";
+    items.forEach((p) => {
+      const d = parseFlexibleDate(p.createdAt);
+      if (!d) return;
+      let key = "";
+      if (period === "day") {
+        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      } else if (period === "week") {
+        const startOfWeek = new Date(d);
+        startOfWeek.setDate(d.getDate() - d.getDay());
+        key = `${startOfWeek.getFullYear()}-${String(startOfWeek.getMonth()+1).padStart(2,"0")}-${String(startOfWeek.getDate()).padStart(2,"0")}`;
+      } else if (period === "month") {
+        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      } else {
+        key = String(d.getFullYear());
       }
-      return;
-    }
+      buckets.set(key, (buckets.get(key) || 0) + 1);
+    });
 
-    if (els.tableWrap) els.tableWrap.classList.remove("hidden");
-    if (els.emptyState) els.emptyState.classList.add("hidden");
+    const sorted = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const maxCount = period === "day" ? 30 : period === "week" ? 16 : period === "month" ? 12 : 10;
+    const sliced = sorted.slice(-maxCount);
+    if (!sliced.length) { el.innerHTML = '<div class="stat-empty">표시할 데이터가 없습니다.</div>'; return; }
 
-    const frag = document.createDocumentFragment();
-    for (const p of pageData.rows) frag.appendChild(renderRow(p));
-    els.tableBody.appendChild(frag);
-    renderMainPagination(pageData.totalPages);
+    const maxVal = Math.max(...sliced.map((s) => s[1]), 1);
+
+    const formatLabel = (key) => {
+      if (period === "day") return key.slice(5);
+      if (period === "week") return key.slice(5) + "~";
+      if (period === "month") return key.slice(2);
+      return key;
+    };
+
+    el.innerHTML = '<div class="inflow-chart">' +
+      sliced.map(([key, count]) => {
+        const pct = Math.max(4, Math.round((count / maxVal) * 100));
+        return '<div class="inflow-bar-col">' +
+          '<div class="inflow-bar-val">' + count + '</div>' +
+          '<div class="inflow-bar" style="height:' + pct + '%"></div>' +
+          '<div class="inflow-bar-label">' + escapeHtml(formatLabel(key)) + '</div>' +
+          '</div>';
+      }).join("") +
+      '</div>';
   }
 
-  function renderRow(p) {
-    const tr = document.createElement("tr");
-    const kindClass = p.source === "auction" ? "kind-auction" : p.source === "onbid" ? "kind-gongmae" : p.source === "realtor" ? "kind-realtor" : "kind-general";
-    const kindLabel = p.source === "auction" ? "경매" : p.source === "onbid" ? "공매" : p.source === "realtor" ? "중개" : "일반";
-    const appraisal = p.appraisalPrice != null ? formatMoneyEok(p.appraisalPrice) : "-";
-    const current = p.currentPrice != null ? formatMoneyEok(p.currentPrice) : "-";
-    const rate = calcRate(p.appraisalPrice, p.currentPrice, p.raw);
-    const moveLink = buildKakaoMapLink(p);
-    const locationCell = moveLink
-      ? `<a class="map-link" href="${escapeAttr(moveLink)}" target="_blank" rel="noopener noreferrer">이동</a>`
-      : "-";
+  function renderSourceDistChart() {
+    const el = els.sourceDistChart || document.getElementById("sourceDistChart");
+    if (!el) return;
+    const items = state.items;
+    const data = [
+      { label: "경매", count: items.filter((p) => p.source === "auction").length, cls: "c-auction" },
+      { label: "공매", count: items.filter((p) => p.source === "onbid").length, cls: "c-onbid" },
+      { label: "중개", count: items.filter((p) => p.source === "realtor").length, cls: "c-realtor" },
+      { label: "일반", count: items.filter((p) => p.source === "general").length, cls: "c-general" },
+    ];
+    const total = Math.max(items.length, 1);
+    el.innerHTML = '<div class="hbar-chart">' +
+      data.map((d) => {
+        const pct = Math.max(2, Math.round((d.count / total) * 100));
+        return '<div class="hbar-row">' +
+          '<div class="hbar-label">' + d.label + '</div>' +
+          '<div class="hbar-track"><div class="hbar-fill ' + d.cls + '" style="width:' + pct + '%">' + pct + '%</div></div>' +
+          '<div class="hbar-count">' + d.count.toLocaleString() + '</div>' +
+          '</div>';
+      }).join("") +
+      '</div>';
+  }
 
-    tr.innerHTML = `
-      <td><span class="kind-text ${kindClass}">${escapeHtml(kindLabel)}</span></td>
-      <td>${fitTextHtml(p.statusLabel || "-")}</td>
-      <td class="text-cell">${fitTextHtml(p.address || "-", 22, 40, 62)}</td>
-      <td>${fitTextHtml(p.type || "-", 10, 16, 24)}</td>
-      <td>${fitTextHtml(String(p.floor || "-"), 8, 12, 18)}</td>
-      <td>${fitTextHtml(String(p.totalFloor || "-"), 8, 12, 18)}</td>
-      <td>${fitTextHtml(formatShortDate(p.useapproval) || "-")}</td>
-      <td>${p.exclusivearea != null ? fitTextHtml(formatAreaPyeong(p.exclusivearea), 8, 12, 16) : "-"}</td>
-      <td>${fitTextHtml(appraisal, 10, 16, 24)}</td>
-      <td>${fitTextHtml(current, 10, 16, 24)}</td>
-      <td>${fitTextHtml(rate, 8, 10, 14)}</td>
-      <td class="schedule-cell"><div class="schedule-stack">${formatScheduleHtml(p)}</div></td>
-      <td>${locationCell}</td>
-      <td>${fitTextHtml(formatShortDate(p.createdAt) || "-")}</td>
-      <td>${fitTextHtml(p.assignedAgentName || "-", 8, 14, 20)}</td>
-      <td class="note-check-cell">${renderHoverCheckCell(p.rightsAnalysis)}</td>
-      <td class="note-check-cell">${renderHoverCheckCell(p.siteInspection)}</td>
-      <td class="text-cell opinion-cell">${fitTextHtml(p.opinion || "-", 18, 32, 48)}</td>
-    `;
+  function renderRegionDistChart() {
+    const el = els.regionDistChart || document.getElementById("regionDistChart");
+    if (!el) return;
+    const counter = new Map();
+    state.items.forEach((p) => {
+      const gu = p.regionGu || extractAddressGu(p.address);
+      if (gu) counter.set(gu, (counter.get(gu) || 0) + 1);
+    });
+    const sorted = [...counter.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (!sorted.length) { el.innerHTML = '<div class="stat-empty">지역 데이터가 없습니다.</div>'; return; }
+    const maxVal = Math.max(sorted[0][1], 1);
+    el.innerHTML = '<div class="hbar-chart">' +
+      sorted.map(([label, count]) => {
+        const pct = Math.max(2, Math.round((count / maxVal) * 100));
+        return '<div class="hbar-row">' +
+          '<div class="hbar-label">' + escapeHtml(label) + '</div>' +
+          '<div class="hbar-track"><div class="hbar-fill c-accent" style="width:' + pct + '%"></div></div>' +
+          '<div class="hbar-count">' + count.toLocaleString() + '</div>' +
+          '</div>';
+      }).join("") +
+      '</div>';
+  }
 
-    return tr;
+  function extractAddressGu(address) {
+    const m = String(address || "").match(/([가-힣]+(?:구|군|시))/);
+    return m ? m[1] : "";
+  }
+
+  function renderTypeDistChart() {
+    const el = els.typeDistChart || document.getElementById("typeDistChart");
+    if (!el) return;
+    const counter = new Map();
+    state.items.forEach((p) => {
+      const t = String(p.type || "").trim();
+      if (t && t !== "-") counter.set(t, (counter.get(t) || 0) + 1);
+    });
+    const sorted = [...counter.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (!sorted.length) { el.innerHTML = '<div class="stat-empty">유형 데이터가 없습니다.</div>'; return; }
+    const maxVal = Math.max(sorted[0][1], 1);
+    el.innerHTML = '<div class="hbar-chart">' +
+      sorted.map(([label, count]) => {
+        const pct = Math.max(2, Math.round((count / maxVal) * 100));
+        return '<div class="hbar-row">' +
+          '<div class="hbar-label">' + escapeHtml(label.length > 8 ? label.slice(0, 8) + ".." : label) + '</div>' +
+          '<div class="hbar-track"><div class="hbar-fill c-accent" style="width:' + pct + '%"></div></div>' +
+          '<div class="hbar-count">' + count.toLocaleString() + '</div>' +
+          '</div>';
+      }).join("") +
+      '</div>';
+  }
+
+  function renderPriceDistChart() {
+    const el = els.priceDistChart || document.getElementById("priceDistChart");
+    if (!el) return;
+    const ranges = [
+      { label: "1억 미만", min: 0, max: 100000000 },
+      { label: "1~3억", min: 100000000, max: 300000000 },
+      { label: "3~5억", min: 300000000, max: 500000000 },
+      { label: "5~10억", min: 500000000, max: 1000000000 },
+      { label: "10~20억", min: 1000000000, max: 2000000000 },
+      { label: "20~50억", min: 2000000000, max: 5000000000 },
+      { label: "50억 이상", min: 5000000000, max: Infinity },
+    ];
+    const counts = ranges.map(() => 0);
+    state.items.forEach((p) => {
+      const price = p.appraisalPrice || p.currentPrice || 0;
+      if (!price) return;
+      for (let i = 0; i < ranges.length; i++) {
+        if (price >= ranges[i].min && price < ranges[i].max) { counts[i]++; break; }
+      }
+    });
+    const maxVal = Math.max(...counts, 1);
+    el.innerHTML = '<div class="hbar-chart">' +
+      ranges.map((r, i) => {
+        const pct = Math.max(2, Math.round((counts[i] / maxVal) * 100));
+        return '<div class="hbar-row">' +
+          '<div class="hbar-label">' + r.label + '</div>' +
+          '<div class="hbar-track"><div class="hbar-fill c-accent" style="width:' + pct + '%"></div></div>' +
+          '<div class="hbar-count">' + counts[i].toLocaleString() + '</div>' +
+          '</div>';
+      }).join("") +
+      '</div>';
   }
 
   function formatLocation(p) {
