@@ -145,6 +145,14 @@
   }
 
   // ── Load Data ──
+  function rowAssignedToUid(row, uid) {
+    const target = String(uid || "").trim();
+    if (!target) return false;
+    const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
+    return [row?.assignee_id, row?.assigneeId, row?.assignedAgentId, raw.assignee_id, raw.assigneeId, raw.assignedAgentId]
+      .some((v) => String(v || "").trim() === target);
+  }
+
   async function loadProperties() {
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
@@ -154,24 +162,42 @@
       const uid = String(state.session?.user?.id || "").trim();
       if (!uid) { state.properties = []; renderAll(); return; }
 
-      // 배정된 물건만 조회 (1000건씩 페이징)
+      // admin-app.js와 동일한 fallback 패턴
+      const filters = [
+        "assignee_id.eq." + uid + ",raw->>assigneeId.eq." + uid + ",raw->>assignedAgentId.eq." + uid + ",raw->>assignee_id.eq." + uid,
+        "assignee_id.eq." + uid,
+      ];
+
       const allItems = [];
-      let from = 0;
-      const pageSize = 1000;
-      while (true) {
-        const { data, error } = await sb.from("properties")
-          .select("*")
-          .or("assignee_id.eq." + uid + ",raw->>assigneeId.eq." + uid + ",raw->>assignedAgentId.eq." + uid)
-          .order("date_uploaded", { ascending: false })
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        const rows = Array.isArray(data) ? data : [];
-        allItems.push(...rows);
-        if (rows.length < pageSize) break;
-        from += pageSize;
+      let lastError = null;
+
+      for (const filter of filters) {
+        allItems.length = 0;
+        lastError = null;
+        let from = 0;
+        const pageSize = 1000;
+        let success = true;
+
+        while (true) {
+          const { data, error } = await sb.from("properties")
+            .select("*")
+            .or(filter)
+            .order("date_uploaded", { ascending: false })
+            .range(from, from + pageSize - 1);
+
+          if (error) { lastError = error; success = false; break; }
+          const rows = Array.isArray(data) ? data : [];
+          allItems.push(...rows);
+          if (rows.length < pageSize) break;
+          from += pageSize;
+        }
+
+        if (success) break;
       }
 
-      state.properties = allItems.map(normalizeProperty);
+      // 클라이언트 측 추가 필터링 (DB 필터가 부정확할 수 있으므로)
+      const verified = allItems.filter((row) => rowAssignedToUid(row, uid));
+      state.properties = verified.map(normalizeProperty);
       renderAll();
     } catch (err) {
       console.error("loadProperties error:", err);
