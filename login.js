@@ -56,7 +56,7 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   })();
 
   btnPublicRegister.addEventListener("click", () => {
-    location.href = "./buypage.html";
+    location.href = "./general-register.html";
   });
 
   form.addEventListener("submit", async (e) => {
@@ -141,8 +141,11 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
 
   function resolvePostLoginUrl(session) {
     const role = String(session?.user?.role || "").trim().toLowerCase();
-    if (role === "staff" || role === "담당자" || role === "agent") {
+    if (role === "admin" || role === "관리자") {
       return "./admin-index.html";
+    }
+    if (role === "staff" || role === "담당자" || role === "agent") {
+      return "./agent-index.html";
     }
     return nextUrl;
   }
