@@ -161,7 +161,7 @@
   function renderSessionUI() {
     const user = state.session?.user;
     if (!user) return;
-    if (els.agentUserBadge) els.agentUserBadge.textContent = "담당자: " + (user.name || user.email || "");
+    if (els.agentUserBadge) els.agentUserBadge.textContent = user.name || user.email || "";
     if (els.btnAgentLogout) els.btnAgentLogout.classList.remove("hidden");
     if (els.btnChangeMyPassword && isSupabaseMode()) els.btnChangeMyPassword.classList.remove("hidden");
   }
