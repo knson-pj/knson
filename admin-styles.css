@@ -26,6 +26,8 @@
   --kpi-auction:#f5d0fe;
   --kpi-gongmae:#dbeafe;
   --kpi-realtor:#d1fae5;
+  --kpi-naver-realtor:#ccfbf1;
+  --kpi-direct-realtor:#d1fae5;
   --kpi-general:#fef3c7;
   --kpi-agents:#ede9fe;
 }
@@ -48,6 +50,8 @@ html[data-theme="dark"]{
   --kpi-auction:#42225b;
   --kpi-gongmae:#172b4d;
   --kpi-realtor:#11352f;
+  --kpi-naver-realtor:#0a2a28;
+  --kpi-direct-realtor:#11352f;
   --kpi-general:#4a3712;
   --kpi-agents:#261d49;
   --shadow-lg: 0 24px 56px rgba(2,8,23,.42);
@@ -96,7 +100,7 @@ body{
 .brand p{margin:4px 0 0;color:var(--muted);font-size:13px;}
 .top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 
-.btn,.badge,.theme-toggle,.top-link{
+.btn,.badge,.theme-toggle{
   display:inline-flex;
   align-items:center;
   justify-content:center;
@@ -111,6 +115,24 @@ body{
   cursor:pointer;
   font-weight:700;
   font-size:14px;
+  transition:transform .15s ease, border-color .15s ease, background-color .15s ease;
+}
+/* M 버튼 — 테마 토글과 동일한 원형 */
+.top-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--surface);
+  color:var(--text);
+  text-decoration:none;
+  cursor:pointer;
+  font-weight:700;
+  font-size:14px;
+  flex-shrink:0;
   transition:transform .15s ease, border-color .15s ease, background-color .15s ease;
 }
 .btn:hover,.theme-toggle:hover,.top-link:hover{transform:translateY(-1px);}
@@ -151,7 +173,7 @@ body{
 }
 .summary-grid{
   display:grid;
-  grid-template-columns:repeat(6, minmax(0,1fr));
+  grid-template-columns:repeat(auto-fit, minmax(min(150px,100%), 1fr));
   gap:12px;
 }
 .summary-card{
@@ -162,12 +184,26 @@ body{
   display:grid;
   gap:8px;
 }
+.summary-card[data-card]{
+  cursor:pointer;
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.summary-card[data-card]:hover{
+  transform:translateY(-2px);
+  box-shadow:var(--shadow-lg);
+}
+.summary-card[data-card].is-active{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft), var(--shadow-md);
+}
 .summary-card span{color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;}
 .summary-card strong{font-size:28px;line-height:1;letter-spacing:-.03em;}
 .summary-total{background:linear-gradient(180deg, var(--kpi-total), var(--surface));}
 .summary-auction{background:linear-gradient(180deg, var(--kpi-auction), var(--surface));}
 .summary-gongmae{background:linear-gradient(180deg, var(--kpi-gongmae), var(--surface));}
 .summary-realtor{background:linear-gradient(180deg, var(--kpi-realtor), var(--surface));}
+.summary-naver-realtor{background:linear-gradient(180deg, var(--kpi-naver-realtor), var(--surface));}
+.summary-direct-realtor{background:linear-gradient(180deg, var(--kpi-direct-realtor), var(--surface));}
 .summary-general{background:linear-gradient(180deg, var(--kpi-general), var(--surface));}
 .summary-agents{background:linear-gradient(180deg, var(--kpi-agents), var(--surface));}
 .kind-text{display:inline-block;font-weight:900;font-size:12px;letter-spacing:-.01em;}
@@ -206,11 +242,11 @@ body.role-staff .admin-main{gap:14px;}
 .toolbar{
   margin-top:12px;
   display:grid;
-  grid-template-columns:160px 160px minmax(240px, 420px);
+  grid-template-columns:160px 160px 160px 130px minmax(180px, 1fr);
   gap:10px;
   justify-content:start;
 }
-#propKeyword{max-width:420px;}
+#propKeyword,#agKeyword{max-width:420px;}
 .input,.select,.textarea,.assignment-select,.inline-input{
   width:100%;
   border:1px solid var(--line);

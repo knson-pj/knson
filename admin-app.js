@@ -501,7 +501,7 @@ function bindEvents() {
       return;
     }
 
-    els.adminUserBadge.textContent = "관리자: " + (user.name || user.email || "");
+    els.adminUserBadge.textContent = user.name || user.email || "";
     els.adminUserBadge.className = "badge badge-admin";
     document.body.classList.add("role-admin");
 
