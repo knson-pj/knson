@@ -179,17 +179,23 @@
       aemDelete: $("#aemDelete"),
       aemMsg: $("#aemMsg"),
 
-      // geocoding
-      geocodeBar: $("#geocodeBar"),
+      // geocoding tab
+      tabGeocoding: $("#tab-geocoding"),
       geocodePending: $("#geocodePending"),
       geocodeOk: $("#geocodeOk"),
       geocodeFailed: $("#geocodeFailed"),
-      geocodeIcon: $("#geocodeIcon"),
       geocodeProgress: $("#geocodeProgress"),
       geocodeProgressBar: $("#geocodeProgressBar"),
       geocodeRunningText: $("#geocodeRunningText"),
       btnGeocodeRun: $("#btnGeocodeRun"),
       btnGeocodeRetryFailed: $("#btnGeocodeRetryFailed"),
+      geoStatPending: $("#geoStatPending"),
+      geoStatOk: $("#geoStatOk"),
+      geoStatFailed: $("#geoStatFailed"),
+      geocodeListWrap: $("#geocodeListWrap"),
+      geocodeListTitle: $("#geocodeListTitle"),
+      geocodeListBody: $("#geocodeListBody"),
+      geocodeListEmpty: $("#geocodeListEmpty"),
 
     });
   }
@@ -324,6 +330,7 @@ function bindEvents() {
         if (state.session?.user?.role === "admin") {
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
           if (key === "offices") loadOffices().catch((e)=>handleAsyncError(e,"중개사무소 로드 실패"));
+          if (key === "geocoding") updateGeocodeStatusBar();
         }
       });
     }
@@ -444,6 +451,16 @@ function bindEvents() {
       if (state.session?.user?.role !== "admin") return;
       runGeocoding(true).catch((e) => handleAsyncError(e, "지오코딩 재시도 실패"));
     });
+
+    // 지오코딩 통계 카드 클릭 → 해당 물건 리스트
+    ["geoStatPending", "geoStatOk", "geoStatFailed"].forEach((elKey) => {
+      if (els[elKey]) {
+        els[elKey].addEventListener("click", () => {
+          const filter = els[elKey].dataset.geoFilter;
+          renderGeocodeList(filter);
+        });
+      }
+    });
   }
 
   async function ensureLoginThenLoad() {
@@ -480,11 +497,28 @@ function bindEvents() {
       staff: els.tabStaff,
       regions: els.tabRegions,
       offices: els.tabOffices,
+      geocoding: els.tabGeocoding,
     };
     Object.entries(map).forEach(([key, panel]) => {
       if (!panel) return;
       panel.classList.toggle("hidden", key !== tab);
     });
+
+    // 탭 전환 시 폼/결과 초기화
+    if (tab !== "csv") {
+      if (els.csvFileInput) els.csvFileInput.value = "";
+      if (els.csvResultBox) {
+        els.csvResultBox.textContent = "";
+        els.csvResultBox.className = "result-box hidden csv-result-inline";
+      }
+    }
+    if (tab !== "offices") {
+      if (els.officeCsvFileInput) els.officeCsvFileInput.value = "";
+      if (els.officeResultBox) {
+        els.officeResultBox.textContent = "";
+        els.officeResultBox.className = "result-box hidden";
+      }
+    }
   }
 
   function renderSessionUI() {
@@ -976,27 +1010,56 @@ function bindEvents() {
 
   function renderAdminPropertiesPagination(totalPages) {
     if (!els.adminPropertiesPagination) return;
-    els.adminPropertiesPagination.innerHTML = '';
+    els.adminPropertiesPagination.innerHTML = "";
     if (totalPages <= 1) {
-      els.adminPropertiesPagination.classList.add('hidden');
+      els.adminPropertiesPagination.classList.add("hidden");
       return;
     }
-    els.adminPropertiesPagination.classList.remove('hidden');
+    els.adminPropertiesPagination.classList.remove("hidden");
+
+    const cur = state.propertyPage;
+    const scrollTop = () => {
+      const wrap = els.propertiesTableBody?.closest(".table-wrap");
+      if (wrap) window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - 120, behavior: "smooth" });
+    };
+    const go = (page) => {
+      state.propertyPage = Math.max(1, Math.min(totalPages, page));
+      renderPropertiesTable();
+      scrollTop();
+    };
+
     const frag = document.createDocumentFragment();
-    const addBtn = (label, page, disabled=false, active=false) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = active ? 'pager-num is-active' : (typeof label === 'number' ? 'pager-num' : 'pager-btn');
+    const addBtn = (label, page, disabled = false, active = false, title = "") => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = active ? "pager-num is-active" : (typeof label === "number" ? "pager-num" : "pager-btn");
       b.textContent = String(label);
       b.disabled = disabled;
-      if (!disabled) b.addEventListener('click', () => { state.propertyPage = page; renderPropertiesTable(); window.scrollTo({ top: els.propertiesTableBody?.closest('.table-wrap')?.getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth' }); });
+      if (title) b.title = title;
+      if (!disabled) b.addEventListener("click", () => go(page));
       frag.appendChild(b);
     };
-    addBtn('이전', state.propertyPage - 1, state.propertyPage <= 1);
-    const start = Math.max(1, state.propertyPage - 2);
-    const end = Math.min(totalPages, start + 4);
-    for (let p = start; p <= end; p += 1) addBtn(p, p, false, p === state.propertyPage);
-    addBtn('다음', state.propertyPage + 1, state.propertyPage >= totalPages);
+
+    // 이전
+    addBtn("이전", cur - 1, cur <= 1);
+
+    // 페이지 번호: 현재 페이지 기준 앞뒤로 최대 10개
+    const blockSize = 10;
+    const blockStart = Math.floor((cur - 1) / blockSize) * blockSize + 1;
+    const blockEnd = Math.min(totalPages, blockStart + blockSize - 1);
+    for (let p = blockStart; p <= blockEnd; p++) {
+      addBtn(p, p, false, p === cur);
+    }
+
+    // 다음
+    addBtn("다음", cur + 1, cur >= totalPages);
+
+    // +10 점프
+    addBtn(">", cur + 10, cur + 10 > totalPages, false, "10페이지 앞으로");
+
+    // +20 점프
+    addBtn(">>", cur + 20, cur + 20 > totalPages, false, "20페이지 앞으로");
+
     els.adminPropertiesPagination.appendChild(frag);
   }
 
@@ -2684,18 +2747,15 @@ function bindEvents() {
   }
 
   function updateGeocodeStatusBar() {
-    if (!els.geocodeBar) return;
-    const user = state.session?.user;
-    if (!user || user.role !== "admin") {
-      els.geocodeBar.classList.add("hidden");
-      return;
-    }
     const stats = getGeocodeStats();
-    els.geocodeBar.classList.toggle("hidden", stats.total === 0);
 
-    if (els.geocodePending) els.geocodePending.textContent = String(stats.pending);
-    if (els.geocodeOk) els.geocodeOk.textContent = String(stats.ok);
-    if (els.geocodeFailed) els.geocodeFailed.textContent = String(stats.failed);
+    if (els.geocodePending) els.geocodePending.textContent = stats.pending.toLocaleString("ko-KR");
+    if (els.geocodeOk)      els.geocodeOk.textContent      = stats.ok.toLocaleString("ko-KR");
+    if (els.geocodeFailed)  els.geocodeFailed.textContent  = stats.failed.toLocaleString("ko-KR");
+
+    // 카드 active 스타일 (실패 0이면 실패 카드 dim)
+    if (els.geoStatFailed) els.geoStatFailed.classList.toggle("is-empty", stats.failed === 0);
+    if (els.geoStatPending) els.geoStatPending.classList.toggle("is-empty", stats.pending === 0);
 
     if (els.btnGeocodeRun) {
       els.btnGeocodeRun.disabled = stats.pending === 0 || state.geocodeRunning;
@@ -2705,9 +2765,55 @@ function bindEvents() {
       els.btnGeocodeRetryFailed.classList.toggle("hidden", stats.failed === 0);
       els.btnGeocodeRetryFailed.disabled = stats.failed === 0 || state.geocodeRunning;
     }
-    if (els.geocodeIcon) {
-      els.geocodeIcon.textContent = state.geocodeRunning ? "\u23F3" : (stats.pending > 0 ? "\uD83D\uDCCD" : "\u2705");
+  }
+
+  function renderGeocodeList(filter) {
+    if (!els.geocodeListWrap || !els.geocodeListBody) return;
+
+    // 카드 선택 강조
+    ["geoStatPending", "geoStatOk", "geoStatFailed"].forEach((key) => {
+      if (els[key]) els[key].classList.toggle("is-selected", els[key].dataset.geoFilter === filter);
+    });
+
+    const labelMap = { pending: "대기", ok: "완료", failed: "실패" };
+    const label = labelMap[filter] || filter;
+
+    const rows = state.properties.filter((p) => {
+      const st = String(p.geocodeStatus || "").toLowerCase();
+      const hasCoords = p.latitude != null && p.longitude != null;
+      if (filter === "ok")      return st === "ok" || (hasCoords && st !== "failed" && st !== "pending");
+      if (filter === "failed")  return st === "failed";
+      if (filter === "pending") return st === "pending" || (!hasCoords && !!p.address && st !== "ok" && st !== "failed");
+      return false;
+    });
+
+    if (els.geocodeListTitle) {
+      els.geocodeListTitle.textContent = `${label} 물건 ${rows.length.toLocaleString("ko-KR")}건`;
     }
+
+    els.geocodeListBody.innerHTML = "";
+
+    if (!rows.length) {
+      if (els.geocodeListEmpty) els.geocodeListEmpty.classList.remove("hidden");
+      els.geocodeListWrap.classList.remove("hidden");
+      return;
+    }
+    if (els.geocodeListEmpty) els.geocodeListEmpty.classList.add("hidden");
+
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    const frag = document.createDocumentFragment();
+    rows.forEach((p) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td>${escapeHtml(p.itemNo || "-")}</td>` +
+        `<td><span class="kind-text kind-${p.sourceType || "general"}">${escapeHtml(kindMap[p.sourceType] || "-")}</span></td>` +
+        `<td class="text-cell">${escapeHtml(p.address || "-")}</td>` +
+        `<td>${escapeHtml(p.geocodeStatus || "pending")}</td>` +
+        `<td>${escapeHtml(formatDate(p.createdAt) || "-")}</td>`;
+      frag.appendChild(tr);
+    });
+    els.geocodeListBody.appendChild(frag);
+    els.geocodeListWrap.classList.remove("hidden");
   }
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

@@ -79,13 +79,14 @@
           <button class="tab" data-tab="csv">물건 등록</button>
           <button class="tab" data-tab="staff">등록 관리</button>
           <button class="tab" data-tab="regions">담당 지역 설정</button>
+          <button class="tab" data-tab="geocoding">지오코딩</button>
         </div>
       </section>
 
-      <!-- 물건 관리 -->
+      <!-- 전체 현황 -->
       <section id="tab-properties" class="panel tab-panel">
         <div class="panel-title-row">
-          <h2>물건 리스팅</h2>
+          <h2>전체 현황</h2>
           <div class="panel-actions-inline">
             <button id="btnDeleteSelectedProperties" class="btn btn-danger">선택 삭제</button>
           </div>
@@ -126,28 +127,6 @@
           </select>
 
           <input id="propKeyword" class="input" type="text" placeholder="주소 / 담당자 검색" />
-        </div>
-
-        <!-- 지오코딩 상태 바 -->
-        <div id="geocodeBar" class="geocode-bar hidden">
-          <div class="geocode-bar-left">
-            <span class="geocode-status-icon" id="geocodeIcon">📍</span>
-            <span class="geocode-status-text">
-              지오코딩 대기: <strong id="geocodePending">0</strong>건
-              <span class="geocode-sep">|</span>
-              완료: <strong id="geocodeOk">0</strong>건
-              <span class="geocode-sep">|</span>
-              실패: <strong id="geocodeFailed">0</strong>건
-            </span>
-          </div>
-          <div class="geocode-bar-right">
-            <div id="geocodeProgress" class="geocode-progress hidden">
-              <div class="geocode-progress-bar" id="geocodeProgressBar" style="width:0%"></div>
-            </div>
-            <span id="geocodeRunningText" class="geocode-running-text hidden">처리 중...</span>
-            <button id="btnGeocodeRun" class="btn btn-primary btn-sm">지오코딩 실행</button>
-            <button id="btnGeocodeRetryFailed" class="btn btn-secondary btn-sm hidden">실패 건 재시도</button>
-          </div>
         </div>
 
         <div class="table-wrap">
@@ -320,6 +299,62 @@
             <tbody></tbody>
           </table>
           <div id="assignmentEmpty" class="empty hidden">담당자 계정을 먼저 등록해 주세요.</div>
+        </div>
+      </section>
+
+      <!-- 지오코딩 탭 -->
+      <section id="tab-geocoding" class="panel tab-panel hidden">
+        <div class="panel-title-row">
+          <h2>지오코딩</h2>
+        </div>
+
+        <!-- 통계 카드 -->
+        <div class="geocode-stat-row">
+          <button class="geocode-stat-card" id="geoStatPending" data-geo-filter="pending">
+            <span class="geocode-stat-label">대기</span>
+            <strong class="geocode-stat-num" id="geocodePending">0</strong>
+            <span class="geocode-stat-unit">건</span>
+          </button>
+          <button class="geocode-stat-card" id="geoStatOk" data-geo-filter="ok">
+            <span class="geocode-stat-label">완료</span>
+            <strong class="geocode-stat-num" id="geocodeOk">0</strong>
+            <span class="geocode-stat-unit">건</span>
+          </button>
+          <button class="geocode-stat-card geocode-stat-failed" id="geoStatFailed" data-geo-filter="failed">
+            <span class="geocode-stat-label">실패</span>
+            <strong class="geocode-stat-num" id="geocodeFailed">0</strong>
+            <span class="geocode-stat-unit">건</span>
+          </button>
+        </div>
+
+        <!-- 실행 영역 -->
+        <div class="geocode-action-row">
+          <div id="geocodeProgress" class="geocode-progress hidden">
+            <div class="geocode-progress-bar" id="geocodeProgressBar" style="width:0%"></div>
+          </div>
+          <span id="geocodeRunningText" class="geocode-running-text hidden">처리 중...</span>
+          <button id="btnGeocodeRun" class="btn btn-primary">지오코딩 실행</button>
+          <button id="btnGeocodeRetryFailed" class="btn btn-secondary hidden">실패 건 재시도</button>
+        </div>
+
+        <!-- 필터된 물건 리스트 -->
+        <div id="geocodeListWrap" class="hidden">
+          <div class="geocode-list-title" id="geocodeListTitle"></div>
+          <div class="table-wrap">
+            <table class="table" id="geocodeListTable">
+              <thead>
+                <tr>
+                  <th>물건번호</th>
+                  <th>구분</th>
+                  <th>주소</th>
+                  <th>상태</th>
+                  <th>등록일</th>
+                </tr>
+              </thead>
+              <tbody id="geocodeListBody"></tbody>
+            </table>
+            <div id="geocodeListEmpty" class="empty hidden">해당 항목이 없습니다.</div>
+          </div>
         </div>
       </section>
     </main>

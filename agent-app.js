@@ -407,21 +407,36 @@
     els.agPagination.innerHTML = "";
     if (totalPages <= 1) { els.agPagination.classList.add("hidden"); return; }
     els.agPagination.classList.remove("hidden");
+
+    const cur = state.page;
+    const go = (page) => {
+      state.page = Math.max(1, Math.min(totalPages, page));
+      renderTable();
+    };
+
     const frag = document.createDocumentFragment();
-    const addBtn = (label, page, disabled, active) => {
+    const addBtn = (label, page, disabled, active, title = "") => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = active ? "pager-num is-active" : (typeof label === "number" ? "pager-num" : "pager-btn");
       b.textContent = String(label);
       b.disabled = disabled;
-      if (!disabled) b.addEventListener("click", () => { state.page = page; renderTable(); });
+      if (title) b.title = title;
+      if (!disabled) b.addEventListener("click", () => go(page));
       frag.appendChild(b);
     };
-    addBtn("이전", state.page - 1, state.page <= 1);
-    const s = Math.max(1, state.page - 2);
-    const e = Math.min(totalPages, s + 4);
-    for (let i = s; i <= e; i++) addBtn(i, i, false, i === state.page);
-    addBtn("다음", state.page + 1, state.page >= totalPages);
+
+    addBtn("이전", cur - 1, cur <= 1);
+
+    const blockSize = 10;
+    const blockStart = Math.floor((cur - 1) / blockSize) * blockSize + 1;
+    const blockEnd = Math.min(totalPages, blockStart + blockSize - 1);
+    for (let p = blockStart; p <= blockEnd; p++) addBtn(p, p, false, p === cur);
+
+    addBtn("다음", cur + 1, cur >= totalPages);
+    addBtn(">", cur + 10, cur + 10 > totalPages, false, "10페이지 앞으로");
+    addBtn(">>", cur + 20, cur + 20 > totalPages, false, "20페이지 앞으로");
+
     els.agPagination.appendChild(frag);
   }
 
