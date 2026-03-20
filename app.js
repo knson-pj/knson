@@ -432,7 +432,11 @@
       regionDong: firstText(p.regionDong, p.region_dong, raw.regionDong, raw.region_dong, ""),
       latitude: lat,
       longitude: lng,
-      submitterType: firstText(p.submitterType, p.submitter_type, raw.submitterType, raw.submitter_type, ""),
+      // 부직센 직접 등록 여부: submitter_name 또는 broker_office_name이 있으면 부직센(일반중개)
+      isDirectSubmission: !!(
+        firstText(p.submitter_name, p.submitterName, raw.submitter_name, raw.submitterName, "") ||
+        firstText(p.broker_office_name, p.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, "")
+      ),
       raw,
     };
   }
@@ -769,7 +773,7 @@
         if (p.source === "auction") sourceCount["\uACBD\uB9E4"]++;
         else if (p.source === "onbid") sourceCount["\uACF5\uB9E4"]++;
         else if (p.source === "realtor") {
-          if (p.submitterType === "realtor") sourceCount["\uC77C\uBC18\uC911\uAC1C"]++;
+          if (p.isDirectSubmission) sourceCount["\uC77C\uBC18\uC911\uAC1C"]++;
           else sourceCount["\uB124\uC774\uBC84\uC911\uAC1C"]++;
         }
         else sourceCount["\uC77C\uBC18"]++;
