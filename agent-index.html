@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>부동산 물건 관리 시스템 | 담당자</title>
+  <meta name="supabase-url" content="" />
+  <meta name="supabase-anon-key" content="" />
+
+  <style>html{visibility:hidden;}</style>
+  <script>
+    (function(){
+      try{
+        var raw = null;
+        try { raw = sessionStorage.getItem('knson_bms_session_v1'); } catch(e) {}
+        try { localStorage.removeItem('knson_bms_session_v1'); } catch(e) {}
+        var s = raw ? JSON.parse(raw) : null;
+        if (!s || !s.token || !s.user) {
+          location.replace('./login.html?next=' + encodeURIComponent('./agent-index.html'));
+          return;
+        }
+        // 관리자가 접근하면 관리자 페이지로 리다이렉트
+        var role = String(s.user.role || '').trim().toLowerCase();
+        if (role === 'admin') {
+          location.replace('./admin-index.html');
+          return;
+        }
+      }catch(e){
+        location.replace('./login.html?next=' + encodeURIComponent('./agent-index.html'));
+        return;
+      }
+      document.documentElement.style.visibility = 'visible';
+    })();
+  </script>
+
+  <link rel="stylesheet" href="./admin-styles.css?v=20260320-agent" />
+</head>
+<body>
+  <div class="admin-shell">
+    <header class="admin-topbar">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div>
+          <h1>담당자 페이지</h1>
+          <p>배정된 물건을 관리합니다.</p>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <a id="btnBackToMain" class="top-link" href="./index.html">메인으로</a>
+        <span id="agentUserBadge" class="badge badge-agent">담당자</span>
+        <button id="btnChangeMyPassword" class="btn btn-secondary hidden">내 비밀번호 변경</button>
+        <button id="btnAgentLogout" class="btn btn-ghost hidden">로그아웃</button>
+      </div>
+    </header>
+    <div id="globalMsg" class="global-msg hidden"></div>
+
+    <main class="admin-main">
+      <!-- 요약 -->
+      <section class="panel summary-panel">
+        <div class="summary-grid">
+          <div class="summary-card summary-total"><span>배정 물건</span><strong id="agSumTotal">0</strong></div>
+          <div class="summary-card summary-auction"><span>경매</span><strong id="agSumAuction">0</strong></div>
+          <div class="summary-card summary-gongmae"><span>공매</span><strong id="agSumGongmae">0</strong></div>
+          <div class="summary-card summary-realtor"><span>중개</span><strong id="agSumRealtor">0</strong></div>
+          <div class="summary-card summary-general"><span>일반</span><strong id="agSumGeneral">0</strong></div>
+        </div>
+      </section>
+
+      <!-- 물건 관리 -->
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>배정된 물건</h2>
+          <button id="btnAgentRefresh" class="btn btn-secondary">새로고침</button>
+        </div>
+
+        <div class="toolbar">
+          <select id="agSourceFilter" class="select">
+            <option value="">전체 소스</option>
+            <option value="auction">경매</option>
+            <option value="onbid">공매</option>
+            <option value="realtor">중개</option>
+            <option value="general">일반</option>
+          </select>
+          <select id="agStatusFilter" class="select">
+            <option value="">전체 상태</option>
+            <option value="active">진행중</option>
+            <option value="hold">보류</option>
+            <option value="closed">종결</option>
+            <option value="review">검토중</option>
+          </select>
+          <input id="agKeyword" class="input" type="text" placeholder="주소 / 지역 검색" />
+        </div>
+
+        <div class="table-wrap">
+          <table class="table" id="agPropertiesTable">
+            <thead>
+              <tr>
+                <th>물건번호</th>
+                <th>구분</th>
+                <th>주소</th>
+                <th>유형</th>
+                <th>층수</th>
+                <th>전용면적(평)</th>
+                <th>감정가(매각가)</th>
+                <th>현재가격</th>
+                <th>비율</th>
+                <th>주요일정</th>
+                <th>진행상태</th>
+                <th>권리분석</th>
+                <th>현장실사</th>
+                <th>의견</th>
+              </tr>
+            </thead>
+            <tbody id="agTableBody"></tbody>
+          </table>
+          <div id="agEmpty" class="empty hidden">배정된 물건이 없습니다.</div>
+        </div>
+        <div id="agPagination" class="pager"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 물건 편집 모달 (제한적) -->
+  <div id="agEditModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>물건 정보 수정</h3>
+        <button id="agEditClose" class="icon-btn" aria-label="닫기">✕</button>
+      </div>
+      <form id="agEditForm" class="modal-body">
+        <div class="grid2">
+          <label class="field"><span>물건번호</span><input name="itemNo" class="input" type="text" disabled /></label>
+          <label class="field"><span>구분</span><input name="sourceType" class="input" type="text" disabled /></label>
+        </div>
+
+        <label class="field"><span>주소</span><input name="address" class="input" type="text" disabled /></label>
+
+        <div class="grid2">
+          <label class="field"><span>세부유형</span><input name="assetType" class="input" type="text" /></label>
+          <label class="field"><span>진행상태</span><input name="status" class="input" type="text" /></label>
+        </div>
+
+        <div class="grid2">
+          <label class="field"><span>권리분석</span><input name="rightsAnalysis" class="input" type="text" /></label>
+          <label class="field"><span>현장실사</span><input name="siteInspection" class="input" type="text" /></label>
+        </div>
+
+        <label class="field">
+          <span>의견</span>
+          <textarea name="opinion" class="input" rows="3"></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button id="agEditSave" class="btn btn-primary" type="submit">저장</button>
+          <button id="agEditCancel" class="btn btn-ghost" type="button">취소</button>
+        </div>
+        <div id="agEditMsg" class="note"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 내 비밀번호 변경 -->
+  <div id="passwordChangeModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-card modal-card-sm">
+      <div class="modal-header">
+        <h3>내 비밀번호 변경</h3>
+        <button id="pwdModalClose" class="icon-btn" aria-label="닫기">✕</button>
+      </div>
+      <form id="passwordChangeForm" class="modal-body">
+        <label class="field"><span>새 비밀번호</span><input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label>
+        <label class="field"><span>새 비밀번호 확인</span><input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label>
+        <div class="modal-actions">
+          <button id="pwdSave" class="btn btn-primary" type="submit">변경</button>
+          <button id="pwdCancel" class="btn btn-ghost" type="button">취소</button>
+        </div>
+        <div id="pwdMsg" class="note"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./knson-core.js?v=20260320-agent"></script>
+  <script src="./agent-app.js?v=20260320-agent"></script>
+</body>
+</html>

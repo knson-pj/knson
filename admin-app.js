@@ -430,10 +430,9 @@ function bindEvents() {
       return;
     }
 
-    // 담당자: properties만
-    if (user.role !== "admin") {
-      setActiveTab("properties");
-      await Promise.all([loadStaff().catch(()=>{}), loadProperties()]);
+    // 담당자는 담당자 페이지로 리다이렉트
+    if (String(user.role || "").toLowerCase() !== "admin") {
+      location.replace("./agent-index.html");
       return;
     }
 
@@ -474,33 +473,11 @@ function bindEvents() {
       return;
     }
 
-    const titleEl = document.querySelector('.brand h1');
-    const descEl = document.querySelector('.brand p');
-    const isAdminRole = String(user.role || '').trim().toLowerCase() === "admin" || String(user.role || '').trim() === "관리자";
-    document.body.classList.toggle('role-admin', !!isAdminRole);
-    document.body.classList.toggle('role-staff', !isAdminRole);
-    if (isAdminRole) {
-      els.adminUserBadge.textContent = `관리자: ${user.name}`;
-      els.adminUserBadge.className = "badge badge-admin";
-      if (titleEl) titleEl.textContent = '관리자 페이지';
-      if (descEl) descEl.textContent = '물건 · 담당자 · 지역배정 관리';
-    } else {
-      els.adminUserBadge.textContent = `담당자: ${user.name}`;
-      els.adminUserBadge.className = "badge badge-agent";
-      if (titleEl) titleEl.textContent = '담당자 페이지';
-      if (descEl) descEl.textContent = '배정된 물건을 관리하는 페이지 입니다';
-    }
+    els.adminUserBadge.textContent = "관리자: " + (user.name || user.email || "");
+    els.adminUserBadge.className = "badge badge-admin";
+    document.body.classList.add("role-admin");
 
-    // 탭 권한/레이아웃: 담당자는 물건 목록만 바로 노출
-    const isAdmin = isAdminRole;
-    document.querySelectorAll("[data-tab]").forEach((btn) => {
-      const key = btn.getAttribute("data-tab");
-      if (!key) return;
-      btn.classList.toggle("hidden", !isAdmin && key !== "properties");
-    });
-    if (els.tabsPanel) els.tabsPanel.classList.toggle("hidden", !isAdmin);
     if (els.summaryPanel) els.summaryPanel.classList.remove("hidden");
-    if (els.sumAgentsCard) els.sumAgentsCard.classList.toggle("hidden", !isAdmin);
   }
 
   function openLoginModal(){ goLoginPage(); }
