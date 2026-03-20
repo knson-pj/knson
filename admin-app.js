@@ -38,9 +38,12 @@
     staff: [],
     offices: [],
     propertyFilters: {
-      source: "",
+      activeCard: "",   // "" | "all" | "auction" | "onbid" | "realtor_naver" | "realtor_direct" | "general"
       status: "",
       keyword: "",
+      area: "",         // "0-5" | "5-10" | ... | "50-"
+      priceRange: "",   // "0-1" | "1-3" | ... | "20-"  (억 단위)
+      ratio50: "",      // "50" = 50% 이하 (경매/공매만)
     },
     officeCsvPreviewRows: [],
     lastGroupSuggestion: null,
@@ -106,7 +109,8 @@
       sumTotal: $("#sumTotal"),
       sumAuction: $("#sumAuction"),
       sumGongmae: $("#sumGongmae"),
-      sumRealtor: $("#sumRealtor"),
+      sumNaverRealtor: $("#sumNaverRealtor"),
+      sumDirectRealtor: $("#sumDirectRealtor"),
       sumGeneral: $("#sumGeneral"),
       sumAgents: $("#sumAgents"),
       sumAgentsCard: $("#sumAgentsCard"),
@@ -122,11 +126,12 @@
       tabOffices: $("#tab-offices"),
 
       // properties table
-      btnReloadProperties: $("#btnReloadProperties"),
       btnDeleteSelectedProperties: $("#btnDeleteSelectedProperties"),
       propSelectAll: $("#propSelectAll"),
-      propSourceFilter: $("#propSourceFilter"),
       propStatusFilter: $("#propStatusFilter"),
+      propAreaFilter: $("#propAreaFilter"),
+      propPriceFilter: $("#propPriceFilter"),
+      propRatioFilter: $("#propRatioFilter"),
       propKeyword: $("#propKeyword"),
       propertiesTableBody: $("#propertiesTable tbody"),
       propertiesEmpty: $("#propertiesEmpty"),
@@ -323,31 +328,54 @@ function bindEvents() {
       });
     }
 
+
     // properties
-    if (els.btnReloadProperties) els.btnReloadProperties.addEventListener("click", () => loadProperties().catch((e)=>handleAsyncError(e,"물건 로드 실패")));
     if (els.btnDeleteSelectedProperties) els.btnDeleteSelectedProperties.addEventListener("click", () => {
       deleteSelectedProperties().catch((e)=>handleAsyncError(e,"삭제 실패"));
     });
     if (els.propSelectAll) els.propSelectAll.addEventListener("change", (e) => {
       toggleSelectAllProperties(!!e.target.checked);
     });
-    if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
-      state.propertyFilters.source = String(e.target.value || "");
-      state.propertyPage = 1;
-      renderPropertiesTable();
-      renderSummary();
+
+    // 요약 카드 클릭 → 필터
+    document.querySelectorAll(".summary-card[data-card]").forEach((card) => {
+      card.addEventListener("click", () => {
+        const key = card.dataset.card || "";
+        const next = state.propertyFilters.activeCard === key ? "" : key; // 같은 카드 재클릭 시 해제
+        state.propertyFilters.activeCard = next;
+        // active 스타일 토글
+        document.querySelectorAll(".summary-card[data-card]").forEach((c) => {
+          c.classList.toggle("is-active", c.dataset.card === next && next !== "");
+        });
+        state.propertyPage = 1;
+        renderPropertiesTable();
+      });
     });
+
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
       state.propertyFilters.status = String(e.target.value || "");
       state.propertyPage = 1;
       renderPropertiesTable();
-      renderSummary();
+    });
+    if (els.propAreaFilter) els.propAreaFilter.addEventListener("change", (e) => {
+      state.propertyFilters.area = String(e.target.value || "");
+      state.propertyPage = 1;
+      renderPropertiesTable();
+    });
+    if (els.propPriceFilter) els.propPriceFilter.addEventListener("change", (e) => {
+      state.propertyFilters.priceRange = String(e.target.value || "");
+      state.propertyPage = 1;
+      renderPropertiesTable();
+    });
+    if (els.propRatioFilter) els.propRatioFilter.addEventListener("change", (e) => {
+      state.propertyFilters.ratio50 = String(e.target.value || "");
+      state.propertyPage = 1;
+      renderPropertiesTable();
     });
     if (els.propKeyword) els.propKeyword.addEventListener("input", debounce((e) => {
       state.propertyFilters.keyword = String(e.target.value || "").toLowerCase();
       state.propertyPage = 1;
       renderPropertiesTable();
-      renderSummary();
     }, 150));
 
     // CSV import (관리자만)
@@ -743,6 +771,10 @@ function bindEvents() {
       opinion: opinionText,
       geocodeStatus: firstText(item.geocode_status, item.geocodeStatus, raw.geocode_status, ""),
       geocodedAt: firstText(item.geocoded_at, item.geocodedAt, ""),
+      isDirectSubmission: !!(
+        firstText(item.submitterName, item.submitter_name, raw.submitter_name, raw.submitterName, "") ||
+        firstText(item.brokerOfficeName, item.broker_office_name, raw.broker_office_name, raw.brokerOfficeName, "")
+      ),
       _raw: item,
     };
   }
@@ -856,15 +888,17 @@ function bindEvents() {
     const props = state.properties;
     const staff = state.staff;
     const offices = state.offices;
+    const fmt = (n) => Number(n).toLocaleString("ko-KR");
 
-    if (els.sumTotal) els.sumTotal.textContent = String(props.length);
-    if (els.sumAuction) els.sumAuction.textContent = String(props.filter(p => p.sourceType === "auction").length);
-    if (els.sumGongmae) els.sumGongmae.textContent = String(props.filter(p => p.sourceType === "onbid").length);
-    if (els.sumRealtor) els.sumRealtor.textContent = String(props.filter(p => p.sourceType === "realtor").length);
-    if (els.sumGeneral) els.sumGeneral.textContent = String(props.filter(p => p.sourceType === "general").length);
+    if (els.sumTotal) els.sumTotal.textContent = fmt(props.length);
+    if (els.sumAuction) els.sumAuction.textContent = fmt(props.filter(p => p.sourceType === "auction").length);
+    if (els.sumGongmae) els.sumGongmae.textContent = fmt(props.filter(p => p.sourceType === "onbid").length);
+    if (els.sumNaverRealtor) els.sumNaverRealtor.textContent = fmt(props.filter(p => p.sourceType === "realtor" && !p.isDirectSubmission).length);
+    if (els.sumDirectRealtor) els.sumDirectRealtor.textContent = fmt(props.filter(p => p.sourceType === "realtor" && p.isDirectSubmission).length);
+    if (els.sumGeneral) els.sumGeneral.textContent = fmt(props.filter(p => p.sourceType === "general").length);
 
-    if (els.sumAgents) els.sumAgents.textContent = String(staff.filter(s => normalizeRole(s.role) === "staff").length);
-    if (els.sumOffices) els.sumOffices.textContent = String(offices.length);
+    if (els.sumAgents) els.sumAgents.textContent = fmt(staff.filter(s => normalizeRole(s.role) === "staff").length);
+    if (els.sumOffices) els.sumOffices.textContent = fmt(offices.length);
   }
 
   function getFilteredProperties() {
@@ -872,27 +906,61 @@ function bindEvents() {
     const kw = (f.keyword || "").toLowerCase().trim();
 
     return state.properties.filter((p) => {
-      if (f.source && p.sourceType !== f.source) return false;
+      // 카드 클릭 필터
+      if (f.activeCard && f.activeCard !== "all") {
+        if (f.activeCard === "realtor_naver") {
+          if (p.sourceType !== "realtor" || p.isDirectSubmission) return false;
+        } else if (f.activeCard === "realtor_direct") {
+          if (p.sourceType !== "realtor" || !p.isDirectSubmission) return false;
+        } else if (["auction", "onbid", "general"].includes(f.activeCard)) {
+          if (p.sourceType !== f.activeCard) return false;
+        }
+      }
+
+      // 상태 필터
       if (f.status) {
         if ((p.status || "") !== f.status && !(p.status || "").includes(f.status)) return false;
       }
+
+      // 면적 필터 (전용면적 평)
+      if (f.area) {
+        const [minStr, maxStr] = f.area.split("-");
+        const min = parseFloat(minStr) || 0;
+        const max = maxStr ? parseFloat(maxStr) : Infinity;
+        const area = p.exclusivearea;
+        if (area == null || area <= 0) return false;
+        if (area < min || (max !== Infinity && area >= max)) return false;
+      }
+
+      // 가격대 필터: 경매/공매 → 현재가(lowprice), 중개/일반 → 매각가(priceMain)
+      if (f.priceRange) {
+        const [minStr, maxStr] = f.priceRange.split("-");
+        const min = (parseFloat(minStr) || 0) * 100000000;
+        const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
+        const isAuctionType = p.sourceType === "auction" || p.sourceType === "onbid";
+        const price = isAuctionType ? (p.lowprice ?? p.priceMain) : p.priceMain;
+        if (!price || price <= 0) return false;
+        if (price < min || (max !== Infinity && price >= max)) return false;
+      }
+
+      // 50% 이하 비율 필터 (경매/공매만)
+      if (f.ratio50) {
+        if (p.sourceType !== "auction" && p.sourceType !== "onbid") return false;
+        if (!p.priceMain || !p.lowprice || p.priceMain <= 0) return false;
+        if ((p.lowprice / p.priceMain) > 0.5) return false;
+      }
+
+      // 키워드 필터
       if (kw) {
         const hay = [
-          p.itemNo,
-          p.address,
-          p.assetType,
-          p.floor,
-          p.totalfloor,
-          p.rightsAnalysis,
-          p.siteInspection,
-          p.opinion,
+          p.itemNo, p.address, p.assetType, p.floor, p.totalfloor,
+          p.rightsAnalysis, p.siteInspection, p.opinion,
           (p.assignedAgentName || getStaffNameById(p.assignedAgentId)),
-          p.regionGu,
-          p.regionDong,
-          p.status,
+          p.regionGu, p.regionDong, p.status,
         ].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(kw)) return false;
       }
+
       return true;
     });
   }

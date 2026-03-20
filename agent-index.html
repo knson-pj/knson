@@ -58,11 +58,12 @@
       <!-- 요약 -->
       <section class="panel summary-panel">
         <div class="summary-grid">
-          <div class="summary-card summary-total"><span>배정 물건</span><strong id="agSumTotal">0</strong></div>
-          <div class="summary-card summary-auction"><span>경매</span><strong id="agSumAuction">0</strong></div>
-          <div class="summary-card summary-gongmae"><span>공매</span><strong id="agSumGongmae">0</strong></div>
-          <div class="summary-card summary-realtor"><span>중개</span><strong id="agSumRealtor">0</strong></div>
-          <div class="summary-card summary-general"><span>일반</span><strong id="agSumGeneral">0</strong></div>
+          <div class="summary-card summary-total" data-card="all"><span>배정 물건</span><strong id="agSumTotal">0</strong></div>
+          <div class="summary-card summary-auction" data-card="auction"><span>경매</span><strong id="agSumAuction">0</strong></div>
+          <div class="summary-card summary-gongmae" data-card="onbid"><span>공매</span><strong id="agSumGongmae">0</strong></div>
+          <div class="summary-card summary-naver-realtor" data-card="realtor_naver"><span>네이버중개</span><strong id="agSumNaverRealtor">0</strong></div>
+          <div class="summary-card summary-direct-realtor" data-card="realtor_direct"><span>일반중개</span><strong id="agSumDirectRealtor">0</strong></div>
+          <div class="summary-card summary-general" data-card="general"><span>일반</span><strong id="agSumGeneral">0</strong></div>
         </div>
       </section>
 
@@ -70,17 +71,9 @@
       <section class="panel">
         <div class="panel-title-row">
           <h2>배정된 물건</h2>
-          <button id="btnAgentRefresh" class="btn btn-secondary">새로고침</button>
         </div>
 
         <div class="toolbar">
-          <select id="agSourceFilter" class="select">
-            <option value="">전체 소스</option>
-            <option value="auction">경매</option>
-            <option value="onbid">공매</option>
-            <option value="realtor">중개</option>
-            <option value="general">일반</option>
-          </select>
           <select id="agStatusFilter" class="select">
             <option value="">전체 상태</option>
             <option value="active">진행중</option>
@@ -88,6 +81,32 @@
             <option value="closed">종결</option>
             <option value="review">검토중</option>
           </select>
+
+          <select id="agAreaFilter" class="select">
+            <option value="">전체 면적</option>
+            <option value="0-5">5평 미만</option>
+            <option value="5-10">5~10평</option>
+            <option value="10-20">10~20평</option>
+            <option value="20-30">20~30평</option>
+            <option value="30-50">30~50평</option>
+            <option value="50-">50평 이상</option>
+          </select>
+
+          <select id="agPriceFilter" class="select">
+            <option value="">전체 가격</option>
+            <option value="0-1">1억 미만</option>
+            <option value="1-3">1~3억</option>
+            <option value="3-5">3~5억</option>
+            <option value="5-10">5~10억</option>
+            <option value="10-20">10~20억</option>
+            <option value="20-">20억 이상</option>
+          </select>
+
+          <select id="agRatioFilter" class="select">
+            <option value="">전체 비율</option>
+            <option value="50">50% 이하</option>
+          </select>
+
           <input id="agKeyword" class="input" type="text" placeholder="주소 / 지역 검색" />
         </div>
 

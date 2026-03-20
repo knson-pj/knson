@@ -14,7 +14,14 @@
   const state = {
     session: loadSession(),
     properties: [],
-    filters: { source: "", status: "", keyword: "" },
+    filters: {
+      activeCard: "",   // "" | "all" | "auction" | "onbid" | "realtor_naver" | "realtor_direct" | "general"
+      status: "",
+      keyword: "",
+      area: "",
+      priceRange: "",
+      ratio50: "",
+    },
     page: 1,
     pageSize: 30,
     editingProperty: null,
@@ -34,14 +41,14 @@
     els.agentUserBadge = $("#agentUserBadge");
     els.btnAgentLogout = $("#btnAgentLogout");
     els.btnChangeMyPassword = $("#btnChangeMyPassword");
-    els.btnAgentRefresh = $("#btnAgentRefresh");
     els.globalMsg = $("#globalMsg");
 
     // Summary
     els.agSumTotal = $("#agSumTotal");
     els.agSumAuction = $("#agSumAuction");
     els.agSumGongmae = $("#agSumGongmae");
-    els.agSumRealtor = $("#agSumRealtor");
+    els.agSumNaverRealtor = $("#agSumNaverRealtor");
+    els.agSumDirectRealtor = $("#agSumDirectRealtor");
     els.agSumGeneral = $("#agSumGeneral");
 
     // Table
@@ -50,8 +57,10 @@
     els.agPagination = $("#agPagination");
 
     // Filters
-    els.agSourceFilter = $("#agSourceFilter");
     els.agStatusFilter = $("#agStatusFilter");
+    els.agAreaFilter = $("#agAreaFilter");
+    els.agPriceFilter = $("#agPriceFilter");
+    els.agRatioFilter = $("#agRatioFilter");
     els.agKeyword = $("#agKeyword");
 
     // Edit modal
@@ -91,13 +100,26 @@
       });
     }
 
-    // Refresh
-    if (els.btnAgentRefresh) els.btnAgentRefresh.addEventListener("click", () => loadProperties());
+    // 요약 카드 클릭 → 필터
+    document.querySelectorAll(".summary-card[data-card]").forEach((card) => {
+      card.addEventListener("click", () => {
+        const key = card.dataset.card || "";
+        const next = state.filters.activeCard === key ? "" : key;
+        state.filters.activeCard = next;
+        document.querySelectorAll(".summary-card[data-card]").forEach((c) => {
+          c.classList.toggle("is-active", c.dataset.card === next && next !== "");
+        });
+        state.page = 1;
+        renderTable();
+      });
+    });
 
     // Filters
-    if (els.agSourceFilter) els.agSourceFilter.addEventListener("change", (e) => { state.filters.source = e.target.value; state.page = 1; renderAll(); });
-    if (els.agStatusFilter) els.agStatusFilter.addEventListener("change", (e) => { state.filters.status = e.target.value; state.page = 1; renderAll(); });
-    if (els.agKeyword) els.agKeyword.addEventListener("input", debounce((e) => { state.filters.keyword = String(e.target.value || "").trim(); state.page = 1; renderAll(); }, 150));
+    if (els.agStatusFilter) els.agStatusFilter.addEventListener("change", (e) => { state.filters.status = e.target.value; state.page = 1; renderTable(); });
+    if (els.agAreaFilter) els.agAreaFilter.addEventListener("change", (e) => { state.filters.area = e.target.value; state.page = 1; renderTable(); });
+    if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
+    if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
+    if (els.agKeyword) els.agKeyword.addEventListener("input", debounce((e) => { state.filters.keyword = String(e.target.value || "").trim(); state.page = 1; renderTable(); }, 150));
 
     // Edit modal
     if (els.agEditClose) els.agEditClose.addEventListener("click", closeEditModal);
@@ -234,6 +256,10 @@
       siteInspection: firstText(item.siteInspection, item.site_inspection, raw.siteInspection, ""),
       opinion: firstText(item.opinion, raw.opinion, ""),
       createdAt: firstText(item.date, item.date_uploaded, item.createdAt, raw.date, ""),
+      isDirectSubmission: !!(
+        firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, "") ||
+        firstText(item.broker_office_name, item.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, "")
+      ),
       _raw: item,
     };
   }
@@ -246,21 +272,71 @@
 
   function renderSummary() {
     const p = state.properties;
-    if (els.agSumTotal) els.agSumTotal.textContent = String(p.length);
-    if (els.agSumAuction) els.agSumAuction.textContent = String(p.filter((r) => r.sourceType === "auction").length);
-    if (els.agSumGongmae) els.agSumGongmae.textContent = String(p.filter((r) => r.sourceType === "onbid").length);
-    if (els.agSumRealtor) els.agSumRealtor.textContent = String(p.filter((r) => r.sourceType === "realtor").length);
-    if (els.agSumGeneral) els.agSumGeneral.textContent = String(p.filter((r) => r.sourceType === "general").length);
+    const fmt = (n) => Number(n).toLocaleString("ko-KR");
+    if (els.agSumTotal) els.agSumTotal.textContent = fmt(p.length);
+    if (els.agSumAuction) els.agSumAuction.textContent = fmt(p.filter((r) => r.sourceType === "auction").length);
+    if (els.agSumGongmae) els.agSumGongmae.textContent = fmt(p.filter((r) => r.sourceType === "onbid").length);
+    if (els.agSumNaverRealtor) els.agSumNaverRealtor.textContent = fmt(p.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission).length);
+    if (els.agSumDirectRealtor) els.agSumDirectRealtor.textContent = fmt(p.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission).length);
+    if (els.agSumGeneral) els.agSumGeneral.textContent = fmt(p.filter((r) => r.sourceType === "general").length);
   }
 
   function getFilteredProps() {
     let rows = state.properties;
     const f = state.filters;
-    if (f.source) rows = rows.filter((r) => r.sourceType === f.source);
-    if (f.status) rows = rows.filter((r) => {
-      const s = String(r.status || "").toLowerCase();
-      return s === f.status || s.includes(f.status);
-    });
+
+    // 카드 클릭 필터
+    if (f.activeCard && f.activeCard !== "all") {
+      if (f.activeCard === "realtor_naver") {
+        rows = rows.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission);
+      } else if (f.activeCard === "realtor_direct") {
+        rows = rows.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission);
+      } else {
+        rows = rows.filter((r) => r.sourceType === f.activeCard);
+      }
+    }
+
+    // 상태 필터
+    if (f.status) {
+      rows = rows.filter((r) => {
+        const s = String(r.status || "").toLowerCase();
+        return s === f.status || s.includes(f.status);
+      });
+    }
+
+    // 면적 필터
+    if (f.area) {
+      const [minStr, maxStr] = f.area.split("-");
+      const min = parseFloat(minStr) || 0;
+      const max = maxStr ? parseFloat(maxStr) : Infinity;
+      rows = rows.filter((r) => {
+        const area = r.exclusivearea;
+        return area != null && area > 0 && area >= min && (max === Infinity || area < max);
+      });
+    }
+
+    // 가격대 필터
+    if (f.priceRange) {
+      const [minStr, maxStr] = f.priceRange.split("-");
+      const min = (parseFloat(minStr) || 0) * 100000000;
+      const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
+      rows = rows.filter((r) => {
+        const isAuctionType = r.sourceType === "auction" || r.sourceType === "onbid";
+        const price = isAuctionType ? (r.lowprice ?? r.priceMain) : r.priceMain;
+        return price && price > 0 && price >= min && (max === Infinity || price < max);
+      });
+    }
+
+    // 50% 이하 비율 필터
+    if (f.ratio50) {
+      rows = rows.filter((r) => {
+        if (r.sourceType !== "auction" && r.sourceType !== "onbid") return false;
+        if (!r.priceMain || !r.lowprice || r.priceMain <= 0) return false;
+        return (r.lowprice / r.priceMain) <= 0.5;
+      });
+    }
+
+    // 키워드 필터
     if (f.keyword) {
       const kw = f.keyword.toLowerCase();
       rows = rows.filter((r) =>
@@ -269,6 +345,7 @@
         (r.opinion || "").toLowerCase().includes(kw)
       );
     }
+
     return rows;
   }
 
