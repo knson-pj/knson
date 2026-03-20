@@ -1734,8 +1734,11 @@ function bindEvents() {
         const mappedRows = [];
         for (const r of rawRows) {
           const m = mapPropertyCsvRow(r, sourceType);
+          // itemNo 없으면 global_id = "sourceType:" 으로 중복돼 upsert 에러 유발
           if (!m || !m.itemNo || !m.address) continue;
-          mappedRows.push(buildSupabasePropertyRow(r, m, sourceType));
+          const built = buildSupabasePropertyRow(r, m, sourceType);
+          if (!built.global_id || built.global_id.endsWith(":")) continue;
+          mappedRows.push(built);
         }
 
         if (!mappedRows.length) throw new Error("유효한 행이 없습니다.");
@@ -1838,7 +1841,16 @@ function bindEvents() {
     let memo = "";
 
     if (sourceType === "auction") {
-      itemNo = pick("사건번호", "itemNo", "caseNo", "물건번호");
+      // 사건번호 + 물건번호를 조합해야 고유 식별자가 됨
+      // ex) 사건번호=2025타경41814, 물건번호=1 → "2025타경41814(1)"
+      // 물건번호가 이미 사건번호를 포함한 형태(2025타경41814(1))면 그대로 사용
+      const caseNo = pick("사건번호", "caseNo", "");
+      const propNo = pick("물건번호", "");
+      if (caseNo && propNo) {
+        itemNo = propNo.includes(caseNo) ? propNo : `${caseNo}(${propNo})`;
+      } else {
+        itemNo = caseNo || propNo || pick("itemNo", "");
+      }
       address = pick("주소(시군구동)", "주소", "소재지", "address");
       status = pick("진행상태", "상태", "status");
       priceMain = toNum(pick("감정가", "감정가(원)", "priceMain"));
