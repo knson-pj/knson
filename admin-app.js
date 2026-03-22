@@ -1040,6 +1040,12 @@ function bindEvents() {
       frag.appendChild(b);
     };
 
+    // -20 점프
+    addBtn("<<", cur - 20, cur - 20 < 1, false, "20페이지 뒤로");
+
+    // -10 점프
+    addBtn("<", cur - 10, cur - 10 < 1, false, "10페이지 뒤로");
+
     // 이전
     addBtn("이전", cur - 1, cur <= 1);
 

@@ -426,6 +426,8 @@
       frag.appendChild(b);
     };
 
+    addBtn("<<", cur - 20, cur - 20 < 1, false, "20페이지 뒤로");
+    addBtn("<", cur - 10, cur - 10 < 1, false, "10페이지 뒤로");
     addBtn("이전", cur - 1, cur <= 1);
 
     const blockSize = 10;
