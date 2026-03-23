@@ -267,7 +267,7 @@
       const uid = String(state.session?.user?.id || "").trim();
       if (!uid) { state.properties = []; renderAll(); return; }
 
-      const COLS = "id,global_id,item_no,source_type,is_general,address,asset_type,floor,totalfloor,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,rights_analysis,site_inspection,memo,raw,latitude,longitude,geocode_status";
+      const COLS = "id,global_id,item_no,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status";
 
       // 1차: assignee_id 컬럼 직접 일치
       const allItems = [];
@@ -337,15 +337,15 @@
       itemNo: firstText(item.item_no, item.itemNo, raw.itemNo, ""),
       address: firstText(item.address, item.location, raw.address, ""),
       assetType: firstText(item.asset_type, item.assetType, raw.assetType, raw["세부유형"], "-"),
-      floor: firstText(item.floor, raw.floor, raw["해당층"], ""),
-      totalfloor: firstText(item.totalfloor, item.total_floor, raw.totalfloor, raw["총층"], ""),
+      floor: firstText(raw.floor, raw.floorText, raw["해당층"], ""),
+      totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
       exclusivearea: toNum(item.exclusive_area ?? item.exclusivearea ?? raw.exclusivearea ?? raw["전용면적(평)"]),
       priceMain: toNum(item.price_main ?? item.priceMain ?? raw.priceMain ?? raw["감정가(원)"]),
       lowprice: toNum(item.lowprice ?? item.low_price ?? raw.lowprice ?? raw["최저입찰가(원)"] ?? raw["매각가"]),
       status: firstText(item.status, raw.status, ""),
       dateMain: firstText(item.date_main, item.dateMain, raw.dateMain, raw["입찰일자"], ""),
-      rightsAnalysis: firstText(item.rights_analysis, item.rightsAnalysis, raw.rightsAnalysis, ""),
-      siteInspection: firstText(item.site_inspection, item.siteInspection, raw.siteInspection, ""),
+      rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, ""),
+      siteInspection: firstText(raw.siteInspection, raw.site_inspection, ""),
       opinion: firstText(item.opinion, item.memo, raw.opinion, raw.memo, ""),
       createdAt: firstText(item.date, item.date_uploaded, item.createdAt, raw.date, ""),
       isDirectSubmission: !!(
