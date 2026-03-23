@@ -367,6 +367,249 @@
   }
 
   // ── Normalize ──
+  const REG_LOG_LABELS = {
+    itemNo: "물건번호",
+    address: "주소",
+    assetType: "세부유형",
+    floor: "층수",
+    totalfloor: "총층",
+    commonArea: "공용면적",
+    exclusiveArea: "전용면적",
+    siteArea: "토지면적",
+    useapproval: "사용승인일",
+    status: "진행상태",
+    priceMain: "매매가",
+    sourceUrl: "원문링크",
+    realtorName: "중개사무소명",
+    realtorPhone: "유선전화",
+    realtorCell: "휴대폰번호",
+    submitterName: "등록자명",
+    submitterPhone: "등록자 연락처",
+    memo: "메모/의견",
+  };
+
+  function hasMeaningfulValue(value) {
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string") return value.trim() !== "";
+    return true;
+  }
+
+  function normalizeCompareValue(field, value) {
+    if (value === null || value === undefined) return "";
+    if (["priceMain", "commonArea", "exclusiveArea", "siteArea"].includes(field)) {
+      const n = toNum(value);
+      return n == null ? "" : String(n);
+    }
+    return String(value).trim().replace(/\s+/g, " ");
+  }
+
+  function formatFieldValueForLog(field, value) {
+    if (value === null || value === undefined) return "";
+    if (["priceMain"].includes(field)) {
+      const n = toNum(value);
+      return n == null ? "" : Number(n).toLocaleString("ko-KR");
+    }
+    if (["commonArea", "exclusiveArea", "siteArea"].includes(field)) {
+      const n = toNum(value);
+      if (n == null) return "";
+      return Number.isInteger(n) ? String(n) : String(n).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    }
+    return String(value).trim();
+  }
+
+  function buildRegisterLogContext(route, user) {
+    return {
+      at: new Date().toISOString(),
+      route: String(route || "등록").trim(),
+      actor: String(user?.name || user?.email || "").trim(),
+    };
+  }
+
+  function parseFloorNumberForLog(value) {
+    const s = String(value || "").trim();
+    if (!s) return "";
+    let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
+    if (m) return `b${m[1]}`;
+    m = s.match(/(\d+)/);
+    return m ? String(Number(m[1])) : "";
+  }
+
+  function extractHoNumberForLog(data) {
+    const texts = [data?.ho, data?.raw?.ho, data?.address, data?.raw?.address, data?.raw?.물건명, data?.raw?.상세주소].filter(Boolean).join(" ");
+    const m = texts.match(/(\d{1,5})\s*호/);
+    return m ? String(Number(m[1])) : "";
+  }
+
+  function extractDongLotKey(address) {
+    const src = String(address || "").trim();
+    if (!src) return "";
+    const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)\s*([0-9]+(?:-[0-9]+)?)/g)];
+    if (matches.length) {
+      const m = matches[matches.length - 1];
+      return `${m[1]}|${m[2]}`.replace(/\s+/g, "");
+    }
+    const dongOnly = [...src.matchAll(/([가-힣A-Za-z0-9]+동)/g)];
+    if (dongOnly.length) {
+      const dong = dongOnly[dongOnly.length - 1][1];
+      const tail = src.slice(src.lastIndexOf(dong) + dong.length);
+      const lot = (tail.match(/([0-9]+(?:-[0-9]+)?)/) || [null, ""])[1];
+      if (lot) return `${dong}|${lot}`.replace(/\s+/g, "");
+    }
+    return src.replace(/\s+/g, "");
+  }
+
+  function buildRegistrationMatchKey(data) {
+    const lotKey = extractDongLotKey(firstText(data?.address, data?.raw?.address, ""));
+    const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, ""));
+    const hoKey = extractHoNumberForLog(data);
+    if (!lotKey) return "";
+    return `${lotKey}|${floorKey}|${hoKey}`;
+  }
+
+  function buildRegistrationSnapshotFromItem(item) {
+    const raw = item?._raw?.raw || {};
+    return {
+      itemNo: firstText(item?.itemNo, raw.itemNo, ""),
+      address: firstText(item?.address, raw.address, ""),
+      assetType: firstText(item?.assetType, raw.assetType, raw["세부유형"], ""),
+      floor: firstText(item?.floor, raw.floor, ""),
+      totalfloor: firstText(item?.totalfloor, raw.totalfloor, raw.total_floor, raw.totalFloor, ""),
+      commonArea: raw.commonArea ?? null,
+      exclusiveArea: item?.exclusivearea ?? raw.exclusiveArea ?? null,
+      siteArea: raw.siteArea ?? null,
+      useapproval: firstText(raw.useapproval, raw.useApproval, ""),
+      status: firstText(item?.status, raw.status, ""),
+      priceMain: item?.priceMain ?? raw.priceMain ?? null,
+      sourceUrl: firstText(raw.sourceUrl, item?._raw?.source_url, ""),
+      realtorName: firstText(raw.realtorName, raw.realtorname, item?._raw?.broker_office_name, ""),
+      realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
+      realtorCell: firstText(raw.realtorCell, raw.realtorcell, item?._raw?.submitter_phone, ""),
+      submitterName: firstText(item?._raw?.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      submitterPhone: firstText(item?._raw?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
+      memo: firstText(item?._raw?.memo, raw.memo, raw.opinion, ""),
+    };
+  }
+
+  function buildRegistrationSnapshotFromDbRow(row) {
+    const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
+    return {
+      itemNo: firstText(row?.item_no, raw.itemNo, ""),
+      address: firstText(row?.address, raw.address, ""),
+      assetType: firstText(row?.asset_type, raw.assetType, raw["세부유형"], ""),
+      floor: firstText(raw.floor, row?.floor, ""),
+      totalfloor: firstText(raw.totalfloor, row?.total_floor, row?.totalfloor, ""),
+      commonArea: row?.common_area ?? raw.commonArea ?? null,
+      exclusiveArea: row?.exclusive_area ?? raw.exclusiveArea ?? null,
+      siteArea: row?.site_area ?? raw.siteArea ?? null,
+      useapproval: firstText(row?.use_approval, raw.useapproval, raw.useApproval, ""),
+      status: firstText(row?.status, raw.status, ""),
+      priceMain: row?.price_main ?? raw.priceMain ?? null,
+      sourceUrl: firstText(row?.source_url, raw.sourceUrl, ""),
+      realtorName: firstText(row?.broker_office_name, raw.realtorName, raw.realtorname, ""),
+      realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
+      realtorCell: firstText(row?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
+      submitterName: firstText(row?.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      submitterPhone: firstText(row?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
+      memo: firstText(row?.memo, raw.memo, raw.opinion, ""),
+      raw,
+    };
+  }
+
+  function buildRegistrationChanges(prevSnapshot, nextSnapshot) {
+    const changes = [];
+    Object.keys(REG_LOG_LABELS).forEach((field) => {
+      const nextValue = nextSnapshot?.[field];
+      if (!hasMeaningfulValue(nextValue)) return;
+      const prevNorm = normalizeCompareValue(field, prevSnapshot?.[field]);
+      const nextNorm = normalizeCompareValue(field, nextValue);
+      if (prevNorm === nextNorm) return;
+      changes.push({
+        field,
+        label: REG_LOG_LABELS[field],
+        before: formatFieldValueForLog(field, prevSnapshot?.[field]) || "-",
+        after: formatFieldValueForLog(field, nextValue) || "-",
+      });
+    });
+    return changes;
+  }
+
+  function appendRegistrationCreateLog(raw, context) {
+    const nextRaw = { ...(raw || {}) };
+    const firstAt = firstText(nextRaw.firstRegisteredAt, context?.at, new Date().toISOString());
+    const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
+    if (!current.length) current.push({ type: "created", at: firstAt, route: context?.route || "등록", actor: context?.actor || "" });
+    nextRaw.firstRegisteredAt = firstAt;
+    nextRaw.registrationLog = current;
+    return nextRaw;
+  }
+
+  function appendRegistrationChangeLog(raw, context, changes) {
+    const nextRaw = appendRegistrationCreateLog(raw, context);
+    if (Array.isArray(changes) && changes.length) {
+      nextRaw.registrationLog = [...nextRaw.registrationLog, {
+        type: "changed",
+        at: context?.at || new Date().toISOString(),
+        route: context?.route || "등록",
+        actor: context?.actor || "",
+        changes: changes.map((entry) => ({ ...entry })),
+      }];
+    }
+    return nextRaw;
+  }
+
+  function mergeMeaningfulShallow(baseObj, incomingObj) {
+    const out = { ...(baseObj || {}) };
+    Object.entries(incomingObj || {}).forEach(([key, value]) => {
+      if (!hasMeaningfulValue(value)) return;
+      out[key] = value;
+    });
+    return out;
+  }
+
+  function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
+    const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
+    const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
+    const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
+    const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot);
+    const nextRow = { ...base };
+    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo"].forEach((key) => {
+      if (hasMeaningfulValue(incomingRow?.[key])) nextRow[key] = incomingRow[key];
+    });
+    if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
+    if (!hasMeaningfulValue(nextRow.item_no) && hasMeaningfulValue(incomingRow?.item_no)) nextRow.item_no = incomingRow.item_no;
+    if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) nextRow.source_type = incomingRow.source_type;
+    const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
+    nextRow.raw = appendRegistrationChangeLog(mergedRaw, context, changes);
+    return { row: nextRow, changes };
+  }
+
+  function buildRegistrationDbRowForCreate(row, context) {
+    return { ...(row || {}), raw: appendRegistrationCreateLog(row?.raw || {}, context) };
+  }
+
+  function findExistingPropertyByRegistrationKey(data, items) {
+    const targetKey = buildRegistrationMatchKey(data);
+    if (!targetKey) return null;
+    for (const item of Array.isArray(items) ? items : []) {
+      if (buildRegistrationMatchKey(buildRegistrationSnapshotFromItem(item)) === targetKey) return item;
+    }
+    return null;
+  }
+
+  async function findExistingPropertyForRegistration(sb, data) {
+    const address = firstText(data?.address, data?.raw?.address, "");
+    const dongToken = ((address.match(/([가-힣A-Za-z0-9]+동)/) || [null, ""])[1] || "").trim();
+    try {
+      let query = sb.from("properties").select("*").limit(500);
+      if (dongToken) query = query.ilike("address", `%${dongToken}%`);
+      const { data: rows, error } = await query;
+      if (error) return null;
+      return findExistingPropertyByRegistrationKey(data, Array.isArray(rows) ? rows.map(normalizeProperty) : []);
+    } catch {
+      return null;
+    }
+  }
+
   function normalizeProperty(item) {
     const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
     const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || "").toString().toLowerCase();
@@ -941,8 +1184,17 @@
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       if (!sb) throw new Error("Supabase 연동이 필요합니다.");
-      await insertPropertyRowResilient(sb, payload);
-      setNpmMsg("등록되었습니다.", false);
+      const regContext = buildRegisterLogContext("담당자 등록", state.session?.user);
+      let existing = await findExistingPropertyForRegistration(sb, payload.raw);
+      if (!existing) existing = findExistingPropertyByRegistrationKey(payload.raw, state.properties);
+      if (existing) {
+        const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
+        await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
+        setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
+      } else {
+        await insertPropertyRowResilient(sb, buildRegistrationDbRowForCreate(payload, regContext));
+        setNpmMsg("등록되었습니다.", false);
+      }
       setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;

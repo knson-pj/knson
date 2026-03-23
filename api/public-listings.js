@@ -10,6 +10,57 @@ const {
   nowIso,
 } = require('./_lib/utils');
 
+
+function parseFloorNumberForLog(value) {
+  const s = String(value || '').trim();
+  if (!s) return '';
+  let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
+  if (m) return `b${m[1]}`;
+  m = s.match(/(\d+)/);
+  return m ? String(Number(m[1])) : '';
+}
+
+function extractHoNumberForLog(...values) {
+  const joined = values.filter(Boolean).join(' ');
+  const m = joined.match(/(\d{1,5})\s*호/);
+  return m ? String(Number(m[1])) : '';
+}
+
+function extractDongLotKey(address) {
+  const src = String(address || '').trim();
+  if (!src) return '';
+  const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)\s*([0-9]+(?:-[0-9]+)?)/g)];
+  if (matches.length) {
+    const m = matches[matches.length - 1];
+    return `${m[1]}|${m[2]}`.replace(/\s+/g, '');
+  }
+  const dongOnly = [...src.matchAll(/([가-힣A-Za-z0-9]+동)/g)];
+  if (dongOnly.length) {
+    const dong = dongOnly[dongOnly.length - 1][1];
+    const tail = src.slice(src.lastIndexOf(dong) + dong.length);
+    const lot = (tail.match(/([0-9]+(?:-[0-9]+)?)/) || [null, ''])[1];
+    if (lot) return `${dong}|${lot}`.replace(/\s+/g, '');
+  }
+  return src.replace(/\s+/g, '');
+}
+
+function buildRegistrationKey(body) {
+  const lotKey = extractDongLotKey(body.address || '');
+  const floorKey = parseFloorNumberForLog(body.floor || body.totalFloor || '');
+  const hoKey = extractHoNumberForLog(body.address || '');
+  return lotKey ? `${lotKey}|${floorKey}|${hoKey}` : '';
+}
+
+function buildRegistrationLogCreated(route, actor) {
+  return [{ type: 'created', at: nowIso(), route, actor }];
+}
+
+function appendRegistrationLog(raw, route, actor, changes) {
+  const current = Array.isArray(raw.registrationLog) ? raw.registrationLog.slice() : buildRegistrationLogCreated('공개 등록', actor);
+  if (Array.isArray(changes) && changes.length) current.push({ type: 'changed', at: nowIso(), route, actor, changes });
+  return current;
+}
+
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
   const store = getStore();
@@ -39,12 +90,40 @@ module.exports = async function handler(req, res) {
   }
 
   const normalizedAddress = normalizeAddress(address);
-  const exists = store.properties.some(p => p.normalizedAddress === normalizedAddress);
-  if (exists) {
-    return send(res, 409, { ok: false, message: '동일 주소 물건이 이미 등록되어 있습니다.' });
-  }
+  const registrationKey = buildRegistrationKey(body);
+  const existing = store.properties.find((p) => {
+    const baseKey = p.registrationKey || buildRegistrationKey({ address: p.address, floor: p.floor, totalFloor: p.totalFloor });
+    return registrationKey && baseKey && registrationKey === baseKey;
+  });
 
   const geo = extractGuDong(address);
+  if (existing) {
+    const changes = [];
+    const pushChange = (label, beforeValue, afterValue) => {
+      const before = String(beforeValue || '').trim();
+      const after = String(afterValue || '').trim();
+      if (!after || before === after) return;
+      changes.push({ label, before: before || '-', after });
+    };
+    pushChange('주소', existing.address, address);
+    pushChange('세부유형', existing.assetType, body.assetType || '');
+    pushChange('매매가', existing.price, price);
+    pushChange('등록자명', existing.ownerName, registrantName);
+    pushChange('등록자 연락처', existing.phone, phone);
+    if (address) existing.address = address;
+    existing.normalizedAddress = normalizedAddress;
+    existing.price = price;
+    existing.assetType = String(body.assetType || existing.assetType || '').trim();
+    existing.ownerName = registrantName;
+    existing.phone = phone;
+    existing.submitterType = submitterType;
+    existing.updatedAt = nowIso();
+    existing.registrationKey = registrationKey;
+    existing.raw = existing.raw || {};
+    existing.raw.registrationLog = appendRegistrationLog(existing.raw, '공개 등록', registrantName || '공개 등록', changes);
+    return send(res, 200, { ok: true, message: '기존 물건을 갱신했습니다.', item: { id: existing.id, address: existing.address, updatedAt: existing.updatedAt } });
+  }
+
   const item = {
     id: id('prop'),
     source: sourceType === 'realtor' ? 'realtor' : 'general',
@@ -70,6 +149,14 @@ module.exports = async function handler(req, res) {
     createdAt: nowIso(),
     updatedAt: nowIso(),
     note: String(body.note || '공개 등록 접수').trim(),
+    floor: String(body.floor || '').trim(),
+    totalFloor: String(body.totalFloor || '').trim(),
+    registrationKey,
+    raw: {
+      ...body,
+      firstRegisteredAt: nowIso(),
+      registrationLog: buildRegistrationLogCreated('공개 등록', registrantName || '공개 등록'),
+    },
   };
 
   store.properties.unshift(item);

@@ -14,6 +14,23 @@
 
   const K = window.KNSN || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
+  const REG_LOG_LABELS = {
+    address: "주소",
+    assetType: "세부유형",
+    floor: "층수",
+    totalfloor: "총층",
+    commonArea: "공용면적",
+    exclusiveArea: "전용면적",
+    siteArea: "토지면적",
+    useapproval: "사용승인일",
+    priceMain: "매매가",
+    realtorName: "중개사무소명",
+    realtorPhone: "유선전화",
+    realtorCell: "휴대폰번호",
+    submitterName: "등록자명",
+    submitterPhone: "등록자 연락처",
+    memo: "메모/의견",
+  };
 
   document.addEventListener("DOMContentLoaded", () => {
     if (K && typeof K.initTheme === "function") {
@@ -98,26 +115,21 @@
 
       if (sbEnabled) {
         const sb = K.initSupabase();
-        const row = {
-          source_type: sourceType,
-          address,
-          asset_type: assetType,
-          exclusive_area: exclusiveArea,
-          common_area: commonArea,
-          site_area: siteArea,
-          use_approval: useApproval,
-          price_main: priceMain,
-          memo: opinion,
-          assignee_id: null,
-          submitter_type: submitterType,
-          submitter_name: submitterName,
-          submitter_phone: submitterPhone,
-          broker_office_name: realtorName,
-          raw: payload,
-        };
-
-        const { error } = await sb.from('properties').insert(row);
-        if (error) throw error;
+        const regContext = buildRegisterLogContext('공개 등록');
+        let existingRow = null;
+        try { existingRow = await findExistingRowByRegistrationKey(sb, payload); } catch {}
+        if (existingRow) {
+          const merged = buildRowForExisting(existingRow, payload, regContext);
+          const col = String(existingRow.id || '').trim() ? 'id' : 'global_id';
+          const target = String(existingRow.id || existingRow.global_id || '').trim();
+          if (!target) throw new Error('기존 물건 식별자 확인 실패');
+          const { error } = await sb.from('properties').update(merged.row).eq(col, target);
+          if (error) throw error;
+        } else {
+          const row = buildRowForCreate(payload, regContext);
+          const { error } = await sb.from('properties').insert(row);
+          if (error) throw error;
+        }
         done();
         return;
       }
@@ -134,6 +146,226 @@
       setBusy(false);
     }
   });
+
+  function hasMeaningfulValue(value) {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') return value.trim() !== '';
+    return true;
+  }
+
+  function normalizeCompareValue(field, value) {
+    if (value === null || value === undefined) return '';
+    if (['priceMain', 'commonArea', 'exclusiveArea', 'siteArea'].includes(field)) {
+      const n = Number(String(value).replace(/,/g, ''));
+      return Number.isFinite(n) ? String(n) : '';
+    }
+    return String(value).trim().replace(/\s+/g, ' ');
+  }
+
+  function formatFieldValueForLog(field, value) {
+    if (value === null || value === undefined) return '';
+    if (['priceMain'].includes(field)) {
+      const n = Number(String(value).replace(/,/g, ''));
+      return Number.isFinite(n) ? n.toLocaleString('ko-KR') : '';
+    }
+    if (['commonArea', 'exclusiveArea', 'siteArea'].includes(field)) {
+      const n = Number(String(value).replace(/,/g, ''));
+      if (!Number.isFinite(n)) return '';
+      return Number.isInteger(n) ? String(n) : String(n).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+    }
+    return String(value).trim();
+  }
+
+  function buildRegisterLogContext(route) {
+    return { at: new Date().toISOString(), route: String(route || '등록').trim(), actor: '공개 등록' };
+  }
+
+  function parseFloorNumberForLog(value) {
+    const s = String(value || '').trim();
+    if (!s) return '';
+    let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
+    if (m) return `b${m[1]}`;
+    m = s.match(/(\d+)/);
+    return m ? String(Number(m[1])) : '';
+  }
+
+  function extractHoNumberForLog(data) {
+    const texts = [data?.ho, data?.address, data?.raw?.address].filter(Boolean).join(' ');
+    const m = texts.match(/(\d{1,5})\s*호/);
+    return m ? String(Number(m[1])) : '';
+  }
+
+  function extractDongLotKey(address) {
+    const src = String(address || '').trim();
+    if (!src) return '';
+    const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)\s*([0-9]+(?:-[0-9]+)?)/g)];
+    if (matches.length) {
+      const m = matches[matches.length - 1];
+      return `${m[1]}|${m[2]}`.replace(/\s+/g, '');
+    }
+    const dongOnly = [...src.matchAll(/([가-힣A-Za-z0-9]+동)/g)];
+    if (dongOnly.length) {
+      const dong = dongOnly[dongOnly.length - 1][1];
+      const tail = src.slice(src.lastIndexOf(dong) + dong.length);
+      const lot = (tail.match(/([0-9]+(?:-[0-9]+)?)/) || [null, ''])[1];
+      if (lot) return `${dong}|${lot}`.replace(/\s+/g, '');
+    }
+    return src.replace(/\s+/g, '');
+  }
+
+  function buildRegistrationMatchKey(data) {
+    const lotKey = extractDongLotKey(data?.address || data?.raw?.address || '');
+    const floorKey = parseFloorNumberForLog(data?.floor || data?.raw?.floor || '');
+    const hoKey = extractHoNumberForLog(data);
+    if (!lotKey) return '';
+    return `${lotKey}|${floorKey}|${hoKey}`;
+  }
+
+  function buildRegistrationSnapshot(payload) {
+    return {
+      address: payload.address,
+      assetType: payload.assetType,
+      floor: payload.floor,
+      totalfloor: payload.totalFloor,
+      commonArea: payload.commonArea,
+      exclusiveArea: payload.exclusiveArea,
+      siteArea: payload.siteArea,
+      useapproval: payload.useApproval,
+      priceMain: payload.priceMain,
+      realtorName: payload.realtorName,
+      realtorPhone: payload.realtorPhone,
+      realtorCell: payload.realtorCell,
+      submitterName: payload.submitterName,
+      submitterPhone: payload.submitterPhone,
+      memo: payload.opinion,
+    };
+  }
+
+  function buildRegistrationSnapshotFromRow(row) {
+    const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+    return {
+      address: row?.address || raw.address || '',
+      assetType: row?.asset_type || raw.assetType || '',
+      floor: raw.floor || row?.floor || '',
+      totalfloor: raw.totalfloor || row?.total_floor || '',
+      commonArea: row?.common_area ?? raw.commonArea ?? null,
+      exclusiveArea: row?.exclusive_area ?? raw.exclusiveArea ?? null,
+      siteArea: row?.site_area ?? raw.siteArea ?? null,
+      useapproval: row?.use_approval || raw.useapproval || raw.useApproval || '',
+      priceMain: row?.price_main ?? raw.priceMain ?? null,
+      realtorName: row?.broker_office_name || raw.realtorName || '',
+      realtorPhone: raw.realtorPhone || raw.realtorphone || '',
+      realtorCell: row?.submitter_phone || raw.realtorCell || raw.realtorcell || raw.submitterPhone || '',
+      submitterName: row?.submitter_name || raw.submitterName || raw.submitter_name || '',
+      submitterPhone: row?.submitter_phone || raw.submitterPhone || raw.submitter_phone || '',
+      memo: row?.memo || raw.memo || raw.opinion || '',
+      raw,
+    };
+  }
+
+  function buildRegistrationChanges(prevSnapshot, nextSnapshot) {
+    const changes = [];
+    Object.keys(REG_LOG_LABELS).forEach((field) => {
+      const nextValue = nextSnapshot?.[field];
+      if (!hasMeaningfulValue(nextValue)) return;
+      const prevNorm = normalizeCompareValue(field, prevSnapshot?.[field]);
+      const nextNorm = normalizeCompareValue(field, nextValue);
+      if (prevNorm === nextNorm) return;
+      changes.push({
+        field,
+        label: REG_LOG_LABELS[field],
+        before: formatFieldValueForLog(field, prevSnapshot?.[field]) || '-',
+        after: formatFieldValueForLog(field, nextValue) || '-',
+      });
+    });
+    return changes;
+  }
+
+  function appendRegistrationCreateLog(raw, context) {
+    const nextRaw = { ...(raw || {}) };
+    const firstAt = String(nextRaw.firstRegisteredAt || context?.at || new Date().toISOString()).trim();
+    const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
+    if (!current.length) current.push({ type: 'created', at: firstAt, route: context?.route || '등록', actor: context?.actor || '' });
+    nextRaw.firstRegisteredAt = firstAt;
+    nextRaw.registrationLog = current;
+    return nextRaw;
+  }
+
+  function appendRegistrationChangeLog(raw, context, changes) {
+    const nextRaw = appendRegistrationCreateLog(raw, context);
+    if (Array.isArray(changes) && changes.length) {
+      nextRaw.registrationLog = [...nextRaw.registrationLog, {
+        type: 'changed',
+        at: context?.at || new Date().toISOString(),
+        route: context?.route || '등록',
+        actor: context?.actor || '',
+        changes: changes.map((entry) => ({ ...entry })),
+      }];
+    }
+    return nextRaw;
+  }
+
+  function mergeMeaningfulShallow(baseObj, incomingObj) {
+    const out = { ...(baseObj || {}) };
+    Object.entries(incomingObj || {}).forEach(([key, value]) => {
+      if (!hasMeaningfulValue(value)) return;
+      out[key] = value;
+    });
+    return out;
+  }
+
+  function buildRowForCreate(payload, context) {
+    return {
+      source_type: payload.sourceType,
+      address: payload.address,
+      asset_type: payload.assetType,
+      exclusive_area: payload.exclusiveArea,
+      common_area: payload.commonArea,
+      site_area: payload.siteArea,
+      use_approval: payload.useApproval,
+      price_main: payload.priceMain,
+      memo: payload.opinion,
+      assignee_id: null,
+      submitter_type: payload.submitterType,
+      submitter_name: payload.submitterName,
+      submitter_phone: payload.submitterPhone,
+      broker_office_name: payload.realtorName,
+      raw: appendRegistrationCreateLog({ ...payload }, context),
+    };
+  }
+
+  function buildRowForExisting(existingRow, payload, context) {
+    const base = { ...existingRow, raw: { ...((existingRow && existingRow.raw) || {}) } };
+    const prevSnapshot = buildRegistrationSnapshotFromRow(existingRow);
+    const nextSnapshot = buildRegistrationSnapshot(payload);
+    const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot);
+    const nextRow = { ...base };
+    if (hasMeaningfulValue(payload.address)) nextRow.address = payload.address;
+    if (hasMeaningfulValue(payload.assetType)) nextRow.asset_type = payload.assetType;
+    if (hasMeaningfulValue(payload.exclusiveArea)) nextRow.exclusive_area = payload.exclusiveArea;
+    if (hasMeaningfulValue(payload.commonArea)) nextRow.common_area = payload.commonArea;
+    if (hasMeaningfulValue(payload.siteArea)) nextRow.site_area = payload.siteArea;
+    if (hasMeaningfulValue(payload.useApproval)) nextRow.use_approval = payload.useApproval;
+    if (hasMeaningfulValue(payload.priceMain)) nextRow.price_main = payload.priceMain;
+    if (hasMeaningfulValue(payload.opinion)) nextRow.memo = payload.opinion;
+    if (hasMeaningfulValue(payload.submitterType)) nextRow.submitter_type = payload.submitterType;
+    if (hasMeaningfulValue(payload.submitterName)) nextRow.submitter_name = payload.submitterName;
+    if (hasMeaningfulValue(payload.submitterPhone)) nextRow.submitter_phone = payload.submitterPhone;
+    if (hasMeaningfulValue(payload.realtorName)) nextRow.broker_office_name = payload.realtorName;
+    nextRow.raw = appendRegistrationChangeLog(mergeMeaningfulShallow(base.raw || {}, payload), context, changes);
+    return { row: nextRow, changes };
+  }
+
+  async function findExistingRowByRegistrationKey(sb, payload) {
+    const address = String(payload.address || '').trim();
+    const dongToken = ((address.match(/([가-힣A-Za-z0-9]+동)/) || [null, ''])[1] || '').trim();
+    let query = sb.from('properties').select('*').limit(300);
+    if (dongToken) query = query.ilike('address', `%${dongToken}%`);
+    const { data, error } = await query;
+    if (error) return null;
+    const targetKey = buildRegistrationMatchKey(payload);
+    return (Array.isArray(data) ? data : []).find((row) => buildRegistrationMatchKey(buildRegistrationSnapshotFromRow(row)) === targetKey) || null;
+  }
 
   function bindTypeSwitch() {
     typeCards().forEach((card) => {
@@ -166,7 +398,7 @@
   function readNum(fd, key) {
     const v = String(fd.get(key) || '').trim();
     if (!v) return null;
-    const n = Number(v);
+    const n = Number(v.replace(/,/g, ''));
     return Number.isFinite(n) ? n : null;
   }
 
