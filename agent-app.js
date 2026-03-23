@@ -11,6 +11,62 @@
   function loadSession() { return K ? K.loadSession() : null; }
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
 
+  function parseFlexibleNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    const s = String(value).trim();
+    if (!s) return null;
+    const n = Number(s.replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatMoneyInputValue(value) {
+    if (value === null || value === undefined) return "";
+    const raw = String(value).trim();
+    if (!raw) return "";
+    const digits = raw.replace(/[^\d-]/g, "");
+    if (!digits || digits === "-") return "";
+    const sign = digits.startsWith("-") ? "-" : "";
+    const body = digits.replace(/-/g, "");
+    if (!body) return sign;
+    return sign + body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function bindAmountInputMask(input) {
+    if (!input || input.dataset.amountMaskBound === "true") return;
+    input.dataset.amountMaskBound = "true";
+    input.addEventListener("input", () => {
+      const formatted = formatMoneyInputValue(input.value);
+      if (input.value !== formatted) input.value = formatted;
+    });
+    input.addEventListener("blur", () => {
+      input.value = formatMoneyInputValue(input.value);
+    });
+  }
+
+  function configureFreeDecimalInput(input) {
+    if (!input) return;
+    input.setAttribute("type", "text");
+    input.setAttribute("inputmode", "decimal");
+    input.removeAttribute("step");
+  }
+
+  function configureAmountInput(input) {
+    if (!input) return;
+    input.setAttribute("type", "text");
+    input.setAttribute("inputmode", "numeric");
+    input.removeAttribute("step");
+    bindAmountInputMask(input);
+  }
+
+  function configureFormNumericUx(form, options = {}) {
+    if (!form?.elements) return;
+    const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
+    const amountNames = Array.isArray(options.amountNames) ? options.amountNames : [];
+    decimalNames.forEach((name) => configureFreeDecimalInput(form.elements[name]));
+    amountNames.forEach((name) => configureAmountInput(form.elements[name]));
+  }
+
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
 
   function getFavsKey() {
@@ -62,6 +118,7 @@
   // ── Init ──
   function init() {
     cacheEls();
+    configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     bindEvents();
     setupChrome();
     ensureLoginThenLoad();
@@ -743,6 +800,7 @@
   function openNewPropertyModal() {
     if (!els.newPropertyModal || !els.newPropertyForm) return;
     els.newPropertyForm.reset();
+    configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     if (els.npmRealtorFields) els.npmRealtorFields.classList.remove("hidden");
     if (els.npmOwnerFields) els.npmOwnerFields.classList.add("hidden");
     els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
@@ -819,7 +877,7 @@
     const f = els.newPropertyForm;
     const fd = new FormData(f);
     const readStr = (k) => String(fd.get(k) || "").trim();
-    const readNum = (k) => { const v = String(fd.get(k) || "").trim(); if (!v) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+    const readNum = (k) => parseFlexibleNumber(fd.get(k));
 
     const submitterKind = readStr("submitterKind") || "realtor";
     const sourceType = submitterKind === "realtor" ? "realtor" : "general";

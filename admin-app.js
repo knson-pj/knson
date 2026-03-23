@@ -14,6 +14,62 @@
     return Number.isFinite(n) ? n : NaN;
   };
 
+  function parseFlexibleNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    const s = String(value).trim();
+    if (!s) return null;
+    const n = toNumber(s.replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatMoneyInputValue(value) {
+    if (value === null || value === undefined) return "";
+    const raw = String(value).trim();
+    if (!raw) return "";
+    const digits = raw.replace(/[^\d-]/g, "");
+    if (!digits || digits === "-") return "";
+    const sign = digits.startsWith("-") ? "-" : "";
+    const body = digits.replace(/-/g, "");
+    if (!body) return sign;
+    return sign + body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function bindAmountInputMask(input) {
+    if (!input || input.dataset.amountMaskBound === "true") return;
+    input.dataset.amountMaskBound = "true";
+    input.addEventListener("input", () => {
+      const formatted = formatMoneyInputValue(input.value);
+      if (input.value !== formatted) input.value = formatted;
+    });
+    input.addEventListener("blur", () => {
+      input.value = formatMoneyInputValue(input.value);
+    });
+  }
+
+  function configureFreeDecimalInput(input) {
+    if (!input) return;
+    input.setAttribute("type", "text");
+    input.setAttribute("inputmode", "decimal");
+    input.removeAttribute("step");
+  }
+
+  function configureAmountInput(input) {
+    if (!input) return;
+    input.setAttribute("type", "text");
+    input.setAttribute("inputmode", "numeric");
+    input.removeAttribute("step");
+    bindAmountInputMask(input);
+  }
+
+  function configureFormNumericUx(form, options = {}) {
+    if (!form?.elements) return;
+    const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
+    const amountNames = Array.isArray(options.amountNames) ? options.amountNames : [];
+    decimalNames.forEach((name) => configureFreeDecimalInput(form.elements[name]));
+    amountNames.forEach((name) => configureAmountInput(form.elements[name]));
+  }
+
   function chunkArray(arr, size) {
     const out = [];
     for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -70,6 +126,8 @@
 
   function init() {
     cacheEls();
+    configureFormNumericUx(els.aemForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea", "latitude", "longitude"], amountNames: ["priceMain", "lowprice"] });
+    configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     setupChrome();
     bindEvents();
     resetStaffForm();
@@ -812,6 +870,7 @@ function bindEvents() {
   function openNewPropertyModal() {
     if (!els.newPropertyModal || !els.newPropertyForm) return;
     els.newPropertyForm.reset();
+    configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     if (els.npmRealtorFields) els.npmRealtorFields.classList.remove("hidden");
     if (els.npmOwnerFields) els.npmOwnerFields.classList.add("hidden");
     els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
@@ -887,7 +946,7 @@ function bindEvents() {
     const f = els.newPropertyForm;
     const fd = new FormData(f);
     const readStr = (k) => String(fd.get(k) || "").trim();
-    const readNum = (k) => { const v = String(fd.get(k) || "").trim(); if (!v) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+    const readNum = (k) => parseFlexibleNumber(fd.get(k));
 
     const submitterKind = readStr("submitterKind") || "realtor";
     const sourceType = submitterKind === "realtor" ? "realtor" : "general";
@@ -1532,8 +1591,8 @@ function bindEvents() {
     setVal("sitearea", formatModalAreaValue(item.sourceType, item.sitearea ?? ""));
     setVal("useapproval", item.useapproval ?? "");
     setVal("status", item.status ?? "");
-    setVal("priceMain", item.priceMain ?? "");
-    setVal("lowprice", item.lowprice ?? "");
+    setVal("priceMain", formatMoneyInputValue(item.priceMain ?? ""));
+    setVal("lowprice", formatMoneyInputValue(item.lowprice ?? ""));
     setVal("dateMain", toInputDateTimeLocal(item.dateMain) ?? "");
     setVal("sourceUrl", item.sourceUrl ?? "");
     setVal("date", formatDate(item.createdAt) ?? "");
@@ -1546,29 +1605,8 @@ function bindEvents() {
     setVal("latitude", item.latitude ?? "");
     setVal("longitude", item.longitude ?? "");
 
-    // 위도/경도: step 제한 없이 소수점 자유 입력
-    ["latitude", "longitude"].forEach((name) => {
-      const el = f.elements[name];
-      if (el) el.setAttribute("step", "any");
-    });
+    configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea", "latitude", "longitude"], amountNames: ["priceMain", "lowprice"] });
     toggleBrokerFieldsBySource(item.sourceType);
-
-    // 면적 필드: blur 시 소수점 둘째 자리 자동 반올림
-    ["commonarea", "exclusivearea", "sitearea"].forEach((name) => {
-      const el = f.elements[name];
-      if (!el) return;
-      el.onblur = () => {
-        const n = parseFloat(el.value);
-        if (!isNaN(n)) el.value = n.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
-      };
-      el.oninput = () => {
-        const parts = el.value.split(".");
-        if (parts[1] && parts[1].length > 2) {
-          const n = parseFloat(el.value);
-          if (!isNaN(n)) el.value = n.toFixed(2);
-        }
-      };
-    });
 
     // opinion 잠금 해제 (항상 신규 작성 가능)
     const opinionEl = f.elements["opinion"];
@@ -1611,8 +1649,6 @@ function bindEvents() {
     lockIfHas("rightsAnalysis", hasText(item.rightsAnalysis));
     lockIfHas("siteInspection", hasText(item.siteInspection));
     // opinion은 항상 신규 작성 가능 — lockIfHas 제외
-    lockIfHas("latitude", hasNum(item.latitude));
-    lockIfHas("longitude", hasNum(item.longitude));
 
     if (f.elements["sourceType"]) f.elements["sourceType"].disabled = !isAdmin;
     if (f.elements["assigneeId"]) f.elements["assigneeId"].disabled = !isAdmin;
@@ -1690,12 +1726,7 @@ function bindEvents() {
 
     const fd = new FormData(els.aemForm);
     const readStr = (k) => String(fd.get(k) || "").trim();
-    const readNum = (k) => {
-      const v = String(fd.get(k) || "").trim();
-      if (!v) return null;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    };
+    const readNum = (k) => parseFlexibleNumber(fd.get(k));
 
     const newOpinionText = readStr("opinion");
     const opinionHistory = appendOpinionEntry(
