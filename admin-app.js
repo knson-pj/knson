@@ -1237,7 +1237,6 @@ function bindEvents() {
     realtorPhone: "유선전화",
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
-    submitterPhone: "등록자 연락처",
     memo: "메모/의견",
     latitude: "위도",
     longitude: "경도",
@@ -1407,7 +1406,6 @@ function bindEvents() {
       realtorPhone: firstText(item?.realtorphone, raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(item?.realtorcell, raw.realtorCell, raw.realtorcell, item?._raw?.submitter_phone, item?._raw?.submitterPhone, ""),
       submitterName: firstText(raw.registeredByName, item?._raw?.registeredByName, item?._raw?.submitter_name, item?._raw?.submitterName, raw.submitterName, raw.submitter_name, ""),
-      submitterPhone: firstText(item?._raw?.submitter_phone, item?._raw?.submitterPhone, raw.submitterPhone, raw.submitter_phone, ""),
       memo: firstText(item?.memo, item?.opinion, raw.memo, raw.opinion, ""),
       latitude: item?.latitude ?? raw.latitude ?? null,
       longitude: item?.longitude ?? raw.longitude ?? null,
@@ -1435,7 +1433,6 @@ function bindEvents() {
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(row?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
       submitterName: firstText(raw.registeredByName, row?.submitter_name, raw.submitterName, raw.submitter_name, ""),
-      submitterPhone: firstText(row?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
       memo: firstText(row?.memo, raw.memo, raw.opinion, ""),
       latitude: row?.latitude ?? raw.latitude ?? null,
       longitude: row?.longitude ?? raw.longitude ?? null,
@@ -1557,7 +1554,7 @@ function bindEvents() {
           <div class="reglog-badge">최초 등록</div>
         </div>`;
       }
-      const changes = Array.isArray(entry.changes) ? entry.changes : [];
+      const changes = (Array.isArray(entry.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
       const rows = changes.length
         ? `<div class="reglog-changes">${changes.map((change) => `<div class="reglog-change-row"><span class="reglog-label">${esc(change.label || "")}</span><span class="reglog-arrow">${esc(change.before || "-")}</span><span class="reglog-sep">→</span><span class="reglog-arrow is-next">${esc(change.after || "-")}</span></div>`).join("")}</div>`
         : `<div class="reglog-badge">변경 없음</div>`;
