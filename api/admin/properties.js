@@ -11,10 +11,79 @@ const {
   nowIso,
 } = require('../_lib/utils');
 const { requireAdmin } = require('../_lib/auth');
+const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../_lib/supabase-admin');
+
+function omitUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj || {}).filter(([_, v]) => v !== undefined));
+}
+
+function buildSupabaseHeaders(hasJson = false, extra = {}) {
+  const { serviceRoleKey } = getEnv();
+  const headers = {
+    Accept: 'application/json',
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    ...extra,
+  };
+  if (hasJson) headers['Content-Type'] = 'application/json';
+  return headers;
+}
+
+async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
+  const { url } = getEnv();
+  const res = await fetch(`${url}${path}`, {
+    method,
+    headers: buildSupabaseHeaders(json !== undefined, headers),
+    body: json !== undefined ? JSON.stringify(json) : undefined,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text || null; }
+  if (!res.ok) {
+    const err = new Error((data && (data.message || data.msg || data.error_description || data.error)) || `Supabase API 오류 (${res.status})`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function buildSupabasePropertyPatch(body = {}) {
+  return omitUndefined({
+    item_no: body.item_no ?? body.itemNo,
+    source_type: body.source_type ?? body.sourceType,
+    assignee_id: body.assignee_id ?? body.assigneeId,
+    submitter_type: body.submitter_type ?? body.submitterType,
+    address: body.address,
+    asset_type: body.asset_type ?? body.assetType,
+    floor: body.floor,
+    total_floor: body.total_floor ?? body.totalfloor,
+    common_area: body.common_area ?? body.commonarea,
+    exclusive_area: body.exclusive_area ?? body.exclusivearea,
+    site_area: body.site_area ?? body.sitearea,
+    use_approval: body.use_approval ?? body.useapproval,
+    status: body.status,
+    price_main: body.price_main ?? body.priceMain,
+    lowprice: body.lowprice,
+    date_main: body.date_main ?? body.dateMain,
+    source_url: body.source_url ?? body.sourceUrl,
+    broker_office_name: body.broker_office_name ?? body.realtorname,
+    submitter_phone: body.submitter_phone ?? body.realtorcell,
+    memo: body.memo ?? body.opinion,
+    latitude: body.latitude,
+    longitude: body.longitude,
+    raw: body.raw,
+  });
+}
 
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
-  const session = requireAdmin(req, res);
+  let session = null;
+  if (hasSupabaseAdminEnv()) {
+    session = await requireSupabaseAdmin(req, res);
+  } else {
+    session = requireAdmin(req, res);
+  }
   if (!session) return;
 
   const store = getStore();
@@ -69,6 +138,22 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === 'PATCH') {
+    if (hasSupabaseAdminEnv()) {
+      const body = getJsonBody(req);
+      const targetId = String(body.id || body.globalId || '').trim();
+      if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
+
+      const patch = buildSupabasePropertyPatch(body);
+      const col = targetId.includes(':') ? 'global_id' : 'id';
+      const rows = await supabaseRest(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        json: patch,
+      });
+      const item = Array.isArray(rows) ? rows[0] : rows;
+      if (!item) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
+      return send(res, 200, { ok: true, item });
+    }
     const body = getJsonBody(req);
     const targetId = String(body.id || '').trim();
     const item = store.properties.find(p => p.id === targetId);

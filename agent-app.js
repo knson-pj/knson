@@ -255,8 +255,39 @@
     const target = String(uid || "").trim();
     if (!target) return false;
     const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
-    return [row?.assignee_id, row?.assigneeId, row?.assignedAgentId, raw.assignee_id, raw.assigneeId, raw.assignedAgentId]
+    return [row?.assignee_id, row?.assigneeId, row?.assignedAgentId, row?.assigned_agent_id, raw.assignee_id, raw.assigneeId, raw.assignedAgentId, raw.assigned_agent_id]
       .some((v) => String(v || "").trim() === target);
+  }
+
+  async function fetchPropertiesBatch(sb, from, pageSize, uid) {
+    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+    const filters = [
+      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid},raw->>assigned_agent_id.eq.${uid}`,
+      `assignee_id.eq.${uid}`
+    ];
+    let lastError = null;
+    for (const filter of filters) {
+      const { data, error } = await queryBase().or(filter);
+      if (!error) {
+        const rows = Array.isArray(data) ? data : [];
+        return rows.filter((row) => rowAssignedToUid(row, uid));
+      }
+      lastError = error;
+    }
+    throw lastError;
+  }
+
+  async function fetchAllAssignedProperties(sb, uid) {
+    const out = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const rows = await fetchPropertiesBatch(sb, from, pageSize, uid);
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
   }
 
   async function loadProperties() {
@@ -267,51 +298,9 @@
       const uid = String(state.session?.user?.id || "").trim();
       if (!uid) { state.properties = []; renderAll(); return; }
 
-      const COLS = "id,global_id,item_no,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status";
-
-      // 1차: assignee_id 컬럼 직접 일치
-      const allItems = [];
-      let from = 0;
-      const pageSize = 1000;
-      let useRawFallback = false;
-
-      while (true) {
-        const { data, error } = await sb
-          .from("properties")
-          .select(COLS)
-          .eq("assignee_id", uid)
-          .order("date_uploaded", { ascending: false })
-          .range(from, from + pageSize - 1);
-
-        if (error) { useRawFallback = true; break; }
-        const rows = Array.isArray(data) ? data : [];
-        allItems.push(...rows);
-        if (rows.length < pageSize) break;
-        from += pageSize;
-      }
-
-      // 2차: assignee_id 결과가 0건이거나 에러면 raw JSONB 조건 시도
-      if (useRawFallback || allItems.length === 0) {
-        allItems.length = 0;
-        from = 0;
-        while (true) {
-          const { data: d2, error: e2 } = await sb
-            .from("properties")
-            .select(COLS)
-            .or(`assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`)
-            .order("date_uploaded", { ascending: false })
-            .range(from, from + pageSize - 1);
-          if (e2) break;
-          const rows = Array.isArray(d2) ? d2 : [];
-          allItems.push(...rows);
-          if (rows.length < pageSize) break;
-          from += pageSize;
-        }
-      }
-
-      // 클라이언트 측 최종 검증
-      const verified = allItems.filter((row) => rowAssignedToUid(row, uid));
-      state.properties = verified.map(normalizeProperty);
+      try { await K.sbSyncLocalSession(); state.session = loadSession() || state.session; } catch {}
+      const rows = await fetchAllAssignedProperties(sb, uid);
+      state.properties = Array.isArray(rows) ? rows.map(normalizeProperty) : [];
       renderAll();
     } catch (err) {
       console.error("loadProperties error:", err);
@@ -634,7 +623,6 @@
       if (!sb) throw new Error("Supabase 연동 필요");
 
       const targetId = item.id || item.globalId;
-      const col = String(targetId).includes(":") ? "global_id" : "id";
 
       // raw JSON 업데이트 — 기존 raw에서 raw 키 자체는 제외하여 중첩 방지
       const existingRaw = item._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
@@ -651,8 +639,7 @@
       // undefined 키 제거 (Supabase 전송 시 에러 방지)
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
-      const { error } = await sb.from("properties").update(patch).eq(col, targetId);
-      if (error) throw error;
+      await updatePropertyRowResilient(sb, targetId, patch);
 
       closeEditModal();
       await loadProperties();
@@ -782,6 +769,52 @@
     els.npmMsg.textContent = text || "";
   }
 
+  function extractSchemaMissingColumn(err) {
+    const msg = String(err?.message || err || "");
+    const m = msg.match(/Could not find the '([^']+)' column of 'properties' in the schema cache/i);
+    return m ? String(m[1] || "").trim() : "";
+  }
+
+  function omitKeys(obj, keys) {
+    const drop = new Set((Array.isArray(keys) ? keys : []).map((v) => String(v || "").trim()).filter(Boolean));
+    return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
+  }
+
+  async function insertPropertyRowResilient(sb, row) {
+    let current = { ...(row || {}) };
+    const removed = new Set();
+    for (let i = 0; i < 16; i += 1) {
+      const { data, error } = await sb.from("properties").insert(current).select("id").limit(1);
+      if (!error) {
+        if (Array.isArray(data) && data.length) return data[0];
+        return null;
+      }
+      const missing = extractSchemaMissingColumn(error);
+      if (!missing || removed.has(missing) || !(missing in current)) throw error;
+      removed.add(missing);
+      current = omitKeys(current, [missing]);
+    }
+    throw new Error("properties insert failed after schema fallback retries");
+  }
+
+  async function updatePropertyRowResilient(sb, targetId, patch) {
+    let current = { ...(patch || {}) };
+    const removed = new Set();
+    const col = String(targetId).includes(":") ? "global_id" : "id";
+    for (let i = 0; i < 16; i += 1) {
+      const { data, error } = await sb.from("properties").update(current).eq(col, targetId).select("id").limit(1);
+      if (!error) {
+        if (Array.isArray(data) && data.length) return data[0];
+        throw Object.assign(new Error("NO_ROWS_UPDATED"), { code: "NO_ROWS_UPDATED" });
+      }
+      const missing = extractSchemaMissingColumn(error);
+      if (!missing || removed.has(missing) || !(missing in current)) throw error;
+      removed.add(missing);
+      current = omitKeys(current, [missing]);
+    }
+    throw new Error("properties update failed after schema fallback retries");
+  }
+
   async function submitNewProperty() {
     const f = els.newPropertyForm;
     const fd = new FormData(f);
@@ -810,28 +843,37 @@
       if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
     }
 
+    const currentUserId = String(state.session?.user?.id || "").trim() || null;
     const payload = {
       source_type: sourceType,
       is_general: true,
       address,
       asset_type: assetType,
       price_main: priceMain,
-      floor: readStr("floor") || null,
-      total_floor: readStr("totalfloor") || null,
       use_approval: readStr("useapproval") || null,
       common_area: readNum("commonarea"),
       exclusive_area: readNum("exclusivearea"),
       site_area: readNum("sitearea"),
+      assignee_id: currentUserId,
       broker_office_name: realtorName,
+      submitter_name: submitterName || null,
       submitter_phone: submitterPhone,
       memo: readStr("opinion") || null,
       raw: {
         sourceType,
         submitterType: submitterKind === "realtor" ? "realtor" : "owner",
         address, assetType, priceMain,
+        floor: readStr("floor") || null,
+        totalfloor: readStr("totalfloor") || null,
+        useapproval: readStr("useapproval") || null,
+        commonArea: readNum("commonarea"),
+        exclusiveArea: readNum("exclusivearea"),
+        siteArea: readNum("sitearea"),
         realtorName, realtorPhone, realtorCell,
         submitterName, submitterPhone,
         opinion: readStr("opinion") || null,
+        assigneeId: currentUserId,
+        assignedAgentId: currentUserId,
         registeredByAgent: true,
       },
     };
@@ -841,8 +883,7 @@
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       if (!sb) throw new Error("Supabase 연동이 필요합니다.");
-      const { error } = await sb.from("properties").insert(payload);
-      if (error) throw error;
+      await insertPropertyRowResilient(sb, payload);
       setNpmMsg("등록되었습니다.", false);
       setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
     } finally {

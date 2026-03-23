@@ -36,7 +36,6 @@
     properties: [],
     editingProperty: null,
     staff: [],
-    offices: [],
     propertyFilters: {
       activeCard: "",   // "" | "all" | "auction" | "onbid" | "realtor_naver" | "realtor_direct" | "general"
       status: "",
@@ -45,7 +44,6 @@
       priceRange: "",   // "0-1" | "1-3" | ... | "20-"  (억 단위)
       ratio50: "",      // "50" = 50% 이하 (경매/공매만)
     },
-    officeCsvPreviewRows: [],
     lastGroupSuggestion: null,
     selectedPropertyIds: new Set(),
     propertyPage: 1,
@@ -54,7 +52,6 @@
   };
 
   const els = {};
-  const phoneSaveTimers = new Map();
 
   function isSupabaseMode() {
     return !!(K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase());
@@ -116,14 +113,12 @@
       sumAgentsCard: $("#sumAgentsCard"),
       summaryPanel: $("#summaryPanel"),
       tabsPanel: $("#tabsPanel"),
-      sumOffices: $("#sumOffices"),
 
       // panels
       tabProperties: $("#tab-properties"),
       tabCsv: $("#tab-csv"),
       tabStaff: $("#tab-staff"),
       tabRegions: $("#tab-regions"),
-      tabOffices: $("#tab-offices"),
 
       // properties table
       btnDeleteSelectedProperties: $("#btnDeleteSelectedProperties"),
@@ -160,16 +155,6 @@
       assignmentTableBody: $("#assignmentTable tbody"),
       assignmentEmpty: $("#assignmentEmpty"),
 
-      // offices
-      officeCsvFileInput: $("#officeCsvFileInput"),
-      btnOfficeCsvPreview: $("#btnOfficeCsvPreview"),
-      btnOfficeCsvUpload: $("#btnOfficeCsvUpload"),
-      btnReloadOffices: $("#btnReloadOffices"),
-      officeResultBox: $("#officeResultBox"),
-      officePreviewTableBody: $("#officePreviewTable tbody"),
-      officePreviewEmpty: $("#officePreviewEmpty"),
-      officeTableBody: $("#officeTable tbody"),
-      officeEmpty: $("#officeEmpty"),
       // property edit modal
       propertyEditModalAdmin: $("#propertyEditModalAdmin"),
       aemClose: $("#aemClose"),
@@ -341,7 +326,6 @@ function bindEvents() {
 
         if (state.session?.user?.role === "admin") {
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
-          if (key === "offices") loadOffices().catch((e)=>handleAsyncError(e,"중개사무소 로드 실패"));
           if (key === "geocoding") updateGeocodeStatusBar();
         }
       });
@@ -403,7 +387,7 @@ function bindEvents() {
       handleCsvUpload().catch((e)=>handleAsyncError(e,"업로드 실패"));
     });
 
-    // staff/regions/offices (관리자만)
+    // staff/regions (관리자만)
     if (els.staffForm) els.staffForm.addEventListener("submit", (e) => {
       if (state.session?.user?.role !== "admin") return;
       handleSaveStaff(e);
@@ -420,19 +404,6 @@ function bindEvents() {
     if (els.btnSaveAssignments) els.btnSaveAssignments.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return;
       handleSaveAssignments();
-    });
-
-    if (els.btnOfficeCsvPreview) els.btnOfficeCsvPreview.addEventListener("click", () => {
-      if (state.session?.user?.role !== "admin") return;
-      handleOfficeCsvPreview();
-    });
-    if (els.btnOfficeCsvUpload) els.btnOfficeCsvUpload.addEventListener("click", () => {
-      if (state.session?.user?.role !== "admin") return;
-      handleOfficeCsvUpload().catch((e)=>handleAsyncError(e,"업로드 실패"));
-    });
-    if (els.btnReloadOffices) els.btnReloadOffices.addEventListener("click", () => {
-      if (state.session?.user?.role !== "admin") return;
-      loadOffices();
     });
 
     // property edit modal
@@ -533,7 +504,6 @@ function bindEvents() {
       csv: els.tabCsv,
       staff: els.tabStaff,
       regions: els.tabRegions,
-      offices: els.tabOffices,
       geocoding: els.tabGeocoding,
     };
     Object.entries(map).forEach(([key, panel]) => {
@@ -547,13 +517,6 @@ function bindEvents() {
       if (els.csvResultBox) {
         els.csvResultBox.textContent = "";
         els.csvResultBox.className = "result-box hidden csv-result-inline";
-      }
-    }
-    if (tab !== "offices") {
-      if (els.officeCsvFileInput) els.officeCsvFileInput.value = "";
-      if (els.officeResultBox) {
-        els.officeResultBox.textContent = "";
-        els.officeResultBox.className = "result-box hidden";
       }
     }
   }
@@ -633,7 +596,6 @@ function bindEvents() {
     renderSessionUI();
     state.properties = [];
     state.staff = [];
-    state.offices = [];
     renderAll();
     goLoginPage(true);
   }
@@ -772,13 +734,6 @@ function bindEvents() {
     renderPropertiesTable();
   }
 
-  async function loadOffices() {
-    const res = await api("/admin/realtor-offices", { auth: true });
-    state.offices = Array.isArray(res?.items) ? res.items.map(normalizeOffice) : [];
-    renderOfficesTable();
-    renderSummary();
-  }
-
   function normalizeProperty(item) {
     const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
     const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || "").toString().toLowerCase();
@@ -882,6 +837,52 @@ function bindEvents() {
     els.npmMsg.textContent = text || "";
   }
 
+  function extractSchemaMissingColumn(err) {
+    const msg = String(err?.message || err || "");
+    const m = msg.match(/Could not find the '([^']+)' column of 'properties' in the schema cache/i);
+    return m ? String(m[1] || "").trim() : "";
+  }
+
+  function omitKeys(obj, keys) {
+    const drop = new Set((Array.isArray(keys) ? keys : []).map((v) => String(v || "").trim()).filter(Boolean));
+    return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
+  }
+
+  async function insertPropertyRowResilient(sb, row) {
+    let current = { ...(row || {}) };
+    const removed = new Set();
+    for (let i = 0; i < 16; i += 1) {
+      const { data, error } = await sb.from("properties").insert(current).select("id").limit(1);
+      if (!error) {
+        if (Array.isArray(data) && data.length) return data[0];
+        return null;
+      }
+      const missing = extractSchemaMissingColumn(error);
+      if (!missing || removed.has(missing) || !(missing in current)) throw error;
+      removed.add(missing);
+      current = omitKeys(current, [missing]);
+    }
+    throw new Error("properties insert failed after schema fallback retries");
+  }
+
+  async function updatePropertyRowResilient(sb, targetId, patch) {
+    let current = { ...(patch || {}) };
+    const removed = new Set();
+    const col = String(targetId).includes(":") ? "global_id" : "id";
+    for (let i = 0; i < 16; i += 1) {
+      const { data, error } = await sb.from("properties").update(current).eq(col, targetId).select("id").limit(1);
+      if (!error) {
+        if (Array.isArray(data) && data.length) return data[0];
+        throw Object.assign(new Error("NO_ROWS_UPDATED"), { code: "NO_ROWS_UPDATED" });
+      }
+      const missing = extractSchemaMissingColumn(error);
+      if (!missing || removed.has(missing) || !(missing in current)) throw error;
+      removed.add(missing);
+      current = omitKeys(current, [missing]);
+    }
+    throw new Error("properties update failed after schema fallback retries");
+  }
+
   async function submitNewProperty() {
     const f = els.newPropertyForm;
     const fd = new FormData(f);
@@ -916,19 +917,24 @@ function bindEvents() {
       address,
       asset_type: assetType,
       price_main: priceMain,
-      floor: readStr("floor") || null,
-      total_floor: readStr("totalfloor") || null,
       use_approval: readStr("useapproval") || null,
       common_area: readNum("commonarea"),
       exclusive_area: readNum("exclusivearea"),
       site_area: readNum("sitearea"),
       broker_office_name: realtorName,
+      submitter_name: submitterName || null,
       submitter_phone: submitterPhone,
       memo: readStr("opinion") || null,
       raw: {
         sourceType,
         submitterType: submitterKind === "realtor" ? "realtor" : "owner",
         address, assetType, priceMain,
+        floor: readStr("floor") || null,
+        totalfloor: readStr("totalfloor") || null,
+        useapproval: readStr("useapproval") || null,
+        commonArea: readNum("commonarea"),
+        exclusiveArea: readNum("exclusivearea"),
+        siteArea: readNum("sitearea"),
         realtorName, realtorPhone, realtorCell,
         submitterName, submitterPhone,
         opinion: readStr("opinion") || null,
@@ -941,8 +947,7 @@ function bindEvents() {
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       if (sb) {
-        const { error } = await sb.from("properties").insert(payload);
-        if (error) throw error;
+        await insertPropertyRowResilient(sb, payload);
       } else {
         await api("/public-listings", { method: "POST", body: payload });
       }
@@ -1032,20 +1037,6 @@ function bindEvents() {
     }));
   }
 
-  function normalizeOffice(item) {
-    return {
-      id: item.id || "",
-      officeName: item.officeName || "",
-      branchName: item.branchName || "",
-      address: item.address || "",
-      regionGu: item.regionGu || "",
-      regionDong: item.regionDong || "",
-      managerName: item.managerName || "",
-      phone: item.phone || "",
-      memo: item.memo || item.raw?.memo || "",
-    };
-  }
-
   // ---------------------------
   // Summary / Render
   // ---------------------------
@@ -1053,14 +1044,12 @@ function bindEvents() {
     renderPropertiesTable();
     renderStaffTable();
     renderAssignmentTable();
-    renderOfficesTable();
     renderSummary();
   }
 
   function renderSummary() {
     const props = state.properties;
     const staff = state.staff;
-    const offices = state.offices;
     const fmt = (n) => Number(n).toLocaleString("ko-KR");
 
     if (els.sumTotal) els.sumTotal.textContent = fmt(props.length);
@@ -1071,7 +1060,6 @@ function bindEvents() {
     if (els.sumGeneral) els.sumGeneral.textContent = fmt(props.filter(p => p.sourceType === "general").length);
 
     if (els.sumAgents) els.sumAgents.textContent = fmt(staff.filter(s => normalizeRole(s.role) === "staff").length);
-    if (els.sumOffices) els.sumOffices.textContent = fmt(offices.length);
   }
 
   function getFilteredProperties() {
@@ -1796,12 +1784,15 @@ function bindEvents() {
         submitter_type: patch.submitterType,
         address: patch.address,
         asset_type: patch.assetType,
+        floor: patch.floor,
+        total_floor: patch.totalfloor,
         exclusive_area: patch.exclusivearea,
         common_area: patch.commonarea,
         site_area: patch.sitearea,
         use_approval: patch.useapproval || null,
         status: patch.status,
         price_main: patch.priceMain,
+        lowprice: patch.lowprice,
         date_main: patch.dateMain || null,
         source_url: patch.sourceUrl,
         broker_office_name: patch.realtorname,
@@ -1812,15 +1803,18 @@ function bindEvents() {
         raw: nextRaw,
       };
       Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
-      const col = String(targetId).includes(":") ? "global_id" : "id";
-      const { error } = await sb.from("properties").update(dbPatch).eq(col, targetId);
-      if (error) throw error;
-      return;
+      try {
+        await updatePropertyRowResilient(sb, targetId, dbPatch);
+        return;
+      } catch (error) {
+        if (!isAdmin || error?.code !== "NO_ROWS_UPDATED") throw error;
+      }
     }
 
     const payload = { ...patch, raw: mergePropertyRaw(item, patch) };
     const candidates = [];
     if (isAdmin) {
+      candidates.push({ path: `/admin/properties`, method: "PATCH" });
       candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PATCH" });
       candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PUT" });
     }
@@ -2102,42 +2096,6 @@ function bindEvents() {
         opt.textContent = region;
         opt.selected = Array.isArray(agent.assignedRegions) && agent.assignedRegions.includes(region);
         sel.appendChild(opt);
-      });
-    });
-  }
-
-  function renderOfficesTable() {
-    if (!els.officeTableBody || !els.officeEmpty) return;
-    els.officeTableBody.innerHTML = "";
-
-    if (!Array.isArray(state.offices) || !state.offices.length) {
-      els.officeEmpty.classList.remove("hidden");
-      return;
-    }
-    els.officeEmpty.classList.add("hidden");
-
-    const frag = document.createDocumentFragment();
-    state.offices.forEach((office) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${escapeHtml(office.officeName || "-")}</td>
-        <td>${escapeHtml(office.branchName || "-")}</td>
-        <td>${escapeHtml(office.address || "-")}</td>
-        <td>${escapeHtml([office.regionGu, office.regionDong].filter(Boolean).join(" / ") || "-")}</td>
-        <td>${escapeHtml(office.managerName || "-")}</td>
-        <td>
-          <input class="inline-input office-phone-input" data-id="${escapeAttr(office.id)}" type="text" value="${escapeAttr(formatPhoneDisplay(office.phone || ""))}" placeholder="01012345678" />
-          <div class="muted small" data-save-msg="${escapeAttr(office.id)}"></div>
-        </td>
-        <td>${escapeHtml(office.memo || "-")}</td>
-      `;
-      frag.appendChild(tr);
-    });
-    els.officeTableBody.appendChild(frag);
-
-    els.officeTableBody.querySelectorAll(".office-phone-input").forEach((input) => {
-      input.addEventListener("input", () => {
-        scheduleOfficePhoneSave(input.dataset.id, input.value);
       });
     });
   }
@@ -2640,140 +2598,6 @@ function bindEvents() {
     return result;
   }
 
-  // ---------------------------
-  // Offices CSV / Autosave
-  // ---------------------------
-  async function handleOfficeCsvPreview() {
-    try {
-      const file = els.officeCsvFileInput.files?.[0];
-      if (!file) return alert("CSV 파일을 선택해 주세요.");
-      const text = await readCsvFileText(file, "realtor");
-      const rows = parseCsv(text);
-      state.officeCsvPreviewRows = rows.map(mapOfficeCsvRow).filter(Boolean);
-      renderOfficeCsvPreviewTable();
-      showResultBox(els.officeResultBox, `미리보기 완료: ${state.officeCsvPreviewRows.length}행`);
-    } catch (err) {
-      console.error(err);
-      showResultBox(els.officeResultBox, `미리보기 실패: ${err.message}`, true);
-    }
-  }
-
-  function renderOfficeCsvPreviewTable() {
-    els.officePreviewTableBody.innerHTML = "";
-    if (!state.officeCsvPreviewRows.length) {
-      els.officePreviewEmpty.classList.remove("hidden");
-      return;
-    }
-    els.officePreviewEmpty.classList.add("hidden");
-
-    const frag = document.createDocumentFragment();
-    state.officeCsvPreviewRows.slice(0, 200).forEach((r, idx) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td>${escapeHtml(r.officeName)}</td>
-        <td>${escapeHtml(r.address)}</td>
-        <td>${escapeHtml(r.regionGu || "-")}</td>
-        <td>${escapeHtml(r.regionDong || "-")}</td>
-        <td>${escapeHtml(r.managerName || "-")}</td>
-      `;
-      frag.appendChild(tr);
-    });
-    els.officePreviewTableBody.appendChild(frag);
-  }
-
-  async function handleOfficeCsvUpload() {
-    try {
-      const file = els.officeCsvFileInput.files?.[0];
-      if (!file) return alert("CSV 파일을 선택해 주세요.");
-      const csvText = await readCsvFileText(file, "realtor");
-
-      const res = await api("/admin/import/realtor-offices-csv", {
-        method: "POST",
-        auth: true,
-        body: { csvText },
-      });
-
-      const summary = [
-        `업로드 완료`,
-        `삽입: ${res?.inserted ?? 0}건`,
-        `갱신: ${res?.updated ?? 0}건`,
-        `오류: ${res?.errors ?? 0}건`,
-      ].join(" / ");
-
-      showResultBox(els.officeResultBox, summary);
-      await loadOffices();
-    } catch (err) {
-      console.error(err);
-      if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
-        setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
-        goLoginPage(true);
-      }
-      showResultBox(els.officeResultBox, `업로드 실패: ${err.message}`, true);
-    }
-  }
-
-  function mapOfficeCsvRow(row) {
-    const pick = (...keys) => {
-      for (const k of keys) {
-        if (row[k] != null && String(row[k]).trim() !== "") return String(row[k]).trim();
-      }
-      return "";
-    };
-
-    const officeName = pick("office_name", "사무소명", "중개사무소명");
-    const address = pick("address", "주소");
-    if (!officeName || !address) return null;
-
-    const x = extractGuDong(address);
-
-    return {
-      officeName,
-      branchName: pick("branch_name", "지점명"),
-      address,
-      regionGu: pick("region_gu", "구") || x.gu || "",
-      regionDong: pick("region_dong", "동") || x.dong || "",
-      managerName: pick("manager_name", "담당자"),
-      phone: pick("phone", "핸드폰", "휴대폰", "전화번호"),
-      memo: pick("memo", "비고"),
-    };
-  }
-
-  function scheduleOfficePhoneSave(id, rawValue) {
-    const key = String(id);
-    clearTimeout(phoneSaveTimers.get(key));
-    setSaveMsg(id, "저장 대기...");
-    const t = setTimeout(() => flushOfficePhoneSave(id, rawValue), 700);
-    phoneSaveTimers.set(key, t);
-  }
-
-  async function flushOfficePhoneSave(id, rawValue) {
-    const key = String(id);
-    clearTimeout(phoneSaveTimers.get(key));
-
-    const phone = normalizePhone(rawValue);
-    setSaveMsg(id, "저장 중...");
-
-    try {
-      await api(`/admin/realtor-offices/${encodeURIComponent(id)}/phone`, {
-        method: "PATCH",
-        auth: true,
-        body: { phone },
-      });
-
-      const row = state.offices.find((o) => o.id === id);
-      if (row) row.phone = phone;
-      setSaveMsg(id, "저장됨");
-    } catch (err) {
-      console.error(err);
-      setSaveMsg(id, "저장 실패");
-    }
-  }
-
-  function setSaveMsg(id, msg) {
-    const el = document.querySelector(`[data-save-msg="${CSS.escape(String(id))}"]`);
-    if (el) el.textContent = msg;
-  }
 
   function readCsvFileText(file, sourceType) {
     return file.arrayBuffer().then((buf) => {
