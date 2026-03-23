@@ -153,7 +153,7 @@
     if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
       state.filters.favOnly = !state.filters.favOnly;
       els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
-      els.agFavFilter.textContent = state.filters.favOnly ? "★ 관심물건" : "☆ 관심물건";
+      els.agFavFilter.textContent = state.filters.favOnly ? "★" : "☆";
       state.page = 1;
       renderTable();
     });

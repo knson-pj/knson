@@ -716,3 +716,52 @@ td.fav-col{
 html[data-theme="dark"] .btn-fav-filter.is-active{
   background:rgba(245,158,11,.18);
 }
+
+/* ── 신규 물건 등록 + 버튼 ── */
+.btn-add-circle{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  border:2px solid var(--accent);
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  color:#fff;
+  font-size:22px;
+  font-weight:300;
+  line-height:1;
+  cursor:pointer;
+  flex-shrink:0;
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.btn-add-circle:hover{transform:scale(1.08);box-shadow:0 8px 20px rgba(79,70,229,.32);}
+
+/* ── 신규 등록 모달 내 등록자 유형 ── */
+.npm-type-switch{display:grid;gap:8px;}
+.field-label{font-size:13px;color:var(--muted);font-weight:700;}
+.npm-type-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.npm-type-card{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:14px 16px;
+  border:1px solid var(--line);
+  border-radius:var(--radius-md);
+  background:var(--surface-2);
+  cursor:pointer;
+  transition:border-color .15s, background .15s;
+}
+.npm-type-card input[type=radio]{display:none;}
+.npm-type-card strong{font-size:14px;font-weight:800;}
+.npm-type-card small{font-size:12px;color:var(--muted);}
+.npm-type-card.is-active{
+  border-color:var(--accent);
+  background:var(--accent-soft);
+}
+.npm-type-card.is-active strong{color:var(--accent);}
+.npm-sub-title{
+  font-size:13px;font-weight:800;color:var(--muted);
+  margin-bottom:10px;padding-bottom:6px;
+  border-bottom:1px solid var(--line);
+}
