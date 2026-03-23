@@ -267,26 +267,38 @@
       const uid = String(state.session?.user?.id || "").trim();
       if (!uid) { state.properties = []; renderAll(); return; }
 
-      // assignee_id 컬럼 기준 단일 쿼리 (가장 빠름)
-      // raw 필드 OR 조건은 JSONB 인덱스 없으면 느리므로 클라이언트 검증으로 처리
+      const COLS = "id,global_id,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status";
+
+      // 1차: assignee_id 컬럼 직접 일치
       const allItems = [];
       let from = 0;
       const pageSize = 1000;
+      let useRawFallback = false;
 
       while (true) {
         const { data, error } = await sb
           .from("properties")
-          .select("id,global_id,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status")
+          .select(COLS)
           .eq("assignee_id", uid)
           .order("date_uploaded", { ascending: false })
           .range(from, from + pageSize - 1);
 
-        if (error) {
-          // assignee_id 컬럼 필터 실패 시 fallback: raw JSONB 조건 시도
+        if (error) { useRawFallback = true; break; }
+        const rows = Array.isArray(data) ? data : [];
+        allItems.push(...rows);
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+
+      // 2차: assignee_id 결과가 0건이거나 에러면 raw JSONB 조건 시도
+      if (useRawFallback || allItems.length === 0) {
+        allItems.length = 0;
+        from = 0;
+        while (true) {
           const { data: d2, error: e2 } = await sb
             .from("properties")
-            .select("id,global_id,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status")
-            .or(`raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid}`)
+            .select(COLS)
+            .or(`assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`)
             .order("date_uploaded", { ascending: false })
             .range(from, from + pageSize - 1);
           if (e2) break;
@@ -294,15 +306,10 @@
           allItems.push(...rows);
           if (rows.length < pageSize) break;
           from += pageSize;
-          continue;
         }
-        const rows = Array.isArray(data) ? data : [];
-        allItems.push(...rows);
-        if (rows.length < pageSize) break;
-        from += pageSize;
       }
 
-      // 클라이언트 측 검증 필터 (assignee_id가 없는 경우 raw에서 확인)
+      // 클라이언트 측 최종 검증
       const verified = allItems.filter((row) => rowAssignedToUid(row, uid));
       state.properties = verified.map(normalizeProperty);
       renderAll();
