@@ -1419,6 +1419,12 @@ function bindEvents() {
     setVal("opinion", "");   // 매일 신규 작성 — 기존 내용 불러오지 않음
     setVal("latitude", item.latitude ?? "");
     setVal("longitude", item.longitude ?? "");
+
+    // 위도/경도: step 제한 없이 소수점 자유 입력
+    ["latitude", "longitude"].forEach((name) => {
+      const el = f.elements[name];
+      if (el) el.setAttribute("step", "any");
+    });
     toggleBrokerFieldsBySource(item.sourceType);
 
     // 면적 필드: blur 시 소수점 둘째 자리 자동 반올림

@@ -267,7 +267,7 @@
       const uid = String(state.session?.user?.id || "").trim();
       if (!uid) { state.properties = []; renderAll(); return; }
 
-      const COLS = "id,global_id,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status";
+      const COLS = "id,global_id,item_no,source_type,is_general,address,asset_type,floor,totalfloor,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,rights_analysis,site_inspection,memo,raw,latitude,longitude,geocode_status";
 
       // 1차: assignee_id 컬럼 직접 일치
       const allItems = [];
@@ -334,19 +334,19 @@
       id: String(item.id || item.global_id || ""),
       globalId: String(item.globalId || item.global_id || ""),
       sourceType,
-      itemNo: firstText(item.itemNo, item.item_no, raw.itemNo, ""),
+      itemNo: firstText(item.item_no, item.itemNo, raw.itemNo, ""),
       address: firstText(item.address, item.location, raw.address, ""),
-      assetType: firstText(item.assetType, item.asset_type, raw.assetType, raw["세부유형"], "-"),
+      assetType: firstText(item.asset_type, item.assetType, raw.assetType, raw["세부유형"], "-"),
       floor: firstText(item.floor, raw.floor, raw["해당층"], ""),
       totalfloor: firstText(item.totalfloor, item.total_floor, raw.totalfloor, raw["총층"], ""),
-      exclusivearea: toNum(item.exclusivearea ?? item.exclusive_area ?? raw.exclusivearea ?? raw["전용면적(평)"]),
-      priceMain: toNum(item.priceMain ?? item.price_main ?? raw.priceMain ?? raw["감정가(원)"]),
+      exclusivearea: toNum(item.exclusive_area ?? item.exclusivearea ?? raw.exclusivearea ?? raw["전용면적(평)"]),
+      priceMain: toNum(item.price_main ?? item.priceMain ?? raw.priceMain ?? raw["감정가(원)"]),
       lowprice: toNum(item.lowprice ?? item.low_price ?? raw.lowprice ?? raw["최저입찰가(원)"] ?? raw["매각가"]),
       status: firstText(item.status, raw.status, ""),
-      dateMain: firstText(item.dateMain, item.date_main, raw.dateMain, raw["입찰일자"], ""),
-      rightsAnalysis: firstText(item.rightsAnalysis, item.rights_analysis, raw.rightsAnalysis, ""),
-      siteInspection: firstText(item.siteInspection, item.site_inspection, raw.siteInspection, ""),
-      opinion: firstText(item.opinion, raw.opinion, ""),
+      dateMain: firstText(item.date_main, item.dateMain, raw.dateMain, raw["입찰일자"], ""),
+      rightsAnalysis: firstText(item.rights_analysis, item.rightsAnalysis, raw.rightsAnalysis, ""),
+      siteInspection: firstText(item.site_inspection, item.siteInspection, raw.siteInspection, ""),
+      opinion: firstText(item.opinion, item.memo, raw.opinion, raw.memo, ""),
       createdAt: firstText(item.date, item.date_uploaded, item.createdAt, raw.date, ""),
       isDirectSubmission: !!(
         firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, "") ||
@@ -647,6 +647,9 @@
       if (patch.memo !== undefined) { newRaw.opinion = patch.memo; newRaw.memo = patch.memo; }
       newRaw.opinionHistory = opinionHistory;
       patch.raw = newRaw;
+
+      // undefined 키 제거 (Supabase 전송 시 에러 방지)
+      Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
       const { error } = await sb.from("properties").update(patch).eq(col, targetId);
       if (error) throw error;
