@@ -69,7 +69,6 @@
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
   const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
-  const DAILY_REPORT_LOG_PREFIX = "knson_daily_report_log_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
@@ -113,6 +112,12 @@
     page: 1,
     pageSize: 30,
     editingProperty: null,
+    dailyReport: {
+      dateKey: "",
+      counts: { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 },
+      loadedAt: 0,
+      loading: false,
+    },
   };
 
   const els = {};
@@ -191,7 +196,20 @@
   function getTodayDateKey(input) {
     const d = input ? new Date(input) : new Date();
     if (!d || Number.isNaN(d.getTime())) return "";
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    try {
+      const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(d);
+      const year = parts.find((p) => p.type === "year")?.value || "";
+      const month = parts.find((p) => p.type === "month")?.value || "";
+      const day = parts.find((p) => p.type === "day")?.value || "";
+      return year && month && day ? `${year}-${month}-${day}` : "";
+    } catch {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
   }
 
   function getDailyReportNoteKey() {
@@ -220,90 +238,89 @@
     };
   }
 
-  function getDailyReportLogKey(dateKey) {
-    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
-    return `${DAILY_REPORT_LOG_PREFIX}${uid}_${dateKey || getTodayDateKey()}`;
+  const DAILY_REPORT_ACTION_KEYS = {
+    rightsAnalysis: "rights_analysis",
+    siteInspection: "site_inspection",
+    dailyIssue: "daily_issue",
+    newProperty: "new_property",
+  };
+
+  function emptyDailyReportCounts() {
+    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 };
   }
 
-  function buildAgentWorkEntries(categories, propertyLike, user, at) {
-    const actor = getActorIdentity(user);
-    const stamp = at || new Date().toISOString();
-    const dateKey = getTodayDateKey(stamp);
-    const itemNo = String(propertyLike?.itemNo || propertyLike?.item_no || "").trim();
-    const address = String(propertyLike?.address || propertyLike?.location || propertyLike?.raw?.address || "").trim();
-    const propertyKey = String(propertyLike?.id || propertyLike?.globalId || propertyLike?.global_id || itemNo || address).trim();
-    return (Array.isArray(categories) ? categories : []).filter(Boolean).map((category) => ({
-      at: stamp,
-      dateKey,
-      category: String(category),
-      actorId: actor.id,
-      actorName: actor.name,
-      propertyKey,
-      itemNo,
-      address,
-    }));
+  function getSessionToken() {
+    return String(state.session?.token || "").trim();
   }
 
-  function loadDailyReportLog(dateKey) {
-    try {
-      const raw = localStorage.getItem(getDailyReportLogKey(dateKey));
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveDailyReportLog(entries, dateKey) {
-    try {
-      localStorage.setItem(getDailyReportLogKey(dateKey), JSON.stringify(Array.isArray(entries) ? entries : []));
-    } catch {}
-  }
-
-  function recordDailyReportEntries(categories, propertyLike, user, at) {
-    const incoming = buildAgentWorkEntries(categories, propertyLike, user, at);
-    if (!incoming.length) return;
-    const dateKey = incoming[0]?.dateKey || getTodayDateKey();
-    const current = loadDailyReportLog(dateKey);
-    const seen = new Set(current.map((entry) => `${entry?.category || ""}::${entry?.propertyKey || ""}`));
-    let changed = false;
-    for (const entry of incoming) {
-      const dedupeKey = `${entry?.category || ""}::${entry?.propertyKey || ""}`;
-      if (!entry?.category || !entry?.propertyKey || seen.has(dedupeKey)) continue;
-      current.push(entry);
-      seen.add(dedupeKey);
-      changed = true;
-    }
-    if (changed) saveDailyReportLog(current, dateKey);
-  }
-
-  function getDailyReportSummary() {
-    const buckets = {
-      rightsAnalysis: new Set(),
-      siteInspection: new Set(),
-      dailyIssue: new Set(),
-      newProperty: new Set(),
+  async function apiJson(path, options = {}) {
+    const base = K && typeof K.getApiBase === "function" ? K.getApiBase() : "";
+    const token = getSessionToken();
+    const headers = {
+      Accept: "application/json",
+      ...(options.headers || {}),
     };
-    const logs = loadDailyReportLog(getTodayDateKey());
-    for (const entry of logs) {
-      const category = String(entry?.category || "").trim();
-      if (!category || !(category in buckets)) continue;
-      const key = String(entry?.propertyKey || "").trim();
-      if (!key) continue;
-      buckets[category].add(key);
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (options.json !== undefined) headers["Content-Type"] = "application/json";
+    const res = await fetch(`${base}${path}`, {
+      method: options.method || (options.json !== undefined ? "POST" : "GET"),
+      headers,
+      body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text || null; }
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.message || `요청 실패 (${res.status})`);
     }
-    const counts = {
-      rightsAnalysis: buckets.rightsAnalysis.size,
-      siteInspection: buckets.siteInspection.size,
-      dailyIssue: buckets.dailyIssue.size,
-      newProperty: buckets.newProperty.size,
-    };
-    counts.total = counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.newProperty;
-    return counts;
+    return data;
+  }
+
+  function setGlobalMsg(text, isError = true) {
+    if (!els.globalMsg) return;
+    const msg = String(text || "").trim();
+    if (!msg) {
+      els.globalMsg.classList.add("hidden");
+      els.globalMsg.textContent = "";
+      els.globalMsg.style.color = "";
+      return;
+    }
+    els.globalMsg.textContent = msg;
+    els.globalMsg.classList.remove("hidden");
+    if (isError) {
+      els.globalMsg.style.color = "";
+      els.globalMsg.style.borderColor = "";
+      els.globalMsg.style.background = "";
+    } else {
+      els.globalMsg.style.color = "var(--text)";
+    }
+  }
+
+  async function refreshDailyReportSummary(options = {}) {
+    const dateKey = String(options.dateKey || getTodayDateKey()).trim();
+    if (!dateKey) return state.dailyReport.counts || emptyDailyReportCounts();
+    if (state.dailyReport.loading && !options.force) return state.dailyReport.counts || emptyDailyReportCounts();
+    state.dailyReport.loading = true;
+    try {
+      const data = await apiJson(`/agent/daily-report?date=${encodeURIComponent(dateKey)}`);
+      const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
+      state.dailyReport = {
+        dateKey,
+        counts: nextCounts,
+        loadedAt: Date.now(),
+        loading: false,
+      };
+      renderDailyReport();
+      return nextCounts;
+    } catch (err) {
+      state.dailyReport.loading = false;
+      if (!options.silent) throw err;
+      return state.dailyReport.counts || emptyDailyReportCounts();
+    }
   }
 
   function renderDailyReport() {
-    const counts = getDailyReportSummary();
+    const counts = state.dailyReport?.counts || emptyDailyReportCounts();
     if (els.dailyReportTotal) els.dailyReportTotal.textContent = String(counts.total || 0);
     if (els.dailyReportCounts) {
       const defs = [
@@ -318,13 +335,19 @@
     }
   }
 
-  function openDailyReportModal() {
-    renderDailyReport();
+  async function openDailyReportModal() {
     if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
+    renderDailyReport();
     if (!els.dailyReportModal) return;
     document.body.classList.add("modal-open");
     els.dailyReportModal.classList.remove("hidden");
     els.dailyReportModal.setAttribute("aria-hidden", "false");
+    try {
+      await refreshDailyReportSummary({ force: true });
+      setGlobalMsg("");
+    } catch (err) {
+      setGlobalMsg(err?.message || "일일업무일지 조회 실패");
+    }
   }
 
   function closeDailyReportModal() {
@@ -333,6 +356,41 @@
       els.dailyReportModal.setAttribute("aria-hidden", "true");
     }
     document.body.classList.remove("modal-open");
+  }
+
+  function buildActivityLogEntries(actionKeys, propertyLike, options = {}) {
+    const identityKey = String(
+      options.identityKey ||
+      propertyLike?.registrationIdentityKey ||
+      propertyLike?._raw?.raw?.registrationIdentityKey ||
+      buildRegistrationMatchKey(propertyLike) ||
+      ""
+    ).trim();
+    const propertyId = String(options.propertyId || propertyLike?.id || propertyLike?.globalId || propertyLike?.global_id || "").trim();
+    const propertyItemNo = String(propertyLike?.itemNo || propertyLike?.item_no || propertyLike?._raw?.item_no || "").trim();
+    const propertyAddress = String(propertyLike?.address || propertyLike?.location || propertyLike?._raw?.address || propertyLike?.raw?.address || "").trim();
+    return (Array.isArray(actionKeys) ? actionKeys : []).filter(Boolean).map((key) => ({
+      actionType: DAILY_REPORT_ACTION_KEYS[key] || String(key || "").trim(),
+      propertyId: propertyId || null,
+      propertyIdentityKey: identityKey || null,
+      propertyItemNo: propertyItemNo || null,
+      propertyAddress: propertyAddress || null,
+      changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
+      note: key === "dailyIssue" ? (String(options.dailyIssueText || "").trim() || null) : null,
+      actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
+    }));
+  }
+
+  async function recordDailyReportEntries(entries) {
+    const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.actionType);
+    if (!safeEntries.length) return;
+    await apiJson('/agent/daily-report', {
+      method: 'POST',
+      json: { entries: safeEntries },
+    });
+    if (els.dailyReportModal && !els.dailyReportModal.classList.contains('hidden')) {
+      await refreshDailyReportSummary({ force: true, silent: true });
+    }
   }
 
   function setupChrome() {
@@ -1158,21 +1216,51 @@
       newRaw.opinionHistory = opinionHistory;
 
       const workCategories = [];
+      const changedFields = {};
       const prevRights = String(item.rightsAnalysis || "").trim();
       const prevSite = String(item.siteInspection || "").trim();
-      if (rightsVal && rightsVal !== prevRights) workCategories.push("rightsAnalysis");
-      if (siteVal && siteVal !== prevSite) workCategories.push("siteInspection");
-      if (newOpinionText) workCategories.push("dailyIssue");
+      if (rightsVal && rightsVal !== prevRights) {
+        workCategories.push("rightsAnalysis");
+        changedFields.rightsAnalysis = ["rightsAnalysis"];
+      }
+      if (siteVal && siteVal !== prevSite) {
+        workCategories.push("siteInspection");
+        changedFields.siteInspection = ["siteInspection"];
+      }
+      if (newOpinionText) {
+        workCategories.push("dailyIssue");
+        changedFields.dailyIssue = ["opinion"];
+      }
       patch.raw = newRaw;
 
       // undefined 키 제거 (Supabase 전송 시 에러 방지)
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
-      await updatePropertyRowResilient(sb, targetId, patch);
-      if (workCategories.length) recordDailyReportEntries(workCategories, item, state.session?.user);
+      const updatedRow = await updatePropertyRowResilient(sb, targetId, patch);
+      let activityError = "";
+      if (workCategories.length) {
+        try {
+          await recordDailyReportEntries(buildActivityLogEntries(workCategories, {
+            ...item,
+            rightsAnalysis: rightsVal || item.rightsAnalysis,
+            siteInspection: siteVal || item.siteInspection,
+            opinion: patch.memo || item.opinion,
+            _raw: { ...(item._raw || {}), raw: newRaw },
+          }, {
+            propertyId: updatedRow?.id || item.id || item.globalId || targetId,
+            identityKey: newRaw.registrationIdentityKey || buildRegistrationMatchKey({ ...item, raw: newRaw, _raw: { ...(item._raw || {}), raw: newRaw } }),
+            changedFields,
+            dailyIssueText: newOpinionText,
+          }));
+        } catch (logErr) {
+          activityError = logErr?.message || "일일업무일지 기록 실패";
+        }
+      }
 
       closeEditModal();
       await loadProperties();
+      if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
+      else setGlobalMsg("");
     } catch (err) {
       if (els.agEditMsg) els.agEditMsg.textContent = err?.message || "저장 실패";
     } finally {
@@ -1419,17 +1507,33 @@
       const regContext = buildRegisterLogContext("담당자 등록", state.session?.user);
       let existing = await findExistingPropertyForRegistration(sb, payload.raw);
       if (!existing) existing = findExistingPropertyByRegistrationKey(payload.raw, state.properties);
+      let savedPropertyId = null;
+      let savedIdentityKey = "";
+      let activityError = "";
       if (existing) {
         const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
-        await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
-        recordDailyReportEntries(["newProperty"], existing, state.session?.user);
+        const updated = await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
+        savedPropertyId = updated?.id || existing.id || existing.globalId || null;
+        savedIdentityKey = merged.row?.raw?.registrationIdentityKey || existing?._raw?.raw?.registrationIdentityKey || buildRegistrationMatchKey(merged.row) || "";
         setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
       } else {
         const createRow = buildRegistrationDbRowForCreate(payload, regContext);
-        await insertPropertyRowResilient(sb, createRow);
-        recordDailyReportEntries(["newProperty"], payload, state.session?.user);
+        const inserted = await insertPropertyRowResilient(sb, createRow);
+        savedPropertyId = inserted?.id || null;
+        savedIdentityKey = createRow?.raw?.registrationIdentityKey || buildRegistrationMatchKey(createRow) || "";
         setNpmMsg("등록되었습니다.", false);
       }
+      try {
+        await recordDailyReportEntries(buildActivityLogEntries(["newProperty"], payload, {
+          propertyId: savedPropertyId,
+          identityKey: savedIdentityKey,
+          changedFields: { newProperty: ["registration"] },
+        }));
+      } catch (logErr) {
+        activityError = logErr?.message || "일일업무일지 기록 실패";
+      }
+      if (activityError) setGlobalMsg(`물건 등록은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
+      else setGlobalMsg("");
       setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
