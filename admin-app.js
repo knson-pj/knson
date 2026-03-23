@@ -818,6 +818,11 @@ function bindEvents() {
       ? sanitizeOnbidOpinion(firstText(item.opinion, raw.opinion, ""), memoText, address)
       : firstText(item.opinion, raw.opinion, memoText, "");
 
+    const assignedAgentId = item.assignedAgentId || item.assigneeId || item.assignee_id || null;
+    const assignedAgentName = assignedAgentId
+      ? firstText(item.assignedAgentName, item.assigneeName, item.assignee_name, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "")
+      : "";
+
     return {
       id: String(item.id || item._id || item.globalId || item.global_id || ""),
       globalId: String(item.globalId || item.global_id || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")),
@@ -833,8 +838,8 @@ function bindEvents() {
       status: firstText(item.status, raw.status, ""),
       latitude,
       longitude,
-      assignedAgentId: item.assignedAgentId || item.assigneeId || item.assignee_id || null,
-      assignedAgentName: firstText(item.assignedAgentName, item.assigneeName, item.assignee_name, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, ""),
+      assignedAgentId,
+      assignedAgentName,
       createdAt: firstText(item.date, item.date_uploaded, item.createdAt, item.created_at, raw.date, raw.createdAt, raw.date_uploaded, ""),
       duplicateFlag: !!item.duplicateFlag,
       regionGu: firstText(item.regionGu, item.region_gu, raw.regionGu, raw.region_gu, ""),
@@ -2156,28 +2161,33 @@ function bindEvents() {
         }
 
         const rawRows = parseCsv(csvText);
-        const mappedRows = [];
+        const preparedRows = [];
         for (const r of rawRows) {
           const m = mapPropertyCsvRow(r, sourceType);
           // itemNo 없으면 global_id = "sourceType:" 으로 중복돼 upsert 에러 유발
           if (!m || !m.itemNo || !m.address) continue;
           const built = buildSupabasePropertyRow(r, m, sourceType);
           if (!built.global_id || built.global_id.endsWith(":")) continue;
-          mappedRows.push(built);
+          preparedRows.push(built);
         }
 
-        if (!mappedRows.length) throw new Error("유효한 행이 없습니다.");
+        if (!preparedRows.length) throw new Error("유효한 행이 없습니다.");
 
-        // chunk upsert
-        const chunks = (K && typeof K.chunk === "function") ? K.chunk(mappedRows, 500) : chunkArray(mappedRows, 500);
-        let okCnt = 0;
-        for (const c of chunks) {
-          const { error } = await sb.from("properties").upsert(c, { onConflict: "global_id" });
-          if (error) throw error;
-          okCnt += c.length;
+        const dedupedRows = dedupePropertyRowsByGlobalId(preparedRows);
+        const dedupedInFile = preparedRows.length - dedupedRows.length;
+        const importResult = await upsertPropertiesResilient(sb, dedupedRows, { chunkSize: 200 });
+        const summaryParts = [
+          `업로드 완료`,
+          `처리: ${importResult.okCount}건`,
+        ];
+        if (dedupedInFile > 0) summaryParts.push(`파일내 중복 통합: ${dedupedInFile}건`);
+        if (importResult.failed.length > 0) {
+          summaryParts.push(`실패: ${importResult.failed.length}건`);
+          const preview = importResult.failed.slice(0, 5).map((v) => v.itemNo || v.globalId || "-").join(", ");
+          if (preview) summaryParts.push(`실패 예시: ${preview}`);
         }
 
-        showResultBox(els.csvResultBox, `업로드 완료 / 처리: ${okCnt}건`);
+        showResultBox(els.csvResultBox, summaryParts.join(" / "), importResult.failed.length > 0);
         await loadProperties();
         return;
       }
@@ -2396,6 +2406,51 @@ function bindEvents() {
     };
 
     return row;
+  }
+
+
+  function dedupePropertyRowsByGlobalId(rows) {
+    const map = new Map();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = String(row?.global_id || "").trim();
+      if (!key) continue;
+      map.set(key, row);
+    }
+    return [...map.values()];
+  }
+
+  async function upsertPropertiesResilient(sb, rows, { chunkSize = 200 } = {}) {
+    const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    const failed = [];
+    let okCount = 0;
+
+    async function upsertBatch(batch) {
+      if (!batch.length) return;
+      const { error } = await sb.from("properties").upsert(batch, { onConflict: "global_id" });
+      if (!error) {
+        okCount += batch.length;
+        return;
+      }
+      if (batch.length === 1) {
+        const row = batch[0] || {};
+        failed.push({
+          globalId: row.global_id || "",
+          itemNo: row.item_no || "",
+          message: String(error.message || error.details || error.hint || "업서트 실패"),
+        });
+        return;
+      }
+      const mid = Math.ceil(batch.length / 2);
+      await upsertBatch(batch.slice(0, mid));
+      await upsertBatch(batch.slice(mid));
+    }
+
+    const chunks = (K && typeof K.chunk === "function") ? K.chunk(list, chunkSize) : chunkArray(list, chunkSize);
+    for (const chunk of chunks) {
+      await upsertBatch(chunk);
+    }
+
+    return { okCount, failed };
   }
 
   // ---------------------------
@@ -3217,8 +3272,11 @@ function bindEvents() {
 
   function mergePropertyRaw(item, patch) {
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
-    const assigneeId = patch.assigneeId ?? item?.assignedAgentId ?? currentRaw.assigneeId ?? currentRaw.assignedAgentId ?? null;
-    const assigneeName = assigneeId ? getStaffNameById(assigneeId) : '';
+    const hasOwnAssignee = Object.prototype.hasOwnProperty.call(patch || {}, "assigneeId");
+    const assigneeId = hasOwnAssignee
+      ? (patch.assigneeId || null)
+      : (item?.assignedAgentId ?? currentRaw.assigneeId ?? currentRaw.assignedAgentId ?? currentRaw.assignee_id ?? null);
+    const assigneeName = assigneeId ? (getStaffNameById(assigneeId) || "") : null;
     return {
       ...currentRaw,
       itemNo: patch.itemNo ?? currentRaw.itemNo ?? null,
@@ -3242,9 +3300,10 @@ function bindEvents() {
       memo: patch.opinion ?? currentRaw.memo ?? null,
       opinionHistory: patch.opinionHistory ?? currentRaw.opinionHistory ?? [],
       assigneeId,
+      assignee_id: assigneeId,
       assignedAgentId: assigneeId,
-      assigneeName: assigneeName || currentRaw.assigneeName || currentRaw.assignedAgentName || null,
-      assignedAgentName: assigneeName || currentRaw.assignedAgentName || currentRaw.assigneeName || null,
+      assigneeName: assigneeName,
+      assignedAgentName: assigneeName,
     };
   }
 

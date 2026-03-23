@@ -357,7 +357,7 @@ body.role-staff .admin-main{gap:14px;}
 }
 .csv-upload-field{margin:0;}
 .csv-upload-field > span{margin-bottom:6px;}
-.csv-upload-action{display:flex;align-items:flex-end;justify-content:flex-start;min-height:100%;}
+.csv-upload-action{display:flex;align-items:flex-end;justify-content:flex-start;min-height:100%;gap:10px;flex-wrap:wrap;}
 .csv-upload-action .btn{min-width:124px;}
 .csv-result-inline{
   min-height:62px;
