@@ -69,6 +69,7 @@
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
   const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
+  const DAILY_REPORT_LOG_PREFIX = "knson_daily_report_log_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
@@ -219,6 +220,11 @@
     };
   }
 
+  function getDailyReportLogKey(dateKey) {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return `${DAILY_REPORT_LOG_PREFIX}${uid}_${dateKey || getTodayDateKey()}`;
+  }
+
   function buildAgentWorkEntries(categories, propertyLike, user, at) {
     const actor = getActorIdentity(user);
     const stamp = at || new Date().toISOString();
@@ -238,38 +244,53 @@
     }));
   }
 
-  function appendAgentDailyWorkLog(raw, entries) {
-    const nextRaw = { ...(raw || {}) };
-    const current = Array.isArray(nextRaw.agentDailyWorkLog) ? nextRaw.agentDailyWorkLog.slice() : [];
-    const incoming = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.category);
-    nextRaw.agentDailyWorkLog = current.concat(incoming);
-    return nextRaw;
+  function loadDailyReportLog(dateKey) {
+    try {
+      const raw = localStorage.getItem(getDailyReportLogKey(dateKey));
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveDailyReportLog(entries, dateKey) {
+    try {
+      localStorage.setItem(getDailyReportLogKey(dateKey), JSON.stringify(Array.isArray(entries) ? entries : []));
+    } catch {}
+  }
+
+  function recordDailyReportEntries(categories, propertyLike, user, at) {
+    const incoming = buildAgentWorkEntries(categories, propertyLike, user, at);
+    if (!incoming.length) return;
+    const dateKey = incoming[0]?.dateKey || getTodayDateKey();
+    const current = loadDailyReportLog(dateKey);
+    const seen = new Set(current.map((entry) => `${entry?.category || ""}::${entry?.propertyKey || ""}`));
+    let changed = false;
+    for (const entry of incoming) {
+      const dedupeKey = `${entry?.category || ""}::${entry?.propertyKey || ""}`;
+      if (!entry?.category || !entry?.propertyKey || seen.has(dedupeKey)) continue;
+      current.push(entry);
+      seen.add(dedupeKey);
+      changed = true;
+    }
+    if (changed) saveDailyReportLog(current, dateKey);
   }
 
   function getDailyReportSummary() {
-    const todayKey = getTodayDateKey();
-    const actor = getActorIdentity(state.session?.user);
     const buckets = {
       rightsAnalysis: new Set(),
       siteInspection: new Set(),
       dailyIssue: new Set(),
       newProperty: new Set(),
     };
-    for (const item of Array.isArray(state.properties) ? state.properties : []) {
-      const logs = item?._raw?.raw?.agentDailyWorkLog;
-      if (!Array.isArray(logs) || !logs.length) continue;
-      for (const entry of logs) {
-        const category = String(entry?.category || "").trim();
-        if (!category || !(category in buckets)) continue;
-        const entryDate = String(entry?.dateKey || getTodayDateKey(entry?.at) || "");
-        if (entryDate !== todayKey) continue;
-        const actorId = String(entry?.actorId || entry?.actorName || "").trim();
-        if (actor.id && actorId && actorId !== actor.id) continue;
-        if (!actor.id && actor.name && actorId && actorId !== actor.name) continue;
-        const key = String(entry?.propertyKey || item?.id || item?.globalId || item?.itemNo || item?.address || "").trim();
-        if (!key) continue;
-        buckets[category].add(key);
-      }
+    const logs = loadDailyReportLog(getTodayDateKey());
+    for (const entry of logs) {
+      const category = String(entry?.category || "").trim();
+      if (!category || !(category in buckets)) continue;
+      const key = String(entry?.propertyKey || "").trim();
+      if (!key) continue;
+      buckets[category].add(key);
     }
     const counts = {
       rightsAnalysis: buckets.rightsAnalysis.size,
@@ -1142,15 +1163,13 @@
       if (rightsVal && rightsVal !== prevRights) workCategories.push("rightsAnalysis");
       if (siteVal && siteVal !== prevSite) workCategories.push("siteInspection");
       if (newOpinionText) workCategories.push("dailyIssue");
-      if (workCategories.length) {
-        newRaw = appendAgentDailyWorkLog(newRaw, buildAgentWorkEntries(workCategories, item, state.session?.user));
-      }
       patch.raw = newRaw;
 
       // undefined 키 제거 (Supabase 전송 시 에러 방지)
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
       await updatePropertyRowResilient(sb, targetId, patch);
+      if (workCategories.length) recordDailyReportEntries(workCategories, item, state.session?.user);
 
       closeEditModal();
       await loadProperties();
@@ -1400,16 +1419,15 @@
       const regContext = buildRegisterLogContext("담당자 등록", state.session?.user);
       let existing = await findExistingPropertyForRegistration(sb, payload.raw);
       if (!existing) existing = findExistingPropertyByRegistrationKey(payload.raw, state.properties);
-      const newPropertyEntries = buildAgentWorkEntries(["newProperty"], payload, state.session?.user);
       if (existing) {
         const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
-        merged.row.raw = appendAgentDailyWorkLog(merged.row.raw, buildAgentWorkEntries(["newProperty"], existing, state.session?.user));
         await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
+        recordDailyReportEntries(["newProperty"], existing, state.session?.user);
         setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
       } else {
         const createRow = buildRegistrationDbRowForCreate(payload, regContext);
-        createRow.raw = appendAgentDailyWorkLog(createRow.raw, newPropertyEntries);
         await insertPropertyRowResilient(sb, createRow);
+        recordDailyReportEntries(["newProperty"], payload, state.session?.user);
         setNpmMsg("등록되었습니다.", false);
       }
       setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
