@@ -439,21 +439,37 @@
   }
 
   function parseAddressIdentityParts(address) {
-    const src = compactAddressText(address);
-    if (!src) return { dong: "", mainNo: "", subNo: "" };
-    const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)(산?\d+)(?:-(\d+))?/g)];
-    if (matches.length) {
-      const m = matches[matches.length - 1];
-      return { dong: m[1], mainNo: m[2], subNo: m[3] || "" };
+    const text = String(address || "").trim().replace(/\s+/g, " ");
+    const compact = compactAddressText ? compactAddressText(text) : text.replace(/\s+/g, "");
+    if (!compact) return { dong: "", mainNo: "", subNo: "" };
+
+    const suffixSet = new Set(["동", "읍", "면", "리"]);
+    let end = -1;
+    for (let i = compact.length - 1; i >= 0; i -= 1) {
+      if (suffixSet.has(compact[i])) {
+        end = i;
+        break;
+      }
     }
-    const dongOnly = [...src.matchAll(/([가-힣A-Za-z0-9]+동)/g)];
-    if (dongOnly.length) {
-      const dong = dongOnly[dongOnly.length - 1][1];
-      const tail = src.slice(src.lastIndexOf(dong) + dong.length);
-      const lot = (tail.match(/(산?\d+)(?:-(\d+))?/) || [null, "", ""]);
-      if (lot[1]) return { dong, mainNo: lot[1], subNo: lot[2] || "" };
+    if (end < 0) return { dong: "", mainNo: "", subNo: "" };
+
+    let start = 0;
+    for (let i = end - 1; i >= 0; i -= 1) {
+      if (/[시군구읍면리동]/.test(compact[i])) {
+        start = i + 1;
+        break;
+      }
     }
-    return { dong: "", mainNo: "", subNo: "" };
+
+    const dong = compact.slice(start, end + 1);
+    if (!/^[가-힣A-Za-z0-9]+(?:동|읍|면|리)$/.test(dong)) {
+      return { dong: "", mainNo: "", subNo: "" };
+    }
+
+    const tail = compact.slice(end + 1);
+    const lot = tail.match(/(산?\d+)(?:-(\d+))?/);
+    if (!lot) return { dong, mainNo: "", subNo: "" };
+    return { dong, mainNo: lot[1] || "", subNo: lot[2] || "" };
   }
 
   function extractHoNumberForLog(data) {
