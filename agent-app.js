@@ -595,7 +595,8 @@
       patch[rawKeys[key]] = val;
     }
     // opinion: 히스토리 마지막 항목 텍스트 or 기존값 유지
-    patch.opinion = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
+    // opinion → DB의 memo 컬럼으로 매핑 (opinion 컬럼 없음)
+    patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -612,7 +613,7 @@
       if (patch.status !== undefined) newRaw.status = patch.status;
       if (patch.rights_analysis !== undefined) newRaw.rightsAnalysis = patch.rights_analysis;
       if (patch.site_inspection !== undefined) newRaw.siteInspection = patch.site_inspection;
-      if (patch.opinion !== undefined) newRaw.opinion = patch.opinion;
+      if (patch.memo !== undefined) { newRaw.opinion = patch.memo; newRaw.memo = patch.memo; }
       newRaw.opinionHistory = opinionHistory;
       patch.raw = newRaw;
 
