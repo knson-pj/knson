@@ -588,13 +588,16 @@
     );
 
     const patch = {};
-    const fields = ["assetType", "status", "rightsAnalysis", "siteInspection"];
-    const rawKeys = { assetType: "asset_type", status: "status", rightsAnalysis: "rights_analysis", siteInspection: "site_inspection" };
-    for (const key of fields) {
-      const val = readStr(key) || null;
-      patch[rawKeys[key]] = val;
-    }
-    // opinion: 히스토리 마지막 항목 텍스트 or 기존값 유지
+    // DB에 존재하는 컬럼만 직접 매핑
+    const assetTypeVal = readStr("assetType") || null;
+    const statusVal = readStr("status") || null;
+    const rightsVal = readStr("rightsAnalysis") || null;
+    const siteVal = readStr("siteInspection") || null;
+
+    if (assetTypeVal !== null) patch.asset_type = assetTypeVal;
+    if (statusVal !== null) patch.status = statusVal;
+    // rights_analysis, site_inspection 은 DB 컬럼 없음 → raw 에만 저장
+
     // opinion → DB의 memo 컬럼으로 매핑 (opinion 컬럼 없음)
     patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
 
@@ -609,10 +612,10 @@
       // raw JSON도 업데이트
       const existingRaw = item._raw?.raw || {};
       const newRaw = { ...existingRaw };
-      if (patch.asset_type !== undefined) newRaw.assetType = patch.asset_type;
-      if (patch.status !== undefined) newRaw.status = patch.status;
-      if (patch.rights_analysis !== undefined) newRaw.rightsAnalysis = patch.rights_analysis;
-      if (patch.site_inspection !== undefined) newRaw.siteInspection = patch.site_inspection;
+      if (assetTypeVal !== null) newRaw.assetType = assetTypeVal;
+      if (statusVal !== null) newRaw.status = statusVal;
+      if (rightsVal !== null) newRaw.rightsAnalysis = rightsVal;
+      if (siteVal !== null) newRaw.siteInspection = siteVal;
       if (patch.memo !== undefined) { newRaw.opinion = patch.memo; newRaw.memo = patch.memo; }
       newRaw.opinionHistory = opinionHistory;
       patch.raw = newRaw;

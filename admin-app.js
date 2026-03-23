@@ -1421,6 +1421,23 @@ function bindEvents() {
     setVal("longitude", item.longitude ?? "");
     toggleBrokerFieldsBySource(item.sourceType);
 
+    // 면적 필드: blur 시 소수점 둘째 자리 자동 반올림
+    ["commonarea", "exclusivearea", "sitearea"].forEach((name) => {
+      const el = f.elements[name];
+      if (!el) return;
+      el.onblur = () => {
+        const n = parseFloat(el.value);
+        if (!isNaN(n)) el.value = n.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+      };
+      el.oninput = () => {
+        const parts = el.value.split(".");
+        if (parts[1] && parts[1].length > 2) {
+          const n = parseFloat(el.value);
+          if (!isNaN(n)) el.value = n.toFixed(2);
+        }
+      };
+    });
+
     // opinion 잠금 해제 (항상 신규 작성 가능)
     const opinionEl = f.elements["opinion"];
     if (opinionEl) opinionEl.disabled = false;
