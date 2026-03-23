@@ -662,13 +662,24 @@ html[data-theme="dark"] .btn-danger{background:#ef4444;border-color:#ef4444;colo
 }
 
 /* ── 관심물건 ── */
-.fav-col{width:38px;text-align:center;padding:0 4px !important;}
+.fav-col,
+td.fav-col{
+  width:38px;
+  text-align:center;
+  padding:0 4px !important;
+  vertical-align:middle;
+}
 .btn-fav{
   appearance:none;
   border:0;
   background:none;
   padding:0;
-  margin:0;
+  margin:0 auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:28px;
+  height:28px;
   font-size:18px;
   line-height:1;
   cursor:pointer;
