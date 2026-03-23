@@ -966,16 +966,17 @@ function bindEvents() {
 
     if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
 
+    const actorName = String(state.session?.user?.name || state.session?.user?.email || "").trim();
     let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
     if (submitterKind === "realtor") {
       realtorName = readStr("realtorname");
       realtorPhone = readStr("realtorphone") || null;
       realtorCell = readStr("realtorcell");
-      submitterName = realtorName;
+      submitterName = actorName || readStr("submitterName") || null;
       submitterPhone = realtorCell;
       if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
     } else {
-      submitterName = readStr("submitterName");
+      submitterName = readStr("submitterName") || actorName || "";
       submitterPhone = readStr("submitterPhone");
       if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
     }
@@ -1008,6 +1009,7 @@ function bindEvents() {
         submitterName, submitterPhone,
         opinion: readStr("opinion") || null,
         registeredByAdmin: true,
+        registeredByName: actorName || null,
       },
     };
 
@@ -1404,7 +1406,7 @@ function bindEvents() {
       realtorName: firstText(item?.realtorname, raw.realtorName, raw.realtorname, item?._raw?.broker_office_name, item?._raw?.brokerOfficeName, ""),
       realtorPhone: firstText(item?.realtorphone, raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(item?.realtorcell, raw.realtorCell, raw.realtorcell, item?._raw?.submitter_phone, item?._raw?.submitterPhone, ""),
-      submitterName: firstText(item?._raw?.submitter_name, item?._raw?.submitterName, raw.submitterName, raw.submitter_name, ""),
+      submitterName: firstText(raw.registeredByName, item?._raw?.registeredByName, item?._raw?.submitter_name, item?._raw?.submitterName, raw.submitterName, raw.submitter_name, ""),
       submitterPhone: firstText(item?._raw?.submitter_phone, item?._raw?.submitterPhone, raw.submitterPhone, raw.submitter_phone, ""),
       memo: firstText(item?.memo, item?.opinion, raw.memo, raw.opinion, ""),
       latitude: item?.latitude ?? raw.latitude ?? null,
@@ -1432,7 +1434,7 @@ function bindEvents() {
       realtorName: firstText(row?.broker_office_name, raw.realtorName, raw.realtorname, ""),
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(row?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
-      submitterName: firstText(row?.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      submitterName: firstText(raw.registeredByName, row?.submitter_name, raw.submitterName, raw.submitter_name, ""),
       submitterPhone: firstText(row?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
       memo: firstText(row?.memo, raw.memo, raw.opinion, ""),
       latitude: row?.latitude ?? raw.latitude ?? null,

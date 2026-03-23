@@ -1180,16 +1180,17 @@
 
     if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
 
+    const actorName = String(state.session?.user?.name || state.session?.user?.email || "").trim();
     let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
     if (submitterKind === "realtor") {
       realtorName = readStr("realtorname");
       realtorPhone = readStr("realtorphone") || null;
       realtorCell = readStr("realtorcell");
-      submitterName = realtorName;
+      submitterName = actorName || readStr("submitterName") || null;
       submitterPhone = realtorCell;
       if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
     } else {
-      submitterName = readStr("submitterName");
+      submitterName = readStr("submitterName") || actorName || "";
       submitterPhone = readStr("submitterPhone");
       if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
     }
@@ -1226,6 +1227,7 @@
         assigneeId: currentUserId,
         assignedAgentId: currentUserId,
         registeredByAgent: true,
+        registeredByName: actorName || null,
       },
     };
 
