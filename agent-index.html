@@ -33,7 +33,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./admin-styles.css?v=20260320-agent" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260324-daily1" />
 </head>
 <body>
   <div class="admin-shell">
@@ -48,6 +48,7 @@
 
       <div class="top-actions">
         <span id="agentUserBadge" class="badge badge-agent">담당자</span>
+        <button id="btnDailyReport" class="btn btn-secondary">일일업무일지</button>
         <button id="btnChangeMyPassword" class="btn btn-secondary hidden">비밀번호 변경</button>
         <button id="btnAgentLogout" class="btn btn-ghost hidden">로그아웃</button>
       </div>
@@ -309,6 +310,42 @@
     </div>
   </div>
 
+
+  <!-- 일일 업무 일지 -->
+  <div id="dailyReportModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-card daily-report-modal-card">
+      <div class="modal-header daily-report-header">
+        <h3>일일 업무 일지</h3>
+        <button id="dailyReportClose" class="icon-btn" aria-label="닫기">✕</button>
+      </div>
+      <div class="modal-body daily-report-body">
+        <section class="daily-report-section">
+          <h4><span>1.</span> Daily report</h4>
+          <div class="daily-report-grid">
+            <div class="daily-report-copy">
+              <p>오늘도 수고하셨습니다(^^</p>
+              <p>금일은 총 <strong id="dailyReportTotal">0</strong>건의 Log가 기록되었습니다.</p>
+            </div>
+            <div id="dailyReportCounts" class="daily-report-count-box" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section class="daily-report-section">
+          <h4><span>2.</span> 기타 사항</h4>
+          <div class="daily-report-note-wrap">
+            <textarea id="dailyReportNote" class="daily-report-note" placeholder="업무 관련 요청 사항이나 제안 등을 자유롭게 작성해주세요.&#10;없으면 빈칸으로 두셔도 좋습니다."></textarea>
+            <div class="daily-report-note-hint">메모는 오늘 날짜 기준으로 이 브라우저에 자동 저장됩니다.</div>
+          </div>
+        </section>
+
+        <div class="modal-actions">
+          <button id="dailyReportDone" class="btn btn-primary" type="button">확인</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 내 비밀번호 변경 -->
   <div id="passwordChangeModal" class="modal hidden" aria-hidden="true">
     <div class="modal-backdrop" data-close="true"></div>
@@ -331,6 +368,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260320-agent"></script>
-  <script src="./agent-app.js?v=20260320-fix2"></script>
+  <script src="./agent-app.js?v=20260324-daily1"></script>
 </body>
 </html>

@@ -68,6 +68,7 @@
   }
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
+  const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
@@ -128,7 +129,15 @@
     els.agentUserBadge = $("#agentUserBadge");
     els.btnAgentLogout = $("#btnAgentLogout");
     els.btnChangeMyPassword = $("#btnChangeMyPassword");
+    els.btnDailyReport = $("#btnDailyReport");
     els.globalMsg = $("#globalMsg");
+
+    els.dailyReportModal = $("#dailyReportModal");
+    els.dailyReportClose = $("#dailyReportClose");
+    els.dailyReportDone = $("#dailyReportDone");
+    els.dailyReportTotal = $("#dailyReportTotal");
+    els.dailyReportCounts = $("#dailyReportCounts");
+    els.dailyReportNote = $("#dailyReportNote");
 
     // Summary
     els.agSumTotal = $("#agSumTotal");
@@ -176,6 +185,133 @@
     els.pwdClose = $("#pwdModalClose");
     els.pwdCancel = $("#pwdCancel");
     els.pwdMsg = $("#pwdMsg");
+  }
+
+  function getTodayDateKey(input) {
+    const d = input ? new Date(input) : new Date();
+    if (!d || Number.isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function getDailyReportNoteKey() {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return `${DAILY_REPORT_NOTE_PREFIX}${uid}_${getTodayDateKey()}`;
+  }
+
+  function loadDailyReportNote() {
+    try {
+      return String(localStorage.getItem(getDailyReportNoteKey()) || "");
+    } catch {
+      return "";
+    }
+  }
+
+  function saveDailyReportNote(value) {
+    try {
+      localStorage.setItem(getDailyReportNoteKey(), String(value || ""));
+    } catch {}
+  }
+
+  function getActorIdentity(user) {
+    return {
+      id: String(user?.id || user?.email || "").trim(),
+      name: String(user?.name || user?.email || "").trim(),
+    };
+  }
+
+  function buildAgentWorkEntries(categories, propertyLike, user, at) {
+    const actor = getActorIdentity(user);
+    const stamp = at || new Date().toISOString();
+    const dateKey = getTodayDateKey(stamp);
+    const itemNo = String(propertyLike?.itemNo || propertyLike?.item_no || "").trim();
+    const address = String(propertyLike?.address || propertyLike?.location || propertyLike?.raw?.address || "").trim();
+    const propertyKey = String(propertyLike?.id || propertyLike?.globalId || propertyLike?.global_id || itemNo || address).trim();
+    return (Array.isArray(categories) ? categories : []).filter(Boolean).map((category) => ({
+      at: stamp,
+      dateKey,
+      category: String(category),
+      actorId: actor.id,
+      actorName: actor.name,
+      propertyKey,
+      itemNo,
+      address,
+    }));
+  }
+
+  function appendAgentDailyWorkLog(raw, entries) {
+    const nextRaw = { ...(raw || {}) };
+    const current = Array.isArray(nextRaw.agentDailyWorkLog) ? nextRaw.agentDailyWorkLog.slice() : [];
+    const incoming = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.category);
+    nextRaw.agentDailyWorkLog = current.concat(incoming);
+    return nextRaw;
+  }
+
+  function getDailyReportSummary() {
+    const todayKey = getTodayDateKey();
+    const actor = getActorIdentity(state.session?.user);
+    const buckets = {
+      rightsAnalysis: new Set(),
+      siteInspection: new Set(),
+      dailyIssue: new Set(),
+      newProperty: new Set(),
+    };
+    for (const item of Array.isArray(state.properties) ? state.properties : []) {
+      const logs = item?._raw?.raw?.agentDailyWorkLog;
+      if (!Array.isArray(logs) || !logs.length) continue;
+      for (const entry of logs) {
+        const category = String(entry?.category || "").trim();
+        if (!category || !(category in buckets)) continue;
+        const entryDate = String(entry?.dateKey || getTodayDateKey(entry?.at) || "");
+        if (entryDate !== todayKey) continue;
+        const actorId = String(entry?.actorId || entry?.actorName || "").trim();
+        if (actor.id && actorId && actorId !== actor.id) continue;
+        if (!actor.id && actor.name && actorId && actorId !== actor.name) continue;
+        const key = String(entry?.propertyKey || item?.id || item?.globalId || item?.itemNo || item?.address || "").trim();
+        if (!key) continue;
+        buckets[category].add(key);
+      }
+    }
+    const counts = {
+      rightsAnalysis: buckets.rightsAnalysis.size,
+      siteInspection: buckets.siteInspection.size,
+      dailyIssue: buckets.dailyIssue.size,
+      newProperty: buckets.newProperty.size,
+    };
+    counts.total = counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.newProperty;
+    return counts;
+  }
+
+  function renderDailyReport() {
+    const counts = getDailyReportSummary();
+    if (els.dailyReportTotal) els.dailyReportTotal.textContent = String(counts.total || 0);
+    if (els.dailyReportCounts) {
+      const defs = [
+        ["rightsAnalysis", "권리분석"],
+        ["siteInspection", "현장조사"],
+        ["dailyIssue", "금일이슈사항"],
+        ["newProperty", "신규물건등록"],
+      ];
+      els.dailyReportCounts.innerHTML = defs.map(([key, label], idx) => `
+        <span class="daily-report-chip">${label} <strong class="daily-report-chip-count">${counts[key] || 0}</strong>건</span>${idx < defs.length - 1 ? '<span class="daily-report-sep">|</span>' : ''}
+      `).join("");
+    }
+  }
+
+  function openDailyReportModal() {
+    renderDailyReport();
+    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
+    if (!els.dailyReportModal) return;
+    document.body.classList.add("modal-open");
+    els.dailyReportModal.classList.remove("hidden");
+    els.dailyReportModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeDailyReportModal() {
+    if (els.dailyReportModal) {
+      els.dailyReportModal.classList.add("hidden");
+      els.dailyReportModal.setAttribute("aria-hidden", "true");
+    }
+    document.body.classList.remove("modal-open");
   }
 
   function setupChrome() {
@@ -232,6 +368,20 @@
       state.page = 1;
       renderTable();
     });
+
+    if (els.btnDailyReport) els.btnDailyReport.addEventListener("click", openDailyReportModal);
+    if (els.dailyReportClose) els.dailyReportClose.addEventListener("click", closeDailyReportModal);
+    if (els.dailyReportDone) els.dailyReportDone.addEventListener("click", closeDailyReportModal);
+    if (els.dailyReportModal) {
+      els.dailyReportModal.addEventListener("click", (e) => {
+        if (e.target?.dataset?.close === "true") closeDailyReportModal();
+      });
+    }
+    if (els.dailyReportNote) {
+      els.dailyReportNote.addEventListener("input", debounce(() => {
+        saveDailyReportNote(els.dailyReportNote.value || "");
+      }, 120));
+    }
 
     // 신규 물건 등록 모달
     if (els.btnNewProperty) els.btnNewProperty.addEventListener("click", openNewPropertyModal);
@@ -699,6 +849,7 @@
   function renderAll() {
     renderSummary();
     renderTable();
+    if (els.dailyReportModal && !els.dailyReportModal.classList.contains("hidden")) renderDailyReport();
   }
 
   function renderSummary() {
@@ -977,13 +1128,23 @@
       // raw JSON 업데이트 — 기존 raw에서 raw 키 자체는 제외하여 중첩 방지
       const existingRaw = item._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
       delete existingRaw.raw; // 중첩 raw 제거
-      const newRaw = { ...existingRaw };
+      let newRaw = { ...existingRaw };
       if (assetTypeVal !== null) newRaw.assetType = assetTypeVal;
       if (statusVal !== null) newRaw.status = statusVal;
       if (rightsVal !== null) newRaw.rightsAnalysis = rightsVal;
       if (siteVal !== null) newRaw.siteInspection = siteVal;
       if (patch.memo !== undefined) { newRaw.opinion = patch.memo; newRaw.memo = patch.memo; }
       newRaw.opinionHistory = opinionHistory;
+
+      const workCategories = [];
+      const prevRights = String(item.rightsAnalysis || "").trim();
+      const prevSite = String(item.siteInspection || "").trim();
+      if (rightsVal && rightsVal !== prevRights) workCategories.push("rightsAnalysis");
+      if (siteVal && siteVal !== prevSite) workCategories.push("siteInspection");
+      if (newOpinionText) workCategories.push("dailyIssue");
+      if (workCategories.length) {
+        newRaw = appendAgentDailyWorkLog(newRaw, buildAgentWorkEntries(workCategories, item, state.session?.user));
+      }
       patch.raw = newRaw;
 
       // undefined 키 제거 (Supabase 전송 시 에러 방지)
@@ -1239,12 +1400,16 @@
       const regContext = buildRegisterLogContext("담당자 등록", state.session?.user);
       let existing = await findExistingPropertyForRegistration(sb, payload.raw);
       if (!existing) existing = findExistingPropertyByRegistrationKey(payload.raw, state.properties);
+      const newPropertyEntries = buildAgentWorkEntries(["newProperty"], payload, state.session?.user);
       if (existing) {
         const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
+        merged.row.raw = appendAgentDailyWorkLog(merged.row.raw, buildAgentWorkEntries(["newProperty"], existing, state.session?.user));
         await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
         setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
       } else {
-        await insertPropertyRowResilient(sb, buildRegistrationDbRowForCreate(payload, regContext));
+        const createRow = buildRegistrationDbRowForCreate(payload, regContext);
+        createRow.raw = appendAgentDailyWorkLog(createRow.raw, newPropertyEntries);
+        await insertPropertyRowResilient(sb, createRow);
         setNpmMsg("등록되었습니다.", false);
       }
       setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
