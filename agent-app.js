@@ -43,13 +43,14 @@
     properties: [],
     favorites: new Set(),           // 즐겨찾기 property id 집합
     filters: {
-      activeCard: "",   // "" | "all" | "auction" | "onbid" | "realtor_naver" | "realtor_direct" | "general"
+      activeCard: "",
       status: "",
       keyword: "",
       area: "",
       priceRange: "",
       ratio50: "",
-      favOnly: false,               // 관심물건 필터
+      favOnly: false,
+      todayBid: false,        // 당일 입찰기일 필터
     },
     page: 1,
     pageSize: 30,
@@ -92,6 +93,7 @@
     els.agRatioFilter = $("#agRatioFilter");
     els.agKeyword = $("#agKeyword");
     els.agFavFilter = $("#agFavFilter");
+    els.agDayFilter = $("#agDayFilter");
     els.btnNewProperty = $("#btnNewProperty");
     els.newPropertyModal = $("#newPropertyModal");
     els.npmClose = $("#npmClose");
@@ -163,6 +165,13 @@
     if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
       state.filters.favOnly = !state.filters.favOnly;
       els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
+      state.page = 1;
+      renderTable();
+    });
+
+    if (els.agDayFilter) els.agDayFilter.addEventListener("click", () => {
+      state.filters.todayBid = !state.filters.todayBid;
+      els.agDayFilter.classList.toggle("is-active", state.filters.todayBid);
       state.page = 1;
       renderTable();
     });
@@ -255,44 +264,45 @@
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       if (!sb) { state.properties = []; renderAll(); return; }
 
-      try { await K.sbSyncLocalSession(); state.session = loadSession(); } catch {}
       const uid = String(state.session?.user?.id || "").trim();
       if (!uid) { state.properties = []; renderAll(); return; }
 
-      // admin-app.js와 동일한 fallback 패턴
-      const filters = [
-        "assignee_id.eq." + uid + ",raw->>assigneeId.eq." + uid + ",raw->>assignedAgentId.eq." + uid + ",raw->>assignee_id.eq." + uid,
-        "assignee_id.eq." + uid,
-      ];
-
+      // assignee_id 컬럼 기준 단일 쿼리 (가장 빠름)
+      // raw 필드 OR 조건은 JSONB 인덱스 없으면 느리므로 클라이언트 검증으로 처리
       const allItems = [];
-      let lastError = null;
+      let from = 0;
+      const pageSize = 1000;
 
-      for (const filter of filters) {
-        allItems.length = 0;
-        lastError = null;
-        let from = 0;
-        const pageSize = 1000;
-        let success = true;
+      while (true) {
+        const { data, error } = await sb
+          .from("properties")
+          .select("id,global_id,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status")
+          .eq("assignee_id", uid)
+          .order("date_uploaded", { ascending: false })
+          .range(from, from + pageSize - 1);
 
-        while (true) {
-          const { data, error } = await sb.from("properties")
-            .select("*")
-            .or(filter)
+        if (error) {
+          // assignee_id 컬럼 필터 실패 시 fallback: raw JSONB 조건 시도
+          const { data: d2, error: e2 } = await sb
+            .from("properties")
+            .select("id,global_id,source_type,is_general,address,asset_type,exclusive_area,common_area,price_main,lowprice,status,date_main,date_uploaded,assignee_id,memo,raw,latitude,longitude,geocode_status")
+            .or(`raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid}`)
             .order("date_uploaded", { ascending: false })
             .range(from, from + pageSize - 1);
-
-          if (error) { lastError = error; success = false; break; }
-          const rows = Array.isArray(data) ? data : [];
+          if (e2) break;
+          const rows = Array.isArray(d2) ? d2 : [];
           allItems.push(...rows);
           if (rows.length < pageSize) break;
           from += pageSize;
+          continue;
         }
-
-        if (success) break;
+        const rows = Array.isArray(data) ? data : [];
+        allItems.push(...rows);
+        if (rows.length < pageSize) break;
+        from += pageSize;
       }
 
-      // 클라이언트 측 추가 필터링 (DB 필터가 부정확할 수 있으므로)
+      // 클라이언트 측 검증 필터 (assignee_id가 없는 경우 raw에서 확인)
       const verified = allItems.filter((row) => rowAssignedToUid(row, uid));
       state.properties = verified.map(normalizeProperty);
       renderAll();
@@ -408,6 +418,16 @@
         if (r.sourceType !== "auction" && r.sourceType !== "onbid") return false;
         if (!r.priceMain || !r.lowprice || r.priceMain <= 0) return false;
         return (r.lowprice / r.priceMain) <= 0.5;
+      });
+    }
+
+    // 당일 입찰기일 필터 (경매/공매만)
+    if (f.todayBid) {
+      const d = new Date();
+      const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      rows = rows.filter((r) => {
+        if (r.sourceType !== "auction" && r.sourceType !== "onbid") return false;
+        return String(r.dateMain || "").trim().startsWith(todayStr);
       });
     }
 
@@ -609,8 +629,9 @@
       const targetId = item.id || item.globalId;
       const col = String(targetId).includes(":") ? "global_id" : "id";
 
-      // raw JSON도 업데이트
-      const existingRaw = item._raw?.raw || {};
+      // raw JSON 업데이트 — 기존 raw에서 raw 키 자체는 제외하여 중첩 방지
+      const existingRaw = item._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
+      delete existingRaw.raw; // 중첩 raw 제거
       const newRaw = { ...existingRaw };
       if (assetTypeVal !== null) newRaw.assetType = assetTypeVal;
       if (statusVal !== null) newRaw.status = statusVal;
@@ -857,10 +878,6 @@
       </div>`
     ).join("");
     // isAdmin=false → 편집 버튼 없음 (담당자 읽기 전용)
-  }
-
-  function esc(v) {
-    return String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
   }
 
   function debounce(fn, ms) {

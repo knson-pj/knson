@@ -846,3 +846,23 @@ html[data-theme="dark"] .btn-fav-filter.is-active{
 .history-edit-area{display:grid;gap:6px;}
 .history-edit-textarea{resize:vertical;min-height:60px;}
 .history-edit-btns{display:flex;gap:6px;justify-content:flex-end;}
+
+/* D 버튼 (당일 입찰기일) */
+.btn-day-circle{
+  background:var(--surface);
+  border-color:var(--line);
+  color:var(--muted);
+  font-size:15px;
+  font-weight:900;
+}
+.btn-day-circle:hover{
+  border-color:var(--accent-2);
+  color:var(--accent-2);
+  box-shadow:0 4px 14px rgba(15,118,110,.22);
+}
+.btn-day-circle.is-active{
+  background:rgba(15,118,110,.12);
+  border-color:var(--accent-2);
+  color:var(--accent-2);
+  box-shadow:0 4px 14px rgba(15,118,110,.22);
+}
