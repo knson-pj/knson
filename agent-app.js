@@ -11,9 +11,37 @@
   function loadSession() { return K ? K.loadSession() : null; }
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
 
+  const FAVS_KEY_PREFIX = "knson_favs_v1_";
+
+  function getFavsKey() {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return FAVS_KEY_PREFIX + uid;
+  }
+
+  function loadFavorites() {
+    try {
+      const raw = localStorage.getItem(getFavsKey());
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch { return new Set(); }
+  }
+
+  function saveFavorites() {
+    try {
+      localStorage.setItem(getFavsKey(), JSON.stringify([...state.favorites]));
+    } catch {}
+  }
+
+  function toggleFavorite(id) {
+    if (state.favorites.has(id)) state.favorites.delete(id);
+    else state.favorites.add(id);
+    saveFavorites();
+  }
+
   const state = {
     session: loadSession(),
     properties: [],
+    favorites: new Set(),           // 즐겨찾기 property id 집합
     filters: {
       activeCard: "",   // "" | "all" | "auction" | "onbid" | "realtor_naver" | "realtor_direct" | "general"
       status: "",
@@ -21,6 +49,7 @@
       area: "",
       priceRange: "",
       ratio50: "",
+      favOnly: false,               // 관심물건 필터
     },
     page: 1,
     pageSize: 30,
@@ -62,6 +91,7 @@
     els.agPriceFilter = $("#agPriceFilter");
     els.agRatioFilter = $("#agRatioFilter");
     els.agKeyword = $("#agKeyword");
+    els.agFavFilter = $("#agFavFilter");
 
     // Edit modal
     els.agEditModal = $("#agEditModal");
@@ -120,6 +150,13 @@
     if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
     if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
     if (els.agKeyword) els.agKeyword.addEventListener("input", debounce((e) => { state.filters.keyword = String(e.target.value || "").trim(); state.page = 1; renderTable(); }, 150));
+    if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
+      state.filters.favOnly = !state.filters.favOnly;
+      els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
+      els.agFavFilter.textContent = state.filters.favOnly ? "★ 관심물건" : "☆ 관심물건";
+      state.page = 1;
+      renderTable();
+    });
 
     // Edit modal
     if (els.agEditClose) els.agEditClose.addEventListener("click", closeEditModal);
@@ -154,6 +191,9 @@
     if (isSupabaseMode()) {
       try { await K.sbSyncLocalSession(); state.session = loadSession(); } catch {}
     }
+
+    // 세션 확정 후 즐겨찾기 로드 (userId 기반 키)
+    state.favorites = loadFavorites();
 
     await loadProperties();
   }
@@ -336,6 +376,11 @@
       });
     }
 
+    // 관심물건 필터
+    if (f.favOnly) {
+      rows = rows.filter((r) => state.favorites.has(r.id));
+    }
+
     // 키워드 필터
     if (f.keyword) {
       const kw = f.keyword.toLowerCase();
@@ -381,8 +426,30 @@
     const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
     const rate = calcRate(p.priceMain, p.lowprice);
     const statusLabel = normalizeStatus(p.status);
+    const isFav = state.favorites.has(p.id);
 
-    tr.innerHTML =
+    // ☆ 버튼 셀 — 클릭해도 모달 열리지 않음
+    const favTd = document.createElement("td");
+    favTd.className = "fav-col";
+    const favBtn = document.createElement("button");
+    favBtn.type = "button";
+    favBtn.className = "btn-fav" + (isFav ? " is-active" : "");
+    favBtn.textContent = isFav ? "★" : "☆";
+    favBtn.title = isFav ? "관심 해제" : "관심 등록";
+    favBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFavorite(p.id);
+      const nowFav = state.favorites.has(p.id);
+      favBtn.textContent = nowFav ? "★" : "☆";
+      favBtn.title = nowFav ? "관심 해제" : "관심 등록";
+      favBtn.classList.toggle("is-active", nowFav);
+      // 관심물건 필터 활성 중이면 즉시 리렌더
+      if (state.filters.favOnly) { state.page = 1; renderTable(); }
+    });
+    favTd.appendChild(favBtn);
+    tr.appendChild(favTd);
+
+    tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
       '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
       "<td>" + esc(p.address || "-") + "</td>" +
@@ -396,7 +463,8 @@
       "<td>" + esc(statusLabel) + "</td>" +
       "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
       "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
-      "<td>" + esc((p.opinion || "-").slice(0, 30)) + "</td>";
+      "<td>" + esc((p.opinion || "-").slice(0, 30)) + "</td>"
+    );
 
     tr.addEventListener("click", () => openEditModal(p));
     return tr;

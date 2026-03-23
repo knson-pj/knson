@@ -242,7 +242,7 @@ body.role-staff .admin-main{gap:14px;}
 .toolbar{
   margin-top:12px;
   display:grid;
-  grid-template-columns:160px 160px 160px 130px minmax(180px, 1fr);
+  grid-template-columns:160px 160px 160px 130px auto minmax(180px, 1fr);
   gap:10px;
   justify-content:start;
 }
@@ -659,4 +659,49 @@ html[data-theme="dark"] .btn-danger{background:#ef4444;border-color:#ef4444;colo
 @media(max-width:680px){
   .geocode-stat-row{grid-template-columns:1fr 1fr;}
   .geocode-stat-card:last-child{grid-column:1/-1;}
+}
+
+/* ── 관심물건 ── */
+.fav-col{width:38px;text-align:center;padding:0 4px !important;}
+.btn-fav{
+  appearance:none;
+  border:0;
+  background:none;
+  padding:0;
+  margin:0;
+  font-size:18px;
+  line-height:1;
+  cursor:pointer;
+  color:var(--muted);
+  transition:color .15s ease, transform .15s ease;
+}
+.btn-fav:hover{color:#f59e0b;transform:scale(1.2);}
+.btn-fav.is-active{color:#f59e0b;}
+
+/* 관심물건 필터 버튼 (toolbar 내) */
+.btn-fav-filter{
+  appearance:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:46px;
+  padding:0 16px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--surface);
+  color:var(--muted);
+  font-size:13px;
+  font-weight:800;
+  cursor:pointer;
+  white-space:nowrap;
+  transition:border-color .15s ease, background .15s ease, color .15s ease;
+}
+.btn-fav-filter:hover{border-color:#f59e0b;color:#f59e0b;}
+.btn-fav-filter.is-active{
+  border-color:#f59e0b;
+  background:rgba(245,158,11,.10);
+  color:#f59e0b;
+}
+html[data-theme="dark"] .btn-fav-filter.is-active{
+  background:rgba(245,158,11,.18);
 }
