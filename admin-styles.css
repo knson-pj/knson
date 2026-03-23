@@ -784,3 +784,65 @@ html[data-theme="dark"] .btn-fav-filter.is-active{
   color:#f59e0b;
   box-shadow:0 4px 14px rgba(245,158,11,.22);
 }
+
+/* ── 물건 History ── */
+.opinion-history-wrap{
+  margin-top:4px;
+  display:grid;
+  gap:8px;
+}
+.opinion-history-title{
+  font-size:13px;font-weight:800;color:var(--muted);
+  padding-bottom:6px;
+  border-bottom:1px solid var(--line);
+}
+.opinion-history-list{
+  display:grid;
+  gap:8px;
+  max-height:280px;
+  overflow-y:auto;
+  padding-right:4px;
+}
+.history-empty{
+  font-size:12px;color:var(--muted);padding:8px 0;
+}
+.history-item{
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  background:var(--surface-2);
+  padding:10px 12px;
+  display:grid;
+  gap:6px;
+}
+.history-meta{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+.history-date{
+  font-size:11px;font-weight:800;
+  color:var(--accent);
+  background:var(--accent-soft);
+  padding:2px 8px;border-radius:999px;
+}
+.history-author{
+  font-size:11px;color:var(--muted);font-weight:700;
+}
+.history-actions{
+  margin-left:auto;
+  display:flex;gap:4px;
+}
+.history-edit-btn,.history-del-btn{
+  appearance:none;border:0;background:none;
+  color:var(--muted);cursor:pointer;
+  font-size:13px;padding:2px 4px;
+  border-radius:4px;
+  transition:color .12s,background .12s;
+}
+.history-edit-btn:hover{color:var(--accent);background:var(--accent-soft);}
+.history-del-btn:hover{color:var(--danger);background:rgba(220,38,38,.08);}
+.history-text{
+  font-size:13px;line-height:1.55;word-break:keep-all;
+  white-space:pre-wrap;
+}
+.history-edit-area{display:grid;gap:6px;}
+.history-edit-textarea{resize:vertical;min-height:60px;}
+.history-edit-btns{display:flex;gap:6px;justify-content:flex-end;}

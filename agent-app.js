@@ -109,6 +109,7 @@
     els.agEditCancel = $("#agEditCancel");
     els.agEditSave = $("#agEditSave");
     els.agEditMsg = $("#agEditMsg");
+    els.agHistoryList = $("#agHistoryList");
 
     // Password modal
     els.pwdModal = $("#passwordChangeModal");
@@ -557,8 +558,10 @@
     setVal(f, "status", item.status);
     setVal(f, "rightsAnalysis", item.rightsAnalysis);
     setVal(f, "siteInspection", item.siteInspection);
-    setVal(f, "opinion", item.opinion);
+    setVal(f, "opinion", ""); // 매일 신규 작성
     if (els.agEditMsg) els.agEditMsg.textContent = "";
+    // 물건 History (담당자: 읽기 전용)
+    renderOpinionHistory(els.agHistoryList, loadOpinionHistory(item), false);
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
   }
@@ -577,15 +580,22 @@
     const f = els.agEditForm;
     const readStr = (name) => String((f.elements[name]?.value) || "").trim();
 
-    // 담당자는 제한된 필드만 수정 가능
-    const patch = {};
-    const fields = ["assetType", "status", "rightsAnalysis", "siteInspection", "opinion"];
-    const rawKeys = { assetType: "asset_type", status: "status", rightsAnalysis: "rights_analysis", siteInspection: "site_inspection", opinion: "opinion" };
+    const newOpinionText = readStr("opinion");
+    const opinionHistory = appendOpinionEntry(
+      loadOpinionHistory(item),
+      newOpinionText,
+      state.session?.user
+    );
 
+    const patch = {};
+    const fields = ["assetType", "status", "rightsAnalysis", "siteInspection"];
+    const rawKeys = { assetType: "asset_type", status: "status", rightsAnalysis: "rights_analysis", siteInspection: "site_inspection" };
     for (const key of fields) {
       const val = readStr(key) || null;
       patch[rawKeys[key]] = val;
     }
+    // opinion: 히스토리 마지막 항목 텍스트 or 기존값 유지
+    patch.opinion = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -603,6 +613,7 @@
       if (patch.rights_analysis !== undefined) newRaw.rightsAnalysis = patch.rights_analysis;
       if (patch.site_inspection !== undefined) newRaw.siteInspection = patch.site_inspection;
       if (patch.opinion !== undefined) newRaw.opinion = patch.opinion;
+      newRaw.opinionHistory = opinionHistory;
       patch.raw = newRaw;
 
       const { error } = await sb.from("properties").update(patch).eq(col, targetId);
@@ -802,6 +813,50 @@
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }
+  }
+
+  // ── Opinion History 유틸 ──
+  function loadOpinionHistory(item) {
+    const raw = item?._raw?.raw || {};
+    const hist = raw.opinionHistory;
+    if (Array.isArray(hist)) return hist;
+    const legacy = String(item?.opinion || raw.opinion || "").trim();
+    if (legacy) {
+      return [{ date: formatDate(item?.createdAt) || "unknown", text: legacy, author: "" }];
+    }
+    return [];
+  }
+
+  function appendOpinionEntry(history, newText, user) {
+    const text = String(newText || "").trim();
+    if (!text) return history;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const author = String(user?.name || user?.email || "").trim();
+    return [...history, { date: today, text, author }];
+  }
+
+  function renderOpinionHistory(container, history, isAdmin) {
+    if (!container) return;
+    if (!history.length) {
+      container.innerHTML = '<div class="history-empty">등록된 의견이 없습니다.</div>';
+      return;
+    }
+    const reversed = [...history].reverse();
+    container.innerHTML = reversed.map((entry) =>
+      `<div class="history-item">
+        <div class="history-meta">
+          <span class="history-date">${esc(entry.date || "")}</span>
+          ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
+        </div>
+        <div class="history-text">${esc(entry.text || "")}</div>
+      </div>`
+    ).join("");
+    // isAdmin=false → 편집 버튼 없음 (담당자 읽기 전용)
+  }
+
+  function esc(v) {
+    return String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
   }
 
   function debounce(fn, ms) {

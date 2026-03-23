@@ -484,9 +484,15 @@
         </div>
 
         <label class="field">
-          <span>의견</span>
-          <textarea name="opinion" class="input" rows="3"></textarea>
+          <span>오늘 의견 추가</span>
+          <textarea name="opinion" class="input" rows="3" placeholder="오늘 날짜로 새 의견이 추가됩니다."></textarea>
         </label>
+
+        <!-- 물건 History -->
+        <div class="opinion-history-wrap">
+          <div class="opinion-history-title">물건 History</div>
+          <div id="aemHistoryList" class="opinion-history-list"></div>
+        </div>
 
         <div class="grid2">
           <label class="field"><span>위도</span><input name="latitude" class="input" type="number" step="0.0000001" /></label>

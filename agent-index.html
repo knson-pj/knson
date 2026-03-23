@@ -169,9 +169,15 @@
         </div>
 
         <label class="field">
-          <span>의견</span>
-          <textarea name="opinion" class="input" rows="3"></textarea>
+          <span>오늘 의견 추가</span>
+          <textarea name="opinion" class="input" rows="3" placeholder="오늘 날짜로 새 의견이 추가됩니다."></textarea>
         </label>
+
+        <!-- 물건 History -->
+        <div class="opinion-history-wrap">
+          <div class="opinion-history-title">물건 History</div>
+          <div id="agHistoryList" class="opinion-history-list"></div>
+        </div>
 
         <div class="modal-actions">
           <button id="agEditSave" class="btn btn-primary" type="submit">저장</button>

@@ -178,6 +178,7 @@
       aemSave: $("#aemSave"),
       aemDelete: $("#aemDelete"),
       aemMsg: $("#aemMsg"),
+      aemHistoryList: $("#aemHistoryList"),
 
       // geocoding tab
       tabGeocoding: $("#tab-geocoding"),
@@ -1008,6 +1009,128 @@ function bindEvents() {
     return { totalPages, rows: rows.slice(start, start + state.propertyPageSize) };
   }
 
+  // ---------------------------
+  // Opinion History 유틸
+  // ---------------------------
+  function loadOpinionHistory(item) {
+    const raw = item?._raw?.raw || {};
+    const hist = raw.opinionHistory;
+    if (Array.isArray(hist)) return hist;
+    // 기존 opinion 텍스트가 있으면 히스토리 첫 항목으로 변환
+    const legacy = String(item?.opinion || raw.opinion || "").trim();
+    if (legacy) {
+      return [{ date: formatDate(item?.createdAt) || "unknown", text: legacy, author: "" }];
+    }
+    return [];
+  }
+
+  function appendOpinionEntry(history, newText, user) {
+    const text = String(newText || "").trim();
+    if (!text) return history; // 빈 텍스트면 추가하지 않음
+    const today = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    })();
+    const author = String(user?.name || user?.email || "").trim();
+    return [...history, { date: today, text, author }];
+  }
+
+  function renderOpinionHistory(container, history, isAdmin) {
+    if (!container) return;
+    if (!history.length) {
+      container.innerHTML = '<div class="history-empty">등록된 의견이 없습니다.</div>';
+      return;
+    }
+    const reversed = [...history].reverse(); // 최신 순
+    container.innerHTML = reversed.map((entry, idx) => {
+      const realIdx = history.length - 1 - idx; // 원본 배열 index
+      const adminControls = isAdmin
+        ? `<div class="history-actions">
+            <button type="button" class="history-edit-btn" data-idx="${realIdx}" title="수정">✎</button>
+            <button type="button" class="history-del-btn" data-idx="${realIdx}" title="삭제">✕</button>
+           </div>`
+        : "";
+      return `<div class="history-item" data-idx="${realIdx}">
+        <div class="history-meta">
+          <span class="history-date">${esc(entry.date || "")}</span>
+          ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
+          ${adminControls}
+        </div>
+        <div class="history-text" id="historyText_${realIdx}">${esc(entry.text || "")}</div>
+        <div class="history-edit-area hidden" id="historyEdit_${realIdx}">
+          <textarea class="input history-edit-textarea" rows="3">${esc(entry.text || "")}</textarea>
+          <div class="history-edit-btns">
+            <button type="button" class="btn btn-primary btn-sm history-save-btn" data-idx="${realIdx}">저장</button>
+            <button type="button" class="btn btn-ghost btn-sm history-cancel-btn" data-idx="${realIdx}">취소</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    if (!isAdmin) return;
+
+    // 편집 버튼 이벤트 (관리자만)
+    container.querySelectorAll(".history-edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.idx);
+        container.querySelector(`#historyText_${idx}`)?.classList.add("hidden");
+        container.querySelector(`#historyEdit_${idx}`)?.classList.remove("hidden");
+      });
+    });
+    container.querySelectorAll(".history-cancel-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.idx);
+        container.querySelector(`#historyText_${idx}`)?.classList.remove("hidden");
+        container.querySelector(`#historyEdit_${idx}`)?.classList.add("hidden");
+      });
+    });
+    container.querySelectorAll(".history-save-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const idx = Number(btn.dataset.idx);
+        const editArea = container.querySelector(`#historyEdit_${idx} textarea`);
+        const newText = String(editArea?.value || "").trim();
+        if (!newText) return;
+        const item = state.editingProperty;
+        if (!item) return;
+        const hist = loadOpinionHistory(item);
+        hist[idx] = { ...hist[idx], text: newText };
+        await patchOpinionHistory(item, hist);
+        // 로컬 상태 갱신
+        if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
+        renderOpinionHistory(container, hist, true);
+      });
+    });
+    container.querySelectorAll(".history-del-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("이 의견을 삭제할까요?")) return;
+        const idx = Number(btn.dataset.idx);
+        const item = state.editingProperty;
+        if (!item) return;
+        const hist = loadOpinionHistory(item);
+        hist.splice(idx, 1);
+        await patchOpinionHistory(item, hist);
+        if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
+        renderOpinionHistory(container, hist, true);
+      });
+    });
+  }
+
+  async function patchOpinionHistory(item, history) {
+    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+    if (!sb) throw new Error("Supabase 연동 필요");
+    const targetId = item.id || item.globalId;
+    const col = String(targetId).includes(":") ? "global_id" : "id";
+    const latestOpinion = history.length ? history[history.length - 1].text : null;
+    const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
+    const nextRaw = { ...currentRaw, opinionHistory: history, opinion: latestOpinion, memo: latestOpinion };
+    const { error } = await sb.from("properties").update({ memo: latestOpinion, raw: nextRaw }).eq(col, targetId);
+    if (error) throw error;
+  }
+
+  function esc(v) {
+    return String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  }
+
   function renderAdminPropertiesPagination(totalPages) {
     if (!els.adminPropertiesPagination) return;
     els.adminPropertiesPagination.innerHTML = "";
@@ -1293,10 +1416,17 @@ function bindEvents() {
     setVal("realtorcell", item.realtorcell ?? "");
     setVal("rightsAnalysis", item.rightsAnalysis ?? "");
     setVal("siteInspection", item.siteInspection ?? "");
-    setVal("opinion", item.opinion ?? "");
+    setVal("opinion", "");   // 매일 신규 작성 — 기존 내용 불러오지 않음
     setVal("latitude", item.latitude ?? "");
     setVal("longitude", item.longitude ?? "");
     toggleBrokerFieldsBySource(item.sourceType);
+
+    // opinion 잠금 해제 (항상 신규 작성 가능)
+    const opinionEl = f.elements["opinion"];
+    if (opinionEl) opinionEl.disabled = false;
+
+    // 물건 History 렌더
+    renderOpinionHistory(els.aemHistoryList, loadOpinionHistory(item), true);
 
     const sourceTypeEl = f.elements["sourceType"];
     if (sourceTypeEl) {
@@ -1331,7 +1461,7 @@ function bindEvents() {
     lockIfHas("realtorcell", hasText(item.realtorcell));
     lockIfHas("rightsAnalysis", hasText(item.rightsAnalysis));
     lockIfHas("siteInspection", hasText(item.siteInspection));
-    lockIfHas("opinion", hasText(item.opinion));
+    // opinion은 항상 신규 작성 가능 — lockIfHas 제외
     lockIfHas("latitude", hasNum(item.latitude));
     lockIfHas("longitude", hasNum(item.longitude));
 
@@ -1418,6 +1548,13 @@ function bindEvents() {
       return Number.isFinite(n) ? n : null;
     };
 
+    const newOpinionText = readStr("opinion");
+    const opinionHistory = appendOpinionEntry(
+      loadOpinionHistory(item),
+      newOpinionText,
+      state.session?.user
+    );
+
     const patch = {
       id: item.id || "",
       globalId: item.globalId || "",
@@ -1443,7 +1580,8 @@ function bindEvents() {
       realtorcell: readStr("realtorcell") || null,
       rightsAnalysis: readStr("rightsAnalysis") || null,
       siteInspection: readStr("siteInspection") || null,
-      opinion: readStr("opinion") || null,
+      opinion: opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null),
+      opinionHistory,
       latitude: readNum("latitude"),
       longitude: readNum("longitude"),
     };
@@ -1456,7 +1594,7 @@ function bindEvents() {
         const ok = (typeof v === "number") ? isEmptyOldNum : isEmptyOld;
         if (!ok) delete patch[k];
       };
-      ["itemNo","address","assetType","floor","totalfloor","useapproval","status","dateMain","sourceUrl","realtorname","realtorphone","realtorcell","rightsAnalysis","siteInspection","opinion"].forEach((k)=>allowIfEmpty(k, item[k]));
+      ["itemNo","address","assetType","floor","totalfloor","useapproval","status","dateMain","sourceUrl","realtorname","realtorphone","realtorcell","rightsAnalysis","siteInspection"].forEach((k)=>allowIfEmpty(k, item[k]));
       ["commonarea","exclusivearea","sitearea","priceMain","lowprice","latitude","longitude"].forEach((k)=>allowIfEmpty(k, item[k]));
       delete patch.sourceType;
       delete patch.assigneeId;
@@ -3086,6 +3224,7 @@ function bindEvents() {
       siteInspection: patch.siteInspection ?? currentRaw.siteInspection ?? null,
       opinion: patch.opinion ?? currentRaw.opinion ?? null,
       memo: patch.opinion ?? currentRaw.memo ?? null,
+      opinionHistory: patch.opinionHistory ?? currentRaw.opinionHistory ?? [],
       assigneeId,
       assignedAgentId: assigneeId,
       assigneeName: assigneeName || currentRaw.assigneeName || currentRaw.assignedAgentName || null,
