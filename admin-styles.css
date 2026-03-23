@@ -765,3 +765,22 @@ html[data-theme="dark"] .btn-fav-filter.is-active{
   margin-bottom:10px;padding-bottom:6px;
   border-bottom:1px solid var(--line);
 }
+
+/* 즐겨찾기 원형 버튼 (★, 비활성 시 dim) */
+.btn-fav-circle{
+  background:var(--surface);
+  border-color:var(--line);
+  color:var(--muted);
+  font-size:18px;
+}
+.btn-fav-circle:hover{
+  border-color:#f59e0b;
+  color:#f59e0b;
+  box-shadow:0 4px 14px rgba(245,158,11,.22);
+}
+.btn-fav-circle.is-active{
+  background:rgba(245,158,11,.12);
+  border-color:#f59e0b;
+  color:#f59e0b;
+  box-shadow:0 4px 14px rgba(245,158,11,.22);
+}

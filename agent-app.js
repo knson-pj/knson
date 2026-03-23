@@ -92,6 +92,15 @@
     els.agRatioFilter = $("#agRatioFilter");
     els.agKeyword = $("#agKeyword");
     els.agFavFilter = $("#agFavFilter");
+    els.btnNewProperty = $("#btnNewProperty");
+    els.newPropertyModal = $("#newPropertyModal");
+    els.npmClose = $("#npmClose");
+    els.npmCancel = $("#npmCancel");
+    els.newPropertyForm = $("#newPropertyForm");
+    els.npmSave = $("#npmSave");
+    els.npmMsg = $("#npmMsg");
+    els.npmRealtorFields = $("#npmRealtorFields");
+    els.npmOwnerFields = $("#npmOwnerFields");
 
     // Edit modal
     els.agEditModal = $("#agEditModal");
@@ -153,10 +162,35 @@
     if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
       state.filters.favOnly = !state.filters.favOnly;
       els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
-      els.agFavFilter.textContent = state.filters.favOnly ? "★" : "☆";
       state.page = 1;
       renderTable();
     });
+
+    // 신규 물건 등록 모달
+    if (els.btnNewProperty) els.btnNewProperty.addEventListener("click", openNewPropertyModal);
+    if (els.npmClose) els.npmClose.addEventListener("click", closeNewPropertyModal);
+    if (els.npmCancel) els.npmCancel.addEventListener("click", closeNewPropertyModal);
+    if (els.newPropertyModal) {
+      els.newPropertyModal.addEventListener("click", (e) => {
+        if (e.target?.dataset?.close === "true") closeNewPropertyModal();
+      });
+    }
+    if (els.newPropertyForm) {
+      els.newPropertyForm.addEventListener("change", (e) => {
+        if (e.target.name !== "submitterKind") return;
+        const isRealtor = e.target.value === "realtor";
+        if (els.npmRealtorFields) els.npmRealtorFields.classList.toggle("hidden", !isRealtor);
+        if (els.npmOwnerFields) els.npmOwnerFields.classList.toggle("hidden", isRealtor);
+        els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
+          const radio = card.querySelector("input[type=radio]");
+          card.classList.toggle("is-active", !!radio?.checked);
+        });
+      });
+      els.newPropertyForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        submitNewProperty().catch((err) => setNpmMsg(err?.message || "등록 실패"));
+      });
+    }
 
     // Edit modal
     if (els.agEditClose) els.agEditClose.addEventListener("click", closeEditModal);
@@ -670,6 +704,104 @@
     const el = form.elements[name];
     if (!el) return;
     el.value = value || "";
+  }
+
+  // ── 신규 물건 등록 모달 ──
+  function openNewPropertyModal() {
+    if (!els.newPropertyModal || !els.newPropertyForm) return;
+    els.newPropertyForm.reset();
+    if (els.npmRealtorFields) els.npmRealtorFields.classList.remove("hidden");
+    if (els.npmOwnerFields) els.npmOwnerFields.classList.add("hidden");
+    els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
+      const radio = card.querySelector("input[type=radio]");
+      card.classList.toggle("is-active", !!radio?.checked);
+    });
+    setNpmMsg("");
+    document.body.classList.add("modal-open");
+    els.newPropertyModal.classList.remove("hidden");
+    els.newPropertyModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeNewPropertyModal() {
+    if (!els.newPropertyModal) return;
+    els.newPropertyModal.classList.add("hidden");
+    els.newPropertyModal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+    setNpmMsg("");
+  }
+
+  function setNpmMsg(text, isError = true) {
+    if (!els.npmMsg) return;
+    els.npmMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
+    els.npmMsg.textContent = text || "";
+  }
+
+  async function submitNewProperty() {
+    const f = els.newPropertyForm;
+    const fd = new FormData(f);
+    const readStr = (k) => String(fd.get(k) || "").trim();
+    const readNum = (k) => { const v = String(fd.get(k) || "").trim(); if (!v) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+
+    const submitterKind = readStr("submitterKind") || "realtor";
+    const sourceType = submitterKind === "realtor" ? "realtor" : "general";
+    const address = readStr("address");
+    const assetType = readStr("assetType");
+    const priceMain = readNum("priceMain");
+
+    if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
+
+    let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
+    if (submitterKind === "realtor") {
+      realtorName = readStr("realtorname");
+      realtorPhone = readStr("realtorphone") || null;
+      realtorCell = readStr("realtorcell");
+      submitterName = realtorName;
+      submitterPhone = realtorCell;
+      if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
+    } else {
+      submitterName = readStr("submitterName");
+      submitterPhone = readStr("submitterPhone");
+      if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
+    }
+
+    const payload = {
+      source_type: sourceType,
+      is_general: true,
+      address,
+      asset_type: assetType,
+      price_main: priceMain,
+      floor: readStr("floor") || null,
+      total_floor: readStr("totalfloor") || null,
+      use_approval: readStr("useapproval") || null,
+      common_area: readNum("commonarea"),
+      exclusive_area: readNum("exclusivearea"),
+      site_area: readNum("sitearea"),
+      broker_office_name: realtorName,
+      submitter_phone: submitterPhone,
+      memo: readStr("opinion") || null,
+      raw: {
+        sourceType,
+        submitterType: submitterKind === "realtor" ? "realtor" : "owner",
+        address, assetType, priceMain,
+        realtorName, realtorPhone, realtorCell,
+        submitterName, submitterPhone,
+        opinion: readStr("opinion") || null,
+        registeredByAgent: true,
+      },
+    };
+
+    if (els.npmSave) els.npmSave.disabled = true;
+    setNpmMsg("");
+    try {
+      const sb = isSupabaseMode() ? K.initSupabase() : null;
+      if (!sb) throw new Error("Supabase 연동이 필요합니다.");
+      const { error } = await sb.from("properties").insert(payload);
+      if (error) throw error;
+      setNpmMsg("등록되었습니다.", false);
+      setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
+    } finally {
+      if (els.npmSave) els.npmSave.disabled = false;
+    }
   }
 
   function debounce(fn, ms) {
