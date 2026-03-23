@@ -16,41 +16,62 @@ function parseFloorNumberForLog(value) {
   if (!s) return '';
   let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
   if (m) return `b${m[1]}`;
-  m = s.match(/(\d+)/);
+  m = s.match(/(-?\d+)/);
   return m ? String(Number(m[1])) : '';
 }
 
-function extractHoNumberForLog(...values) {
-  const joined = values.filter(Boolean).join(' ');
-  const m = joined.match(/(\d{1,5})\s*호/);
-  return m ? String(Number(m[1])) : '';
+function compactAddressText(value) {
+  return String(value || '').trim().replace(/\s+/g, '');
 }
 
-function extractDongLotKey(address) {
-  const src = String(address || '').trim();
-  if (!src) return '';
-  const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)\s*([0-9]+(?:-[0-9]+)?)/g)];
+function parseAddressIdentityParts(address) {
+  const src = compactAddressText(address);
+  if (!src) return { dong: '', mainNo: '', subNo: '' };
+  const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)(산?\d+)(?:-(\d+))?/g)];
   if (matches.length) {
     const m = matches[matches.length - 1];
-    return `${m[1]}|${m[2]}`.replace(/\s+/g, '');
+    return { dong: m[1], mainNo: m[2], subNo: m[3] || '' };
   }
   const dongOnly = [...src.matchAll(/([가-힣A-Za-z0-9]+동)/g)];
   if (dongOnly.length) {
     const dong = dongOnly[dongOnly.length - 1][1];
     const tail = src.slice(src.lastIndexOf(dong) + dong.length);
-    const lot = (tail.match(/([0-9]+(?:-[0-9]+)?)/) || [null, ''])[1];
-    if (lot) return `${dong}|${lot}`.replace(/\s+/g, '');
+    const lot = (tail.match(/(산?\d+)(?:-(\d+))?/) || [null, '', '']);
+    if (lot[1]) return { dong, mainNo: lot[1], subNo: lot[2] || '' };
   }
-  return src.replace(/\s+/g, '');
+  return { dong: '', mainNo: '', subNo: '' };
+}
+
+function extractHoNumberForLog(...values) {
+  for (const value of values) {
+    const s = String(value || '').trim();
+    if (!s) continue;
+    let m = s.match(/(\d{1,5})\s*호/);
+    if (m) return String(Number(m[1]));
+    if (!/층|동/.test(s)) {
+      m = s.match(/^\D*(\d{1,5})\D*$/);
+      if (m) return String(Number(m[1]));
+    }
+  }
+  return '';
 }
 
 function buildRegistrationKey(body) {
-  const lotKey = extractDongLotKey(body.address || '');
-  const floorKey = parseFloorNumberForLog(body.floor || body.totalFloor || '');
-  const hoKey = extractHoNumberForLog(body.address || '');
-  return lotKey ? `${lotKey}|${floorKey}|${hoKey}` : '';
+  const parts = parseAddressIdentityParts(body.address || '');
+  const floorKey = parseFloorNumberForLog(body.floor || body.totalFloor || '') || '0';
+  const hoKey = extractHoNumberForLog(body.ho || '', body.unit || '', body.room || '', body.address || '') || '0';
+  return parts.dong && parts.mainNo ? `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}|${floorKey}|${hoKey}` : '';
 }
 
+function attachRegistrationIdentity(raw, body) {
+  const nextRaw = { ...(raw || {}) };
+  const parts = parseAddressIdentityParts(body.address || nextRaw.address || '');
+  const floorKey = parseFloorNumberForLog(body.floor || body.totalFloor || nextRaw.floor || '') || '';
+  const hoKey = extractHoNumberForLog(body.ho || '', body.unit || '', body.room || '', body.address || nextRaw.address || '') || '';
+  nextRaw.registrationIdentityKey = parts.dong && parts.mainNo ? `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}|${floorKey || '0'}|${hoKey || '0'}` : '';
+  nextRaw.registrationIdentity = { dong: parts.dong || '', mainNo: parts.mainNo || '', subNo: parts.subNo || '', floor: floorKey || '', ho: hoKey || '' };
+  return nextRaw;
+}
 function buildRegistrationLogCreated(route, actor) {
   return [{ type: 'created', at: nowIso(), route, actor }];
 }
@@ -120,6 +141,7 @@ module.exports = async function handler(req, res) {
     existing.updatedAt = nowIso();
     existing.registrationKey = registrationKey;
     existing.raw = existing.raw || {};
+    existing.raw = attachRegistrationIdentity(existing.raw, body);
     existing.raw.registrationLog = appendRegistrationLog(existing.raw, '공개 등록', registrantName || '공개 등록', changes);
     return send(res, 200, { ok: true, message: '기존 물건을 갱신했습니다.', item: { id: existing.id, address: existing.address, updatedAt: existing.updatedAt } });
   }
@@ -152,11 +174,11 @@ module.exports = async function handler(req, res) {
     floor: String(body.floor || '').trim(),
     totalFloor: String(body.totalFloor || '').trim(),
     registrationKey,
-    raw: {
+    raw: attachRegistrationIdentity({
       ...body,
       firstRegisteredAt: nowIso(),
       registrationLog: buildRegistrationLogCreated('공개 등록', registrantName || '공개 등록'),
-    },
+    }, body),
   };
 
   store.properties.unshift(item);

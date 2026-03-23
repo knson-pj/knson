@@ -186,8 +186,31 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'DELETE') {
     const body = getJsonBody(req);
+    const deleteAll = !!body.all;
+
+    if (deleteAll) {
+      if (hasSupabaseAdminEnv()) {
+        await supabaseRest('/rest/v1/properties?id=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+        return send(res, 200, { ok: true, removedAll: true });
+      }
+      const removedCount = store.properties.length;
+      store.properties = [];
+      return send(res, 200, { ok: true, removedAll: true, removedCount });
+    }
+
     const ids = Array.isArray(body.ids) ? body.ids.map(v => String(v || '').trim()).filter(Boolean) : [];
     if (ids.length) {
+      if (hasSupabaseAdminEnv()) {
+        const pureIds = ids.filter((v) => !String(v).includes(':'));
+        const globalIds = ids.filter((v) => String(v).includes(':'));
+        if (pureIds.length) {
+          await supabaseRest(`/rest/v1/properties?id=in.(${pureIds.map(encodeURIComponent).join(',')})`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+        }
+        if (globalIds.length) {
+          await supabaseRest(`/rest/v1/properties?global_id=in.(${globalIds.map(encodeURIComponent).join(',')})`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+        }
+        return send(res, 200, { ok: true, removedCount: ids.length, removedIds: ids });
+      }
       const before = store.properties.length;
       store.properties = store.properties.filter((p) => !ids.includes(String(p.id || '')));
       const removedCount = before - store.properties.length;
@@ -195,6 +218,12 @@ module.exports = async function handler(req, res) {
     }
 
     const targetId = String(body.id || '').trim();
+    if (hasSupabaseAdminEnv()) {
+      if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
+      const col = targetId.includes(':') ? 'global_id' : 'id';
+      await supabaseRest(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+      return send(res, 200, { ok: true, removedId: targetId });
+    }
     const idx = store.properties.findIndex(p => p.id === targetId);
     if (idx < 0) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
     const removed = store.properties.splice(idx, 1)[0];

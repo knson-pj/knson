@@ -180,6 +180,7 @@
 
       // properties table
       btnDeleteSelectedProperties: $("#btnDeleteSelectedProperties"),
+      btnDeleteAllProperties: $("#btnDeleteAllProperties"),
       propSelectAll: $("#propSelectAll"),
       propStatusFilter: $("#propStatusFilter"),
       propAreaFilter: $("#propAreaFilter"),
@@ -394,6 +395,9 @@ function bindEvents() {
     // properties
     if (els.btnDeleteSelectedProperties) els.btnDeleteSelectedProperties.addEventListener("click", () => {
       deleteSelectedProperties().catch((e)=>handleAsyncError(e,"삭제 실패"));
+    });
+    if (els.btnDeleteAllProperties) els.btnDeleteAllProperties.addEventListener("click", () => {
+      deleteAllProperties().catch((e)=>handleAsyncError(e,"전체삭제 실패"));
     });
     if (els.propSelectAll) els.propSelectAll.addEventListener("change", (e) => {
       toggleSelectAllProperties(!!e.target.checked);
@@ -1294,50 +1298,76 @@ function bindEvents() {
     if (!s) return "";
     let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
     if (m) return `b${m[1]}`;
-    m = s.match(/(\d+)/);
+    m = s.match(/(-?\d+)/);
     return m ? String(Number(m[1])) : "";
   }
 
-  function extractHoNumberForLog(data) {
-    const texts = [
-      data?.ho,
-      data?.raw?.ho,
-      data?.address,
-      data?.raw?.address,
-      data?.raw?.물건명,
-      data?.raw?.물건번호,
-      data?.raw?.상세주소,
-    ].filter(Boolean).join(" ");
-    const m = texts.match(/(\d{1,5})\s*호/);
-    return m ? String(Number(m[1])) : "";
+  function compactAddressText(value) {
+    return String(value || "").trim().replace(/\s+/g, "");
   }
 
-  function extractDongLotKey(address) {
-    const src = String(address || "").trim();
-    if (!src) return "";
-    const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)\s*([0-9]+(?:-[0-9]+)?)/g)];
+  function parseAddressIdentityParts(address) {
+    const src = compactAddressText(address);
+    if (!src) return { dong: "", mainNo: "", subNo: "" };
+    const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)(산?\d+)(?:-(\d+))?/g)];
     if (matches.length) {
       const m = matches[matches.length - 1];
-      return `${m[1]}|${m[2]}`.replace(/\s+/g, "");
+      return { dong: m[1], mainNo: m[2], subNo: m[3] || "" };
     }
     const dongOnly = [...src.matchAll(/([가-힣A-Za-z0-9]+동)/g)];
     if (dongOnly.length) {
       const dong = dongOnly[dongOnly.length - 1][1];
       const tail = src.slice(src.lastIndexOf(dong) + dong.length);
-      const lot = (tail.match(/([0-9]+(?:-[0-9]+)?)/) || [null, ""])[1];
-      if (lot) return `${dong}|${lot}`.replace(/\s+/g, "");
+      const lot = (tail.match(/(산?\d+)(?:-(\d+))?/) || [null, "", ""]);
+      if (lot[1]) return { dong, mainNo: lot[1], subNo: lot[2] || "" };
     }
-    return src.replace(/\s+/g, "");
+    return { dong: "", mainNo: "", subNo: "" };
+  }
+
+  function extractHoNumberForLog(data) {
+    const explicitValues = [data?.ho, data?.unit, data?.room, data?.raw?.ho, data?.raw?.unit, data?.raw?.room];
+    for (const value of explicitValues) {
+      const s = String(value || "").trim();
+      if (!s) continue;
+      let m = s.match(/(\d{1,5})\s*호/);
+      if (m) return String(Number(m[1]));
+      if (!/층|동/.test(s)) {
+        m = s.match(/^\D*(\d{1,5})\D*$/);
+        if (m) return String(Number(m[1]));
+      }
+    }
+    const texts = [
+      data?.address, data?.raw?.address, data?.raw?.물건명, data?.raw?.상세주소,
+      data?.memo, data?.raw?.memo, data?.raw?.opinion, data?.raw?.detailAddress
+    ].filter(Boolean).join(" ");
+    const m = texts.match(/(\d{1,5})\s*호/);
+    return m ? String(Number(m[1])) : "";
   }
 
   function buildRegistrationMatchKey(data) {
-    const lotKey = extractDongLotKey(firstText(data?.address, data?.raw?.address, ""));
-    const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, ""));
-    const hoKey = extractHoNumberForLog(data);
-    if (!lotKey) return "";
-    return `${lotKey}|${floorKey}|${hoKey}`;
+    const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, ""));
+    const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, "")) || "0";
+    const hoKey = extractHoNumberForLog(data) || "0";
+    if (!parts.dong || !parts.mainNo) return "";
+    return `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey}|${hoKey}`;
   }
 
+  function attachRegistrationIdentity(raw, data) {
+    const nextRaw = { ...(raw || {}) };
+    const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, nextRaw.address, ""));
+    const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, nextRaw.floor, ""));
+    const hoKey = extractHoNumberForLog(data);
+    const key = parts.dong && parts.mainNo ? `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey || "0"}|${hoKey || "0"}` : "";
+    nextRaw.registrationIdentityKey = key;
+    nextRaw.registrationIdentity = {
+      dong: parts.dong || "",
+      mainNo: parts.mainNo || "",
+      subNo: parts.subNo || "",
+      floor: floorKey || "",
+      ho: hoKey || "",
+    };
+    return nextRaw;
+  }
   function buildRegistrationSnapshotFromItem(item) {
     const raw = item?._raw?.raw || {};
     return {
@@ -1470,14 +1500,14 @@ function bindEvents() {
     if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) nextRow.source_type = incomingRow.source_type;
     if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
     const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
-    nextRow.raw = appendRegistrationChangeLog(mergedRaw, context, changes);
+    nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergedRaw, context, changes), nextSnapshot);
     return { row: nextRow, changes };
   }
 
   function buildRegistrationDbRowForCreate(row, context) {
     return {
       ...(row || {}),
-      raw: appendRegistrationCreateLog(row?.raw || {}, context),
+      raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row),
     };
   }
 
@@ -1772,6 +1802,25 @@ function bindEvents() {
 
     state.selectedPropertyIds.clear();
     await loadProperties();
+  }
+
+
+  async function deleteAllProperties() {
+    const total = Array.isArray(state.properties) ? state.properties.length : 0;
+    if (!total) {
+      alert('삭제할 물건이 없습니다.');
+      return;
+    }
+    const ok = window.confirm(`현재 등록된 물건 ${total.toLocaleString('ko-KR')}건을 전체삭제할까요? 이 작업은 되돌릴 수 없습니다.`);
+    if (!ok) return;
+    const ok2 = window.confirm('정말로 전체삭제를 진행할까요?');
+    if (!ok2) return;
+
+    await api('/admin/properties', { method: 'DELETE', auth: true, body: { all: true } });
+
+    state.selectedPropertyIds.clear();
+    await loadProperties();
+    alert('전체삭제가 완료되었습니다.');
   }
 
   function renderPropertiesTable() {

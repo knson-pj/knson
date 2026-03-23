@@ -185,42 +185,67 @@
     if (!s) return '';
     let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
     if (m) return `b${m[1]}`;
-    m = s.match(/(\d+)/);
+    m = s.match(/(-?\d+)/);
     return m ? String(Number(m[1])) : '';
   }
 
-  function extractHoNumberForLog(data) {
-    const texts = [data?.ho, data?.address, data?.raw?.address].filter(Boolean).join(' ');
-    const m = texts.match(/(\d{1,5})\s*호/);
-    return m ? String(Number(m[1])) : '';
+  function compactAddressText(value) {
+    return String(value || '').trim().replace(/\s+/g, '');
   }
 
-  function extractDongLotKey(address) {
-    const src = String(address || '').trim();
-    if (!src) return '';
-    const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)\s*([0-9]+(?:-[0-9]+)?)/g)];
+  function parseAddressIdentityParts(address) {
+    const src = compactAddressText(address);
+    if (!src) return { dong: '', mainNo: '', subNo: '' };
+    const matches = [...src.matchAll(/([가-힣A-Za-z0-9]+동)(산?\d+)(?:-(\d+))?/g)];
     if (matches.length) {
       const m = matches[matches.length - 1];
-      return `${m[1]}|${m[2]}`.replace(/\s+/g, '');
+      return { dong: m[1], mainNo: m[2], subNo: m[3] || '' };
     }
     const dongOnly = [...src.matchAll(/([가-힣A-Za-z0-9]+동)/g)];
     if (dongOnly.length) {
       const dong = dongOnly[dongOnly.length - 1][1];
       const tail = src.slice(src.lastIndexOf(dong) + dong.length);
-      const lot = (tail.match(/([0-9]+(?:-[0-9]+)?)/) || [null, ''])[1];
-      if (lot) return `${dong}|${lot}`.replace(/\s+/g, '');
+      const lot = (tail.match(/(산?\d+)(?:-(\d+))?/) || [null, '', '']);
+      if (lot[1]) return { dong, mainNo: lot[1], subNo: lot[2] || '' };
     }
-    return src.replace(/\s+/g, '');
+    return { dong: '', mainNo: '', subNo: '' };
+  }
+
+  function extractHoNumberForLog(data) {
+    const explicitValues = [data?.ho, data?.unit, data?.room, data?.raw?.ho, data?.raw?.unit, data?.raw?.room];
+    for (const value of explicitValues) {
+      const s = String(value || '').trim();
+      if (!s) continue;
+      let m = s.match(/(\d{1,5})\s*호/);
+      if (m) return String(Number(m[1]));
+      if (!/층|동/.test(s)) {
+        m = s.match(/^\D*(\d{1,5})\D*$/);
+        if (m) return String(Number(m[1]));
+      }
+    }
+    const texts = [data?.address, data?.raw?.address, data?.memo, data?.raw?.memo, data?.raw?.opinion, data?.raw?.detailAddress].filter(Boolean).join(' ');
+    const m = texts.match(/(\d{1,5})\s*호/);
+    return m ? String(Number(m[1])) : '';
   }
 
   function buildRegistrationMatchKey(data) {
-    const lotKey = extractDongLotKey(data?.address || data?.raw?.address || '');
-    const floorKey = parseFloorNumberForLog(data?.floor || data?.raw?.floor || '');
-    const hoKey = extractHoNumberForLog(data);
-    if (!lotKey) return '';
-    return `${lotKey}|${floorKey}|${hoKey}`;
+    const parts = parseAddressIdentityParts(data?.address || data?.raw?.address || '');
+    const floorKey = parseFloorNumberForLog(data?.floor || data?.raw?.floor || '') || '0';
+    const hoKey = extractHoNumberForLog(data) || '0';
+    if (!parts.dong || !parts.mainNo) return '';
+    return `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}|${floorKey}|${hoKey}`;
   }
 
+  function attachRegistrationIdentity(raw, data) {
+    const nextRaw = { ...(raw || {}) };
+    const parts = parseAddressIdentityParts(data?.address || data?.raw?.address || nextRaw.address || '');
+    const floorKey = parseFloorNumberForLog(data?.floor || data?.raw?.floor || nextRaw.floor || '');
+    const hoKey = extractHoNumberForLog(data);
+    const key = parts.dong && parts.mainNo ? `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}|${floorKey || '0'}|${hoKey || '0'}` : '';
+    nextRaw.registrationIdentityKey = key;
+    nextRaw.registrationIdentity = { dong: parts.dong || '', mainNo: parts.mainNo || '', subNo: parts.subNo || '', floor: floorKey || '', ho: hoKey || '' };
+    return nextRaw;
+  }
   function buildRegistrationSnapshot(payload) {
     return {
       address: payload.address,
@@ -330,7 +355,7 @@
       submitter_name: payload.submitterName,
       submitter_phone: payload.submitterPhone,
       broker_office_name: payload.realtorName,
-      raw: appendRegistrationCreateLog({ ...payload }, context),
+      raw: attachRegistrationIdentity(appendRegistrationCreateLog({ ...payload }, context), payload),
     };
   }
 
@@ -352,7 +377,7 @@
     if (hasMeaningfulValue(payload.submitterName)) nextRow.submitter_name = payload.submitterName;
     if (hasMeaningfulValue(payload.submitterPhone)) nextRow.submitter_phone = payload.submitterPhone;
     if (hasMeaningfulValue(payload.realtorName)) nextRow.broker_office_name = payload.realtorName;
-    nextRow.raw = appendRegistrationChangeLog(mergeMeaningfulShallow(base.raw || {}, payload), context, changes);
+    nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergeMeaningfulShallow(base.raw || {}, payload), context, changes), payload);
     return { row: nextRow, changes };
   }
 
