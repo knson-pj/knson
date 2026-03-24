@@ -1,703 +1,279 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>부동산 물건 관리 시스템 | 관리자</title>
-  <meta name="supabase-url" content="" />
-  <meta name="supabase-anon-key" content="" />
+  <meta name="supabase-url" content="" /><meta name="supabase-anon-key" content="" />
   <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
-  
   <style>html{visibility:hidden;}</style>
-  <script>
-    (function(){
-      try{
-        var raw = null;
-        try { raw = sessionStorage.getItem('knson_bms_session_v1'); } catch(e) {}
-        try { localStorage.removeItem('knson_bms_session_v1'); } catch(e) {}
-        var s = raw ? JSON.parse(raw) : null;
-        if (!s || !s.token || !s.user) {
-          location.replace('./login.html?next=' + encodeURIComponent('./admin-index.html'));
-          return;
-        }
-        // 담당자는 담당자 페이지로 리다이렉트
-        var role = String(s.user.role || '').trim().toLowerCase();
-        if (role !== 'admin') {
-          location.replace('./agent-index.html');
-          return;
-        }
-      }catch(e){
-        location.replace('./login.html?next=' + encodeURIComponent('./admin-index.html'));
-        return;
-      }
-      document.documentElement.style.visibility = 'visible';
-    })();
-  </script>
-
-  <link rel="stylesheet" href="./admin-styles.css?v=20260324-work2" />
+  <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
+  <link rel="stylesheet" href="./admin-styles.css?v=20260325-v3" />
 </head>
 <body>
-  <div class="admin-shell">
-    <header class="admin-topbar">
-      <div class="brand">
-        <div class="brand-dot"></div>
-        <div>
-          <h1>관리자 페이지</h1>
-          <p>물건 · 담당자 · 지역배정 관리</p>
+
+<button class="sidebar-toggle-btn" id="sidebarToggle">&#8249;</button>
+
+<aside class="admin-sidebar">
+  <div class="sidebar-logo">
+    <img src="./image/logo-mail.png" alt="로고" class="sidebar-logo-img" />
+    <span class="sidebar-page-title sidebar-nav-label">관리자페이지</span>
+  </div>
+  <div class="sidebar-user-top">
+    <div class="sidebar-user-badge">
+      <div class="sidebar-user-dot"></div>
+      <span class="sidebar-user-name sidebar-nav-label" id="sidebarUserName">관리자</span>
+    </div>
+  </div>
+  <nav class="sidebar-nav" id="sidebarNav">
+    <div class="sidebar-group">
+      <button class="sidebar-group-btn" data-group="properties">
+        <span class="sidebar-nav-icon">🏢</span><span class="sidebar-nav-label">물건관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+      </button>
+      <div class="sidebar-group-items">
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="properties"><span class="sidebar-nav-icon">📋</span><span class="sidebar-nav-label">전체 현황</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="csv"><span class="sidebar-nav-icon">📤</span><span class="sidebar-nav-label">물건 등록</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="geocoding"><span class="sidebar-nav-icon">📍</span><span class="sidebar-nav-label">지오 코딩</span></button>
+      </div>
+    </div>
+    <div class="sidebar-group">
+      <button class="sidebar-group-btn" data-group="staff">
+        <span class="sidebar-nav-icon">👥</span><span class="sidebar-nav-label">담당자관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+      </button>
+      <div class="sidebar-group-items">
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="staff"><span class="sidebar-nav-icon">👤</span><span class="sidebar-nav-label">등록 관리</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="workmgmt"><span class="sidebar-nav-icon">📊</span><span class="sidebar-nav-label">업무 관리</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="regions"><span class="sidebar-nav-icon">🗺️</span><span class="sidebar-nav-label">담당 지역 설정</span></button>
+      </div>
+    </div>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="theme-toggle sidebar-bottom-btn" id="themeToggle" title="테마 전환">C</button>
+    <a class="sidebar-bottom-btn" id="btnBackToMain" href="./index.html" title="메인으로">M</a>
+  </div>
+</aside>
+
+<div class="admin-content">
+  <header class="admin-topbar">
+    <div class="topbar-left"><h1 id="topbarTitle">홈</h1></div>
+    <div class="top-actions">
+      <span id="adminUserBadge" class="badge badge-muted hidden">비로그인</span>
+      <button id="btnAdminLoginOpen" class="btn btn-primary hidden">로그인</button>
+      <button id="btnChangeMyPassword" class="btn btn-ghost hidden">내 비밀번호 변경</button>
+      <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
+    </div>
+  </header>
+  <div id="globalMsg" class="global-msg hidden"></div>
+  <div style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;" aria-hidden="true">
+    <div class="tabs" id="adminTabs">
+      <button class="tab is-active" data-tab="home">홈</button>
+      <button class="tab" data-tab="properties">전체 현황</button>
+      <button class="tab" data-tab="csv">물건 등록</button>
+      <button class="tab" data-tab="staff">등록 관리</button>
+      <button class="tab" data-tab="regions">담당 지역 설정</button>
+      <button class="tab" data-tab="geocoding">지오 코딩</button>
+      <button class="tab" data-tab="workmgmt">업무 관리</button>
+    </div>
+  </div>
+  <div class="admin-shell"><main class="admin-main">
+
+    <!-- 홈 -->
+    <section id="tab-home" class="tab-panel">
+      <div class="home-panel">
+        <p class="home-intro">관리자 전용 페이지 입니다.</p>
+        <div class="home-section">
+          <div class="home-section-tag">Total</div>
+          <div class="home-sentence-wrap">
+            <p class="home-sentence">현재 등록 매물수는&nbsp;총&nbsp;<strong class="hs-total" id="sumTotal">-</strong>건 이며,</p>
+            <p class="home-sentence"><span class="hs-auction">경매</span>&nbsp;<span id="sumAuction">-</span>&nbsp;건,&nbsp;공매&nbsp;<span id="sumGongmae">-</span>&nbsp;건,&nbsp;<span class="hs-naver">네이버중개</span>&nbsp;<span id="sumNaverRealtor">-</span>&nbsp;건,&nbsp;<span class="hs-direct">일반중개</span>&nbsp;<span id="sumDirectRealtor">-</span>&nbsp;건,&nbsp;&nbsp;<span class="hs-general">일반</span>&nbsp;<span class="hs-general-num" id="sumGeneral">-</span>&nbsp;건 입니다.</p>
+            <p class="home-sentence">등록된&nbsp;<span class="hs-agents-lbl">담당자수</span>는&nbsp;총&nbsp;<strong class="hs-agents" id="sumAgents">-</strong>&nbsp;명 입니다.</p>
+          </div>
+        </div>
+        <div class="home-section">
+          <div class="home-section-tag">Today</div>
+          <div class="home-sentence-wrap">
+            <p class="home-sentence">금일 신규 등록 물건은&nbsp;총&nbsp;<strong class="hs-total" id="sumTodayTotal">-</strong>&nbsp;건이며,</p>
+            <p class="home-sentence" id="sumTodayDetail"><span class="hs-muted">집계 중...</span></p>
+          </div>
         </div>
       </div>
+    </section>
 
-      <div class="top-actions">
-        <a id="btnBackToMain" class="top-link" href="./index.html">M</a>
-        <span id="adminUserBadge" class="badge badge-muted">비로그인</span>
-        <button id="btnAdminLoginOpen" class="btn btn-primary">로그인</button>
-        <button id="btnChangeMyPassword" class="btn btn-secondary hidden">비밀번호 변경</button>
-        <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
+    <!-- 전체 현황 -->
+    <section id="tab-properties" class="panel tab-panel hidden">
+      <div class="panel-title-row">
+        <h2>전체 현황</h2>
+        <div class="panel-actions-inline">
+          <button id="btnDeleteSelectedProperties" class="btn btn-danger">선택 삭제</button>
+          <button id="btnDeleteAllProperties" class="btn btn-danger">전체삭제</button>
+        </div>
       </div>
-    </header>
-    <div id="globalMsg" class="global-msg hidden"></div>
+      <div class="toolbar">
+        <select id="propStatusFilter" class="select"><option value="">전체 상태</option><option value="active">진행중</option><option value="hold">보류</option><option value="closed">종결</option><option value="review">검토중</option></select>
+        <select id="propAreaFilter" class="select"><option value="">전체 면적</option><option value="0-5">5평 미만</option><option value="5-10">5~10평</option><option value="10-20">10~20평</option><option value="20-30">20~30평</option><option value="30-50">30~50평</option><option value="50-">50평 이상</option></select>
+        <select id="propPriceFilter" class="select"><option value="">전체 가격</option><option value="0-1">1억 미만</option><option value="1-3">1~3억</option><option value="3-5">3~5억</option><option value="5-10">5~10억</option><option value="10-20">10~20억</option><option value="20-">20억 이상</option></select>
+        <select id="propRatioFilter" class="select"><option value="">전체 비율</option><option value="50">50% 이하</option></select>
+        <input id="propKeyword" class="input" type="text" placeholder="주소 / 지역 검색" />
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="propertiesTable">
+          <thead><tr>
+            <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
+            <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th><th>층수</th><th>총층</th><th>사용승인일</th>
+            <th>공용면적(평)</th><th>전용면적(평)</th><th>감정가(매각가)</th><th>현재가격</th><th>비율</th>
+            <th>주요일정</th><th>진행상태</th><th>위치보기</th><th>등록일</th><th>담당자</th>
+            <th>권리분석</th><th>현장실사</th><th>의견</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="propertiesEmpty" class="empty hidden">표시할 물건이 없습니다.</div>
+      </div>
+      <div id="adminPropertiesPagination" class="pager"></div>
+    </section>
 
-
-    <main class="admin-main">
-      <!-- 대시보드 요약 -->
-      <section id="summaryPanel" class="panel summary-panel">
-        <div class="summary-grid">
-          <div class="summary-card summary-total" data-card="all"><span>전체 물건</span><strong id="sumTotal">0</strong></div>
-          <div class="summary-card summary-auction" data-card="auction"><span>경매</span><strong id="sumAuction">0</strong></div>
-          <div class="summary-card summary-gongmae" data-card="onbid"><span>공매</span><strong id="sumGongmae">0</strong></div>
-          <div class="summary-card summary-naver-realtor" data-card="realtor_naver"><span>네이버중개</span><strong id="sumNaverRealtor">0</strong></div>
-          <div class="summary-card summary-direct-realtor" data-card="realtor_direct"><span>일반중개</span><strong id="sumDirectRealtor">0</strong></div>
-          <div class="summary-card summary-general" data-card="general"><span>일반</span><strong id="sumGeneral">0</strong></div>
-          <div id="sumAgentsCard" class="summary-card summary-agents"><span>담당자 수</span><strong id="sumAgents">0</strong></div>
-        </div>
-      </section>
-
-      <!-- 탭 -->
-      <section id="tabsPanel" class="panel">
-        <div class="tabs" id="adminTabs">
-          <button class="tab is-active" data-tab="properties">전체 현황</button>
-          <button class="tab" data-tab="csv">물건 등록</button>
-          <button class="tab" data-tab="staff">등록 관리</button>
-          <button class="tab" data-tab="regions">담당 지역 설정</button>
-          <button class="tab" data-tab="geocoding">지오코딩</button>
-          <button class="tab" data-tab="workmgmt">업무관리</button>
-        </div>
-      </section>
-
-      <!-- 전체 현황 -->
-      <section id="tab-properties" class="panel tab-panel">
-        <div class="panel-title-row">
-          <h2>전체 현황</h2>
-          <div class="panel-actions-inline">
-            <button id="btnDeleteSelectedProperties" class="btn btn-danger">선택 삭제</button>
-            <button id="btnDeleteAllProperties" class="btn btn-danger" type="button">전체삭제</button>
+    <!-- 물건 등록 -->
+    <section id="tab-csv" class="panel tab-panel hidden">
+      <div class="sub-card csv-upload-card">
+        <div class="csv-upload-toolbar">
+          <label class="field csv-upload-field"><span>업로드 대상</span><select id="csvImportSource" class="select"><option value="auction">경매 CSV</option><option value="onbid">공매 CSV</option><option value="realtor">중개 CSV</option></select></label>
+          <label class="field csv-upload-field"><span>CSV 파일</span><input id="csvFileInput" class="input" type="file" accept=".csv,text/csv" /></label>
+          <div class="csv-upload-action">
+            <button id="btnCsvUpload" class="btn btn-primary">서버 업로드</button>
+            <button id="btnNewProperty" class="btn-add-circle" type="button" title="신규 물건 등록">+</button>
           </div>
+          <div id="csvResultBox" class="result-box hidden csv-result-inline"></div>
         </div>
+      </div>
+    </section>
 
-        <div class="toolbar">
-          <select id="propStatusFilter" class="select">
-            <option value="">전체 상태</option>
-            <option value="active">진행중</option>
-            <option value="hold">보류</option>
-            <option value="closed">종결</option>
-            <option value="review">검토중</option>
-          </select>
-
-          <select id="propAreaFilter" class="select">
-            <option value="">전체 면적</option>
-            <option value="0-5">5평 미만</option>
-            <option value="5-10">5~10평</option>
-            <option value="10-20">10~20평</option>
-            <option value="20-30">20~30평</option>
-            <option value="30-50">30~50평</option>
-            <option value="50-">50평 이상</option>
-          </select>
-
-          <select id="propPriceFilter" class="select">
-            <option value="">전체 가격</option>
-            <option value="0-1">1억 미만</option>
-            <option value="1-3">1~3억</option>
-            <option value="3-5">3~5억</option>
-            <option value="5-10">5~10억</option>
-            <option value="10-20">10~20억</option>
-            <option value="20-">20억 이상</option>
-          </select>
-
-          <select id="propRatioFilter" class="select">
-            <option value="">전체 비율</option>
-            <option value="50">50% 이하</option>
-          </select>
-
-          <input id="propKeyword" class="input" type="text" placeholder="주소 / 담당자 검색" />
-        </div>
-
-        <div class="table-wrap">
-          <table class="table" id="propertiesTable">
-            <thead>
-              <tr>
-                <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /><span></span></label></th>
-                <th>물건번호</th>
-                <th>구분</th>
-                <th>주소</th>
-                <th>유형</th>
-                <th>층수</th>
-                <th>총층</th>
-                <th>사용승인일</th>
-                <th>공용면적(평)</th>
-                <th>전용면적(평)</th>
-                <th>감정가(매각가)</th>
-                <th>현재가격</th>
-                <th>비율</th>
-                <th>주요일정</th>
-                <th>진행상태</th>
-                <th>위치보기</th>
-                <th>등록일</th>
-                <th>담당자</th>
-                <th>권리분석</th>
-                <th>현장실사</th>
-                <th>의견</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <div id="propertiesEmpty" class="empty hidden">표시할 물건이 없습니다.</div>
-        </div>
-        <div id="adminPropertiesPagination" class="pager"></div>
-      </section>
-
-      <!-- CSV 업로드 -->
-      <section id="tab-csv" class="panel tab-panel hidden">
-        <div class="sub-card csv-upload-card">
-          <div class="csv-upload-toolbar">
-            <label class="field csv-upload-field csv-source-field">
-              <span>업로드 대상</span>
-              <select id="csvImportSource" class="select">
-                <option value="auction">경매 CSV</option>
-                <option value="onbid">공매 CSV</option>
-                <option value="realtor">중개 CSV</option>
-              </select>
-            </label>
-
-            <label class="field csv-upload-field csv-file-field">
-              <span>CSV 파일</span>
-              <input id="csvFileInput" class="input" type="file" accept=".csv,text/csv" />
-            </label>
-
-            <div class="csv-upload-action">
-              <button id="btnCsvUpload" class="btn btn-primary">서버 업로드</button>
-              <button id="btnNewProperty" class="btn-add-circle" type="button" title="신규 물건 등록">+</button>
+    <!-- 등록 관리 -->
+    <section id="tab-staff" class="panel tab-panel hidden">
+      <div class="panel-title-row"><h2>등록 관리</h2></div>
+      <div class="sub-card">
+        <form id="staffForm" class="staff-form">
+          <input type="hidden" name="id" />
+          <label class="field"><span>로그인 이메일 *</span><input name="email" class="input" type="email" autocomplete="off" placeholder="예: staff01@knson.local" /></label>
+          <label class="field"><span>이름 *</span><input name="name" class="input" type="text" required /></label>
+          <label class="field"><span>권한</span><select name="role" class="select"><option value="staff">담당자</option><option value="admin">관리자</option></select></label>
+          <label class="field staff-password-field"><span>초기 비밀번호 *</span><input name="password" class="input" type="password" autocomplete="new-password" /></label>
+          <div class="field staff-actions-field">
+            <span class="field-spacer" aria-hidden="true">&nbsp;</span>
+            <div class="btn-row inline-btn-row staff-action-row">
+              <button type="submit" id="btnStaffSave" class="btn btn-primary">계정 생성</button>
+              <button type="button" id="btnStaffReset" class="btn btn-ghost">초기화</button>
             </div>
-
-            <div id="csvResultBox" class="result-box hidden csv-result-inline"></div>
           </div>
+        </form>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="staffTable"><thead><tr><th>이름</th><th>권한</th><th>담당지역 수</th><th>생성일</th><th>작업</th></tr></thead><tbody></tbody></table>
+        <div id="staffEmpty" class="empty hidden">담당자가 없습니다.</div>
+      </div>
+    </section>
+
+    <!-- 담당 지역 설정 -->
+    <section id="tab-regions" class="panel tab-panel hidden">
+      <div class="panel-title-row"><h2>담당 지역 설정</h2></div>
+      <div class="sub-card">
+        <div class="field-row">
+          <label class="field"><span>담당자 수(X명)</span><input id="agentCountInput" class="input" type="number" min="1" step="1" value="1" /></label>
+          <label class="field"><span>기준 단위</span><select id="regionUnitMode" class="select"><option value="auto">자동 (구 수 초과 시 동 단위 재편성)</option><option value="gu">구 단위 고정</option><option value="dong">동 단위 고정</option></select></label>
         </div>
-      </section>
-
-      <!-- 담당자 관리 -->
-      <section id="tab-staff" class="panel tab-panel hidden">
-        <div class="panel-title-row">
-          <h2>담당자 계정 관리</h2>
+        <div class="btn-row">
+          <button id="btnSuggestGrouping" class="btn btn-secondary">자동 그룹핑 제안</button>
+          <button id="btnSaveAssignments" class="btn btn-primary">배정 저장</button>
         </div>
+        <div class="hint-box"><div class="hint-title">자동 그룹핑 로직(초기 버전)</div><ul><li>물건 주소에서 <strong>구/동</strong> 추출</li><li>X명이 구 개수보다 많으면 <strong>동 단위</strong>로 자동 전환</li><li>같은 구 우선, 인접 구는 인접맵 기준으로 묶는 휴리스틱 적용</li></ul></div>
+        <div id="groupSuggestBox" class="group-suggest-box"></div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="assignmentTable"><thead><tr><th>담당자</th><th>권한</th><th>배정 지역(복수선택 저장)</th></tr></thead><tbody></tbody></table>
+        <div id="assignmentEmpty" class="empty hidden">담당자 계정을 먼저 등록해 주세요.</div>
+      </div>
+    </section>
 
-        <div class="sub-card">
-          <div class="sub-card-title">신규 Supabase 계정 생성</div>
-          <form id="staffForm" class="staff-form">
-            <input type="hidden" name="id" />
-            <label class="field">
-              <span>로그인 이메일 *</span>
-              <input name="email" class="input" type="email" autocomplete="off" placeholder="예: staff01@knson.local" />
-            </label>
-            <label class="field">
-              <span>이름 *</span>
-              <input name="name" class="input" type="text" required />
-            </label>
-            <label class="field">
-              <span>권한</span>
-              <select name="role" class="select">
-                <option value="staff">담당자</option>
-                <option value="admin">관리자</option>
-                <option value="other">기타</option>
-              </select>
-            </label>
-            <label class="field staff-password-field">
-              <span>초기 비밀번호 *</span>
-              <input name="password" class="input" type="password" placeholder="신규 생성 시만 입력" autocomplete="new-password" />
-            </label>
-            <div class="field staff-actions-field" aria-label="담당자 계정 액션">
-              <span class="field-spacer" aria-hidden="true">&nbsp;</span>
-              <div class="btn-row inline-btn-row staff-action-row">
-                <button type="submit" id="btnStaffSave" class="btn btn-primary">계정 생성</button>
-                <button type="button" id="btnStaffReset" class="btn btn-ghost">초기화</button>
-              </div>
-            </div>
-          </form>
+    <!-- 지오 코딩 -->
+    <section id="tab-geocoding" class="panel tab-panel hidden">
+      <div class="panel-title-row"><h2>지오 코딩</h2></div>
+      <div class="geocode-stat-row">
+        <button class="geocode-stat-card" id="geoStatPending" data-geo-filter="pending"><span class="geocode-stat-label">대기</span><strong class="geocode-stat-num" id="geocodePending">0</strong><span class="geocode-stat-unit">건</span></button>
+        <button class="geocode-stat-card" id="geoStatOk" data-geo-filter="ok"><span class="geocode-stat-label">완료</span><strong class="geocode-stat-num" id="geocodeOk">0</strong><span class="geocode-stat-unit">건</span></button>
+        <button class="geocode-stat-card geocode-stat-failed" id="geoStatFailed" data-geo-filter="failed"><span class="geocode-stat-label">실패</span><strong class="geocode-stat-num" id="geocodeFailed">0</strong><span class="geocode-stat-unit">건</span></button>
+      </div>
+      <div class="geocode-action-row">
+        <div id="geocodeProgress" class="geocode-progress hidden"><div class="geocode-progress-bar" id="geocodeProgressBar" style="width:0%"></div></div>
+        <span id="geocodeRunningText" class="geocode-running-text hidden">처리 중...</span>
+        <button id="btnGeocodeRun" class="btn btn-primary">지오코딩 실행</button>
+        <button id="btnGeocodeRetryFailed" class="btn btn-secondary hidden">실패 건 재시도</button>
+      </div>
+      <div id="geocodeListWrap" class="hidden">
+        <div class="geocode-list-title" id="geocodeListTitle"></div>
+        <div class="table-wrap"><table class="table" id="geocodeListTable"><thead><tr><th>물건번호</th><th>구분</th><th>주소</th><th>상태</th><th>등록일</th></tr></thead><tbody id="geocodeListBody"></tbody></table><div id="geocodeListEmpty" class="empty hidden">해당 항목이 없습니다.</div></div>
+      </div>
+    </section>
+
+    <!-- 업무 관리 -->
+    <section id="tab-workmgmt" class="panel tab-panel hidden">
+      <div class="panel-title-row">
+        <h2>업무 관리</h2>
+        <div class="panel-actions-inline work-mgmt-actions">
+          <label class="field work-mgmt-date-field"><span>기준일</span><input id="workMgmtDate" class="input" type="date" /></label>
+          <button id="btnWorkMgmtRefresh" class="btn btn-secondary">새로고침</button>
         </div>
-
-        <div class="table-wrap">
-          <table class="table" id="staffTable">
-            <thead>
-              <tr>
-                <th>이름</th>
-                <th>권한</th>
-                <th>담당지역 수</th>
-                <th>생성일</th>
-                <th>작업</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <div id="staffEmpty" class="empty hidden">담당자가 없습니다.</div>
-        </div>
-      </section>
-
-      <!-- 담당자 지역 배정 -->
-      <section id="tab-regions" class="panel tab-panel hidden">
-        <div class="panel-title-row">
-          <h2>담당자 지역 배정</h2>
-        </div>
-
-        <div class="sub-card">
-          <div class="field-row">
-            <label class="field">
-              <span>담당자 수(X명)</span>
-              <input id="agentCountInput" class="input" type="number" min="1" step="1" value="1" />
-            </label>
-
-            <label class="field">
-              <span>기준 단위</span>
-              <select id="regionUnitMode" class="select">
-                <option value="auto">자동 (구 수 초과 시 동 단위 재편성)</option>
-                <option value="gu">구 단위 고정</option>
-                <option value="dong">동 단위 고정</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="btn-row">
-            <button id="btnSuggestGrouping" class="btn btn-secondary">자동 그룹핑 제안</button>
-            <button id="btnSaveAssignments" class="btn btn-primary">배정 저장</button>
-          </div>
-
-          <div class="hint-box">
-            <div class="hint-title">자동 그룹핑 로직(초기 버전)</div>
-            <ul>
-              <li>물건 주소에서 <strong>구/동</strong> 추출</li>
-              <li>X명이 구 개수보다 많으면 <strong>동 단위</strong>로 자동 전환</li>
-              <li>같은 구 우선, 인접 구는 인접맵(초기 내장) 기준으로 묶는 휴리스틱 적용</li>
-            </ul>
-          </div>
-
-          <div id="groupSuggestBox" class="group-suggest-box"></div>
-        </div>
-
-        <div class="table-wrap">
-          <table class="table" id="assignmentTable">
-            <thead>
-              <tr>
-                <th>담당자</th>
-                <th>권한</th>
-                <th>배정 지역(복수선택 저장)</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <div id="assignmentEmpty" class="empty hidden">담당자 계정을 먼저 등록해 주세요.</div>
-        </div>
-      </section>
-
-      <!-- 지오코딩 탭 -->
-      <section id="tab-geocoding" class="panel tab-panel hidden">
-        <div class="panel-title-row">
-          <h2>지오코딩</h2>
-        </div>
-
-        <!-- 통계 카드 -->
-        <div class="geocode-stat-row">
-          <button class="geocode-stat-card" id="geoStatPending" data-geo-filter="pending">
-            <span class="geocode-stat-label">대기</span>
-            <strong class="geocode-stat-num" id="geocodePending">0</strong>
-            <span class="geocode-stat-unit">건</span>
-          </button>
-          <button class="geocode-stat-card" id="geoStatOk" data-geo-filter="ok">
-            <span class="geocode-stat-label">완료</span>
-            <strong class="geocode-stat-num" id="geocodeOk">0</strong>
-            <span class="geocode-stat-unit">건</span>
-          </button>
-          <button class="geocode-stat-card geocode-stat-failed" id="geoStatFailed" data-geo-filter="failed">
-            <span class="geocode-stat-label">실패</span>
-            <strong class="geocode-stat-num" id="geocodeFailed">0</strong>
-            <span class="geocode-stat-unit">건</span>
-          </button>
-        </div>
-
-        <!-- 실행 영역 -->
-        <div class="geocode-action-row">
-          <div id="geocodeProgress" class="geocode-progress hidden">
-            <div class="geocode-progress-bar" id="geocodeProgressBar" style="width:0%"></div>
-          </div>
-          <span id="geocodeRunningText" class="geocode-running-text hidden">처리 중...</span>
-          <button id="btnGeocodeRun" class="btn btn-primary">지오코딩 실행</button>
-          <button id="btnGeocodeRetryFailed" class="btn btn-secondary hidden">실패 건 재시도</button>
-        </div>
-
-        <!-- 필터된 물건 리스트 -->
-        <div id="geocodeListWrap" class="hidden">
-          <div class="geocode-list-title" id="geocodeListTitle"></div>
-          <div class="table-wrap">
-            <table class="table" id="geocodeListTable">
-              <thead>
-                <tr>
-                  <th>물건번호</th>
-                  <th>구분</th>
-                  <th>주소</th>
-                  <th>상태</th>
-                  <th>등록일</th>
-                </tr>
-              </thead>
-              <tbody id="geocodeListBody"></tbody>
-            </table>
-            <div id="geocodeListEmpty" class="empty hidden">해당 항목이 없습니다.</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 업무관리 탭 -->
-      <section id="tab-workmgmt" class="panel tab-panel hidden">
-        <div class="panel-title-row">
-          <h2>업무관리</h2>
-          <div class="panel-actions-inline work-mgmt-actions">
-            <label class="field work-mgmt-date-field">
-              <span>기준일</span>
-              <input id="workMgmtDate" class="input" type="date" />
-            </label>
-            <button id="btnWorkMgmtRefresh" class="btn btn-secondary" type="button">새로고침</button>
-          </div>
-        </div>
-
-        <div class="work-mgmt-shell">
-          <div id="workMgmtMeta" class="work-mgmt-meta"></div>
-          <div id="workMgmtCanvas" class="work-mgmt-canvas">
-            <div class="work-mgmt-actors-wrap">
-              <div id="workMgmtActors" class="work-mgmt-actors"></div>
-            </div>
-            <div class="work-mgmt-map">
-              <div class="work-mgmt-axis" aria-hidden="true"></div>
-              <div class="work-mgmt-rows-wrap">
-                <div id="workMgmtRows" class="work-mgmt-rows"></div>
-                <div id="workMgmtEmpty" class="empty hidden">표시할 업무 로그가 없습니다.</div>
-              </div>
+      </div>
+      <div class="work-mgmt-shell">
+        <div id="workMgmtMeta" class="work-mgmt-meta"></div>
+        <div id="workMgmtCanvas" class="work-mgmt-canvas">
+          <div><div id="workMgmtActors" class="work-mgmt-actors"></div></div>
+          <div class="work-mgmt-map">
+            <div class="work-mgmt-axis" aria-hidden="true"></div>
+            <div class="work-mgmt-rows-wrap">
+              <div id="workMgmtRows" class="work-mgmt-rows"></div>
+              <div id="workMgmtEmpty" class="empty hidden">표시할 업무 로그가 없습니다.</div>
             </div>
           </div>
         </div>
-      </section>
-    </main>
-  </div>
-
-  <!-- 로그인 모달 -->
-  <div id="adminLoginModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>로그인</h3>
-        <button id="btnAdminLoginClose" class="icon-btn" aria-label="닫기">✕</button>
       </div>
-      <form id="adminLoginForm" class="modal-body">
-        <label class="field">
-          <span>이름</span>
-          <input name="name" class="input" type="text" required />
-        </label>
-        <label class="field">
-          <span>비밀번호</span>
-          <input name="password" class="input" type="password" required />
-        </label>
-        <button type="submit" class="btn btn-primary w-full">로그인</button>
-        <div class="muted small">관리자 권한 계정만 접속 가능합니다.</div>
-      </form>
-    </div>
-  </div>
+    </section>
 
-  
-  <!-- 물건 편집 모달 -->
-  <div id="propertyEditModalAdmin" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 id="aemTitle">물건 정보 수정</h3>
-        <button id="aemClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <form id="aemForm" class="modal-body">
-        <div class="grid2">
-          <label class="field">
-            <span>물건번호</span>
-            <input name="itemNo" class="input" type="text" />
-          </label>
-          <label class="field">
-            <span>구분</span>
-            <select name="sourceType" class="input">
-              <option value="auction">경매</option>
-              <option value="onbid">공매</option>
-              <option value="realtor">중개</option>
-              <option value="general">일반</option>
-            </select>
-          </label>
-        </div>
+  </main></div>
+</div>
 
-        <div class="grid2">
-          <label class="field">
-            <span>등록자 유형</span>
-            <select name="submitterType" class="input">
-              <option value="">선택 안함</option>
-              <option value="realtor">공인중개사</option>
-              <option value="owner">소유자 / 일반</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>담당자 배정</span>
-            <select name="assigneeId" class="input"></select>
-          </label>
-        </div>
+<!-- 모달들 -->
+<div id="adminLoginModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card"><div class="modal-header"><h3>로그인</h3><button id="btnAdminLoginClose" class="icon-btn">✕</button></div><form id="adminLoginForm" class="modal-body"><label class="field"><span>이름</span><input name="name" class="input" type="text" required /></label><label class="field"><span>비밀번호</span><input name="password" class="input" type="password" required /></label><button type="submit" class="btn btn-primary">로그인</button></form></div></div>
 
-        <label class="field">
-          <span>주소</span>
-          <input name="address" class="input" type="text" />
-        </label>
+<div id="propertyEditModalAdmin" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card"><div class="modal-header"><h3 id="aemTitle">물건 정보 수정</h3><button id="aemClose" class="icon-btn">✕</button></div><form id="aemForm" class="modal-body"><div class="grid2"><label class="field"><span>물건번호</span><input name="itemNo" class="input" type="text" /></label><label class="field"><span>구분</span><select name="sourceType" class="input"><option value="auction">경매</option><option value="onbid">공매</option><option value="realtor">중개</option><option value="general">일반</option></select></label></div><div class="grid2"><label class="field"><span>등록자 유형</span><select name="submitterType" class="input"><option value="">선택 안함</option><option value="realtor">공인중개사</option><option value="owner">소유자 / 일반</option></select></label><label class="field"><span>담당자 배정</span><select name="assigneeId" class="input"></select></label></div><label class="field"><span>주소</span><input name="address" class="input" type="text" /></label><div class="grid3"><label class="field"><span>세부유형</span><input name="assetType" class="input" type="text" /></label><label class="field"><span>층수</span><input name="floor" class="input" type="text" /></label><label class="field"><span>총층</span><input name="totalfloor" class="input" type="text" /></label></div><div class="grid2"><label class="field"><span>사용승인일</span><input name="useapproval" class="input" type="date" /></label><label class="field"><span>진행상태</span><input name="status" class="input" type="text" /></label></div><div class="grid3"><label class="field"><span>공용면적(평)</span><input name="commonarea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>전용면적(평)</span><input name="exclusivearea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="text" inputmode="decimal" /></label></div><div class="grid3"><label class="field"><span>감정가(매각가)</span><input name="priceMain" class="input" type="text" inputmode="numeric" /></label><label class="field"><span>현재가격</span><input name="lowprice" class="input" type="text" inputmode="numeric" /></label><label class="field"><span>주요일정</span><input name="dateMain" class="input" type="datetime-local" /></label></div><div class="grid2"><label class="field"><span>원문링크</span><input name="sourceUrl" class="input" type="url" /></label><label class="field"><span>등록일</span><input name="date" class="input" type="date" disabled /></label></div><div class="grid3"><label class="field"><span>중개사무소명</span><input name="realtorname" class="input" type="text" /></label><label class="field"><span>유선전화</span><input name="realtorphone" class="input" type="text" /></label><label class="field"><span>휴대폰번호</span><input name="realtorcell" class="input" type="text" /></label></div><div class="grid2"><label class="field"><span>권리분석</span><input name="rightsAnalysis" class="input" type="text" /></label><label class="field"><span>현장실사</span><input name="siteInspection" class="input" type="text" /></label></div><label class="field"><span>금일 이슈사항</span><textarea name="opinion" class="input" rows="3"></textarea></label><div class="opinion-history-wrap"><div class="opinion-history-title">물건 History</div><div id="aemHistoryList" class="opinion-history-list"></div></div><div class="opinion-history-wrap"><div class="opinion-history-title">물건 등록 LOG</div><div id="aemRegistrationLogList" class="opinion-history-list"></div></div><div class="grid2"><label class="field"><span>위도</span><input name="latitude" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>경도</span><input name="longitude" class="input" type="text" inputmode="decimal" /></label></div><div class="modal-actions"><button id="aemDelete" class="btn btn-danger hidden" type="button">삭제</button><button id="aemSave" class="btn btn-primary" type="submit">저장</button><button id="aemCancel" class="btn btn-ghost" type="button">취소</button></div><div id="aemMsg" class="note"></div></form></div></div>
 
-        <div class="grid3">
-          <label class="field">
-            <span>세부유형</span>
-            <input name="assetType" class="input" type="text" />
-          </label>
-          <label class="field">
-            <span>층수</span>
-            <input name="floor" class="input" type="text" />
-          </label>
-          <label class="field">
-            <span>총층</span>
-            <input name="totalfloor" class="input" type="text" />
-          </label>
-        </div>
+<div id="newPropertyModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card"><div class="modal-header"><h3>신규 물건 등록</h3><button id="npmClose" class="icon-btn">✕</button></div><form id="newPropertyForm" class="modal-body" autocomplete="off"><div class="field npm-type-switch"><span class="field-label">유입 유형 *</span><div class="npm-type-options"><label class="npm-type-card is-active"><input type="radio" name="submitterKind" value="realtor" checked /><strong>공인중개사</strong><small>공인중개사를 통한 유입 물건</small></label><label class="npm-type-card"><input type="radio" name="submitterKind" value="owner" /><strong>소유자 / 기타</strong><small>공인중개사 유입 외의 물건</small></label></div></div><label class="field"><span>주소 *</span><input name="address" class="input" type="text" required /></label><div class="grid2"><label class="field"><span>세부유형 *</span><input name="assetType" class="input" type="text" required /></label><label class="field"><span>매매가(원) *</span><input name="priceMain" class="input" type="text" inputmode="numeric" required /></label></div><div class="grid3"><label class="field"><span>해당층</span><input name="floor" class="input" type="text" /></label><label class="field"><span>총층</span><input name="totalfloor" class="input" type="text" /></label><label class="field"><span>사용승인일</span><input name="useapproval" class="input" type="date" /></label></div><div class="grid3"><label class="field"><span>공용면적(평)</span><input name="commonarea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>전용면적(평)</span><input name="exclusivearea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="text" inputmode="decimal" /></label></div><div id="npmRealtorFields"><div class="npm-sub-title">중개사 정보</div><div class="grid2"><label class="field"><span>중개사무소명 *</span><input name="realtorname" class="input" type="text" /></label><label class="field"><span>유선전화</span><input name="realtorphone" class="input" type="tel" /></label></div><div class="grid2" style="margin-top:9px;"><label class="field"><span>휴대폰번호 *</span><input name="realtorcell" class="input" type="tel" /></label></div></div><div id="npmOwnerFields" class="hidden"><div class="npm-sub-title">소유자 / 일반 등록자 정보</div><div class="grid2"><label class="field"><span>이름 *</span><input name="submitterName" class="input" type="text" /></label><label class="field"><span>연락처 *</span><input name="submitterPhone" class="input" type="tel" /></label></div></div><label class="field"><span>의견</span><textarea name="opinion" class="input" rows="3"></textarea></label><div class="modal-actions"><button id="npmSave" class="btn btn-primary" type="submit">등록</button><button id="npmCancel" class="btn btn-ghost" type="button">취소</button></div><div id="npmMsg" class="note"></div></form></div></div>
 
-        <div class="grid2">
-          <label class="field">
-            <span>사용승인일</span>
-            <input name="useapproval" class="input" type="date" />
-          </label>
-          <label class="field">
-            <span>진행상태</span>
-            <input name="status" class="input" type="text" />
-          </label>
-        </div>
+<div id="passwordChangeModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card modal-card-sm"><div class="modal-header"><h3>비밀번호 변경</h3><button id="pwdModalClose" class="icon-btn">✕</button></div><form id="passwordChangeForm" class="modal-body"><label class="field"><span>새 비밀번호</span><input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><label class="field"><span>새 비밀번호 확인</span><input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><div class="modal-actions"><button id="pwdSave" class="btn btn-primary" type="submit">변경</button><button id="pwdCancel" class="btn btn-ghost" type="button">취소</button></div><div id="pwdMsg" class="note"></div></form></div></div>
 
-        <div class="grid3">
-          <label class="field"><span>공용면적(평)</span><input name="commonarea" class="input" type="text" inputmode="decimal" /></label>
-          <label class="field"><span>전용면적(평)</span><input name="exclusivearea" class="input" type="text" inputmode="decimal" /></label>
-          <label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="text" inputmode="decimal" /></label>
-        </div>
-
-        <div class="grid3">
-          <label class="field"><span>감정가(매각가)</span><input name="priceMain" class="input" type="text" inputmode="numeric" /></label>
-          <label class="field"><span>현재가격</span><input name="lowprice" class="input" type="text" inputmode="numeric" /></label>
-          <label class="field"><span>주요일정</span><input name="dateMain" class="input" type="datetime-local" /></label>
-        </div>
-
-        <div class="grid2">
-          <label class="field"><span>원문링크</span><input name="sourceUrl" class="input" type="url" /></label>
-          <label class="field"><span>등록일</span><input name="date" class="input" type="date" disabled /></label>
-        </div>
-
-        <div class="grid3">
-          <label class="field"><span>중개사무소명</span><input name="realtorname" class="input" type="text" /></label>
-          <label class="field"><span>유선전화</span><input name="realtorphone" class="input" type="text" /></label>
-          <label class="field"><span>휴대폰번호</span><input name="realtorcell" class="input" type="text" /></label>
-        </div>
-
-        <div class="grid2">
-          <label class="field"><span>권리분석</span><input name="rightsAnalysis" class="input" type="text" /></label>
-          <label class="field"><span>현장실사</span><input name="siteInspection" class="input" type="text" /></label>
-        </div>
-
-        <label class="field">
-          <span>금일 이슈사항</span>
-          <textarea name="opinion" class="input" rows="3" placeholder="오늘 발생한 이슈를 기록해주세요"></textarea>
-        </label>
-
-        <!-- 물건 History -->
-        <div class="opinion-history-wrap">
-          <div class="opinion-history-title">물건 History</div>
-          <div id="aemHistoryList" class="opinion-history-list"></div>
-        </div>
-
-        <div class="registration-log-wrap">
-          <div class="opinion-history-title">물건 등록 LOG</div>
-          <div id="aemRegistrationLogList" class="registration-log-list"></div>
-        </div>
-
-        <div class="grid2">
-          <label class="field"><span>위도</span><input name="latitude" class="input" type="text" inputmode="decimal" /></label>
-          <label class="field"><span>경도</span><input name="longitude" class="input" type="text" inputmode="decimal" /></label>
-        </div>
-
-        <div class="modal-actions">
-          <button id="aemDelete" class="btn btn-danger hidden" type="button">삭제</button>
-          <button id="aemSave" class="btn btn-primary" type="submit">저장</button>
-          <button id="aemCancel" class="btn btn-ghost" type="button">취소</button>
-        </div>
-        <div id="aemMsg" class="note"></div>
-      </form>
-    </div>
-  </div>
-
-
-  <!-- 신규 물건 등록 모달 -->
-  <!-- 신규 물건 등록 모달 -->
-  <div id="newPropertyModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>신규 물건 등록</h3>
-        <button id="npmClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <form id="newPropertyForm" class="modal-body" autocomplete="off">
-
-        <div class="field npm-type-switch" role="radiogroup" aria-label="유입 유형">
-          <span class="field-label">유입 유형 *</span>
-          <div class="npm-type-options">
-            <label class="npm-type-card is-active">
-              <input type="radio" name="submitterKind" value="realtor" checked />
-              <strong>공인중개사</strong>
-              <small>공인중개사를 통한 유입 물건</small>
-            </label>
-            <label class="npm-type-card">
-              <input type="radio" name="submitterKind" value="owner" />
-              <strong>소유자 / 기타</strong>
-              <small>공인중개사 유입 외의 물건</small>
-            </label>
-          </div>
-        </div>
-
-        <label class="field">
-          <span>주소 *</span>
-          <input name="address" class="input" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
-        </label>
-
-        <div class="grid2">
-          <label class="field">
-            <span>세부유형 *</span>
-            <input name="assetType" class="input" type="text" required placeholder="예: 아파트, 오피스텔" />
-          </label>
-          <label class="field">
-            <span>매매가(원) *</span>
-            <input name="priceMain" class="input" type="text" inputmode="numeric" required placeholder="예: 580,000,000" />
-          </label>
-        </div>
-
-        <div class="grid3">
-          <label class="field">
-            <span>해당층</span>
-            <input name="floor" class="input" type="text" placeholder="예: 5 / B1" />
-          </label>
-          <label class="field">
-            <span>총층</span>
-            <input name="totalfloor" class="input" type="text" placeholder="예: 15" />
-          </label>
-          <label class="field">
-            <span>사용승인일</span>
-            <input name="useapproval" class="input" type="date" />
-          </label>
-        </div>
-
-        <div class="grid3">
-          <label class="field">
-            <span>공용면적(평)</span>
-            <input name="commonarea" class="input" type="text" inputmode="decimal" placeholder="예: 10.523" />
-          </label>
-          <label class="field">
-            <span>전용면적(평)</span>
-            <input name="exclusivearea" class="input" type="text" inputmode="decimal" placeholder="예: 18.3475" />
-          </label>
-          <label class="field">
-            <span>토지면적(평)</span>
-            <input name="sitearea" class="input" type="text" inputmode="decimal" placeholder="예: 42.105" />
-          </label>
-        </div>
-
-        <div id="npmRealtorFields">
-          <div class="npm-sub-title">중개사 정보</div>
-          <div class="grid2">
-            <label class="field">
-              <span>중개사무소명 *</span>
-              <input name="realtorname" class="input" type="text" placeholder="예: 한빛공인중개사사무소" />
-            </label>
-            <label class="field">
-              <span>유선전화</span>
-              <input name="realtorphone" class="input" type="tel" placeholder="예: 02-1234-5678" />
-            </label>
-          </div>
-          <div class="grid2" style="margin-top:10px;">
-            <label class="field">
-              <span>휴대폰번호 *</span>
-              <input name="realtorcell" class="input" type="tel" placeholder="010-0000-0000" />
-            </label>
-          </div>
-        </div>
-
-        <div id="npmOwnerFields" class="hidden">
-          <div class="npm-sub-title">소유자 / 기타 등록자 정보</div>
-          <div class="grid2">
-            <label class="field">
-              <span>이름 *</span>
-              <input name="submitterName" class="input" type="text" placeholder="예: 홍길동" />
-            </label>
-            <label class="field">
-              <span>연락처 *</span>
-              <input name="submitterPhone" class="input" type="tel" placeholder="010-0000-0000" />
-            </label>
-          </div>
-        </div>
-
-        <label class="field">
-          <span>의견</span>
-          <textarea name="opinion" class="input" rows="3" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
-        </label>
-
-        <div class="modal-actions">
-          <button id="npmSave" class="btn btn-primary" type="submit">등록</button>
-          <button id="npmCancel" class="btn btn-ghost" type="button">취소</button>
-        </div>
-        <div id="npmMsg" class="note"></div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 내 비밀번호 변경 -->
-  <div id="passwordChangeModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card modal-card-sm">
-      <div class="modal-header">
-        <h3>비밀번호 변경</h3>
-        <button id="pwdModalClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <form id="passwordChangeForm" class="modal-body">
-        <label class="field">
-          <span>새 비밀번호</span>
-          <input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required />
-        </label>
-        <label class="field">
-          <span>새 비밀번호 확인</span>
-          <input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required />
-        </label>
-        <div class="muted small">현재 로그인한 본인 계정의 비밀번호만 변경됩니다. 관리자/담당자 공통 기능입니다.</div>
-        <div class="modal-actions">
-          <button id="pwdSave" class="btn btn-primary" type="submit">변경</button>
-          <button id="pwdCancel" class="btn btn-ghost" type="button">취소</button>
-        </div>
-        <div id="pwdMsg" class="note"></div>
-      </form>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./knson-core.js?v=20260320-split"></script>
-  <script src="./admin-app.js?v=20260324-adminfast4"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./knson-core.js?v=20260320-split"></script>
+<script src="./admin-app.js?v=20260325"></script>
+<script>
+(function(){
+  var TITLES={home:'홈',properties:'전체 현황',csv:'물건 등록',staff:'등록 관리',regions:'담당 지역 설정',geocoding:'지오 코딩',workmgmt:'업무 관리'};
+  var toggleBtn=document.getElementById('sidebarToggle');
+  toggleBtn.addEventListener('click',function(){var c=document.body.classList.toggle('sidebar-collapsed');toggleBtn.innerHTML=c?'&#8250;':'&#8249;';});
+  document.querySelectorAll('.sidebar-group-btn').forEach(function(btn){
+    var items=btn.closest('.sidebar-group').querySelector('.sidebar-group-items');
+    items.style.maxHeight='0';
+    btn.addEventListener('click',function(){var o=this.classList.toggle('is-open');items.style.maxHeight=o?items.scrollHeight+'px':'0';this.querySelector('.sidebar-group-arrow').textContent=o?'∧':'∨';});
+  });
+  var titleEl=document.getElementById('topbarTitle');
+  function activate(t){
+    document.querySelectorAll('#sidebarNav .sidebar-nav-item').forEach(function(si){si.classList.toggle('is-active',si.dataset.tab===t);});
+    var active=document.querySelector('#sidebarNav .sidebar-nav-item.is-active');
+    if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(!gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
+    if(titleEl&&TITLES[t])titleEl.textContent=TITLES[t];
+  }
+  var ht=document.querySelectorAll('#adminTabs .tab');
+  document.querySelectorAll('#sidebarNav .sidebar-nav-item').forEach(function(item){item.addEventListener('click',function(){var t=this.dataset.tab;ht.forEach(function(h){if(h.dataset.tab===t)h.click();});activate(t);});});
+  var obs=new MutationObserver(function(){ht.forEach(function(t){if(t.classList.contains('is-active'))activate(t.dataset.tab);});});
+  ht.forEach(function(t){obs.observe(t,{attributes:true,attributeFilter:['class']});});
+  var badge=document.getElementById('adminUserBadge'),sn=document.getElementById('sidebarUserName');
+  if(badge&&sn){new MutationObserver(function(){var txt=badge.textContent.trim();if(txt&&txt!=='비로그인')sn.textContent=txt;}).observe(badge,{childList:true,subtree:true,characterData:true});}
+})();
+</script>
 </body>
 </html>

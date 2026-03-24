@@ -1,389 +1,192 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>부동산 물건 관리 시스템 | 담당자</title>
-  <meta name="supabase-url" content="" />
-  <meta name="supabase-anon-key" content="" />
-
+  <meta name="supabase-url" content="" /><meta name="supabase-anon-key" content="" />
   <style>html{visibility:hidden;}</style>
-  <script>
-    (function(){
-      try{
-        var raw = null;
-        try { raw = sessionStorage.getItem('knson_bms_session_v1'); } catch(e) {}
-        try { localStorage.removeItem('knson_bms_session_v1'); } catch(e) {}
-        var s = raw ? JSON.parse(raw) : null;
-        if (!s || !s.token || !s.user) {
-          location.replace('./login.html?next=' + encodeURIComponent('./agent-index.html'));
-          return;
-        }
-        // 관리자가 접근하면 관리자 페이지로 리다이렉트
-        var role = String(s.user.role || '').trim().toLowerCase();
-        if (role === 'admin') {
-          location.replace('./admin-index.html');
-          return;
-        }
-      }catch(e){
-        location.replace('./login.html?next=' + encodeURIComponent('./agent-index.html'));
-        return;
-      }
-      document.documentElement.style.visibility = 'visible';
-    })();
-  </script>
-
-  <link rel="stylesheet" href="./admin-styles.css?v=20260324-agentui1" />
+  <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
+  <link rel="stylesheet" href="./admin-styles.css?v=20260325-v3" />
 </head>
 <body>
-  <div class="admin-shell">
-    <header class="admin-topbar">
-      <div class="brand">
-        <div class="brand-dot"></div>
-        <div>
-          <h1>담당자 페이지</h1>
-          <p>배정된 물건을 관리합니다.</p>
-        </div>
+
+<button class="sidebar-toggle-btn" id="sidebarToggle">&#8249;</button>
+
+<aside class="admin-sidebar">
+  <div class="sidebar-logo">
+    <img src="./image/logo-mail.png" alt="로고" class="sidebar-logo-img" />
+    <span class="sidebar-page-title sidebar-nav-label">담당자페이지</span>
+  </div>
+  <div class="sidebar-user-top">
+    <div class="sidebar-user-badge">
+      <div class="sidebar-user-dot"></div>
+      <span class="sidebar-user-name sidebar-nav-label" id="sidebarAgentName">담당자</span>
+    </div>
+  </div>
+  <nav class="sidebar-nav" id="agentSidebarNav">
+
+    <!-- 물건관리 그룹 -->
+    <div class="sidebar-group">
+      <button class="sidebar-group-btn" data-group="ag-props">
+        <span class="sidebar-nav-icon">🏢</span><span class="sidebar-nav-label">물건관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+      </button>
+      <div class="sidebar-group-items">
+        <button class="sidebar-nav-item sidebar-nav-sub" data-view="list"><span class="sidebar-nav-icon">📋</span><span class="sidebar-nav-label">전체 현황</span></button>
       </div>
+    </div>
 
-      <div class="top-actions">
-        <span id="agentUserBadge" class="badge badge-agent">담당자</span>
-        <button id="btnDailyReport" class="btn btn-secondary">일일업무일지</button>
-        <button id="btnChangeMyPassword" class="btn btn-secondary hidden">비밀번호 변경</button>
-        <button id="btnAgentLogout" class="btn btn-ghost hidden">로그아웃</button>
+    <!-- 업무관리 그룹 -->
+    <div class="sidebar-group">
+      <button class="sidebar-group-btn" data-group="ag-work">
+        <span class="sidebar-nav-icon">📊</span><span class="sidebar-nav-label">업무관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+      </button>
+      <div class="sidebar-group-items">
+        <button class="sidebar-nav-item sidebar-nav-sub" data-view="dailyreport"><span class="sidebar-nav-icon">📝</span><span class="sidebar-nav-label">일일 업무 일지</span></button>
       </div>
-    </header>
-    <div id="globalMsg" class="global-msg hidden"></div>
+    </div>
 
-    <main class="admin-main">
-      <!-- 요약 -->
-      <section class="panel summary-panel">
-        <div class="summary-grid">
-          <div class="summary-card summary-total" data-card="all"><span>전체 물건</span><strong id="agSumTotal">0</strong></div>
-          <div class="summary-card summary-auction" data-card="auction"><span>경매</span><strong id="agSumAuction">0</strong></div>
-          <div class="summary-card summary-gongmae" data-card="onbid"><span>공매</span><strong id="agSumGongmae">0</strong></div>
-          <div class="summary-card summary-naver-realtor" data-card="realtor_naver"><span>네이버중개</span><strong id="agSumNaverRealtor">0</strong></div>
-          <div class="summary-card summary-direct-realtor" data-card="realtor_direct"><span>일반중개</span><strong id="agSumDirectRealtor">0</strong></div>
-          <div class="summary-card summary-general" data-card="general"><span>일반</span><strong id="agSumGeneral">0</strong></div>
-        </div>
-      </section>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="theme-toggle sidebar-bottom-btn" id="themeToggle" title="테마 전환">C</button>
+  </div>
+</aside>
 
-      <!-- 물건 관리 -->
+<div class="admin-content">
+  <header class="admin-topbar">
+    <div class="topbar-left"><h1 id="agTopbarTitle">홈</h1></div>
+    <div class="top-actions">
+      <span id="agentUserBadge" class="badge badge-agent hidden">담당자</span>
+      <button id="btnChangeMyPassword" class="btn btn-ghost hidden">내 비밀번호 변경</button>
+      <button id="btnAgentLogout" class="btn btn-ghost hidden">로그아웃</button>
+    </div>
+  </header>
+  <div id="globalMsg" class="global-msg hidden"></div>
+
+  <div class="admin-shell"><main class="admin-main">
+
+    <!-- ── 홈 (slide8): 담당자 전용, 문장형, 패널 없음 ── -->
+    <section id="ag-view-home" class="ag-view">
+      <div class="agent-home-wrap">
+        <p class="home-intro">담당자 전용 페이지 입니다.</p>
+        <p class="home-sentence" style="margin-top:18px;">
+          현재 관리중인 매물수는&nbsp;총&nbsp;<strong class="hs-total" id="agSumTotal">-</strong>건 이며,
+        </p>
+        <p class="home-sentence" style="margin-top:6px;">
+          <span class="hs-auction">경매</span>&nbsp;<span id="agSumAuction">-</span>&nbsp;건,&nbsp;
+          공매&nbsp;<span id="agSumGongmae">-</span>&nbsp;건,&nbsp;
+          <span class="hs-naver">네이버중개</span>&nbsp;<span id="agSumNaverRealtor">-</span>&nbsp;건,&nbsp;
+          <span class="hs-direct">일반중개</span>&nbsp;<span id="agSumDirectRealtor">-</span>&nbsp;건,&nbsp;&nbsp;
+          <span class="hs-general">일반</span>&nbsp;<span class="hs-general-num" id="agSumGeneral">-</span>&nbsp;건 입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ── 전체 현황 (물건 목록) ── -->
+    <section id="ag-view-list" class="ag-view hidden">
       <section class="panel">
-        <div class="panel-title-row">
-          <h2>전체 현황</h2>
-        </div>
-
+        <div class="panel-title-row"><h2>전체 현황</h2></div>
         <div class="toolbar">
-          <select id="agStatusFilter" class="select">
-            <option value="">전체 상태</option>
-            <option value="active">진행중</option>
-            <option value="hold">보류</option>
-            <option value="closed">종결</option>
-            <option value="review">검토중</option>
-          </select>
-
-          <select id="agAreaFilter" class="select">
-            <option value="">전체 면적</option>
-            <option value="0-5">5평 미만</option>
-            <option value="5-10">5~10평</option>
-            <option value="10-20">10~20평</option>
-            <option value="20-30">20~30평</option>
-            <option value="30-50">30~50평</option>
-            <option value="50-">50평 이상</option>
-          </select>
-
-          <select id="agPriceFilter" class="select">
-            <option value="">전체 가격</option>
-            <option value="0-1">1억 미만</option>
-            <option value="1-3">1~3억</option>
-            <option value="3-5">3~5억</option>
-            <option value="5-10">5~10억</option>
-            <option value="10-20">10~20억</option>
-            <option value="20-">20억 이상</option>
-          </select>
-
-          <select id="agRatioFilter" class="select">
-            <option value="">전체 비율</option>
-            <option value="50">50% 이하</option>
-          </select>
-
+          <select id="agStatusFilter" class="select"><option value="">전체 상태</option><option value="active">진행중</option><option value="hold">보류</option><option value="closed">종결</option><option value="review">검토중</option></select>
+          <select id="agAreaFilter" class="select"><option value="">전체 면적</option><option value="0-5">5평 미만</option><option value="5-10">5~10평</option><option value="10-20">10~20평</option><option value="20-30">20~30평</option><option value="30-50">30~50평</option><option value="50-">50평 이상</option></select>
+          <select id="agPriceFilter" class="select"><option value="">전체 가격</option><option value="0-1">1억 미만</option><option value="1-3">1~3억</option><option value="3-5">3~5억</option><option value="5-10">5~10억</option><option value="10-20">10~20억</option><option value="20-">20억 이상</option></select>
+          <select id="agRatioFilter" class="select"><option value="">전체 비율</option><option value="50">50% 이하</option></select>
           <input id="agKeyword" class="input" type="text" placeholder="주소 / 지역 검색" />
           <button id="agFavFilter" class="btn-add-circle btn-fav-circle" type="button" title="관심물건만 보기">★</button>
           <button id="agDayFilter" class="btn-add-circle btn-day-circle" type="button" title="당일 입찰기일">D</button>
           <button id="btnNewProperty" class="btn-add-circle" type="button" title="신규 물건 등록">+</button>
         </div>
-
         <div class="table-wrap">
           <table class="table" id="agPropertiesTable">
-            <thead>
-              <tr>
-                <th class="fav-col"></th>
-                <th>물건번호</th>
-                <th>구분</th>
-                <th>주소</th>
-                <th>유형</th>
-                <th>층수</th>
-                <th>전용면적(평)</th>
-                <th>감정가(매각가)</th>
-                <th>현재가격</th>
-                <th>비율</th>
-                <th>주요일정</th>
-                <th>진행상태</th>
-                <th>권리분석</th>
-                <th>현장실사</th>
-                <th>의견</th>
-              </tr>
-            </thead>
+            <thead><tr>
+              <th class="fav-col"></th>
+              <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th>
+              <th>층수</th><th>전용면적(평)</th>
+              <th>감정가(매각가)</th><th>현재가격</th><th>비율</th>
+              <th>주요일정</th><th>진행상태</th>
+              <th>권리분석</th><th>현장실사</th><th>의견</th>
+            </tr></thead>
             <tbody id="agTableBody"></tbody>
           </table>
           <div id="agEmpty" class="empty hidden">배정된 물건이 없습니다.</div>
         </div>
         <div id="agPagination" class="pager"></div>
       </section>
-    </main>
-  </div>
+    </section>
 
-  <!-- 물건 편집 모달 (담당자 전용) -->
-  <div id="agEditModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card agent-edit-modal-card">
-      <div class="modal-header">
-        <h3>물건 정보 수정</h3>
-        <button id="agEditClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <form id="agEditForm" class="modal-body agent-edit-form" autocomplete="off">
-        <div class="agent-edit-topline grid4">
-          <label class="field agent-lock-field"><span>물건번호</span><input name="itemNo" class="input" type="text" readonly /></label>
-          <label class="field agent-lock-field"><span>구분</span><input name="sourceType" class="input" type="text" readonly /></label>
-          <label class="field agent-lock-field"><span>세부유형</span><input name="assetType" class="input" type="text" readonly /></label>
-          <label class="field agent-lock-field"><span>진행상태</span><input name="status" class="input" type="text" readonly /></label>
-        </div>
-
-        <label class="field agent-lock-field">
-          <span>주소</span>
-          <input name="address" class="input" type="text" readonly />
-        </label>
-
-        <div class="grid3">
-          <label class="field"><span>층수</span><input name="floor" class="input" type="text" placeholder="예: 1 / B1" /></label>
-          <label class="field"><span>총층</span><input name="totalfloor" class="input" type="text" placeholder="예: 15" /></label>
-          <label class="field"><span>사용승인일</span><input name="useapproval" class="input" type="date" /></label>
-        </div>
-
-        <div class="grid3">
-          <label class="field"><span>공용면적(평)</span><input name="commonarea" class="input" type="text" inputmode="decimal" placeholder="예: 23" /></label>
-          <label class="field"><span>전용면적(평)</span><input name="exclusivearea" class="input" type="text" inputmode="decimal" placeholder="예: 10.74" /></label>
-          <label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="text" inputmode="decimal" placeholder="예: 8.00" /></label>
-        </div>
-
-        <div class="grid3">
-          <label class="field"><span>감정가(매각가)</span><input name="priceMain" class="input" type="text" inputmode="numeric" placeholder="예: 509,000,000" /></label>
-          <label class="field"><span>현재가격</span><input name="currentPrice" class="input" type="text" inputmode="numeric" placeholder="예: 356,300,000" /></label>
-          <label class="field"><span>주요일정</span><input name="dateMain" class="input" type="text" placeholder="예: 2026-04-23 오전 09:00" /></label>
-        </div>
-
-        <div class="grid2">
-          <label class="field"><span>권리분석</span><input name="rightsAnalysis" class="input" type="text" autocomplete="off" /></label>
-          <label class="field"><span>현장실사</span><input name="siteInspection" class="input" type="text" autocomplete="off" /></label>
-        </div>
-
-        <label class="field">
-          <span>금일 이슈사항</span>
-          <textarea name="opinion" class="input agent-edit-textarea" rows="3" placeholder="오늘 발생한 이슈를 기록해주세요"></textarea>
-        </label>
-
-        <div class="opinion-history-wrap agent-history-wrap">
-          <div class="opinion-history-title">물건 History</div>
-          <div id="agHistoryList" class="opinion-history-list"></div>
-        </div>
-
-        <div class="modal-actions">
-          <button id="agEditSave" class="btn btn-primary" type="submit">저장</button>
-          <button id="agEditCancel" class="btn btn-ghost" type="button">취소</button>
-        </div>
-        <div id="agEditMsg" class="note"></div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 신규 물건 등록 모달 -->
-  <div id="newPropertyModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>신규 물건 등록</h3>
-        <button id="npmClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <form id="newPropertyForm" class="modal-body" autocomplete="off">
-
-        <div class="field npm-type-switch" role="radiogroup" aria-label="유입 유형">
-          <span class="field-label">유입 유형 *</span>
-          <div class="npm-type-options">
-            <label class="npm-type-card is-active">
-              <input type="radio" name="submitterKind" value="realtor" checked />
-              <strong>공인중개사</strong>
-              <small>공인중개사를 통한 유입 물건</small>
-            </label>
-            <label class="npm-type-card">
-              <input type="radio" name="submitterKind" value="owner" />
-              <strong>소유자 / 기타</strong>
-              <small>공인중개사 유입 외의 물건</small>
-            </label>
-          </div>
-        </div>
-
-        <label class="field">
-          <span>주소 *</span>
-          <input name="address" class="input" type="text" required placeholder="예: 서울특별시 강남구 역삼동 ..." />
-        </label>
-
-        <div class="grid2">
-          <label class="field">
-            <span>세부유형 *</span>
-            <input name="assetType" class="input" type="text" required placeholder="예: 아파트, 오피스텔" />
-          </label>
-          <label class="field">
-            <span>매매가(원) *</span>
-            <input name="priceMain" class="input" type="text" inputmode="numeric" required placeholder="예: 580,000,000" />
-          </label>
-        </div>
-
-        <div class="grid3">
-          <label class="field">
-            <span>해당층</span>
-            <input name="floor" class="input" type="text" placeholder="예: 5 / B1" />
-          </label>
-          <label class="field">
-            <span>총층</span>
-            <input name="totalfloor" class="input" type="text" placeholder="예: 15" />
-          </label>
-          <label class="field">
-            <span>사용승인일</span>
-            <input name="useapproval" class="input" type="date" />
-          </label>
-        </div>
-
-        <div class="grid3">
-          <label class="field">
-            <span>공용면적(평)</span>
-            <input name="commonarea" class="input" type="text" inputmode="decimal" placeholder="예: 10.523" />
-          </label>
-          <label class="field">
-            <span>전용면적(평)</span>
-            <input name="exclusivearea" class="input" type="text" inputmode="decimal" placeholder="예: 18.3475" />
-          </label>
-          <label class="field">
-            <span>토지면적(평)</span>
-            <input name="sitearea" class="input" type="text" inputmode="decimal" placeholder="예: 42.105" />
-          </label>
-        </div>
-
-        <div id="npmRealtorFields">
-          <div class="npm-sub-title">중개사 정보</div>
-          <div class="grid2">
-            <label class="field">
-              <span>중개사무소명 *</span>
-              <input name="realtorname" class="input" type="text" placeholder="예: 한빛공인중개사사무소" />
-            </label>
-            <label class="field">
-              <span>유선전화</span>
-              <input name="realtorphone" class="input" type="tel" placeholder="예: 02-1234-5678" />
-            </label>
-          </div>
-          <div class="grid2" style="margin-top:10px;">
-            <label class="field">
-              <span>휴대폰번호 *</span>
-              <input name="realtorcell" class="input" type="tel" placeholder="010-0000-0000" />
-            </label>
-          </div>
-        </div>
-
-        <div id="npmOwnerFields" class="hidden">
-          <div class="npm-sub-title">소유자 / 일반 등록자 정보</div>
-          <div class="grid2">
-            <label class="field">
-              <span>이름 *</span>
-              <input name="submitterName" class="input" type="text" placeholder="예: 홍길동" />
-            </label>
-            <label class="field">
-              <span>연락처 *</span>
-              <input name="submitterPhone" class="input" type="tel" placeholder="010-0000-0000" />
-            </label>
-          </div>
-        </div>
-
-        <label class="field">
-          <span>의견</span>
-          <textarea name="opinion" class="input" rows="3" placeholder="추가 설명이 있으면 입력해 주세요."></textarea>
-        </label>
-
-        <div class="modal-actions">
-          <button id="npmSave" class="btn btn-primary" type="submit">등록</button>
-          <button id="npmCancel" class="btn btn-ghost" type="button">취소</button>
-        </div>
-        <div id="npmMsg" class="note"></div>
-      </form>
-    </div>
-  </div>
-
-
-  <!-- 일일 업무 일지 -->
-  <div id="dailyReportModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card daily-report-modal-card daily-report-modal-card-v2">
-      <div class="modal-header daily-report-header">
-        <h3>일일 업무 일지</h3>
-        <button id="dailyReportClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <div class="modal-body daily-report-body daily-report-body-v2">
-        <section class="daily-report-section">
-          <h4><span>1.</span> Daily report</h4>
-          <div class="daily-report-copy daily-report-copy-v2">
+    <!-- ── 일일 업무 일지 (풀페이지, image10) ── -->
+    <section id="ag-view-dailyreport" class="ag-view hidden">
+      <div class="daily-full-panel">
+        <div class="daily-full-section">
+          <div class="home-section-tag">Daily report</div>
+          <div class="daily-full-copy">
             <p>오늘도 수고하셨습니다^^</p>
-            <p id="dailyReportLead">금일은 총 0건 정보를 수정등록 하셨네요.</p>
-            <p>오류가 없는지 다시한번 확인해 주세요.</p>
+            <p id="dailyReportLead">금일은 총 <strong class="hs-total">0건</strong>의 정보를 수정·등록 하셨네요.</p>
+            <p>오류가 없는지 다시한번 확인해주세요.</p>
           </div>
-          <div id="dailyReportFlow" class="daily-report-flow" aria-live="polite"></div>
-        </section>
-
-        <section class="daily-report-section">
-          <h4><span>2.</span> 기타 사항</h4>
-          <div class="daily-report-note-wrap daily-report-note-wrap-v2">
-            <textarea id="dailyReportNote" class="daily-report-note daily-report-note-v2" placeholder="업무 관련 요청 사항이나 제안 등을 자유롭게 작성해주세요.&#10;없으면 빈칸으로 두셔도 좋습니다."></textarea>
-            <div class="daily-report-note-hint">메모는 오늘 날짜 기준으로 이 브라우저에 자동 저장됩니다.</div>
+          <div id="dailyReportFlow" class="daily-full-flow">
+            <div class="daily-report-flow-empty">오늘 업무 로그가 없습니다.</div>
           </div>
-        </section>
-
-        <div class="modal-actions">
-          <button id="dailyReportDone" class="btn btn-primary" type="button">확인</button>
+        </div>
+        <div class="daily-full-section" style="margin-top:32px;">
+          <div class="home-section-tag">기타 사항</div>
+          <div class="daily-full-note-wrap">
+            <textarea id="dailyReportNote" class="daily-full-note" placeholder="업무 관련 요청 사항이나 제안 등을 자유롭게 작성해주세요.&#10;없으면 빈칸으로 두셔도 좋습니다."></textarea>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <!-- 내 비밀번호 변경 -->
-  <div id="passwordChangeModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card modal-card-sm">
-      <div class="modal-header">
-        <h3>비밀번호 변경</h3>
-        <button id="pwdModalClose" class="icon-btn" aria-label="닫기">✕</button>
-      </div>
-      <form id="passwordChangeForm" class="modal-body">
-        <label class="field"><span>새 비밀번호</span><input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label>
-        <label class="field"><span>새 비밀번호 확인</span><input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label>
-        <div class="modal-actions">
-          <button id="pwdSave" class="btn btn-primary" type="submit">변경</button>
-          <button id="pwdCancel" class="btn btn-ghost" type="button">취소</button>
-        </div>
-        <div id="pwdMsg" class="note"></div>
-      </form>
-    </div>
-  </div>
+  </main></div>
+</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./knson-core.js?v=20260320-agent"></script>
-  <script src="./agent-app.js?v=20260324-agentui1"></script>
+<!-- 물건 편집 모달 -->
+<div id="agEditModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card agent-edit-modal-card"><div class="modal-header"><h3>물건 정보 수정</h3><button id="agEditClose" class="icon-btn">✕</button></div><form id="agEditForm" class="modal-body agent-edit-form" autocomplete="off"><div class="grid4"><label class="field agent-lock-field"><span>물건번호</span><input name="itemNo" class="input" type="text" readonly /></label><label class="field agent-lock-field"><span>구분</span><input name="sourceType" class="input" type="text" readonly /></label><label class="field agent-lock-field"><span>세부유형</span><input name="assetType" class="input" type="text" readonly /></label><label class="field agent-lock-field"><span>진행상태</span><input name="status" class="input" type="text" readonly /></label></div><label class="field agent-lock-field"><span>주소</span><input name="address" class="input" type="text" readonly /></label><div class="grid3"><label class="field"><span>층수</span><input name="floor" class="input" type="text" /></label><label class="field"><span>총층</span><input name="totalfloor" class="input" type="text" /></label><label class="field"><span>사용승인일</span><input name="useapproval" class="input" type="date" /></label></div><div class="grid3"><label class="field"><span>공용면적(평)</span><input name="commonarea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>전용면적(평)</span><input name="exclusivearea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="text" inputmode="decimal" /></label></div><div class="grid3"><label class="field"><span>감정가(매각가)</span><input name="priceMain" class="input" type="text" inputmode="numeric" /></label><label class="field"><span>현재가격</span><input name="currentPrice" class="input" type="text" inputmode="numeric" /></label><label class="field"><span>주요일정</span><input name="dateMain" class="input" type="text" /></label></div><div class="grid2"><label class="field"><span>권리분석</span><input name="rightsAnalysis" class="input" type="text" /></label><label class="field"><span>현장실사</span><input name="siteInspection" class="input" type="text" /></label></div><label class="field"><span>금일 이슈사항</span><textarea name="opinion" class="input agent-edit-textarea" rows="3"></textarea></label><div class="opinion-history-wrap agent-history-wrap"><div class="opinion-history-title">물건 History</div><div id="agHistoryList" class="opinion-history-list"></div></div><div class="modal-actions"><button id="agEditSave" class="btn btn-primary" type="submit">저장</button><button id="agEditCancel" class="btn btn-ghost" type="button">취소</button></div><div id="agEditMsg" class="note"></div></form></div></div>
+
+<!-- 신규 물건 등록 모달 -->
+<div id="newPropertyModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card"><div class="modal-header"><h3>신규 물건 등록</h3><button id="npmClose" class="icon-btn">✕</button></div><form id="newPropertyForm" class="modal-body" autocomplete="off"><div class="field npm-type-switch"><span class="field-label">유입 유형 *</span><div class="npm-type-options"><label class="npm-type-card is-active"><input type="radio" name="submitterKind" value="realtor" checked /><strong>공인중개사</strong><small>공인중개사를 통한 유입 물건</small></label><label class="npm-type-card"><input type="radio" name="submitterKind" value="owner" /><strong>소유자 / 기타</strong><small>공인중개사 유입 외의 물건</small></label></div></div><label class="field"><span>주소 *</span><input name="address" class="input" type="text" required /></label><div class="grid2"><label class="field"><span>세부유형 *</span><input name="assetType" class="input" type="text" required /></label><label class="field"><span>매매가(원) *</span><input name="priceMain" class="input" type="text" inputmode="numeric" required /></label></div><div class="grid3"><label class="field"><span>해당층</span><input name="floor" class="input" type="text" /></label><label class="field"><span>총층</span><input name="totalfloor" class="input" type="text" /></label><label class="field"><span>사용승인일</span><input name="useapproval" class="input" type="date" /></label></div><div class="grid3"><label class="field"><span>공용면적(평)</span><input name="commonarea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>전용면적(평)</span><input name="exclusivearea" class="input" type="text" inputmode="decimal" /></label><label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="text" inputmode="decimal" /></label></div><div id="npmRealtorFields"><div class="npm-sub-title">중개사 정보</div><div class="grid2"><label class="field"><span>중개사무소명 *</span><input name="realtorname" class="input" type="text" /></label><label class="field"><span>유선전화</span><input name="realtorphone" class="input" type="tel" /></label></div><div class="grid2" style="margin-top:9px;"><label class="field"><span>휴대폰번호 *</span><input name="realtorcell" class="input" type="tel" /></label></div></div><div id="npmOwnerFields" class="hidden"><div class="npm-sub-title">소유자 / 일반 등록자 정보</div><div class="grid2"><label class="field"><span>이름 *</span><input name="submitterName" class="input" type="text" /></label><label class="field"><span>연락처 *</span><input name="submitterPhone" class="input" type="tel" /></label></div></div><label class="field"><span>의견</span><textarea name="opinion" class="input" rows="3"></textarea></label><div class="modal-actions"><button id="npmSave" class="btn btn-primary" type="submit">등록</button><button id="npmCancel" class="btn btn-ghost" type="button">취소</button></div><div id="npmMsg" class="note"></div></form></div></div>
+
+<!-- 비밀번호 변경 모달 -->
+<div id="passwordChangeModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card modal-card-sm"><div class="modal-header"><h3>비밀번호 변경</h3><button id="pwdModalClose" class="icon-btn">✕</button></div><form id="passwordChangeForm" class="modal-body"><label class="field"><span>새 비밀번호</span><input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><label class="field"><span>새 비밀번호 확인</span><input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><div class="modal-actions"><button id="pwdSave" class="btn btn-primary" type="submit">변경</button><button id="pwdCancel" class="btn btn-ghost" type="button">취소</button></div><div id="pwdMsg" class="note"></div></form></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./knson-core.js?v=20260320-agent"></script>
+<script src="./agent-app.js?v=20260325"></script>
+
+<script>
+(function(){
+  var TITLES={home:'홈',list:'전체 현황',dailyreport:'일일 업무 일지'};
+  var toggleBtn=document.getElementById('sidebarToggle');
+  toggleBtn.addEventListener('click',function(){var c=document.body.classList.toggle('sidebar-collapsed');toggleBtn.innerHTML=c?'&#8250;':'&#8249;';});
+
+  /* 그룹 접이식 */
+  document.querySelectorAll('.sidebar-group-btn').forEach(function(btn){
+    var items=btn.closest('.sidebar-group').querySelector('.sidebar-group-items');
+    items.style.maxHeight='0';
+    btn.addEventListener('click',function(){var o=this.classList.toggle('is-open');items.style.maxHeight=o?items.scrollHeight+'px':'0';this.querySelector('.sidebar-group-arrow').textContent=o?'∧':'∨';});
+  });
+
+  /* 뷰 전환 */
+  var titleEl=document.getElementById('agTopbarTitle');
+  function switchView(viewName){
+    document.querySelectorAll('.ag-view').forEach(function(v){v.classList.toggle('hidden',v.id!=='ag-view-'+viewName);});
+    document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(si){si.classList.toggle('is-active',si.dataset.view===viewName);});
+    /* 해당 그룹 자동 열기 */
+    var active=document.querySelector('#agentSidebarNav .sidebar-nav-item.is-active');
+    if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(!gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
+    if(titleEl&&TITLES[viewName])titleEl.textContent=TITLES[viewName];
+  }
+
+  document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(item){
+    item.addEventListener('click',function(){switchView(this.dataset.view);});
+  });
+
+  /* 담당자명 동기화 */
+  var badge=document.getElementById('agentUserBadge'),sn=document.getElementById('sidebarAgentName');
+  if(badge&&sn){new MutationObserver(function(){var txt=badge.textContent.trim();if(txt&&txt!=='담당자')sn.textContent=txt;}).observe(badge,{childList:true,subtree:true,characterData:true});}
+
+  /* agent-app.js에서 dailyReport 모달 대신 뷰 전환을 쓸 수 있도록 전역 노출 */
+  window.showDailyReportView=function(){switchView('dailyreport');};
+})();
+</script>
 </body>
 </html>
