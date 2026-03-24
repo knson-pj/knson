@@ -46,6 +46,39 @@ function parseNumberOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function extractMissingPropertiesColumn(error) {
+  const message = String(error?.message || error?.data?.message || error?.data?.error || '').trim();
+  const m = message.match(/Could not find the '([^']+)' column of 'properties' in the schema cache/i);
+  return m ? String(m[1] || '').trim() : '';
+}
+
+function clonePlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+}
+
+async function supabasePropertyWriteWithRetry(path, { method, json, headers }, { maxAttempts = 6 } = {}) {
+  let payload = clonePlainObject(json);
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    try {
+      return await supabaseRest(path, { method, json: payload, headers });
+    } catch (err) {
+      const missingCol = extractMissingPropertiesColumn(err);
+      if (!missingCol || !(missingCol in payload)) throw err;
+      const missingVal = payload[missingCol];
+      delete payload[missingCol];
+      if (missingVal !== undefined) {
+        const raw = sanitizePropertyRaw(payload.raw || {});
+        if (raw[missingCol] === undefined) raw[missingCol] = missingVal;
+        payload.raw = raw;
+      }
+      attempts += 1;
+      continue;
+    }
+  }
+  return supabaseRest(path, { method, json: payload, headers });
+}
+
 function sanitizeJsonValue(value, depth = 0, seen) {
   if (value == null) return value;
   if (depth > 6) return undefined;
@@ -278,6 +311,8 @@ async function handleActivityLog(req, res) {
 }
 
 function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName = '', isPatch = false } = {}) {
+  const lowpriceValue = parseNumberOrNull(input.lowprice ?? input.low_price);
+  const baseRaw = input.raw !== undefined ? sanitizePropertyRaw(input.raw) : undefined;
   const row = omitUndefined({
     item_no: input.item_no ?? input.itemNo,
     source_type: input.source_type ?? input.sourceType,
@@ -291,7 +326,6 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
     use_approval: input.use_approval ?? input.useapproval,
     status: input.status != null ? String(input.status || '').trim() : undefined,
     price_main: parseNumberOrNull(input.price_main ?? input.priceMain),
-    lowprice: parseNumberOrNull(input.lowprice ?? input.low_price),
     date_main: input.date_main ?? input.dateMain,
     source_url: input.source_url ?? input.sourceUrl,
     broker_office_name: input.broker_office_name ?? input.brokerOfficeName ?? input.realtorname,
@@ -301,8 +335,13 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
     latitude: parseNumberOrNull(input.latitude),
     longitude: parseNumberOrNull(input.longitude),
     is_general: input.is_general,
-    raw: input.raw !== undefined ? sanitizePropertyRaw(input.raw) : undefined,
+    raw: baseRaw,
   });
+
+  if (lowpriceValue !== null) {
+    row.raw = sanitizePropertyRaw(row.raw || {});
+    if (row.raw.lowprice === undefined) row.raw.lowprice = lowpriceValue;
+  }
 
   if (role === 'staff') {
     if (!isPatch || row.assignee_id === undefined) row.assignee_id = userId || row.assignee_id || null;
@@ -361,7 +400,7 @@ async function handleSupabaseWrite(req, res) {
     const rowInput = body.row && typeof body.row === 'object' ? body.row : body;
     const row = buildSupabasePropertyRow(rowInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: false });
     if (!row.address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
-    const created = await supabaseRest('/rest/v1/properties', {
+    const created = await supabasePropertyWriteWithRetry('/rest/v1/properties', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
       json: row,
@@ -390,7 +429,7 @@ async function handleSupabaseWrite(req, res) {
     if (ctx.role === 'staff') delete patch.assignee_id;
 
     const col = targetId.includes(':') ? 'global_id' : 'id';
-    const rows = await supabaseRest(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
+    const rows = await supabasePropertyWriteWithRetry(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
       json: patch,
