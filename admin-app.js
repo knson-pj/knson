@@ -1,4 +1,7 @@
 (() => {
+  const ADMIN_FAST_BUILD = "20260324-adminfast4";
+  try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
+
   "use strict";
 
   const K = window.KNSN || null;
