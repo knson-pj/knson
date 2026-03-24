@@ -1233,7 +1233,7 @@
       // undefined 키 제거 (Supabase 전송 시 에러 방지)
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
-      const saveRes = await apiJson(`/agent/properties`, { method: "PATCH", json: { targetId, patch } });
+      const saveRes = await apiJson(`/properties`, { method: "PATCH", json: { targetId, patch } });
       const updatedRow = saveRes?.item || { id: targetId };
       let activityError = "";
       if (workCategories.length) {
@@ -1553,7 +1553,7 @@
       let activityError = "";
       if (existing) {
         const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
-        const saveRes = await apiJson(`/agent/properties`, {
+        const saveRes = await apiJson(`/properties`, {
           method: "PATCH",
           json: { targetId: existing.id || existing.globalId, patch: merged.row },
         });
@@ -1563,7 +1563,7 @@
         setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
       } else {
         const createRow = buildRegistrationDbRowForCreate(payload, regContext);
-        const saveRes = await apiJson(`/agent/properties`, {
+        const saveRes = await apiJson(`/properties`, {
           method: "POST",
           json: { row: createRow },
         });
