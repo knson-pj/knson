@@ -1199,9 +1199,6 @@
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
-      const sb = isSupabaseMode() ? K.initSupabase() : null;
-      if (!sb) throw new Error("Supabase 연동 필요");
-
       const targetId = item.id || item.globalId;
 
       // raw JSON 업데이트 — 기존 raw에서 raw 키 자체는 제외하여 중첩 방지
@@ -1236,7 +1233,8 @@
       // undefined 키 제거 (Supabase 전송 시 에러 방지)
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
-      const updatedRow = await updatePropertyRowResilient(sb, targetId, patch);
+      const saveRes = await apiJson(`/agent/properties`, { method: "PATCH", json: { targetId, patch } });
+      const updatedRow = saveRes?.item || { id: targetId };
       let activityError = "";
       if (workCategories.length) {
         try {
@@ -1555,13 +1553,21 @@
       let activityError = "";
       if (existing) {
         const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
-        const updated = await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
+        const saveRes = await apiJson(`/agent/properties`, {
+          method: "PATCH",
+          json: { targetId: existing.id || existing.globalId, patch: merged.row },
+        });
+        const updated = saveRes?.item || null;
         savedPropertyId = updated?.id || existing.id || existing.globalId || null;
         savedIdentityKey = merged.row?.raw?.registrationIdentityKey || existing?._raw?.raw?.registrationIdentityKey || buildRegistrationMatchKey(merged.row) || "";
         setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
       } else {
         const createRow = buildRegistrationDbRowForCreate(payload, regContext);
-        const inserted = await insertPropertyRowResilient(sb, createRow);
+        const saveRes = await apiJson(`/agent/properties`, {
+          method: "POST",
+          json: { row: createRow },
+        });
+        const inserted = saveRes?.item || null;
         savedPropertyId = inserted?.id || null;
         savedIdentityKey = createRow?.raw?.registrationIdentityKey || buildRegistrationMatchKey(createRow) || "";
         setNpmMsg("등록되었습니다.", false);
