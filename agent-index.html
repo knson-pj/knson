@@ -14,8 +14,8 @@
 
 <aside class="admin-sidebar">
   <div class="sidebar-logo">
-    <img src="./image/logo-main.png" alt="로고" class="sidebar-logo-img" />
-    <span class="sidebar-page-title sidebar-nav-label">담당자페이지</span>
+    <img src="./image/logo-mail.png" alt="로고" class="sidebar-logo-img" />
+    <button class="sidebar-page-title sidebar-nav-label sidebar-home-btn" id="btnSidebarHome" title="홈으로">담당자페이지</button>
   </div>
   <div class="sidebar-user-top">
     <div class="sidebar-user-badge">
@@ -179,6 +179,10 @@
   document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(item){
     item.addEventListener('click',function(){switchView(this.dataset.view);});
   });
+
+  /* 로고 옆 '담당자페이지' 클릭 → 홈으로 */
+  var homeBtn=document.getElementById('btnSidebarHome');
+  if(homeBtn){homeBtn.addEventListener('click',function(){switchView('home');});}
 
   /* 담당자명 동기화 */
   var badge=document.getElementById('agentUserBadge'),sn=document.getElementById('sidebarAgentName');
