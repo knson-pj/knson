@@ -502,8 +502,13 @@ module.exports = async function handler(req, res) {
 
   const url = new URL(req.url, 'http://localhost');
   const dailyReportRequested = ['1', 'true', 'yes'].includes(String(url.searchParams.get('daily_report') || '').trim().toLowerCase());
+  if ((req.method === 'POST' || req.method === 'PATCH') && !req.__jsonBody) {
+    req.__jsonBody = getJsonBody(req);
+  }
+  const action = String(req.__jsonBody?.action || '').trim().toLowerCase();
+  const dailyReportPost = req.method === 'POST' && action === 'daily_report_log';
 
-  if (req.method === 'GET' && dailyReportRequested) {
+  if ((req.method === 'GET' && dailyReportRequested) || dailyReportPost) {
     return handleActivityLog(req, res);
   }
 
