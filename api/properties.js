@@ -436,7 +436,39 @@ async function handleSupabaseWrite(req, res) {
 
     const patchInput = body.patch && typeof body.patch === 'object' ? body.patch : body;
     const patch = buildSupabasePropertyRow(patchInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: true });
-    if (ctx.role === 'staff') delete patch.assignee_id;
+    if (ctx.role === 'staff') {
+      delete patch.assignee_id;
+
+      const currentAssetType = String(current.asset_type || '').trim();
+      const requestedAssetType = patch.asset_type !== undefined ? String(patch.asset_type || '').trim() : undefined;
+      if (requestedAssetType !== undefined) {
+        if (currentAssetType) {
+          if (requestedAssetType && requestedAssetType !== currentAssetType) {
+            return send(res, 409, { ok: false, message: '현재 정책상 세부유형 값은 최초 입력 후 변경할 수 없습니다.' });
+          }
+          delete patch.asset_type;
+        } else if (!requestedAssetType) {
+          delete patch.asset_type;
+        } else {
+          patch.asset_type = requestedAssetType;
+        }
+      }
+
+      const currentStatus = String(current.status || '').trim();
+      const requestedStatus = patch.status !== undefined ? String(patch.status || '').trim() : undefined;
+      if (requestedStatus !== undefined) {
+        if (currentStatus) {
+          if (requestedStatus && requestedStatus !== currentStatus) {
+            return send(res, 409, { ok: false, message: '현재 정책상 진행상태 값은 최초 입력 후 변경할 수 없습니다.' });
+          }
+          delete patch.status;
+        } else if (!requestedStatus) {
+          delete patch.status;
+        } else {
+          patch.status = requestedStatus;
+        }
+      }
+    }
 
     const requesterToken = readBearer(req);
     const useRequesterJwt = !!requesterToken;
