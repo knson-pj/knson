@@ -1181,6 +1181,10 @@
     setVal(f, "address", item.address);
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
+    const assetTypeLocked = !!String(item?._raw?.asset_type || "").trim();
+    const statusLocked = !!String(item?._raw?.status || "").trim();
+    if (f.elements.assetType) f.elements.assetType.readOnly = assetTypeLocked;
+    if (f.elements.status) f.elements.status.readOnly = statusLocked;
     setVal(f, "rightsAnalysis", item.rightsAnalysis);
     setVal(f, "siteInspection", item.siteInspection);
     setVal(f, "opinion", ""); // 매일 신규 작성
@@ -1212,8 +1216,8 @@
       state.session?.user
     );
 
+    const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
-    // DB에 존재하는 컬럼만 직접 매핑
     const assetTypeVal = readStr("assetType") || null;
     const statusVal = readStr("status") || null;
     const rightsVal = readStr("rightsAnalysis") || null;
@@ -1235,18 +1239,24 @@
       return;
     }
 
-    if (assetTypeVal !== null && (!prevAssetTypeDbVal || assetTypeVal !== prevAssetTypeDbVal)) patch.asset_type = assetTypeVal;
-    if (statusVal !== null && (!prevStatusDbVal || statusVal !== prevStatusDbVal)) patch.status = statusVal;
-    // rights_analysis, site_inspection 은 DB 컬럼 없음 → raw 에만 저장
+    // 잠긴 컬럼은 '최초 입력'인 경우에만 보낸다.
+    if (!prevAssetTypeDbVal && assetTypeVal !== null) patch.asset_type = assetTypeVal;
+    if (!prevStatusDbVal && statusVal !== null) patch.status = statusVal;
 
-    // opinion → DB의 memo 컬럼으로 매핑 (opinion 컬럼 없음)
     patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
-      const targetId = item.id || item.globalId;
+      if (!currentUserId) throw new Error("로그인 정보가 만료되었습니다. 다시 로그인해 주세요.");
+      if (!K || typeof K.initSupabase !== "function") throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
+      const sb = K.initSupabase();
+      if (!sb) throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
+      try { if (typeof K.sbSyncLocalSession === "function") await K.sbSyncLocalSession(); } catch {}
 
-      // raw JSON 업데이트 — 기존 raw에서 raw 키 자체는 제외하여 중첩 방지
+      const targetId = String(item?._raw?.id || item.id || item.globalId || "").trim();
+      const targetCol = item?._raw?.id ? "id" : "global_id";
+      if (!targetId) throw new Error("수정 대상 물건 식별자를 찾을 수 없습니다.");
+
       const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
       const newRaw = sanitizePropertyRawForSave(existingRaw, {
         ...(assetTypeVal !== null ? { assetType: assetTypeVal } : {}),
@@ -1275,11 +1285,22 @@
       }
       patch.raw = newRaw;
 
-      // undefined 키 제거 (Supabase 전송 시 에러 방지)
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
-      const saveRes = await apiJson(`/properties`, { method: "PATCH", json: { targetId, patch } });
-      const updatedRow = saveRes?.item || { id: targetId };
+      let query = sb.from("properties").update(patch).eq(targetCol, targetId).eq("assignee_id", currentUserId).select("*").limit(1);
+      const { data, error } = await query;
+      if (error) {
+        const message = String(error?.message || "").trim();
+        if (/not allowed/i.test(message)) {
+          throw new Error("현재 물건 수정은 DB 정책에 의해 차단되었습니다. assignee_id 또는 잠긴 컬럼 상태를 다시 확인해 주세요.");
+        }
+        throw error;
+      }
+      const updatedRow = Array.isArray(data) ? (data[0] || null) : data;
+      if (!updatedRow) {
+        throw new Error("수정 가능한 물건을 찾지 못했습니다. assignee_id 배정 상태를 다시 확인해 주세요.");
+      }
+
       let activityError = "";
       if (workCategories.length) {
         try {
