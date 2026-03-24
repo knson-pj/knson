@@ -8,23 +8,33 @@ function omitUndefined(obj) {
   return Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v !== undefined));
 }
 
-function buildSupabaseHeaders(hasJson = false, extra = {}) {
-  const { serviceRoleKey } = getEnv();
+function readBearer(req) {
+  const auth = String(req?.headers?.authorization || '').trim();
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  return m ? String(m[1] || '').trim() : '';
+}
+
+function buildSupabaseHeaders({ hasJson = false, extra = {}, authToken = '', useAnon = false } = {}) {
+  const { serviceRoleKey, anonKey } = getEnv();
+  const token = String(authToken || '').trim();
+  const hasUserToken = !!token;
+  const apiKey = hasUserToken || useAnon ? (anonKey || serviceRoleKey) : serviceRoleKey;
+  const authorization = hasUserToken ? token : serviceRoleKey;
   const headers = {
     Accept: 'application/json',
-    apikey: serviceRoleKey,
-    Authorization: `Bearer ${serviceRoleKey}`,
+    apikey: apiKey,
+    Authorization: `Bearer ${authorization}`,
     ...extra,
   };
   if (hasJson) headers['Content-Type'] = 'application/json';
   return headers;
 }
 
-async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
+async function supabaseRest(path, { method = 'GET', json, headers, authToken = '', useAnon = false } = {}) {
   const { url } = getEnv();
   const res = await fetch(`${url}${path}`, {
     method,
-    headers: buildSupabaseHeaders(json !== undefined, headers),
+    headers: buildSupabaseHeaders({ hasJson: json !== undefined, extra: headers, authToken, useAnon }),
     body: json !== undefined ? JSON.stringify(json) : undefined,
   });
   const text = await res.text();
@@ -56,12 +66,12 @@ function clonePlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
 }
 
-async function supabasePropertyWriteWithRetry(path, { method, json, headers }, { maxAttempts = 6 } = {}) {
+async function supabasePropertyWriteWithRetry(path, { method, json, headers, authToken = '', useAnon = false }, { maxAttempts = 6 } = {}) {
   let payload = clonePlainObject(json);
   let attempts = 0;
   while (attempts < maxAttempts) {
     try {
-      return await supabaseRest(path, { method, json: payload, headers });
+      return await supabaseRest(path, { method, json: payload, headers, authToken, useAnon });
     } catch (err) {
       const missingCol = extractMissingPropertiesColumn(err);
       if (!missingCol || !(missingCol in payload)) throw err;
@@ -76,7 +86,7 @@ async function supabasePropertyWriteWithRetry(path, { method, json, headers }, {
       continue;
     }
   }
-  return supabaseRest(path, { method, json: payload, headers });
+  return supabaseRest(path, { method, json: payload, headers, authToken, useAnon });
 }
 
 function sanitizeJsonValue(value, depth = 0, seen) {
@@ -428,11 +438,15 @@ async function handleSupabaseWrite(req, res) {
     const patch = buildSupabasePropertyRow(patchInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: true });
     if (ctx.role === 'staff') delete patch.assignee_id;
 
+    const requesterToken = readBearer(req);
+    const useRequesterJwt = !!requesterToken;
     const col = targetId.includes(':') ? 'global_id' : 'id';
     const rows = await supabasePropertyWriteWithRetry(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
       json: patch,
+      authToken: requesterToken,
+      useAnon: useRequesterJwt,
     });
     const item = Array.isArray(rows) ? (rows[0] || null) : rows;
     return send(res, 200, { ok: true, item });

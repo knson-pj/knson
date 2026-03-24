@@ -253,6 +253,35 @@
     return String(state.session?.token || "").trim();
   }
 
+  function extractApiErrorText(data, status) {
+    const parts = [];
+    const push = (value) => {
+      const text = String(value || "").trim();
+      if (!text) return;
+      if (parts.includes(text)) return;
+      parts.push(text);
+    };
+
+    if (data && typeof data === "object") {
+      push(data.message);
+      const details = data.details;
+      if (typeof details === "string") {
+        push(details);
+      } else if (details && typeof details === "object") {
+        push(details.message);
+        push(details.hint);
+        push(details.details);
+        push(details.error_description);
+        push(details.error);
+      }
+    } else {
+      push(data);
+    }
+
+    if (!parts.length) push(`요청 실패 (${status})`);
+    return parts.join("\n");
+  }
+
   async function apiJson(path, options = {}) {
     const base = K && typeof K.getApiBase === "function" ? K.getApiBase() : "";
     const token = getSessionToken();
@@ -271,7 +300,7 @@
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text || null; }
     if (!res.ok || data?.ok === false) {
-      throw new Error(data?.message || `요청 실패 (${res.status})`);
+      throw new Error(extractApiErrorText(data, res.status));
     }
     return data;
   }
@@ -1189,6 +1218,22 @@
     const statusVal = readStr("status") || null;
     const rightsVal = readStr("rightsAnalysis") || null;
     const siteVal = readStr("siteInspection") || null;
+    const prevAssetTypeVal = String(item.assetType === "-" ? "" : (item.assetType || "")).trim();
+    const prevStatusVal = String(item.status || "").trim();
+
+    const triedToChangeLockedFields = [];
+    if (prevAssetTypeVal && assetTypeVal !== null && assetTypeVal !== prevAssetTypeVal) {
+      triedToChangeLockedFields.push("세부유형");
+    }
+    if (prevStatusVal && statusVal !== null && statusVal !== prevStatusVal) {
+      triedToChangeLockedFields.push("진행상태");
+    }
+    if (triedToChangeLockedFields.length) {
+      if (els.agEditMsg) {
+        els.agEditMsg.textContent = `현재 정책상 ${triedToChangeLockedFields.join(", ")} 값은 최초 입력 후 변경할 수 없습니다.`;
+      }
+      return;
+    }
 
     if (assetTypeVal !== null) patch.asset_type = assetTypeVal;
     if (statusVal !== null) patch.status = statusVal;
