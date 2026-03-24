@@ -909,7 +909,7 @@ function bindEvents() {
       staffRows.push({ id: actorId, name: String(item?.actor_name || item?.actorName || "담당자").trim() || "담당자", count: counts.get(actorId) || 0 });
       seen.add(actorId);
     });
-    return staffRows.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    return staffRows.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name, 'ko'));
   }
 
   function findPropertyForWorkItem(entry) {
@@ -968,17 +968,33 @@ function bindEvents() {
     return [...groups.values()].sort((a, b) => String(b.latestAt || "").localeCompare(String(a.latestAt || "")));
   }
 
+  function compactWorkAddress(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '주소 정보 없음';
+    let text = raw.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    const commaIdx = text.indexOf(',');
+    if (commaIdx > -1) text = text.slice(0, commaIdx).trim();
+    return text || raw;
+  }
+
+  function buildWorkMetaParts(property) {
+    const parts = [];
+    const floor = String(property?.floor || '').trim();
+    const area = formatAreaPyeong(property?.exclusivearea || property?.commonarea || null);
+    if (floor) parts.push(floor);
+    if (area !== '-') parts.push(`${area}평`);
+    return parts;
+  }
+
   function buildWorkPropertyTitle(group) {
     const property = group?.property || null;
-    const fallbackAddress = String(group?.item?.property_address || group?.item?.propertyAddress || "").trim() || "주소 정보 없음";
-    const sourceType = String(property?.sourceType || "").trim();
-    const floor = String(property?.floor || "").trim() || '-';
-    const area = formatAreaPyeong(property?.exclusivearea || property?.commonarea || null);
+    const fallbackAddress = String(group?.item?.property_address || group?.item?.propertyAddress || '').trim() || '주소 정보 없음';
+    const sourceType = String(property?.sourceType || '').trim();
     return {
       sourceType,
       sourceLabel: sourceType === 'auction' ? '경매' : sourceType === 'onbid' ? '공매' : sourceType === 'realtor' ? '중개' : sourceType === 'general' ? '일반' : '물건',
-      address: String(property?.address || fallbackAddress).trim() || fallbackAddress,
-      meta: `${floor} | ${area === '-' ? '-' : `${area}평`}`,
+      address: compactWorkAddress(String(property?.address || fallbackAddress).trim() || fallbackAddress),
+      metaParts: buildWorkMetaParts(property),
     };
   }
 
@@ -1018,16 +1034,24 @@ function bindEvents() {
     const actionDefs = getWorkActionDefs();
     els.workMgmtRows.innerHTML = propertyRows.map((group) => {
       const title = buildWorkPropertyTitle(group);
+      const metaHtml = Array.isArray(title.metaParts) && title.metaParts.length
+        ? `<span class="work-property-meta">${escapeHtml(title.metaParts.join(' | '))}</span>`
+        : '';
       const actionHtml = actionDefs
         .filter(([key]) => (group.counts[key] || 0) > 0)
-        .map(([key, label, tone]) => `<div class="work-action-pill is-${tone}">${escapeHtml(label)} <strong>${escapeHtml(String(group.counts[key] || 0))}건</strong></div>`)
+        .map(([key, label, tone]) => `
+          <div class="work-action-pill is-${tone}">
+            <span class="work-action-label">${escapeHtml(label)}</span>
+            <strong>${escapeHtml(String(group.counts[key] || 0))}건</strong>
+          </div>`)
         .join('');
       return `
         <div class="work-row">
           <div class="work-property-node">
             <div class="work-property-card">
               <span class="work-source-tag is-${escapeAttr(title.sourceType || 'general')}">${escapeHtml(title.sourceLabel)}</span>
-              <span class="work-property-text">${escapeHtml(title.address)} | ${escapeHtml(title.meta)}</span>
+              <span class="work-property-text">${escapeHtml(title.address)}</span>
+              ${metaHtml}
             </div>
           </div>
           <div class="work-action-list">${actionHtml}</div>

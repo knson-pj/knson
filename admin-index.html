@@ -34,7 +34,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./admin-styles.css?v=20260320-split" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260324-work2" />
 </head>
 <body>
   <div class="admin-shell">
@@ -377,10 +377,15 @@
         <div class="work-mgmt-shell">
           <div id="workMgmtMeta" class="work-mgmt-meta"></div>
           <div id="workMgmtCanvas" class="work-mgmt-canvas">
-            <div id="workMgmtActors" class="work-mgmt-actors"></div>
-            <div class="work-mgmt-rows-wrap">
-              <div id="workMgmtRows" class="work-mgmt-rows"></div>
-              <div id="workMgmtEmpty" class="empty hidden">표시할 업무 로그가 없습니다.</div>
+            <div class="work-mgmt-actors-wrap">
+              <div id="workMgmtActors" class="work-mgmt-actors"></div>
+            </div>
+            <div class="work-mgmt-map">
+              <div class="work-mgmt-axis" aria-hidden="true"></div>
+              <div class="work-mgmt-rows-wrap">
+                <div id="workMgmtRows" class="work-mgmt-rows"></div>
+                <div id="workMgmtEmpty" class="empty hidden">표시할 업무 로그가 없습니다.</div>
+              </div>
             </div>
           </div>
         </div>
@@ -693,6 +698,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260320-split"></script>
-  <script src="./admin-app.js?v=20260324-work1"></script>
+  <script src="./admin-app.js?v=20260324-work2"></script>
 </body>
 </html>
