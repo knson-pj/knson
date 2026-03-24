@@ -89,6 +89,194 @@ function sanitizePropertyRaw(raw) {
   return base;
 }
 
+
+
+function kstDateKey(input) {
+  const d = input ? new Date(input) : new Date();
+  if (!d || Number.isNaN(d.getTime())) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
+    const year = parts.find((p) => p.type === 'year')?.value || '';
+    const month = parts.find((p) => p.type === 'month')?.value || '';
+    const day = parts.find((p) => p.type === 'day')?.value || '';
+    return year && month && day ? `${year}-${month}-${day}` : '';
+  } catch {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+}
+
+function normalizeActionType(value) {
+  const s = String(value || '').trim().toLowerCase();
+  if (!s) return '';
+  const map = {
+    new_property: 'new_property',
+    newproperty: 'new_property',
+    rights_analysis: 'rights_analysis',
+    rightsanalysis: 'rights_analysis',
+    site_inspection: 'site_inspection',
+    siteinspection: 'site_inspection',
+    daily_issue: 'daily_issue',
+    dailyissue: 'daily_issue',
+    property_update: 'property_update',
+    propertyupdate: 'property_update',
+  };
+  return map[s] || '';
+}
+
+function cleanText(value, max = 500) {
+  const s = String(value || '').trim();
+  return s ? s.slice(0, max) : null;
+}
+
+function normalizeChangedFields(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of value) {
+    const s = String(entry || '').trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s.slice(0, 80));
+  }
+  return out;
+}
+
+function summarizeActivityRows(rows) {
+  const defs = {
+    new_property: 'newProperty',
+    rights_analysis: 'rightsAnalysis',
+    site_inspection: 'siteInspection',
+    daily_issue: 'dailyIssue',
+  };
+  const buckets = {
+    newProperty: new Set(),
+    rightsAnalysis: new Set(),
+    siteInspection: new Set(),
+    dailyIssue: new Set(),
+  };
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const bucket = defs[String(row?.action_type || '').trim()];
+    if (!bucket) continue;
+    const key = String(
+      row?.property_id ||
+      row?.property_identity_key ||
+      row?.property_item_no ||
+      row?.property_address ||
+      row?.id ||
+      ''
+    ).trim();
+    if (!key) continue;
+    buckets[bucket].add(key);
+  }
+  const counts = {
+    newProperty: buckets.newProperty.size,
+    rightsAnalysis: buckets.rightsAnalysis.size,
+    siteInspection: buckets.siteInspection.size,
+    dailyIssue: buckets.dailyIssue.size,
+  };
+  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue;
+  return counts;
+}
+
+function normalizeActivityEntry(entry, ctx) {
+  const actionType = normalizeActionType(entry?.actionType || entry?.action_type);
+  if (!actionType) return null;
+  return {
+    actor_id: ctx.userId,
+    actor_name: cleanText(ctx.name || ctx.email || '', 120),
+    property_id: cleanText(entry?.propertyId || entry?.property_id, 120),
+    property_identity_key: cleanText(entry?.propertyIdentityKey || entry?.property_identity_key, 180),
+    property_item_no: cleanText(entry?.propertyItemNo || entry?.property_item_no, 120),
+    property_address: cleanText(entry?.propertyAddress || entry?.property_address, 500),
+    action_type: actionType,
+    action_date: /^\d{4}-\d{2}-\d{2}$/.test(String(entry?.actionDate || entry?.action_date || '').trim())
+      ? String(entry.actionDate || entry.action_date).trim()
+      : kstDateKey(),
+    changed_fields: normalizeChangedFields(entry?.changedFields || entry?.changed_fields),
+    note: cleanText(entry?.note, 4000),
+  };
+}
+
+async function handleActivityLog(req, res) {
+  if (!hasSupabaseAdminEnv()) {
+    return send(res, 501, { ok: false, message: '일일업무일지 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
+  }
+
+  let ctx = null;
+  try {
+    ctx = await resolveCurrentUserContext(req);
+  } catch (err) {
+    return send(res, 500, { ok: false, message: err?.message || '사용자 확인에 실패했습니다.' });
+  }
+
+  if (!ctx?.userId) return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+  if (!['staff', 'admin'].includes(String(ctx.role || '').trim())) {
+    return send(res, 403, { ok: false, message: '담당자 또는 관리자 권한이 필요합니다.' });
+  }
+
+  if (req.method === 'GET') {
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(url.searchParams.get('date') || '').trim())
+        ? String(url.searchParams.get('date')).trim()
+        : kstDateKey();
+      const requestedActorId = cleanText(url.searchParams.get('actor_id'), 120);
+      const actorId = ctx.role === 'admin' && requestedActorId ? requestedActorId : ctx.userId;
+      const rows = await supabaseRest(
+        `/rest/v1/property_activity_logs?select=id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`
+      );
+      return send(res, 200, {
+        ok: true,
+        date,
+        actorId,
+        counts: summarizeActivityRows(rows),
+        items: Array.isArray(rows) ? rows : [],
+      });
+    } catch (err) {
+      const rawMessage = err?.message || '일일업무일지 조회 실패';
+      const message = /property_activity_logs/i.test(String(rawMessage))
+        ? 'property_activity_logs 테이블이 없거나 접근할 수 없습니다. migration SQL을 먼저 실행해 주세요.'
+        : rawMessage;
+      return send(res, err?.status || 500, { ok: false, message });
+    }
+  }
+
+  if (req.method === 'POST') {
+    try {
+      const body = req.__jsonBody || getJsonBody(req);
+      const rows = (Array.isArray(body?.entries) ? body.entries : [body])
+        .map((entry) => normalizeActivityEntry(entry, ctx))
+        .filter(Boolean);
+      if (!rows.length) {
+        return send(res, 400, { ok: false, message: '기록할 업무일지 항목이 없습니다.' });
+      }
+      const created = await supabaseRest('/rest/v1/property_activity_logs', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        json: rows,
+      });
+      return send(res, 201, {
+        ok: true,
+        createdCount: Array.isArray(created) ? created.length : 0,
+        items: Array.isArray(created) ? created : [],
+      });
+    } catch (err) {
+      const rawMessage = err?.message || '일일업무일지 기록 실패';
+      const message = /property_activity_logs/i.test(String(rawMessage))
+        ? 'property_activity_logs 테이블이 없거나 접근할 수 없습니다. migration SQL을 먼저 실행해 주세요.'
+        : rawMessage;
+      return send(res, err?.status || 500, { ok: false, message });
+    }
+  }
+
+  return send(res, 405, { ok: false, message: 'Method Not Allowed' });
+}
+
 function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName = '', isPatch = false } = {}) {
   const row = omitUndefined({
     item_no: input.item_no ?? input.itemNo,
@@ -169,7 +357,7 @@ async function handleSupabaseWrite(req, res) {
   if (!isAllowedNonGetRole(ctx.role)) return send(res, 403, { ok: false, message: '권한이 없습니다.' });
 
   if (req.method === 'POST') {
-    const body = getJsonBody(req);
+    const body = req.__jsonBody || getJsonBody(req);
     const rowInput = body.row && typeof body.row === 'object' ? body.row : body;
     const row = buildSupabasePropertyRow(rowInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: false });
     if (!row.address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
@@ -183,7 +371,7 @@ async function handleSupabaseWrite(req, res) {
   }
 
   if (req.method === 'PATCH') {
-    const body = getJsonBody(req);
+    const body = req.__jsonBody || getJsonBody(req);
     const targetId = String(body.targetId || body.id || body.globalId || '').trim();
     if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(targetId)가 필요합니다.' });
 
@@ -220,7 +408,7 @@ function handleLegacyWrite(req, res) {
   const store = getStore();
 
   if (req.method === 'POST') {
-    const body = getJsonBody(req);
+    const body = req.__jsonBody || getJsonBody(req);
     const row = body.row && typeof body.row === 'object' ? body.row : body;
     const address = String(row.address || '').trim();
     if (!address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
@@ -252,7 +440,7 @@ function handleLegacyWrite(req, res) {
   }
 
   if (req.method === 'PATCH') {
-    const body = getJsonBody(req);
+    const body = req.__jsonBody || getJsonBody(req);
     const targetId = String(body.targetId || body.id || '').trim();
     const item = store.properties.find((v) => String(v.id || '') === targetId);
     if (!item) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
@@ -273,10 +461,16 @@ function handleLegacyWrite(req, res) {
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
 
+  const url = new URL(req.url, 'http://localhost');
+  const dailyReportRequested = ['1', 'true', 'yes'].includes(String(url.searchParams.get('daily_report') || '').trim().toLowerCase());
+
+  if (req.method === 'GET' && dailyReportRequested) {
+    return handleActivityLog(req, res);
+  }
+
   if (req.method === 'GET') {
     const store = getStore();
     const session = getSession(req);
-    const url = new URL(req.url, 'http://localhost');
     const source = (url.searchParams.get('source') || 'all').toLowerCase();
     const q = (url.searchParams.get('q') || '').trim().toLowerCase();
     const status = (url.searchParams.get('status') || '').trim().toLowerCase();
@@ -327,6 +521,15 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    if (req.method === 'POST') {
+      const body = req.__jsonBody || getJsonBody(req);
+      const action = String(body?.action || '').trim().toLowerCase();
+      if (action === 'daily_report_log' || action === 'daily-report-log' || action === 'dailyreportlog') {
+        req.__jsonBody = body;
+        return handleActivityLog(req, res);
+      }
+      req.__jsonBody = body;
+    }
     if (hasSupabaseAdminEnv()) return await handleSupabaseWrite(req, res);
     return handleLegacyWrite(req, res);
   } catch (err) {

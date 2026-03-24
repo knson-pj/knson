@@ -302,7 +302,7 @@
     if (state.dailyReport.loading && !options.force) return state.dailyReport.counts || emptyDailyReportCounts();
     state.dailyReport.loading = true;
     try {
-      const data = await apiJson(`/agent/daily-report?date=${encodeURIComponent(dateKey)}`);
+      const data = await apiJson(`/properties?daily_report=1&date=${encodeURIComponent(dateKey)}`);
       const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
       state.dailyReport = {
         dateKey,
@@ -384,9 +384,9 @@
   async function recordDailyReportEntries(entries) {
     const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.actionType);
     if (!safeEntries.length) return;
-    await apiJson('/agent/daily-report', {
+    await apiJson('/properties', {
       method: 'POST',
-      json: { entries: safeEntries },
+      json: { action: 'daily_report_log', entries: safeEntries },
     });
     if (els.dailyReportModal && !els.dailyReportModal.classList.contains('hidden')) {
       await refreshDailyReportSummary({ force: true, silent: true });
@@ -1441,38 +1441,14 @@
     return merged;
   }
 
-  async function insertPropertyRowResilient(sb, row) {
-    let current = { ...(row || {}) };
-    const removed = new Set();
-    for (let i = 0; i < 16; i += 1) {
-      const { data, error } = await sb.from("properties").insert(current).select("id").limit(1);
-      if (!error) {
-        if (Array.isArray(data) && data.length) return data[0];
-        return null;
-      }
-      const missing = extractSchemaMissingColumn(error);
-      if (!missing || removed.has(missing) || !(missing in current)) throw error;
-      removed.add(missing);
-      current = omitKeys(current, [missing]);
-    }
-    throw new Error("properties insert failed after schema fallback retries");
+  async function insertPropertyRowResilient(_sb, row) {
+    const saveRes = await apiJson(`/properties`, { method: "POST", json: { row } });
+    return saveRes?.item || null;
   }
 
-  async function updatePropertyRowResilient(sb, targetId, patch) {
-    let current = { ...(patch || {}) };
-    const removed = new Set();
-    const col = String(targetId).includes(":") ? "global_id" : "id";
-    for (let i = 0; i < 16; i += 1) {
-      const { error } = await sb.from("properties").update(current).eq(col, targetId);
-      if (!error) {
-        return { id: targetId };
-      }
-      const missing = extractSchemaMissingColumn(error);
-      if (!missing || removed.has(missing) || !(missing in current)) throw error;
-      removed.add(missing);
-      current = omitKeys(current, [missing]);
-    }
-    throw new Error("properties update failed after schema fallback retries");
+  async function updatePropertyRowResilient(_sb, targetId, patch) {
+    const saveRes = await apiJson(`/properties`, { method: "PATCH", json: { targetId, patch } });
+    return saveRes?.item || { id: targetId };
   }
 
   async function submitNewProperty() {
