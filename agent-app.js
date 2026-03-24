@@ -1218,14 +1218,14 @@
     const statusVal = readStr("status") || null;
     const rightsVal = readStr("rightsAnalysis") || null;
     const siteVal = readStr("siteInspection") || null;
-    const prevAssetTypeVal = String(item.assetType === "-" ? "" : (item.assetType || "")).trim();
-    const prevStatusVal = String(item.status || "").trim();
+    const prevAssetTypeDbVal = String(item?._raw?.asset_type || "").trim();
+    const prevStatusDbVal = String(item?._raw?.status || "").trim();
 
     const triedToChangeLockedFields = [];
-    if (prevAssetTypeVal && assetTypeVal !== null && assetTypeVal !== prevAssetTypeVal) {
+    if (prevAssetTypeDbVal && assetTypeVal !== null && assetTypeVal !== prevAssetTypeDbVal) {
       triedToChangeLockedFields.push("세부유형");
     }
-    if (prevStatusVal && statusVal !== null && statusVal !== prevStatusVal) {
+    if (prevStatusDbVal && statusVal !== null && statusVal !== prevStatusDbVal) {
       triedToChangeLockedFields.push("진행상태");
     }
     if (triedToChangeLockedFields.length) {
@@ -1235,8 +1235,8 @@
       return;
     }
 
-    if (assetTypeVal !== null) patch.asset_type = assetTypeVal;
-    if (statusVal !== null) patch.status = statusVal;
+    if (assetTypeVal !== null && (!prevAssetTypeDbVal || assetTypeVal !== prevAssetTypeDbVal)) patch.asset_type = assetTypeVal;
+    if (statusVal !== null && (!prevStatusDbVal || statusVal !== prevStatusDbVal)) patch.status = statusVal;
     // rights_analysis, site_inspection 은 DB 컬럼 없음 → raw 에만 저장
 
     // opinion → DB의 memo 컬럼으로 매핑 (opinion 컬럼 없음)
