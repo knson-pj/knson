@@ -1205,15 +1205,15 @@
       const targetId = item.id || item.globalId;
 
       // raw JSON 업데이트 — 기존 raw에서 raw 키 자체는 제외하여 중첩 방지
-      const existingRaw = item._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
-      delete existingRaw.raw; // 중첩 raw 제거
-      let newRaw = { ...existingRaw };
-      if (assetTypeVal !== null) newRaw.assetType = assetTypeVal;
-      if (statusVal !== null) newRaw.status = statusVal;
-      if (rightsVal !== null) newRaw.rightsAnalysis = rightsVal;
-      if (siteVal !== null) newRaw.siteInspection = siteVal;
-      if (patch.memo !== undefined) { newRaw.opinion = patch.memo; newRaw.memo = patch.memo; }
-      newRaw.opinionHistory = opinionHistory;
+      const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
+      const newRaw = sanitizePropertyRawForSave(existingRaw, {
+        ...(assetTypeVal !== null ? { assetType: assetTypeVal } : {}),
+        ...(statusVal !== null ? { status: statusVal } : {}),
+        ...(rightsVal !== null ? { rightsAnalysis: rightsVal } : {}),
+        ...(siteVal !== null ? { siteInspection: siteVal } : {}),
+        ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
+        opinionHistory,
+      });
 
       const workCategories = [];
       const changedFields = {};
@@ -1399,6 +1399,50 @@
     return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
   }
 
+  function sanitizeJsonValue(value, depth = 0, seen) {
+    if (value == null) return value;
+    if (depth > 6) return undefined;
+    const t = typeof value;
+    if (t === "string" || t === "number" || t === "boolean") return value;
+    if (t !== "object") return undefined;
+    const bag = seen || new WeakSet();
+    if (bag.has(value)) return undefined;
+    bag.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const out = [];
+        for (const item of value.slice(0, 500)) {
+          const v = sanitizeJsonValue(item, depth + 1, bag);
+          if (v !== undefined) out.push(v);
+        }
+        return out;
+      }
+      const out = {};
+      for (const [k, v] of Object.entries(value)) {
+        if (k === "raw") continue;
+        const sv = sanitizeJsonValue(v, depth + 1, bag);
+        if (sv !== undefined) out[k] = sv;
+      }
+      return out;
+    } finally {
+      bag.delete(value);
+    }
+  }
+
+  function sanitizePropertyRawForSave(raw, overrides = {}) {
+    const base = raw && typeof raw === "object" ? (sanitizeJsonValue(raw, 0) || {}) : {};
+    if (base && typeof base === "object") delete base.raw;
+    const merged = { ...(base || {}), ...(overrides || {}) };
+    if (Array.isArray(merged.opinionHistory)) {
+      merged.opinionHistory = merged.opinionHistory.slice(-200).map((entry) => ({
+        date: String(entry?.date || "").trim(),
+        text: String(entry?.text || "").trim(),
+        author: String(entry?.author || "").trim(),
+      })).filter((entry) => entry.date || entry.text || entry.author);
+    }
+    return merged;
+  }
+
   async function insertPropertyRowResilient(sb, row) {
     let current = { ...(row || {}) };
     const removed = new Set();
@@ -1421,10 +1465,9 @@
     const removed = new Set();
     const col = String(targetId).includes(":") ? "global_id" : "id";
     for (let i = 0; i < 16; i += 1) {
-      const { data, error } = await sb.from("properties").update(current).eq(col, targetId).select("id").limit(1);
+      const { error } = await sb.from("properties").update(current).eq(col, targetId);
       if (!error) {
-        if (Array.isArray(data) && data.length) return data[0];
-        throw Object.assign(new Error("NO_ROWS_UPDATED"), { code: "NO_ROWS_UPDATED" });
+        return { id: targetId };
       }
       const missing = extractSchemaMissingColumn(error);
       if (!missing || removed.has(missing) || !(missing in current)) throw error;
