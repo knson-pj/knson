@@ -1160,3 +1160,70 @@ html[data-theme="dark"] .btn-fav-filter.is-active{
   .work-property-card{padding:10px 14px;min-height:auto;align-items:flex-start;flex-wrap:wrap;}
   .work-action-pill{min-height:36px;}
 }
+
+
+/* ── Agent page only: daily report v2 ── */
+.daily-report-modal-card-v2{width:min(1180px,calc(100% - 24px));}
+.daily-report-body-v2{gap:24px;}
+.daily-report-copy-v2{gap:2px;padding:0 2px;}
+.daily-report-copy-v2 p{margin:0;font-size:15px;font-weight:800;line-height:1.45;}
+.daily-report-flow{
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--surface);
+  padding:22px 26px;
+  min-height:320px;
+}
+.daily-report-flow-empty{
+  min-height:240px;display:grid;place-items:center;
+  color:var(--muted);font-weight:700;font-size:14px;
+}
+.daily-report-flow-inner{display:grid;grid-template-columns:128px minmax(0,1fr);gap:18px;align-items:center;min-height:260px;}
+.daily-report-agent-col{position:relative;display:flex;align-items:center;justify-content:center;min-height:220px;}
+.daily-report-agent-col::after{content:"";position:absolute;right:-2px;top:16px;bottom:16px;width:2px;background:#d6d3d1;border-radius:999px;}
+.daily-report-agent-node{position:relative;z-index:1;min-width:68px;padding:9px 16px;border-radius:14px;border:1px solid #d0b23e;background:#f4ce45;color:#111827;font-weight:900;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.04);}
+.daily-report-tree-col{display:grid;gap:14px;}
+.daily-report-row{display:grid;grid-template-columns:minmax(0,1fr) 182px;gap:18px;align-items:center;position:relative;}
+.daily-report-row::before{content:"";position:absolute;left:-18px;top:50%;width:18px;height:2px;background:#d6d3d1;border-radius:999px;}
+.daily-report-prop-node{position:relative;min-height:44px;display:flex;align-items:center;gap:8px;padding:0 16px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text);font-weight:800;box-shadow:0 1px 0 rgba(0,0,0,.01);}
+.daily-report-prop-node::after{content:"";position:absolute;right:-18px;top:50%;width:18px;height:2px;background:#d6d3d1;border-radius:999px;}
+.daily-report-prop-kind{font-weight:900;white-space:nowrap;}
+.daily-report-prop-kind.auction{color:#d946ef;}
+.daily-report-prop-kind.onbid{color:#38bdf8;}
+.daily-report-prop-kind.realtor{color:#22c55e;}
+.daily-report-prop-kind.general{color:#64748b;}
+.daily-report-prop-title{color:#6b7280;font-weight:800;min-width:0;word-break:keep-all;}
+.daily-report-actions-col{display:grid;gap:10px;}
+.daily-report-action-node{position:relative;min-height:38px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 14px;border:1px solid var(--line);border-radius:14px;background:#fff;font-size:14px;font-weight:900;white-space:nowrap;}
+.daily-report-action-node strong{color:#16a34a;}
+.daily-report-note-wrap-v2{padding:18px 18px 12px;}
+.daily-report-note-v2{min-height:98px;text-align:center;font-size:15px;font-weight:700;color:var(--text);}
+.daily-report-note-v2::placeholder{text-align:center;}
+
+/* ── Agent page only: edit modal v2 ── */
+.agent-edit-modal-card{width:min(980px,calc(100% - 24px));}
+.agent-edit-form{gap:16px;}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+.agent-lock-field .input,.agent-lock-input{background:#f8fafc;color:#4b5563;font-weight:700;cursor:not-allowed;}
+.agent-edit-form .field > span{font-size:12px;}
+.agent-edit-form .input{min-height:42px;}
+.agent-edit-textarea{min-height:86px;resize:vertical;}
+.agent-history-wrap{margin-top:0;}
+@media (max-width: 1024px){
+  .daily-report-flow-inner{grid-template-columns:1fr;gap:16px;min-height:auto;}
+  .daily-report-agent-col{min-height:auto;justify-content:flex-start;padding-left:12px;}
+  .daily-report-agent-col::after{left:46px;right:auto;top:100%;bottom:-14px;width:2px;height:14px;}
+  .daily-report-row{grid-template-columns:1fr;gap:10px;}
+  .daily-report-row::before,.daily-report-prop-node::after{display:none;}
+  .daily-report-actions-col{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .grid4{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width: 720px){
+  .agent-edit-modal-card{width:min(100%,calc(100% - 16px));}
+  .grid4,.grid3,.grid2{grid-template-columns:1fr !important;}
+  .daily-report-copy-v2 p{font-size:14px;}
+  .daily-report-flow{padding:16px;min-height:auto;}
+  .daily-report-actions-col{grid-template-columns:1fr;}
+  .daily-report-note-v2{min-height:120px;text-align:left;}
+  .daily-report-note-v2::placeholder{text-align:left;}
+}

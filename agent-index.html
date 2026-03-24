@@ -33,7 +33,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./admin-styles.css?v=20260324-daily1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260324-agentui1" />
 </head>
 <body>
   <div class="admin-shell">
@@ -144,25 +144,43 @@
     </main>
   </div>
 
-  <!-- 물건 편집 모달 (제한적) -->
+  <!-- 물건 편집 모달 (담당자 전용) -->
   <div id="agEditModal" class="modal hidden" aria-hidden="true">
     <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card">
+    <div class="modal-card agent-edit-modal-card">
       <div class="modal-header">
         <h3>물건 정보 수정</h3>
         <button id="agEditClose" class="icon-btn" aria-label="닫기">✕</button>
       </div>
-      <form id="agEditForm" class="modal-body">
-        <div class="grid2">
-          <label class="field"><span>물건번호</span><input name="itemNo" class="input" type="text" disabled /></label>
-          <label class="field"><span>구분</span><input name="sourceType" class="input" type="text" disabled /></label>
+      <form id="agEditForm" class="modal-body agent-edit-form" autocomplete="off">
+        <div class="agent-edit-topline grid4">
+          <label class="field agent-lock-field"><span>물건번호</span><input name="itemNo" class="input" type="text" readonly /></label>
+          <label class="field agent-lock-field"><span>구분</span><input name="sourceType" class="input" type="text" readonly /></label>
+          <label class="field agent-lock-field"><span>세부유형</span><input name="assetType" class="input" type="text" readonly /></label>
+          <label class="field agent-lock-field"><span>진행상태</span><input name="status" class="input" type="text" readonly /></label>
         </div>
 
-        <label class="field"><span>주소</span><input name="address" class="input" type="text" disabled /></label>
+        <label class="field agent-lock-field">
+          <span>주소</span>
+          <input name="address" class="input" type="text" readonly />
+        </label>
 
-        <div class="grid2">
-          <label class="field"><span>세부유형</span><input name="assetType" class="input" type="text" autocomplete="off" /></label>
-          <label class="field"><span>진행상태</span><input name="status" class="input" type="text" autocomplete="off" /></label>
+        <div class="grid3">
+          <label class="field"><span>층수</span><input name="floor" class="input" type="text" placeholder="예: 1 / B1" /></label>
+          <label class="field"><span>총층</span><input name="totalfloor" class="input" type="text" placeholder="예: 15" /></label>
+          <label class="field"><span>사용승인일</span><input name="useapproval" class="input" type="date" /></label>
+        </div>
+
+        <div class="grid3">
+          <label class="field"><span>공용면적(평)</span><input name="commonarea" class="input" type="text" inputmode="decimal" placeholder="예: 23" /></label>
+          <label class="field"><span>전용면적(평)</span><input name="exclusivearea" class="input" type="text" inputmode="decimal" placeholder="예: 10.74" /></label>
+          <label class="field"><span>토지면적(평)</span><input name="sitearea" class="input" type="text" inputmode="decimal" placeholder="예: 8.00" /></label>
+        </div>
+
+        <div class="grid3">
+          <label class="field"><span>감정가(매각가)</span><input name="priceMain" class="input" type="text" inputmode="numeric" placeholder="예: 509,000,000" /></label>
+          <label class="field"><span>현재가격</span><input name="currentPrice" class="input" type="text" inputmode="numeric" placeholder="예: 356,300,000" /></label>
+          <label class="field"><span>주요일정</span><input name="dateMain" class="input" type="text" placeholder="예: 2026-04-23 오전 09:00" /></label>
         </div>
 
         <div class="grid2">
@@ -172,11 +190,10 @@
 
         <label class="field">
           <span>금일 이슈사항</span>
-          <textarea name="opinion" class="input" rows="3" placeholder="오늘 발생한 이슈를 기록해주세요"></textarea>
+          <textarea name="opinion" class="input agent-edit-textarea" rows="3" placeholder="오늘 발생한 이슈를 기록해주세요"></textarea>
         </label>
 
-        <!-- 물건 History -->
-        <div class="opinion-history-wrap">
+        <div class="opinion-history-wrap agent-history-wrap">
           <div class="opinion-history-title">물건 History</div>
           <div id="agHistoryList" class="opinion-history-list"></div>
         </div>
@@ -314,27 +331,26 @@
   <!-- 일일 업무 일지 -->
   <div id="dailyReportModal" class="modal hidden" aria-hidden="true">
     <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-card daily-report-modal-card">
+    <div class="modal-card daily-report-modal-card daily-report-modal-card-v2">
       <div class="modal-header daily-report-header">
         <h3>일일 업무 일지</h3>
         <button id="dailyReportClose" class="icon-btn" aria-label="닫기">✕</button>
       </div>
-      <div class="modal-body daily-report-body">
+      <div class="modal-body daily-report-body daily-report-body-v2">
         <section class="daily-report-section">
           <h4><span>1.</span> Daily report</h4>
-          <div class="daily-report-grid">
-            <div class="daily-report-copy">
-              <p>오늘도 수고하셨습니다(^^</p>
-              <p>금일은 총 <strong id="dailyReportTotal">0</strong>건의 Log가 기록되었습니다.</p>
-            </div>
-            <div id="dailyReportCounts" class="daily-report-count-box" aria-live="polite"></div>
+          <div class="daily-report-copy daily-report-copy-v2">
+            <p>오늘도 수고하셨습니다^^</p>
+            <p id="dailyReportLead">금일은 총 0건 정보를 수정등록 하셨네요.</p>
+            <p>오류가 없는지 다시한번 확인해 주세요.</p>
           </div>
+          <div id="dailyReportFlow" class="daily-report-flow" aria-live="polite"></div>
         </section>
 
         <section class="daily-report-section">
           <h4><span>2.</span> 기타 사항</h4>
-          <div class="daily-report-note-wrap">
-            <textarea id="dailyReportNote" class="daily-report-note" placeholder="업무 관련 요청 사항이나 제안 등을 자유롭게 작성해주세요.&#10;없으면 빈칸으로 두셔도 좋습니다."></textarea>
+          <div class="daily-report-note-wrap daily-report-note-wrap-v2">
+            <textarea id="dailyReportNote" class="daily-report-note daily-report-note-v2" placeholder="업무 관련 요청 사항이나 제안 등을 자유롭게 작성해주세요.&#10;없으면 빈칸으로 두셔도 좋습니다."></textarea>
             <div class="daily-report-note-hint">메모는 오늘 날짜 기준으로 이 브라우저에 자동 저장됩니다.</div>
           </div>
         </section>
@@ -368,6 +384,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260320-agent"></script>
-  <script src="./agent-app.js?v=20260324-daily4"></script>
+  <script src="./agent-app.js?v=20260324-agentui1"></script>
 </body>
 </html>

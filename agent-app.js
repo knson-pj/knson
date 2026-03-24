@@ -142,7 +142,8 @@
     els.dailyReportClose = $("#dailyReportClose");
     els.dailyReportDone = $("#dailyReportDone");
     els.dailyReportTotal = $("#dailyReportTotal");
-    els.dailyReportCounts = $("#dailyReportCounts");
+    els.dailyReportLead = $("#dailyReportLead");
+    els.dailyReportFlow = $("#dailyReportFlow");
     els.dailyReportNote = $("#dailyReportNote");
 
     // Summary
@@ -336,6 +337,7 @@
       state.dailyReport = {
         dateKey,
         counts: nextCounts,
+        items: Array.isArray(data?.items) ? data.items : [],
         loadedAt: Date.now(),
         loading: false,
       };
@@ -348,19 +350,115 @@
     }
   }
 
+  function getDailyReportActorName() {
+    return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
+  }
+
+  function getPropertyKindLabel(sourceType) {
+    const map = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    return map[String(sourceType || "").trim()] || "일반";
+  }
+
+  function getPropertyKindClass(sourceType) {
+    const map = { auction: "auction", onbid: "onbid", realtor: "realtor", general: "general" };
+    return map[String(sourceType || "").trim()] || "general";
+  }
+
+  function findPropertyForActivityRow(row) {
+    const propertyId = String(row?.property_id || "").trim();
+    const propertyItemNo = String(row?.property_item_no || "").trim();
+    const propertyAddress = String(row?.property_address || "").trim();
+    const identityKey = String(row?.property_identity_key || "").trim();
+    return state.properties.find((item) => {
+      const raw = item?._raw || {};
+      const rawInner = raw?.raw || {};
+      return (
+        (propertyId && [item.id, item.globalId, raw.id, raw.global_id].map((v) => String(v || "").trim()).includes(propertyId)) ||
+        (propertyItemNo && String(item.itemNo || "").trim() === propertyItemNo) ||
+        (propertyAddress && String(item.address || "").trim() === propertyAddress) ||
+        (identityKey && String(rawInner.registrationIdentityKey || "").trim() === identityKey)
+      );
+    }) || null;
+  }
+
+  function groupDailyReportItems(items) {
+    const groups = [];
+    const map = new Map();
+    (Array.isArray(items) ? items : []).forEach((row) => {
+      const key = String(row?.property_id || row?.property_identity_key || row?.property_item_no || row?.property_address || row?.id || "").trim();
+      if (!key) return;
+      let group = map.get(key);
+      if (!group) {
+        const matched = findPropertyForActivityRow(row);
+        group = {
+          key,
+          item: matched,
+          row,
+          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0 },
+        };
+        map.set(key, group);
+        groups.push(group);
+      }
+      const action = String(row?.action_type || "").trim();
+      if (group.counts[action] !== undefined) group.counts[action] += 1;
+    });
+    return groups;
+  }
+
+  function buildDailyReportPropertyTitle(group) {
+    const item = group?.item;
+    const row = group?.row || {};
+    const address = String(item?.address || row?.property_address || "-").trim();
+    const floor = String(item?.floor || "").trim();
+    const area = item?.exclusivearea != null && item?.exclusivearea !== "" ? `${fmtArea(item.exclusivearea)}평` : "";
+    const meta = [floor, area].filter(Boolean).join(" | ");
+    return meta ? `${address} | ${meta}` : address;
+  }
+
   function renderDailyReport() {
     const counts = state.dailyReport?.counts || emptyDailyReportCounts();
-    if (els.dailyReportTotal) els.dailyReportTotal.textContent = String(counts.total || 0);
-    if (els.dailyReportCounts) {
-      const defs = [
-        ["rightsAnalysis", "권리분석"],
-        ["siteInspection", "현장조사"],
-        ["dailyIssue", "금일이슈사항"],
-        ["newProperty", "신규물건등록"],
-      ];
-      els.dailyReportCounts.innerHTML = defs.map(([key, label], idx) => `
-        <span class="daily-report-chip">${label} <strong class="daily-report-chip-count">${counts[key] || 0}</strong>건</span>${idx < defs.length - 1 ? '<span class="daily-report-sep">|</span>' : ''}
-      `).join("");
+    const total = Number(counts.total || 0);
+    if (els.dailyReportTotal) els.dailyReportTotal.textContent = String(total);
+    if (els.dailyReportLead) {
+      els.dailyReportLead.textContent = `금일은 총 ${total}건 정보를 수정등록 하셨네요.`;
+    }
+    if (els.dailyReportFlow) {
+      const groups = groupDailyReportItems(state.dailyReport?.items || []);
+      if (!groups.length) {
+        els.dailyReportFlow.innerHTML = '<div class="daily-report-flow-empty">아직 오늘 기록된 업무가 없습니다.</div>';
+      } else {
+        const actorName = esc(getDailyReportActorName());
+        els.dailyReportFlow.innerHTML = `
+          <div class="daily-report-flow-inner">
+            <div class="daily-report-agent-col">
+              <div class="daily-report-agent-node">${actorName}</div>
+            </div>
+            <div class="daily-report-tree-col">
+              ${groups.map((group) => {
+                const item = group.item;
+                const kindLabel = getPropertyKindLabel(item?.sourceType);
+                const kindClass = getPropertyKindClass(item?.sourceType);
+                const title = buildDailyReportPropertyTitle(group);
+                const actions = [
+                  ["rights_analysis", "권리분석"],
+                  ["site_inspection", "현장조사"],
+                  ["daily_issue", "금일이슈사항"],
+                  ["new_property", "신규물건등록"],
+                ].filter(([key]) => Number(group.counts[key] || 0) > 0);
+                return `
+                <div class="daily-report-row">
+                  <div class="daily-report-prop-node">
+                    <span class="daily-report-prop-kind ${kindClass}">${esc(kindLabel)}</span>
+                    <span class="daily-report-prop-title">${esc(title)}</span>
+                  </div>
+                  <div class="daily-report-actions-col">
+                    ${actions.map(([key, label]) => `<div class="daily-report-action-node"><span>${esc(label)}</span> <strong>${Number(group.counts[key] || 0)}건</strong></div>`).join("")}
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>
+          </div>`;
+      }
     }
   }
 
@@ -934,13 +1032,16 @@
       itemNo: firstText(item.item_no, item.itemNo, raw.itemNo, ""),
       address: firstText(item.address, item.location, raw.address, ""),
       assetType: firstText(item.asset_type, item.assetType, raw.assetType, raw["세부유형"], "-"),
-      floor: firstText(raw.floor, raw.floorText, raw["해당층"], ""),
-      totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
-      exclusivearea: toNum(item.exclusive_area ?? item.exclusivearea ?? raw.exclusivearea ?? raw["전용면적(평)"]),
-      priceMain: toNum(item.price_main ?? item.priceMain ?? raw.priceMain ?? raw["감정가(원)"]),
-      lowprice: toNum(item.lowprice ?? item.low_price ?? raw.lowprice ?? raw["최저입찰가(원)"] ?? raw["매각가"]),
+      floor: firstText(raw.floor, raw.floorText, raw["해당층"], item.floor, ""),
+      totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], item.total_floor, item.totalfloor, ""),
+      useapproval: firstText(raw.useapproval, raw.useApproval, item.use_approval, ""),
+      commonarea: toNum(raw.commonArea ?? raw.commonarea ?? item.common_area ?? item.commonarea),
+      exclusivearea: toNum(raw.exclusiveArea ?? raw.exclusivearea ?? item.exclusive_area ?? item.exclusivearea ?? raw["전용면적(평)"]),
+      sitearea: toNum(raw.siteArea ?? raw.sitearea ?? item.site_area ?? item.sitearea),
+      priceMain: toNum(raw.priceMain ?? item.price_main ?? item.priceMain ?? raw["감정가(원)"]),
+      lowprice: toNum(raw.currentPrice ?? raw.lowprice ?? item.lowprice ?? item.low_price ?? raw["최저입찰가(원)"] ?? raw["매각가"]),
       status: firstText(item.status, raw.status, ""),
-      dateMain: firstText(item.date_main, item.dateMain, raw.dateMain, raw["입찰일자"], ""),
+      dateMain: firstText(raw.dateMain, item.date_main, item.dateMain, raw["입찰일자"], ""),
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, ""),
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, ""),
       opinion: firstText(item.opinion, item.memo, raw.opinion, raw.memo, ""),
@@ -1171,25 +1272,71 @@
   }
 
   // ── Edit Modal ──
+  function getAgentEditableSnapshot(item) {
+    const raw = item?._raw?.raw || {};
+    const row = item?._raw || {};
+    return {
+      floor: firstText(raw.floor, row.floor, item?.floor, ""),
+      totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, row.total_floor, row.totalfloor, item?.totalfloor, ""),
+      useapproval: firstText(raw.useapproval, raw.useApproval, row.use_approval, item?.useapproval, ""),
+      commonarea: raw.commonArea ?? raw.commonarea ?? row.common_area ?? row.commonarea ?? item?.commonarea ?? null,
+      exclusivearea: raw.exclusiveArea ?? raw.exclusivearea ?? row.exclusive_area ?? row.exclusivearea ?? item?.exclusivearea ?? null,
+      sitearea: raw.siteArea ?? raw.sitearea ?? row.site_area ?? row.sitearea ?? item?.sitearea ?? null,
+      priceMain: raw.priceMain ?? row.price_main ?? item?.priceMain ?? null,
+      currentPrice: raw.currentPrice ?? raw.lowprice ?? row.lowprice ?? row.low_price ?? item?.lowprice ?? null,
+      dateMain: firstText(raw.dateMain, row.date_main, item?.dateMain, ""),
+      rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
+      siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
+      opinion: firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
+    };
+  }
+
+  function maybeAssignInitialColumnValue(patch, key, nextValue, currentValue) {
+    const currentText = currentValue == null ? "" : String(currentValue).trim();
+    const hasCurrent = currentText !== "";
+    if (nextValue == null || nextValue === "") {
+      if (!hasCurrent) patch[key] = null;
+      return;
+    }
+    if (!hasCurrent) patch[key] = nextValue;
+  }
+
   function openEditModal(item) {
     state.editingProperty = item;
     if (!els.agEditForm) return;
     const f = els.agEditForm;
+    const view = getAgentEditableSnapshot(item);
     const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+
+    configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
+
     setVal(f, "itemNo", item.itemNo);
     setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
-    setVal(f, "address", item.address);
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
-    const assetTypeLocked = !!String(item?._raw?.asset_type || "").trim();
-    const statusLocked = !!String(item?._raw?.status || "").trim();
-    if (f.elements.assetType) f.elements.assetType.readOnly = assetTypeLocked;
-    if (f.elements.status) f.elements.status.readOnly = statusLocked;
-    setVal(f, "rightsAnalysis", item.rightsAnalysis);
-    setVal(f, "siteInspection", item.siteInspection);
-    setVal(f, "opinion", ""); // 매일 신규 작성
+    setVal(f, "address", item.address);
+    setVal(f, "floor", view.floor);
+    setVal(f, "totalfloor", view.totalfloor);
+    setVal(f, "useapproval", formatDate(view.useapproval));
+    setVal(f, "commonarea", view.commonarea != null ? fmtArea(view.commonarea) : "");
+    setVal(f, "exclusivearea", view.exclusivearea != null ? fmtArea(view.exclusivearea) : "");
+    setVal(f, "sitearea", view.sitearea != null ? fmtArea(view.sitearea) : "");
+    setVal(f, "priceMain", view.priceMain != null ? formatMoneyInputValue(view.priceMain) : "");
+    setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
+    setVal(f, "dateMain", view.dateMain || "");
+    setVal(f, "rightsAnalysis", view.rightsAnalysis);
+    setVal(f, "siteInspection", view.siteInspection);
+    setVal(f, "opinion", "");
+
+    ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
+      const el = f.elements[name];
+      if (el) {
+        el.readOnly = true;
+        el.classList.add("agent-lock-input");
+      }
+    });
+
     if (els.agEditMsg) els.agEditMsg.textContent = "";
-    // 물건 History (담당자: 읽기 전용)
     renderOpinionHistory(els.agHistoryList, loadOpinionHistory(item), false);
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
@@ -1208,40 +1355,23 @@
     if (!item) return;
     const f = els.agEditForm;
     const readStr = (name) => String((f.elements[name]?.value) || "").trim();
-
+    const readNum = (name) => parseFlexibleNumber(f.elements[name]?.value);
     const newOpinionText = readStr("opinion");
-    const opinionHistory = appendOpinionEntry(
-      loadOpinionHistory(item),
-      newOpinionText,
-      state.session?.user
-    );
+    const opinionHistory = appendOpinionEntry(loadOpinionHistory(item), newOpinionText, state.session?.user);
 
     const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
-    const assetTypeVal = readStr("assetType") || null;
-    const statusVal = readStr("status") || null;
     const rightsVal = readStr("rightsAnalysis") || null;
     const siteVal = readStr("siteInspection") || null;
-    const prevAssetTypeDbVal = String(item?._raw?.asset_type || "").trim();
-    const prevStatusDbVal = String(item?._raw?.status || "").trim();
-
-    const triedToChangeLockedFields = [];
-    if (prevAssetTypeDbVal && assetTypeVal !== null && assetTypeVal !== prevAssetTypeDbVal) {
-      triedToChangeLockedFields.push("세부유형");
-    }
-    if (prevStatusDbVal && statusVal !== null && statusVal !== prevStatusDbVal) {
-      triedToChangeLockedFields.push("진행상태");
-    }
-    if (triedToChangeLockedFields.length) {
-      if (els.agEditMsg) {
-        els.agEditMsg.textContent = `현재 정책상 ${triedToChangeLockedFields.join(", ")} 값은 최초 입력 후 변경할 수 없습니다.`;
-      }
-      return;
-    }
-
-    // 잠긴 컬럼은 '최초 입력'인 경우에만 보낸다.
-    if (!prevAssetTypeDbVal && assetTypeVal !== null) patch.asset_type = assetTypeVal;
-    if (!prevStatusDbVal && statusVal !== null) patch.status = statusVal;
+    const floorVal = readStr("floor") || null;
+    const totalFloorVal = readStr("totalfloor") || null;
+    const useApprovalVal = readStr("useapproval") || null;
+    const commonAreaVal = readNum("commonarea");
+    const exclusiveAreaVal = readNum("exclusivearea");
+    const siteAreaVal = readNum("sitearea");
+    const priceMainVal = readNum("priceMain");
+    const currentPriceVal = readNum("currentPrice");
+    const dateMainVal = readStr("dateMain") || null;
 
     patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
 
@@ -1259,23 +1389,36 @@
 
       const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
       const newRaw = sanitizePropertyRawForSave(existingRaw, {
-        ...(assetTypeVal !== null ? { assetType: assetTypeVal } : {}),
-        ...(statusVal !== null ? { status: statusVal } : {}),
-        ...(rightsVal !== null ? { rightsAnalysis: rightsVal } : {}),
-        ...(siteVal !== null ? { siteInspection: siteVal } : {}),
+        floor: floorVal,
+        totalfloor: totalFloorVal,
+        useapproval: useApprovalVal,
+        commonArea: commonAreaVal,
+        exclusiveArea: exclusiveAreaVal,
+        siteArea: siteAreaVal,
+        priceMain: priceMainVal,
+        currentPrice: currentPriceVal,
+        dateMain: dateMainVal,
+        rightsAnalysis: rightsVal,
+        siteInspection: siteVal,
         ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
         opinionHistory,
       });
 
+      maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
+      maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
+      maybeAssignInitialColumnValue(patch, "exclusive_area", exclusiveAreaVal, item?._raw?.exclusive_area);
+      maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
+      maybeAssignInitialColumnValue(patch, "price_main", priceMainVal, item?._raw?.price_main);
+      maybeAssignInitialColumnValue(patch, "date_main", dateMainVal, item?._raw?.date_main);
+
       const workCategories = [];
       const changedFields = {};
-      const prevRights = String(item.rightsAnalysis || "").trim();
-      const prevSite = String(item.siteInspection || "").trim();
-      if (rightsVal && rightsVal !== prevRights) {
+      const prev = getAgentEditableSnapshot(item);
+      if (rightsVal && rightsVal !== String(prev.rightsAnalysis || "").trim()) {
         workCategories.push("rightsAnalysis");
         changedFields.rightsAnalysis = ["rightsAnalysis"];
       }
-      if (siteVal && siteVal !== prevSite) {
+      if (siteVal && siteVal !== String(prev.siteInspection || "").trim()) {
         workCategories.push("siteInspection");
         changedFields.siteInspection = ["siteInspection"];
       }
@@ -1284,7 +1427,6 @@
         changedFields.dailyIssue = ["opinion"];
       }
       patch.raw = newRaw;
-
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
       let query = sb.from("properties").update(patch).eq(targetCol, targetId).eq("assignee_id", currentUserId).select("*").limit(1);
@@ -1292,7 +1434,7 @@
       if (error) {
         const message = String(error?.message || "").trim();
         if (/not allowed/i.test(message)) {
-          throw new Error("현재 물건 수정은 DB 정책에 의해 차단되었습니다. assignee_id 또는 잠긴 컬럼 상태를 다시 확인해 주세요.");
+          throw new Error("현재 물건 수정은 DB 정책에 의해 차단되었습니다. 잠긴 항목과 assignee_id 배정을 다시 확인해 주세요.");
         }
         throw error;
       }
@@ -1306,6 +1448,8 @@
         try {
           await recordDailyReportEntries(buildActivityLogEntries(workCategories, {
             ...item,
+            floor: floorVal || item.floor,
+            totalfloor: totalFloorVal || item.totalfloor,
             rightsAnalysis: rightsVal || item.rightsAnalysis,
             siteInspection: siteVal || item.siteInspection,
             opinion: patch.memo || item.opinion,
