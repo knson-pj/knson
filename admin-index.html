@@ -34,7 +34,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="./admin-styles.css?v=20260324-work2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260320-split" />
 </head>
 <body>
   <div class="admin-shell">
@@ -80,7 +80,6 @@
           <button class="tab" data-tab="staff">등록 관리</button>
           <button class="tab" data-tab="regions">담당 지역 설정</button>
           <button class="tab" data-tab="geocoding">지오코딩</button>
-          <button class="tab" data-tab="workmgmt">업무관리</button>
         </div>
       </section>
 
@@ -357,36 +356,6 @@
               <tbody id="geocodeListBody"></tbody>
             </table>
             <div id="geocodeListEmpty" class="empty hidden">해당 항목이 없습니다.</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 업무관리 탭 -->
-      <section id="tab-workmgmt" class="panel tab-panel hidden">
-        <div class="panel-title-row">
-          <h2>업무관리</h2>
-          <div class="panel-actions-inline work-mgmt-actions">
-            <label class="field work-mgmt-date-field">
-              <span>기준일</span>
-              <input id="workMgmtDate" class="input" type="date" />
-            </label>
-            <button id="btnWorkMgmtRefresh" class="btn btn-secondary" type="button">새로고침</button>
-          </div>
-        </div>
-
-        <div class="work-mgmt-shell">
-          <div id="workMgmtMeta" class="work-mgmt-meta"></div>
-          <div id="workMgmtCanvas" class="work-mgmt-canvas">
-            <div class="work-mgmt-actors-wrap">
-              <div id="workMgmtActors" class="work-mgmt-actors"></div>
-            </div>
-            <div class="work-mgmt-map">
-              <div class="work-mgmt-axis" aria-hidden="true"></div>
-              <div class="work-mgmt-rows-wrap">
-                <div id="workMgmtRows" class="work-mgmt-rows"></div>
-                <div id="workMgmtEmpty" class="empty hidden">표시할 업무 로그가 없습니다.</div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -698,6 +667,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260320-split"></script>
-  <script src="./admin-app.js?v=20260324-work2"></script>
+  <script src="./admin-app.js?v=20260324-adminfast1"></script>
 </body>
 </html>

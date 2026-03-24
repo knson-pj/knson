@@ -104,14 +104,11 @@
     selectedPropertyIds: new Set(),
     propertyPage: 1,
     propertyPageSize: 30,
+    propertyMode: "page",
+    propertyTotalCount: 0,
+    propertySummary: null,
+    propertiesFullCache: null,
     geocodeRunning: false,
-    workMgmt: {
-      dateKey: '',
-      items: [],
-      selectedActorId: '',
-      loading: false,
-      loadedAt: 0,
-    },
   };
 
   const els = {};
@@ -133,8 +130,6 @@
 
   function init() {
     cacheEls();
-    state.workMgmt.dateKey = getKstDateKey();
-    if (els.workMgmtDate) els.workMgmtDate.value = state.workMgmt.dateKey;
     configureFormNumericUx(els.aemForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea", "latitude", "longitude"], amountNames: ["priceMain", "lowprice"] });
     configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     setupChrome();
@@ -251,15 +246,6 @@
       geocodeListTitle: $("#geocodeListTitle"),
       geocodeListBody: $("#geocodeListBody"),
       geocodeListEmpty: $("#geocodeListEmpty"),
-
-      // work management tab
-      tabWorkMgmt: $("#tab-workmgmt"),
-      workMgmtDate: $("#workMgmtDate"),
-      btnWorkMgmtRefresh: $("#btnWorkMgmtRefresh"),
-      workMgmtMeta: $("#workMgmtMeta"),
-      workMgmtActors: $("#workMgmtActors"),
-      workMgmtRows: $("#workMgmtRows"),
-      workMgmtEmpty: $("#workMgmtEmpty"),
 
       // new property modal
       btnNewProperty: $("#btnNewProperty"),
@@ -404,8 +390,8 @@ function bindEvents() {
 
         if (state.session?.user?.role === "admin") {
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
-          if (key === "geocoding") updateGeocodeStatusBar();
-          if (key === "workmgmt") loadWorkManagement().catch((e)=>handleAsyncError(e,"업무관리 로드 실패"));
+          if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { renderAssignmentTable(); }).catch((e)=>handleAsyncError(e,"지역 데이터 로드 실패"));
+          if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
         }
       });
     }
@@ -433,34 +419,34 @@ function bindEvents() {
           c.classList.toggle("is-active", c.dataset.card === next && next !== "");
         });
         state.propertyPage = 1;
-        renderPropertiesTable();
+        loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
       });
     });
 
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
       state.propertyFilters.status = String(e.target.value || "");
       state.propertyPage = 1;
-      renderPropertiesTable();
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
     if (els.propAreaFilter) els.propAreaFilter.addEventListener("change", (e) => {
       state.propertyFilters.area = String(e.target.value || "");
       state.propertyPage = 1;
-      renderPropertiesTable();
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
     if (els.propPriceFilter) els.propPriceFilter.addEventListener("change", (e) => {
       state.propertyFilters.priceRange = String(e.target.value || "");
       state.propertyPage = 1;
-      renderPropertiesTable();
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
     if (els.propRatioFilter) els.propRatioFilter.addEventListener("change", (e) => {
       state.propertyFilters.ratio50 = String(e.target.value || "");
       state.propertyPage = 1;
-      renderPropertiesTable();
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
     if (els.propKeyword) els.propKeyword.addEventListener("input", debounce((e) => {
       state.propertyFilters.keyword = String(e.target.value || "").toLowerCase();
       state.propertyPage = 1;
-      renderPropertiesTable();
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     }, 150));
 
     // CSV import (관리자만)
@@ -532,30 +518,6 @@ function bindEvents() {
       });
     }
 
-    // work management
-    if (els.workMgmtDate) {
-      els.workMgmtDate.addEventListener("change", () => {
-        state.workMgmt.dateKey = normalizeDateInputValue(els.workMgmtDate.value) || getKstDateKey();
-        els.workMgmtDate.value = state.workMgmt.dateKey;
-        loadWorkManagement({ force: true }).catch((e) => handleAsyncError(e, "업무관리 로드 실패"));
-      });
-    }
-    if (els.btnWorkMgmtRefresh) {
-      els.btnWorkMgmtRefresh.addEventListener("click", () => {
-        loadWorkManagement({ force: true }).catch((e) => handleAsyncError(e, "업무관리 로드 실패"));
-      });
-    }
-    if (els.workMgmtActors) {
-      els.workMgmtActors.addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-actor-id]");
-        if (!btn) return;
-        const actorId = String(btn.dataset.actorId || "").trim();
-        if (!actorId) return;
-        state.workMgmt.selectedActorId = actorId;
-        renderWorkManagement();
-      });
-    }
-
     // geocoding
     if (els.btnGeocodeRun) els.btnGeocodeRun.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return;
@@ -571,7 +533,7 @@ function bindEvents() {
       if (els[elKey]) {
         els[elKey].addEventListener("click", () => {
           const filter = els[elKey].dataset.geoFilter;
-          renderGeocodeList(filter);
+          ensureAuxiliaryPropertiesForAdmin().then(() => { renderGeocodeList(filter); }).catch((e)=>handleAsyncError(e, "지오코딩 데이터 로드 실패"));
         });
       }
     });
@@ -611,7 +573,6 @@ function bindEvents() {
       staff: els.tabStaff,
       regions: els.tabRegions,
       geocoding: els.tabGeocoding,
-      workmgmt: els.tabWorkMgmt,
     };
     Object.entries(map).forEach(([key, panel]) => {
       if (!panel) return;
@@ -750,45 +711,144 @@ function bindEvents() {
       .some((v) => String(v || '').trim() === target);
   }
 
-  async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
-    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+  const PROPERTY_LIST_SELECT = [
+    "id", "global_id", "item_no", "source_type", "is_general", "address", "asset_type",
+    "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+    "status", "price_main", "lowprice", "date_main", "source_url", "assignee_id",
+    "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
+    "memo", "latitude", "longitude", "region_gu", "region_dong", "date_uploaded",
+    "created_at", "geocode_status", "geocoded_at"
+  ].join(",");
+
+  function invalidatePropertyCollections() {
+    state.propertiesFullCache = null;
+    state.propertySummary = null;
+  }
+
+  function getAuxiliaryPropertiesSnapshot() {
+    return Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length
+      ? state.propertiesFullCache
+      : state.properties;
+  }
+
+  function hasActivePropertyFilters() {
+    const f = state.propertyFilters || {};
+    return !!(
+      String(f.activeCard || '').trim() ||
+      String(f.status || '').trim() ||
+      String(f.keyword || '').trim() ||
+      String(f.area || '').trim() ||
+      String(f.priceRange || '').trim() ||
+      String(f.ratio50 || '').trim()
+    );
+  }
+
+  function shouldUseFullPropertyDataset() {
+    return hasActivePropertyFilters();
+  }
+
+  async function fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid }) {
+    const from = Math.max(0, (Math.max(1, Number(page || 1)) - 1) * pageSize);
+    const to = from + pageSize - 1;
+    const queryBase = () => sb
+      .from("properties")
+      .select(PROPERTY_LIST_SELECT, { count: "exact" })
+      .order("date_uploaded", { ascending: false })
+      .range(from, to);
+
     if (isAdmin) {
-      const { data, error } = await queryBase();
+      const { data, error, count } = await queryBase();
       if (error) throw error;
-      return Array.isArray(data) ? data : [];
+      return { items: Array.isArray(data) ? data : [], total: Number(count || 0) };
     }
+
     const filters = [
       `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
       `assignee_id.eq.${uid}`,
     ];
     let lastError = null;
     for (const filter of filters) {
-      const { data, error } = await queryBase().or(filter);
+      const { data, error, count } = await queryBase().or(filter);
       if (!error) {
         const rows = Array.isArray(data) ? data : [];
-        return rows.filter((row) => rowAssignedToUid(row, uid));
+        return { items: rows.filter((row) => rowAssignedToUid(row, uid)), total: Number(count || rows.length || 0) };
       }
       lastError = error;
     }
     throw lastError;
   }
 
-  async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
+  async function fetchAllPropertiesLight(sb, { isAdmin, uid }) {
     const pageSize = 1000;
     const out = [];
-    let from = 0;
+    let page = 1;
     while (true) {
-      const rows = await fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid });
-      out.push(...rows);
-      if (rows.length < pageSize) break;
-      from += pageSize;
+      const { items } = await fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid });
+      out.push(...items);
+      if (items.length < pageSize) break;
+      page += 1;
     }
     return out;
   }
 
-  async function loadProperties() {
+  async function ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh = false } = {}) {
+    if (!forceRefresh && Array.isArray(state.propertiesFullCache)) return state.propertiesFullCache;
+    const rows = await fetchAllPropertiesLight(sb, { isAdmin, uid });
+    state.propertiesFullCache = Array.isArray(rows) ? rows.map(normalizeProperty) : [];
+    return state.propertiesFullCache;
+  }
+
+  async function fetchPropertySummary(sb) {
+    const countRows = async (builder) => {
+      let q = sb.from("properties").select("id", { count: "exact", head: true });
+      if (typeof builder === "function") q = builder(q) || q;
+      const { count, error } = await q;
+      if (error) throw error;
+      return Number(count || 0);
+    };
+
+    const [total, auction, onbid, realtorTotal, realtorDirect, general] = await Promise.all([
+      countRows(),
+      countRows((q) => q.eq("source_type", "auction")),
+      countRows((q) => q.eq("source_type", "onbid")),
+      countRows((q) => q.eq("source_type", "realtor")),
+      countRows((q) => q.eq("source_type", "realtor").eq("submitter_type", "realtor")),
+      countRows((q) => q.eq("source_type", "general")),
+    ]);
+
+    return {
+      total,
+      auction,
+      onbid,
+      realtor_direct: realtorDirect,
+      realtor_naver: Math.max(0, realtorTotal - realtorDirect),
+      general,
+    };
+  }
+
+  async function fetchPropertyDetail(sb, targetId) {
+    const col = String(targetId || '').includes(':') ? 'global_id' : 'id';
+    const { data, error } = await sb.from('properties').select('*').eq(col, targetId).limit(1).maybeSingle();
+    if (error) throw error;
+    return data ? normalizeProperty(data) : null;
+  }
+
+  async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
+    const page = Math.floor(Math.max(0, Number(from || 0)) / Math.max(1, Number(pageSize || 1))) + 1;
+    const { items } = await fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid });
+    return Array.isArray(items) ? items : [];
+  }
+
+  async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
+    return fetchAllPropertiesLight(sb, { isAdmin, uid });
+  }
+
+  async function loadProperties(options = {}) {
+    const refreshSummary = options.refreshSummary !== false;
+    const forceFull = !!options.forceFull;
+    const forceRefreshFull = !!options.forceRefreshFull;
+
     // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
-    // (Vercel API 401/CORS 이슈와 무관하게 안정적으로 동작)
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
 
     if (sb) {
@@ -802,19 +862,45 @@ function bindEvents() {
 
       if (!isAdmin && !uid) {
         state.properties = [];
+        state.propertyMode = 'page';
+        state.propertyTotalCount = 0;
         renderPropertiesTable();
         renderSummary();
         return;
       }
 
-      const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
-      state.properties = Array.isArray(data) ? data.map(normalizeProperty) : [];
+      const needsFull = forceFull || shouldUseFullPropertyDataset() || state.activeTab === 'regions' || state.activeTab === 'geocoding';
+
+      const summaryPromise = (refreshSummary || !state.propertySummary)
+        ? fetchPropertySummary(sb).catch((err) => {
+            console.warn('property summary load failed', err);
+            return state.propertySummary;
+          })
+        : Promise.resolve(state.propertySummary);
+
+      if (needsFull) {
+        const data = await ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: forceRefreshFull });
+        state.properties = Array.isArray(data) ? data.slice() : [];
+        state.propertyMode = 'full';
+        state.propertyTotalCount = state.properties.length;
+      } else {
+        let pageData = await fetchPropertiesPageLight(sb, state.propertyPage, state.propertyPageSize, { isAdmin, uid });
+        const maxPage = Math.max(1, Math.ceil(Number(pageData?.total || 0) / state.propertyPageSize));
+        if (state.propertyPage > maxPage) {
+          state.propertyPage = maxPage;
+          pageData = await fetchPropertiesPageLight(sb, state.propertyPage, state.propertyPageSize, { isAdmin, uid });
+        }
+        state.properties = Array.isArray(pageData?.items) ? pageData.items.map(normalizeProperty) : [];
+        state.propertyMode = 'page';
+        state.propertyTotalCount = Number(pageData?.total || 0);
+      }
+
+      state.propertySummary = await summaryPromise;
       pruneSelectedPropertyIds();
       hydrateAssignedAgentNames();
       renderPropertiesTable();
       renderSummary();
-      updateGeocodeStatusBar();
-      if (state.activeTab === "workmgmt") renderWorkManagement();
+      if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
       return;
     }
 
@@ -823,12 +909,23 @@ function bindEvents() {
     const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });
     state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
+    state.propertyMode = 'full';
+    state.propertyTotalCount = state.properties.length;
     pruneSelectedPropertyIds();
     hydrateAssignedAgentNames();
     renderPropertiesTable();
     renderSummary();
     updateGeocodeStatusBar();
-    if (state.activeTab === "workmgmt") renderWorkManagement();
+  }
+
+
+  async function ensureAuxiliaryPropertiesForAdmin(options = {}) {
+    const sb = isSupabaseMode() ? K.initSupabase() : null;
+    if (!sb) return getAuxiliaryPropertiesSnapshot();
+    const user = state.session?.user || loadSession()?.user || null;
+    const uid = String(user?.id || '').trim();
+    const isAdmin = user?.role === 'admin';
+    return ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: !!options.forceRefresh });
   }
 
   async function loadStaff() {
@@ -841,242 +938,6 @@ function bindEvents() {
     renderSummary();
     hydrateAssignedAgentNames();
     renderPropertiesTable();
-    if (state.activeTab === "workmgmt") renderWorkManagement();
-  }
-
-  function normalizeDateInputValue(value) {
-    const s = String(value || "").trim();
-    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
-  }
-
-  function getKstDateKey(value = new Date()) {
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    const utc = date.getTime() + date.getTimezoneOffset() * 60000;
-    const kst = new Date(utc + 9 * 60 * 60 * 1000);
-    const y = kst.getFullYear();
-    const m = String(kst.getMonth() + 1).padStart(2, "0");
-    const d = String(kst.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-
-  function normalizeWorkActionKeys(entry) {
-    const action = String(entry?.action_type || entry?.actionType || "").trim().toLowerCase();
-    const changed = Array.isArray(entry?.changed_fields) ? entry.changed_fields : (Array.isArray(entry?.changedFields) ? entry.changedFields : []);
-    if (action === "rights_analysis") return ["rightsAnalysis"];
-    if (action === "site_inspection") return ["siteInspection"];
-    if (action === "daily_issue") return ["dailyIssue"];
-    if (action === "new_property") return ["newProperty"];
-    if (action === "property_update") {
-      const out = [];
-      changed.forEach((field) => {
-        const key = String(field || "").trim();
-        if (["rightsAnalysis", "rights_analysis"].includes(key) && !out.includes("rightsAnalysis")) out.push("rightsAnalysis");
-        if (["siteInspection", "site_inspection"].includes(key) && !out.includes("siteInspection")) out.push("siteInspection");
-        if (["opinion", "memo", "dailyIssue", "daily_issue"].includes(key) && !out.includes("dailyIssue")) out.push("dailyIssue");
-        if (["registration", "newProperty", "new_property"].includes(key) && !out.includes("newProperty")) out.push("newProperty");
-      });
-      return out.length ? out : ["propertyUpdate"];
-    }
-    return action ? [action] : [];
-  }
-
-  function getWorkActionDefs() {
-    return [
-      ["rightsAnalysis", "권리분석", "rights"],
-      ["siteInspection", "현장조사", "site"],
-      ["dailyIssue", "금일이슈사항", "issue"],
-      ["newProperty", "신규물건등록", "new"],
-      ["propertyUpdate", "수정", "edit"],
-    ];
-  }
-
-  function getWorkActors(items) {
-    const counts = new Map();
-    (Array.isArray(items) ? items : []).forEach((item) => {
-      const actorId = String(item?.actor_id || item?.actorId || "").trim();
-      if (!actorId) return;
-      counts.set(actorId, (counts.get(actorId) || 0) + 1);
-    });
-    const staffRows = state.staff
-      .filter((row) => normalizeRole(row.role) === "staff")
-      .map((row) => ({ id: String(row.id || "").trim(), name: row.name || row.email || "담당자", count: counts.get(String(row.id || "").trim()) || 0 }))
-      .filter((row) => row.id);
-    const seen = new Set(staffRows.map((row) => row.id));
-    (Array.isArray(items) ? items : []).forEach((item) => {
-      const actorId = String(item?.actor_id || item?.actorId || "").trim();
-      if (!actorId || seen.has(actorId)) return;
-      staffRows.push({ id: actorId, name: String(item?.actor_name || item?.actorName || "담당자").trim() || "담당자", count: counts.get(actorId) || 0 });
-      seen.add(actorId);
-    });
-    return staffRows.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name, 'ko'));
-  }
-
-  function findPropertyForWorkItem(entry) {
-    const propertyId = String(entry?.property_id || entry?.propertyId || "").trim();
-    const identityKey = String(entry?.property_identity_key || entry?.propertyIdentityKey || "").trim();
-    const itemNo = String(entry?.property_item_no || entry?.propertyItemNo || "").trim();
-    const address = String(entry?.property_address || entry?.propertyAddress || "").trim();
-    const rows = Array.isArray(state.properties) ? state.properties : [];
-    const byId = rows.find((row) => {
-      const raw = row?._raw || {};
-      return [row.id, row.globalId, raw.id, raw.global_id].some((v) => String(v || "").trim() === propertyId);
-    });
-    if (byId) return byId;
-    if (identityKey) {
-      const byIdentity = rows.find((row) => {
-        const raw = row?._raw?.raw && typeof row._raw.raw === 'object' ? row._raw.raw : {};
-        const candidate = String(raw.registrationIdentityKey || buildRegistrationMatchKey(row) || "").trim();
-        return candidate && candidate === identityKey;
-      });
-      if (byIdentity) return byIdentity;
-    }
-    if (itemNo) {
-      const byItemNo = rows.find((row) => String(row.itemNo || row._raw?.item_no || "").trim() === itemNo);
-      if (byItemNo) return byItemNo;
-    }
-    if (address) {
-      const byAddress = rows.find((row) => String(row.address || "").trim() === address);
-      if (byAddress) return byAddress;
-    }
-    return null;
-  }
-
-  function buildWorkPropertyRows(actorId) {
-    const rows = Array.isArray(state.workMgmt.items) ? state.workMgmt.items : [];
-    const groups = new Map();
-    rows.filter((item) => String(item?.actor_id || item?.actorId || "").trim() === String(actorId || "").trim()).forEach((item) => {
-      const property = findPropertyForWorkItem(item);
-      const key = String(item?.property_id || item?.propertyId || property?.id || property?.globalId || item?.property_identity_key || item?.propertyIdentityKey || item?.property_item_no || item?.propertyItemNo || item?.property_address || item?.propertyAddress || `row-${groups.size + 1}`).trim();
-      if (!groups.has(key)) {
-        groups.set(key, {
-          key,
-          property,
-          item,
-          counts: { rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0, propertyUpdate: 0 },
-          latestAt: String(item?.created_at || item?.createdAt || ""),
-        });
-      }
-      const group = groups.get(key);
-      normalizeWorkActionKeys(item).forEach((actionKey) => {
-        if (Object.prototype.hasOwnProperty.call(group.counts, actionKey)) group.counts[actionKey] += 1;
-      });
-      const createdAt = String(item?.created_at || item?.createdAt || "");
-      if (createdAt && (!group.latestAt || createdAt > group.latestAt)) group.latestAt = createdAt;
-      if (!group.property && property) group.property = property;
-    });
-    return [...groups.values()].sort((a, b) => String(b.latestAt || "").localeCompare(String(a.latestAt || "")));
-  }
-
-  function compactWorkAddress(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return '주소 정보 없음';
-    let text = raw.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
-    const commaIdx = text.indexOf(',');
-    if (commaIdx > -1) text = text.slice(0, commaIdx).trim();
-    return text || raw;
-  }
-
-  function buildWorkMetaParts(property) {
-    const parts = [];
-    const floor = String(property?.floor || '').trim();
-    const area = formatAreaPyeong(property?.exclusivearea || property?.commonarea || null);
-    if (floor) parts.push(floor);
-    if (area !== '-') parts.push(`${area}평`);
-    return parts;
-  }
-
-  function buildWorkPropertyTitle(group) {
-    const property = group?.property || null;
-    const fallbackAddress = String(group?.item?.property_address || group?.item?.propertyAddress || '').trim() || '주소 정보 없음';
-    const sourceType = String(property?.sourceType || '').trim();
-    return {
-      sourceType,
-      sourceLabel: sourceType === 'auction' ? '경매' : sourceType === 'onbid' ? '공매' : sourceType === 'realtor' ? '중개' : sourceType === 'general' ? '일반' : '물건',
-      address: compactWorkAddress(String(property?.address || fallbackAddress).trim() || fallbackAddress),
-      metaParts: buildWorkMetaParts(property),
-    };
-  }
-
-  function renderWorkManagement() {
-    if (!els.workMgmtActors || !els.workMgmtRows || !els.workMgmtEmpty) return;
-    const items = Array.isArray(state.workMgmt.items) ? state.workMgmt.items : [];
-    const actors = getWorkActors(items);
-    const actorIds = new Set(actors.map((row) => row.id));
-    if (!state.workMgmt.selectedActorId || !actorIds.has(state.workMgmt.selectedActorId)) {
-      const firstWithItems = actors.find((row) => row.count > 0);
-      state.workMgmt.selectedActorId = firstWithItems?.id || actors[0]?.id || '';
-    }
-
-    if (els.workMgmtDate && els.workMgmtDate.value !== state.workMgmt.dateKey) {
-      els.workMgmtDate.value = state.workMgmt.dateKey || getKstDateKey();
-    }
-    if (els.workMgmtMeta) {
-      const propertyCount = new Set(items.map((item) => String(item?.property_id || item?.propertyIdentityKey || item?.property_identity_key || item?.property_item_no || item?.propertyItemNo || item?.property_address || '').trim()).filter(Boolean)).size;
-      els.workMgmtMeta.textContent = `${formatDate(state.workMgmt.dateKey)} 기준 · 담당자 ${actors.length.toLocaleString('ko-KR')}명 · 수정 물건 ${propertyCount.toLocaleString('ko-KR')}건`;
-    }
-
-    els.workMgmtActors.innerHTML = actors.map((actor) => {
-      const isActive = actor.id === state.workMgmt.selectedActorId;
-      const cls = `work-actor-chip${isActive ? ' is-active' : ''}${actor.count ? '' : ' is-muted'}`;
-      return `<button type="button" class="${cls}" data-actor-id="${escapeAttr(actor.id)}"><span>${escapeHtml(actor.name)}</span></button>`;
-    }).join('');
-
-    const propertyRows = state.workMgmt.selectedActorId ? buildWorkPropertyRows(state.workMgmt.selectedActorId) : [];
-    if (!actors.length || !propertyRows.length) {
-      els.workMgmtRows.innerHTML = '';
-      els.workMgmtEmpty.classList.remove('hidden');
-      els.workMgmtEmpty.textContent = actors.length ? '선택한 담당자의 업무 로그가 없습니다.' : '표시할 업무 로그가 없습니다.';
-      return;
-    }
-
-    els.workMgmtEmpty.classList.add('hidden');
-    const actionDefs = getWorkActionDefs();
-    els.workMgmtRows.innerHTML = propertyRows.map((group) => {
-      const title = buildWorkPropertyTitle(group);
-      const metaHtml = Array.isArray(title.metaParts) && title.metaParts.length
-        ? `<span class="work-property-meta">${escapeHtml(title.metaParts.join(' | '))}</span>`
-        : '';
-      const actionHtml = actionDefs
-        .filter(([key]) => (group.counts[key] || 0) > 0)
-        .map(([key, label, tone]) => `
-          <div class="work-action-pill is-${tone}">
-            <span class="work-action-label">${escapeHtml(label)}</span>
-            <strong>${escapeHtml(String(group.counts[key] || 0))}건</strong>
-          </div>`)
-        .join('');
-      return `
-        <div class="work-row">
-          <div class="work-property-node">
-            <div class="work-property-card">
-              <span class="work-source-tag is-${escapeAttr(title.sourceType || 'general')}">${escapeHtml(title.sourceLabel)}</span>
-              <span class="work-property-text">${escapeHtml(title.address)}</span>
-              ${metaHtml}
-            </div>
-          </div>
-          <div class="work-action-list">${actionHtml}</div>
-        </div>`;
-    }).join('');
-  }
-
-  async function loadWorkManagement(options = {}) {
-    const force = !!options.force;
-    if (state.workMgmt.loading && !force) return state.workMgmt.items;
-    const dateKey = normalizeDateInputValue(options.dateKey || els.workMgmtDate?.value || state.workMgmt.dateKey) || getKstDateKey();
-    state.workMgmt.loading = true;
-    state.workMgmt.dateKey = dateKey;
-    if (els.workMgmtDate) els.workMgmtDate.value = dateKey;
-    if (els.btnWorkMgmtRefresh) els.btnWorkMgmtRefresh.disabled = true;
-    try {
-      const data = await api(`/properties?daily_report=1&admin_view=1&date=${encodeURIComponent(dateKey)}`, { auth: true });
-      state.workMgmt.items = Array.isArray(data?.items) ? data.items : [];
-      state.workMgmt.loadedAt = Date.now();
-      renderWorkManagement();
-      return state.workMgmt.items;
-    } finally {
-      state.workMgmt.loading = false;
-      if (els.btnWorkMgmtRefresh) els.btnWorkMgmtRefresh.disabled = false;
-    }
   }
 
   function normalizeProperty(item) {
@@ -1301,7 +1162,8 @@ function bindEvents() {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       const regContext = buildRegisterLogContext("관리자 등록", state.session?.user);
       if (sb) {
-        const existing = findExistingPropertyByRegistrationKey(payload.raw, state.properties);
+        await ensureAuxiliaryPropertiesForAdmin();
+        const existing = findExistingPropertyByRegistrationKey(payload.raw, getAuxiliaryPropertiesSnapshot());
         if (existing) {
           const merged = buildRegistrationDbRowForExisting(existing, payload, regContext);
           await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
@@ -1314,7 +1176,7 @@ function bindEvents() {
         await api("/public-listings", { method: "POST", body: payload });
         setNpmMsg("등록되었습니다.", false);
       }
-      setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
+      setTimeout(() => { closeNewPropertyModal(); invalidatePropertyCollections(); loadProperties(); }, 700);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }
@@ -1410,16 +1272,24 @@ function bindEvents() {
   }
 
   function renderSummary() {
-    const props = state.properties;
+    const props = getAuxiliaryPropertiesSnapshot();
     const staff = state.staff;
-    const fmt = (n) => Number(n).toLocaleString("ko-KR");
+    const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
+    const summary = state.propertySummary || {
+      total: props.length,
+      auction: props.filter((p) => p.sourceType === "auction").length,
+      onbid: props.filter((p) => p.sourceType === "onbid").length,
+      realtor_naver: props.filter((p) => p.sourceType === "realtor" && !p.isDirectSubmission).length,
+      realtor_direct: props.filter((p) => p.sourceType === "realtor" && p.isDirectSubmission).length,
+      general: props.filter((p) => p.sourceType === "general").length,
+    };
 
-    if (els.sumTotal) els.sumTotal.textContent = fmt(props.length);
-    if (els.sumAuction) els.sumAuction.textContent = fmt(props.filter(p => p.sourceType === "auction").length);
-    if (els.sumGongmae) els.sumGongmae.textContent = fmt(props.filter(p => p.sourceType === "onbid").length);
-    if (els.sumNaverRealtor) els.sumNaverRealtor.textContent = fmt(props.filter(p => p.sourceType === "realtor" && !p.isDirectSubmission).length);
-    if (els.sumDirectRealtor) els.sumDirectRealtor.textContent = fmt(props.filter(p => p.sourceType === "realtor" && p.isDirectSubmission).length);
-    if (els.sumGeneral) els.sumGeneral.textContent = fmt(props.filter(p => p.sourceType === "general").length);
+    if (els.sumTotal) els.sumTotal.textContent = fmt(summary.total);
+    if (els.sumAuction) els.sumAuction.textContent = fmt(summary.auction);
+    if (els.sumGongmae) els.sumGongmae.textContent = fmt(summary.onbid);
+    if (els.sumNaverRealtor) els.sumNaverRealtor.textContent = fmt(summary.realtor_naver);
+    if (els.sumDirectRealtor) els.sumDirectRealtor.textContent = fmt(summary.realtor_direct);
+    if (els.sumGeneral) els.sumGeneral.textContent = fmt(summary.general);
 
     if (els.sumAgents) els.sumAgents.textContent = fmt(staff.filter(s => normalizeRole(s.role) === "staff").length);
   }
@@ -1983,9 +1853,17 @@ function bindEvents() {
       const wrap = els.propertiesTableBody?.closest(".table-wrap");
       if (wrap) window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - 120, behavior: "smooth" });
     };
-    const go = (page) => {
+    const go = async (page) => {
       state.propertyPage = Math.max(1, Math.min(totalPages, page));
-      renderPropertiesTable();
+      if (state.propertyMode === 'page') {
+        try {
+          await loadProperties({ refreshSummary: false });
+        } catch (err) {
+          handleAsyncError(err, '물건 목록 로드 실패');
+        }
+      } else {
+        renderPropertiesTable();
+      }
       scrollTop();
     };
 
@@ -1997,20 +1875,14 @@ function bindEvents() {
       b.textContent = String(label);
       b.disabled = disabled;
       if (title) b.title = title;
-      if (!disabled) b.addEventListener("click", () => go(page));
+      if (!disabled) b.addEventListener("click", () => { void go(page); });
       frag.appendChild(b);
     };
 
-    // -20 점프
     addBtn("<<", cur - 20, cur - 20 < 1, false, "20페이지 뒤로");
-
-    // -10 점프
     addBtn("<", cur - 10, cur - 10 < 1, false, "10페이지 뒤로");
-
-    // 이전
     addBtn("이전", cur - 1, cur <= 1);
 
-    // 페이지 번호: 현재 페이지 기준 앞뒤로 최대 10개
     const blockSize = 10;
     const blockStart = Math.floor((cur - 1) / blockSize) * blockSize + 1;
     const blockEnd = Math.min(totalPages, blockStart + blockSize - 1);
@@ -2018,13 +1890,8 @@ function bindEvents() {
       addBtn(p, p, false, p === cur);
     }
 
-    // 다음
     addBtn("다음", cur + 1, cur >= totalPages);
-
-    // +10 점프
     addBtn(">", cur + 10, cur + 10 > totalPages, false, "10페이지 앞으로");
-
-    // +20 점프
     addBtn(">>", cur + 20, cur + 20 > totalPages, false, "20페이지 앞으로");
 
     els.adminPropertiesPagination.appendChild(frag);
@@ -2045,7 +1912,7 @@ function bindEvents() {
   }
 
   function toggleSelectAllProperties(checked) {
-    const rows = getPagedProperties(getFilteredProperties()).rows;
+    const rows = state.propertyMode === 'page' ? state.properties : getPagedProperties(getFilteredProperties()).rows;
     rows.forEach((p) => {
       const key = String(p.id || p.globalId || "").trim();
       if (!key) return;
@@ -2056,7 +1923,7 @@ function bindEvents() {
   }
 
   function updatePropertySelectionControls() {
-    const rows = getPagedProperties(getFilteredProperties()).rows;
+    const rows = state.propertyMode === 'page' ? state.properties : getPagedProperties(getFilteredProperties()).rows;
     const ids = rows.map((p) => String(p.id || p.globalId || "").trim()).filter(Boolean);
     const selectedVisible = ids.filter((id) => state.selectedPropertyIds.has(id));
     if (els.propSelectAll) {
@@ -2098,12 +1965,13 @@ function bindEvents() {
     }
 
     state.selectedPropertyIds.clear();
+    invalidatePropertyCollections();
     await loadProperties();
   }
 
 
   async function deleteAllProperties() {
-    const total = Array.isArray(state.properties) ? state.properties.length : 0;
+    const total = Number(state.propertySummary?.total || state.propertyTotalCount || (Array.isArray(state.properties) ? state.properties.length : 0));
     if (!total) {
       alert('삭제할 물건이 없습니다.');
       return;
@@ -2116,13 +1984,19 @@ function bindEvents() {
     await api('/admin/properties', { method: 'DELETE', auth: true, body: { all: true } });
 
     state.selectedPropertyIds.clear();
+    invalidatePropertyCollections();
     await loadProperties();
     alert('전체삭제가 완료되었습니다.');
   }
 
   function renderPropertiesTable() {
-    const rows = getFilteredProperties();
-    const pageData = getPagedProperties(rows);
+    const pageMode = state.propertyMode === 'page';
+    const rows = pageMode ? state.properties : getFilteredProperties();
+    const totalPages = pageMode
+      ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
+      : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
+    const displayRows = pageMode ? rows : getPagedProperties(rows).rows;
+
     els.propertiesTableBody.innerHTML = "";
 
     if (!rows.length) {
@@ -2134,7 +2008,7 @@ function bindEvents() {
     els.propertiesEmpty.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
-    for (const p of pageData.rows) {
+    for (const p of displayRows) {
       const rowId = String(p.id || p.globalId || "").trim();
       const tr = document.createElement("tr");
       if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
@@ -2188,7 +2062,7 @@ function bindEvents() {
     }
     els.propertiesTableBody.appendChild(frag);
     updatePropertySelectionControls();
-    renderAdminPropertiesPagination(pageData.totalPages);
+    renderAdminPropertiesPagination(totalPages);
   }
 
   // ---------------------------
@@ -2228,16 +2102,28 @@ function bindEvents() {
     const user = state.session?.user;
     const isAdmin = user?.role === "admin";
 
+    let workingItem = item;
+
     if (!isAdmin) {
       const myId = user?.id || "";
-      const assignedId = item.assignedAgentId || "";
+      const assignedId = workingItem?.assignedAgentId || "";
       if (assignedId && myId && assignedId !== myId) {
         alert("본인에게 배정된 물건만 수정할 수 있습니다.");
         return;
       }
     }
+    const sb = isSupabaseMode() ? K.initSupabase() : null;
+    const detailTargetId = String(workingItem?.id || workingItem?.globalId || '').trim();
+    if (sb && detailTargetId) {
+      try {
+        const detailed = await fetchPropertyDetail(sb, detailTargetId);
+        if (detailed) workingItem = detailed;
+      } catch (err) {
+        console.warn('property detail load failed', err);
+      }
+    }
 
-    state.editingProperty = item;
+    state.editingProperty = workingItem;
 
     if (isAdmin) {
       await ensureStaffForPropertyModal();
@@ -2250,43 +2136,43 @@ function bindEvents() {
       el.value = v == null ? "" : String(v);
     };
 
-    setVal("itemNo", item.itemNo);
-    setVal("sourceType", item.sourceType);
-    populateAssigneeSelect(item.assignedAgentId || item.assigneeId || item.assignee_id || "");
-    setVal("submitterType", item.submitterType);
-    setVal("address", item.address);
-    setVal("assetType", item.assetType);
-    setVal("floor", item.floor ?? "");
-    setVal("totalfloor", item.totalfloor ?? "");
-    setVal("commonarea", formatModalAreaValue(item.sourceType, item.commonarea ?? ""));
-    setVal("exclusivearea", formatModalAreaValue(item.sourceType, item.exclusivearea ?? ""));
-    setVal("sitearea", formatModalAreaValue(item.sourceType, item.sitearea ?? ""));
-    setVal("useapproval", item.useapproval ?? "");
-    setVal("status", item.status ?? "");
-    setVal("priceMain", formatMoneyInputValue(item.priceMain ?? ""));
-    setVal("lowprice", formatMoneyInputValue(item.lowprice ?? ""));
-    setVal("dateMain", toInputDateTimeLocal(item.dateMain) ?? "");
-    setVal("sourceUrl", item.sourceUrl ?? "");
-    setVal("date", formatDate(item.createdAt) ?? "");
-    setVal("realtorname", item.realtorname ?? "");
-    setVal("realtorphone", item.realtorphone ?? "");
-    setVal("realtorcell", item.realtorcell ?? "");
-    setVal("rightsAnalysis", item.rightsAnalysis ?? "");
-    setVal("siteInspection", item.siteInspection ?? "");
+    setVal("itemNo", workingItem.itemNo);
+    setVal("sourceType", workingItem.sourceType);
+    populateAssigneeSelect(workingItem.assignedAgentId || workingItem.assigneeId || workingItem.assignee_id || "");
+    setVal("submitterType", workingItem.submitterType);
+    setVal("address", workingItem.address);
+    setVal("assetType", workingItem.assetType);
+    setVal("floor", workingItem.floor ?? "");
+    setVal("totalfloor", workingItem.totalfloor ?? "");
+    setVal("commonarea", formatModalAreaValue(workingItem.sourceType, workingItem.commonarea ?? ""));
+    setVal("exclusivearea", formatModalAreaValue(workingItem.sourceType, workingItem.exclusivearea ?? ""));
+    setVal("sitearea", formatModalAreaValue(workingItem.sourceType, workingItem.sitearea ?? ""));
+    setVal("useapproval", workingItem.useapproval ?? "");
+    setVal("status", workingItem.status ?? "");
+    setVal("priceMain", formatMoneyInputValue(workingItem.priceMain ?? ""));
+    setVal("lowprice", formatMoneyInputValue(workingItem.lowprice ?? ""));
+    setVal("dateMain", toInputDateTimeLocal(workingItem.dateMain) ?? "");
+    setVal("sourceUrl", workingItem.sourceUrl ?? "");
+    setVal("date", formatDate(workingItem.createdAt) ?? "");
+    setVal("realtorname", workingItem.realtorname ?? "");
+    setVal("realtorphone", workingItem.realtorphone ?? "");
+    setVal("realtorcell", workingItem.realtorcell ?? "");
+    setVal("rightsAnalysis", workingItem.rightsAnalysis ?? "");
+    setVal("siteInspection", workingItem.siteInspection ?? "");
     setVal("opinion", "");   // 매일 신규 작성 — 기존 내용 불러오지 않음
-    setVal("latitude", item.latitude ?? "");
-    setVal("longitude", item.longitude ?? "");
+    setVal("latitude", workingItem.latitude ?? "");
+    setVal("longitude", workingItem.longitude ?? "");
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea", "latitude", "longitude"], amountNames: ["priceMain", "lowprice"] });
-    toggleBrokerFieldsBySource(item.sourceType);
+    toggleBrokerFieldsBySource(workingItem.sourceType);
 
     // opinion 잠금 해제 (항상 신규 작성 가능)
     const opinionEl = f.elements["opinion"];
     if (opinionEl) opinionEl.disabled = false;
 
     // 물건 History 렌더
-    renderOpinionHistory(els.aemHistoryList, loadOpinionHistory(item), true);
-    renderRegistrationLog(els.aemRegistrationLogList, loadRegistrationLog(item));
+    renderOpinionHistory(els.aemHistoryList, loadOpinionHistory(workingItem), true);
+    renderRegistrationLog(els.aemRegistrationLogList, loadRegistrationLog(workingItem));
 
     const sourceTypeEl = f.elements["sourceType"];
     if (sourceTypeEl) {
@@ -2302,25 +2188,25 @@ function bindEvents() {
       el.disabled = !isAdmin && has;
     };
 
-    lockIfHas("itemNo", hasText(item.itemNo));
-    lockIfHas("address", hasText(item.address));
-    lockIfHas("assetType", hasText(item.assetType));
-    lockIfHas("floor", hasText(item.floor));
-    lockIfHas("totalfloor", hasText(item.totalfloor));
-    lockIfHas("commonarea", hasNum(item.commonarea));
-    lockIfHas("exclusivearea", hasNum(item.exclusivearea));
-    lockIfHas("sitearea", hasNum(item.sitearea));
-    lockIfHas("useapproval", hasText(item.useapproval));
-    lockIfHas("status", hasText(item.status));
-    lockIfHas("priceMain", hasNum(item.priceMain));
-    lockIfHas("lowprice", hasNum(item.lowprice));
-    lockIfHas("dateMain", hasText(item.dateMain));
-    lockIfHas("sourceUrl", hasText(item.sourceUrl));
-    lockIfHas("realtorname", hasText(item.realtorname));
-    lockIfHas("realtorphone", hasText(item.realtorphone));
-    lockIfHas("realtorcell", hasText(item.realtorcell));
-    lockIfHas("rightsAnalysis", hasText(item.rightsAnalysis));
-    lockIfHas("siteInspection", hasText(item.siteInspection));
+    lockIfHas("itemNo", hasText(workingItem.itemNo));
+    lockIfHas("address", hasText(workingItem.address));
+    lockIfHas("assetType", hasText(workingItem.assetType));
+    lockIfHas("floor", hasText(workingItem.floor));
+    lockIfHas("totalfloor", hasText(workingItem.totalfloor));
+    lockIfHas("commonarea", hasNum(workingItem.commonarea));
+    lockIfHas("exclusivearea", hasNum(workingItem.exclusivearea));
+    lockIfHas("sitearea", hasNum(workingItem.sitearea));
+    lockIfHas("useapproval", hasText(workingItem.useapproval));
+    lockIfHas("status", hasText(workingItem.status));
+    lockIfHas("priceMain", hasNum(workingItem.priceMain));
+    lockIfHas("lowprice", hasNum(workingItem.lowprice));
+    lockIfHas("dateMain", hasText(workingItem.dateMain));
+    lockIfHas("sourceUrl", hasText(workingItem.sourceUrl));
+    lockIfHas("realtorname", hasText(workingItem.realtorname));
+    lockIfHas("realtorphone", hasText(workingItem.realtorphone));
+    lockIfHas("realtorcell", hasText(workingItem.realtorcell));
+    lockIfHas("rightsAnalysis", hasText(workingItem.rightsAnalysis));
+    lockIfHas("siteInspection", hasText(workingItem.siteInspection));
     // opinion은 항상 신규 작성 가능 — lockIfHas 제외
 
     if (f.elements["sourceType"]) f.elements["sourceType"].disabled = !isAdmin;
@@ -2468,6 +2354,7 @@ function bindEvents() {
 
       setAemMsg("저장 완료", false);
       closePropertyEditModal();
+      invalidatePropertyCollections();
       await loadProperties();
     } catch (err) {
       console.error(err);
@@ -2574,6 +2461,7 @@ function bindEvents() {
 
       state.selectedPropertyIds.delete(targetId);
       closePropertyEditModal();
+      invalidatePropertyCollections();
       await loadProperties();
     } catch (err) {
       console.error(err);
@@ -2844,8 +2732,9 @@ function bindEvents() {
         const dedupedRows = dedupePropertyRowsByGlobalId(preparedRows);
         const dedupedInFile = preparedRows.length - dedupedRows.length;
         const regContext = buildRegisterLogContext(`CSV 업로드(${sourceType === "auction" ? "경매" : sourceType === "onbid" ? "공매" : "중개"})`, state.session?.user);
+        await ensureAuxiliaryPropertiesForAdmin();
         const workingByKey = new Map();
-        state.properties.forEach((item) => {
+        getAuxiliaryPropertiesSnapshot().forEach((item) => {
           const key = buildRegistrationMatchKey(buildRegistrationSnapshotFromItem(item));
           if (key && !workingByKey.has(key)) workingByKey.set(key, item);
         });
@@ -2880,6 +2769,7 @@ function bindEvents() {
         }
 
         showResultBox(els.csvResultBox, summaryParts.join(" / "), importResult.failed.length > 0);
+        invalidatePropertyCollections();
         await loadProperties();
         return;
       }
@@ -2904,6 +2794,7 @@ function bindEvents() {
       ].join(" / ");
 
       showResultBox(els.csvResultBox, summary);
+      invalidatePropertyCollections();
       await loadProperties();
     } catch (err) {
       console.error(err);
@@ -3152,7 +3043,7 @@ function bindEvents() {
   // ---------------------------
   function getRegionOptionsFromProperties() {
     const set = new Set();
-    for (const p of state.properties) {
+    for (const p of getAuxiliaryPropertiesSnapshot()) {
       if (p.regionGu) set.add(p.regionGu);
       if (p.regionDong) set.add(p.regionDong);
     }
@@ -3160,13 +3051,14 @@ function bindEvents() {
   }
 
   async function handleSuggestGrouping() {
+    await ensureAuxiliaryPropertiesForAdmin();
     const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
     if (!agents.length) return alert("담당자 계정을 먼저 등록해 주세요.");
 
     const requestedCount = Math.max(1, Number(els.agentCountInput.value || 1));
     const unitMode = els.regionUnitMode.value; // auto|gu|dong
 
-    const grouped = buildAutoRegionGrouping(state.properties, requestedCount, unitMode);
+    const grouped = buildAutoRegionGrouping(getAuxiliaryPropertiesSnapshot(), requestedCount, unitMode);
     state.lastGroupSuggestion = grouped;
 
     renderGroupSuggestion(grouped, agents);
@@ -3685,7 +3577,7 @@ function bindEvents() {
     const labelMap = { pending: "대기", ok: "완료", failed: "실패" };
     const label = labelMap[filter] || filter;
 
-    const rows = state.properties.filter((p) => {
+    const rows = getAuxiliaryPropertiesSnapshot().filter((p) => {
       const st = String(p.geocodeStatus || "").toLowerCase();
       const hasCoords = p.latitude != null && p.longitude != null;
       if (filter === "ok")      return st === "ok" || (hasCoords && st !== "failed" && st !== "pending");
@@ -3846,6 +3738,8 @@ function bindEvents() {
       }
 
       alert("지오코딩 완료: 총 " + total + "건 중 성공 " + okCount + "건, 실패 " + failCount + "건");
+      invalidatePropertyCollections();
+      await ensureAuxiliaryPropertiesForAdmin({ forceRefresh: true });
       await loadProperties();
 
     } catch (err) {
