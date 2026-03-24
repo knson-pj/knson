@@ -713,11 +713,14 @@ function bindEvents() {
 
   const PROPERTY_LIST_SELECT = [
     "id", "global_id", "item_no", "source_type", "is_general", "address", "asset_type",
-    "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+    "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "source_url", "assignee_id",
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
     "memo", "latitude", "longitude", "region_gu", "region_dong", "date_uploaded",
-    "created_at", "geocode_status", "geocoded_at"
+    "created_at", "geocode_status", "geocoded_at",
+    "floor_text:raw->>floor", "floor_korean:raw->>해당층",
+    "totalfloor_text:raw->>totalfloor", "totalfloor_snake:raw->>total_floor",
+    "totalfloor_camel:raw->>totalFloor", "totalfloor_korean:raw->>총층"
   ].join(",");
 
   function invalidatePropertyCollections() {
@@ -979,8 +982,8 @@ function bindEvents() {
       isGeneral: Boolean(item.isGeneral || item.is_general || item.origin === "general" || sourceType === "general"),
       address,
       assetType: firstText(item.assetType, item.asset_type, item.type, item.propertyType, item.kind, raw.assetType, raw['세부유형'], "-"),
-      floor: firstText(item.floor, item.floor_text, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
-      totalfloor: firstText(item.totalfloor, item.total_floor, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
+      floor: firstText(item.floor, item.floor_text, item.floor_text, item.floor_korean, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
+      totalfloor: firstText(item.totalfloor, item.total_floor, item.totalfloor_text, item.totalfloor_snake, item.totalfloor_camel, item.totalfloor_korean, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
       priceMain,
       lowprice,
       status: firstText(item.status, raw.status, ""),
