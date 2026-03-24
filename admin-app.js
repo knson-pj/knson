@@ -713,7 +713,7 @@ function bindEvents() {
 
   const PROPERTY_LIST_SELECT = [
     "id", "global_id", "item_no", "source_type", "is_general", "address", "asset_type",
-    "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+    "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "source_url", "assignee_id",
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
     "memo", "latitude", "longitude", "region_gu", "region_dong", "date_uploaded",
