@@ -712,15 +712,13 @@ function bindEvents() {
   }
 
   const PROPERTY_LIST_SELECT = [
-    "id", "global_id", "item_no", "source_type", "is_general", "address", "asset_type",
-    "common_area", "exclusive_area", "site_area", "use_approval",
-    "status", "price_main", "lowprice", "date_main", "source_url", "assignee_id",
+    // 목록 첫 화면은 실제 존재가 확인된 컬럼 + raw만 가져온다.
+    // 속도 개선용 경량 select에서 스키마 불일치(column does not exist)가 반복되어,
+    // 가변 스키마 가능성이 큰 상세 필드는 raw 기준으로 파생한다.
+    "id", "global_id", "item_no", "source_type", "is_general", "address", "assignee_id",
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
-    "memo", "latitude", "longitude", "region_gu", "region_dong", "date_uploaded",
-    "created_at", "geocode_status", "geocoded_at",
-    "floor_text:raw->>floor", "floor_korean:raw->>해당층",
-    "totalfloor_text:raw->>totalfloor", "totalfloor_snake:raw->>total_floor",
-    "totalfloor_camel:raw->>totalFloor", "totalfloor_korean:raw->>총층"
+    "memo", "latitude", "longitude", "date_uploaded", "created_at",
+    "geocode_status", "geocoded_at", "raw"
   ].join(",");
 
   function invalidatePropertyCollections() {
