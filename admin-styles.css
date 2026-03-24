@@ -979,3 +979,172 @@ html[data-theme="dark"] .btn-fav-filter.is-active{
   .daily-report-chip{font-size:15px;}
   .daily-report-note{font-size:15px;min-height:140px;text-align:left;}
 }
+
+/* 업무관리 */
+.work-mgmt-actions{gap:12px;}
+.work-mgmt-date-field{min-width:160px;}
+.work-mgmt-date-field span{white-space:nowrap;}
+.work-mgmt-shell{
+  display:grid;
+  gap:16px;
+}
+.work-mgmt-meta{
+  font-size:13px;
+  font-weight:700;
+  color:var(--muted);
+}
+.work-mgmt-canvas{
+  display:grid;
+  grid-template-columns:110px minmax(0,1fr);
+  gap:28px;
+  min-height:320px;
+  align-items:start;
+}
+.work-mgmt-actors{
+  display:grid;
+  gap:14px;
+  align-content:start;
+  padding-top:6px;
+}
+.work-actor-chip{
+  appearance:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:42px;
+  padding:0 14px;
+  border-radius:14px;
+  border:1px solid var(--line-strong);
+  background:var(--surface);
+  color:var(--text);
+  font-size:16px;
+  font-weight:800;
+  letter-spacing:-.02em;
+  cursor:pointer;
+  box-shadow:var(--shadow-sm);
+}
+.work-actor-chip:hover{transform:translateY(-1px);}
+.work-actor-chip.is-active{
+  background:#facc15;
+  border-color:#eab308;
+  color:#111827;
+  box-shadow:0 10px 22px rgba(234,179,8,.18);
+}
+.work-actor-chip.is-muted{opacity:.72;}
+.work-mgmt-rows-wrap{position:relative;min-height:280px;}
+.work-mgmt-rows{
+  display:grid;
+  gap:18px;
+  position:relative;
+}
+.work-mgmt-rows::before{
+  content:"";
+  position:absolute;
+  left:-26px;
+  top:16px;
+  bottom:16px;
+  width:2px;
+  background:var(--line-strong);
+  border-radius:999px;
+}
+.work-row{
+  position:relative;
+  display:grid;
+  grid-template-columns:minmax(280px, 1fr) minmax(150px, 220px);
+  gap:22px;
+  align-items:center;
+}
+.work-row::before{
+  content:"";
+  position:absolute;
+  left:-26px;
+  top:50%;
+  width:26px;
+  height:2px;
+  background:var(--line-strong);
+  border-radius:999px;
+}
+.work-property-node{position:relative;}
+.work-property-card{
+  min-height:56px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:0 16px;
+  border-radius:10px;
+  border:1px solid var(--line-strong);
+  background:color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow:var(--shadow-sm);
+}
+.work-source-tag{
+  font-size:17px;
+  font-weight:900;
+  letter-spacing:-.02em;
+  white-space:nowrap;
+}
+.work-source-tag.is-auction{color:#d946ef;}
+.work-source-tag.is-onbid{color:#38bdf8;}
+.work-source-tag.is-realtor{color:#22c55e;}
+.work-source-tag.is-general{color:#f59e0b;}
+.work-property-text{
+  min-width:0;
+  color:var(--text);
+  font-size:16px;
+  font-weight:700;
+  letter-spacing:-.02em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.work-action-list{
+  position:relative;
+  display:grid;
+  gap:10px;
+}
+.work-action-list::before{
+  content:"";
+  position:absolute;
+  left:-22px;
+  top:50%;
+  width:22px;
+  height:2px;
+  background:var(--line-strong);
+  border-radius:999px;
+}
+.work-action-pill{
+  min-height:42px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  padding:0 14px;
+  border-radius:14px;
+  border:1px solid var(--line-strong);
+  background:var(--surface);
+  color:var(--text);
+  font-size:16px;
+  font-weight:800;
+  letter-spacing:-.02em;
+  white-space:nowrap;
+  box-shadow:var(--shadow-sm);
+}
+.work-action-pill strong{font-weight:900;}
+.work-action-pill.is-rights strong{color:#f59e0b;}
+.work-action-pill.is-site strong{color:#0ea5e9;}
+.work-action-pill.is-issue strong{color:#f59e0b;}
+.work-action-pill.is-new strong{color:#22c55e;}
+.work-action-pill.is-edit strong{color:#6366f1;}
+@media (max-width: 980px){
+  .work-mgmt-canvas{grid-template-columns:1fr;gap:18px;}
+  .work-mgmt-rows::before{display:none;}
+  .work-row{grid-template-columns:1fr;gap:12px;}
+  .work-row::before,.work-action-list::before{display:none;}
+  .work-property-text{white-space:normal;}
+  .work-mgmt-actors{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width: 640px){
+  .work-mgmt-actions{width:100%;justify-content:stretch;}
+  .work-mgmt-date-field{min-width:0;flex:1 1 100%;}
+  .work-actor-chip,.work-action-pill,.work-property-text,.work-source-tag{font-size:14px;}
+  .work-mgmt-actors{grid-template-columns:1fr 1fr;}
+}

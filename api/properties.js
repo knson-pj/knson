@@ -269,14 +269,24 @@ async function handleActivityLog(req, res) {
         ? String(url.searchParams.get('date')).trim()
         : kstDateKey();
       const requestedActorId = cleanText(url.searchParams.get('actor_id'), 120);
+      const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
       const actorId = ctx.role === 'admin' && requestedActorId ? requestedActorId : ctx.userId;
-      const rows = await supabaseRest(
-        `/rest/v1/property_activity_logs?select=id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`
-      );
+      const baseSelect = 'id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at';
+      let query = `/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}`;
+      if (adminViewRequested) {
+        if (requestedActorId) {
+          query += `&actor_id=eq.${encodeURIComponent(requestedActorId)}`;
+        }
+        query += '&order=actor_name.asc.nullslast,created_at.desc';
+      } else {
+        query += `&actor_id=eq.${encodeURIComponent(actorId)}&order=created_at.desc`;
+      }
+      const rows = await supabaseRest(query);
       return send(res, 200, {
         ok: true,
         date,
-        actorId,
+        actorId: adminViewRequested ? (requestedActorId || null) : actorId,
+        adminView: adminViewRequested,
         counts: summarizeActivityRows(rows),
         items: Array.isArray(rows) ? rows : [],
       });
@@ -436,39 +446,7 @@ async function handleSupabaseWrite(req, res) {
 
     const patchInput = body.patch && typeof body.patch === 'object' ? body.patch : body;
     const patch = buildSupabasePropertyRow(patchInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: true });
-    if (ctx.role === 'staff') {
-      delete patch.assignee_id;
-
-      const currentAssetType = String(current.asset_type || '').trim();
-      const requestedAssetType = patch.asset_type !== undefined ? String(patch.asset_type || '').trim() : undefined;
-      if (requestedAssetType !== undefined) {
-        if (currentAssetType) {
-          if (requestedAssetType && requestedAssetType !== currentAssetType) {
-            return send(res, 409, { ok: false, message: '현재 정책상 세부유형 값은 최초 입력 후 변경할 수 없습니다.' });
-          }
-          delete patch.asset_type;
-        } else if (!requestedAssetType) {
-          delete patch.asset_type;
-        } else {
-          patch.asset_type = requestedAssetType;
-        }
-      }
-
-      const currentStatus = String(current.status || '').trim();
-      const requestedStatus = patch.status !== undefined ? String(patch.status || '').trim() : undefined;
-      if (requestedStatus !== undefined) {
-        if (currentStatus) {
-          if (requestedStatus && requestedStatus !== currentStatus) {
-            return send(res, 409, { ok: false, message: '현재 정책상 진행상태 값은 최초 입력 후 변경할 수 없습니다.' });
-          }
-          delete patch.status;
-        } else if (!requestedStatus) {
-          delete patch.status;
-        } else {
-          patch.status = requestedStatus;
-        }
-      }
-    }
+    if (ctx.role === 'staff') delete patch.assignee_id;
 
     const requesterToken = readBearer(req);
     const useRequesterJwt = !!requesterToken;

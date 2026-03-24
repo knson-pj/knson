@@ -105,6 +105,13 @@
     propertyPage: 1,
     propertyPageSize: 30,
     geocodeRunning: false,
+    workMgmt: {
+      dateKey: '',
+      items: [],
+      selectedActorId: '',
+      loading: false,
+      loadedAt: 0,
+    },
   };
 
   const els = {};
@@ -126,6 +133,8 @@
 
   function init() {
     cacheEls();
+    state.workMgmt.dateKey = getKstDateKey();
+    if (els.workMgmtDate) els.workMgmtDate.value = state.workMgmt.dateKey;
     configureFormNumericUx(els.aemForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea", "latitude", "longitude"], amountNames: ["priceMain", "lowprice"] });
     configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     setupChrome();
@@ -242,6 +251,15 @@
       geocodeListTitle: $("#geocodeListTitle"),
       geocodeListBody: $("#geocodeListBody"),
       geocodeListEmpty: $("#geocodeListEmpty"),
+
+      // work management tab
+      tabWorkMgmt: $("#tab-workmgmt"),
+      workMgmtDate: $("#workMgmtDate"),
+      btnWorkMgmtRefresh: $("#btnWorkMgmtRefresh"),
+      workMgmtMeta: $("#workMgmtMeta"),
+      workMgmtActors: $("#workMgmtActors"),
+      workMgmtRows: $("#workMgmtRows"),
+      workMgmtEmpty: $("#workMgmtEmpty"),
 
       // new property modal
       btnNewProperty: $("#btnNewProperty"),
@@ -387,6 +405,7 @@ function bindEvents() {
         if (state.session?.user?.role === "admin") {
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
           if (key === "geocoding") updateGeocodeStatusBar();
+          if (key === "workmgmt") loadWorkManagement().catch((e)=>handleAsyncError(e,"업무관리 로드 실패"));
         }
       });
     }
@@ -513,6 +532,30 @@ function bindEvents() {
       });
     }
 
+    // work management
+    if (els.workMgmtDate) {
+      els.workMgmtDate.addEventListener("change", () => {
+        state.workMgmt.dateKey = normalizeDateInputValue(els.workMgmtDate.value) || getKstDateKey();
+        els.workMgmtDate.value = state.workMgmt.dateKey;
+        loadWorkManagement({ force: true }).catch((e) => handleAsyncError(e, "업무관리 로드 실패"));
+      });
+    }
+    if (els.btnWorkMgmtRefresh) {
+      els.btnWorkMgmtRefresh.addEventListener("click", () => {
+        loadWorkManagement({ force: true }).catch((e) => handleAsyncError(e, "업무관리 로드 실패"));
+      });
+    }
+    if (els.workMgmtActors) {
+      els.workMgmtActors.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-actor-id]");
+        if (!btn) return;
+        const actorId = String(btn.dataset.actorId || "").trim();
+        if (!actorId) return;
+        state.workMgmt.selectedActorId = actorId;
+        renderWorkManagement();
+      });
+    }
+
     // geocoding
     if (els.btnGeocodeRun) els.btnGeocodeRun.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return;
@@ -568,6 +611,7 @@ function bindEvents() {
       staff: els.tabStaff,
       regions: els.tabRegions,
       geocoding: els.tabGeocoding,
+      workmgmt: els.tabWorkMgmt,
     };
     Object.entries(map).forEach(([key, panel]) => {
       if (!panel) return;
@@ -770,6 +814,7 @@ function bindEvents() {
       renderPropertiesTable();
       renderSummary();
       updateGeocodeStatusBar();
+      if (state.activeTab === "workmgmt") renderWorkManagement();
       return;
     }
 
@@ -783,6 +828,7 @@ function bindEvents() {
     renderPropertiesTable();
     renderSummary();
     updateGeocodeStatusBar();
+    if (state.activeTab === "workmgmt") renderWorkManagement();
   }
 
   async function loadStaff() {
@@ -795,6 +841,218 @@ function bindEvents() {
     renderSummary();
     hydrateAssignedAgentNames();
     renderPropertiesTable();
+    if (state.activeTab === "workmgmt") renderWorkManagement();
+  }
+
+  function normalizeDateInputValue(value) {
+    const s = String(value || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+  }
+
+  function getKstDateKey(value = new Date()) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+    const kst = new Date(utc + 9 * 60 * 60 * 1000);
+    const y = kst.getFullYear();
+    const m = String(kst.getMonth() + 1).padStart(2, "0");
+    const d = String(kst.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function normalizeWorkActionKeys(entry) {
+    const action = String(entry?.action_type || entry?.actionType || "").trim().toLowerCase();
+    const changed = Array.isArray(entry?.changed_fields) ? entry.changed_fields : (Array.isArray(entry?.changedFields) ? entry.changedFields : []);
+    if (action === "rights_analysis") return ["rightsAnalysis"];
+    if (action === "site_inspection") return ["siteInspection"];
+    if (action === "daily_issue") return ["dailyIssue"];
+    if (action === "new_property") return ["newProperty"];
+    if (action === "property_update") {
+      const out = [];
+      changed.forEach((field) => {
+        const key = String(field || "").trim();
+        if (["rightsAnalysis", "rights_analysis"].includes(key) && !out.includes("rightsAnalysis")) out.push("rightsAnalysis");
+        if (["siteInspection", "site_inspection"].includes(key) && !out.includes("siteInspection")) out.push("siteInspection");
+        if (["opinion", "memo", "dailyIssue", "daily_issue"].includes(key) && !out.includes("dailyIssue")) out.push("dailyIssue");
+        if (["registration", "newProperty", "new_property"].includes(key) && !out.includes("newProperty")) out.push("newProperty");
+      });
+      return out.length ? out : ["propertyUpdate"];
+    }
+    return action ? [action] : [];
+  }
+
+  function getWorkActionDefs() {
+    return [
+      ["rightsAnalysis", "권리분석", "rights"],
+      ["siteInspection", "현장조사", "site"],
+      ["dailyIssue", "금일이슈사항", "issue"],
+      ["newProperty", "신규물건등록", "new"],
+      ["propertyUpdate", "수정", "edit"],
+    ];
+  }
+
+  function getWorkActors(items) {
+    const counts = new Map();
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      const actorId = String(item?.actor_id || item?.actorId || "").trim();
+      if (!actorId) return;
+      counts.set(actorId, (counts.get(actorId) || 0) + 1);
+    });
+    const staffRows = state.staff
+      .filter((row) => normalizeRole(row.role) === "staff")
+      .map((row) => ({ id: String(row.id || "").trim(), name: row.name || row.email || "담당자", count: counts.get(String(row.id || "").trim()) || 0 }))
+      .filter((row) => row.id);
+    const seen = new Set(staffRows.map((row) => row.id));
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      const actorId = String(item?.actor_id || item?.actorId || "").trim();
+      if (!actorId || seen.has(actorId)) return;
+      staffRows.push({ id: actorId, name: String(item?.actor_name || item?.actorName || "담당자").trim() || "담당자", count: counts.get(actorId) || 0 });
+      seen.add(actorId);
+    });
+    return staffRows.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  }
+
+  function findPropertyForWorkItem(entry) {
+    const propertyId = String(entry?.property_id || entry?.propertyId || "").trim();
+    const identityKey = String(entry?.property_identity_key || entry?.propertyIdentityKey || "").trim();
+    const itemNo = String(entry?.property_item_no || entry?.propertyItemNo || "").trim();
+    const address = String(entry?.property_address || entry?.propertyAddress || "").trim();
+    const rows = Array.isArray(state.properties) ? state.properties : [];
+    const byId = rows.find((row) => {
+      const raw = row?._raw || {};
+      return [row.id, row.globalId, raw.id, raw.global_id].some((v) => String(v || "").trim() === propertyId);
+    });
+    if (byId) return byId;
+    if (identityKey) {
+      const byIdentity = rows.find((row) => {
+        const raw = row?._raw?.raw && typeof row._raw.raw === 'object' ? row._raw.raw : {};
+        const candidate = String(raw.registrationIdentityKey || buildRegistrationMatchKey(row) || "").trim();
+        return candidate && candidate === identityKey;
+      });
+      if (byIdentity) return byIdentity;
+    }
+    if (itemNo) {
+      const byItemNo = rows.find((row) => String(row.itemNo || row._raw?.item_no || "").trim() === itemNo);
+      if (byItemNo) return byItemNo;
+    }
+    if (address) {
+      const byAddress = rows.find((row) => String(row.address || "").trim() === address);
+      if (byAddress) return byAddress;
+    }
+    return null;
+  }
+
+  function buildWorkPropertyRows(actorId) {
+    const rows = Array.isArray(state.workMgmt.items) ? state.workMgmt.items : [];
+    const groups = new Map();
+    rows.filter((item) => String(item?.actor_id || item?.actorId || "").trim() === String(actorId || "").trim()).forEach((item) => {
+      const property = findPropertyForWorkItem(item);
+      const key = String(item?.property_id || item?.propertyId || property?.id || property?.globalId || item?.property_identity_key || item?.propertyIdentityKey || item?.property_item_no || item?.propertyItemNo || item?.property_address || item?.propertyAddress || `row-${groups.size + 1}`).trim();
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          property,
+          item,
+          counts: { rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0, propertyUpdate: 0 },
+          latestAt: String(item?.created_at || item?.createdAt || ""),
+        });
+      }
+      const group = groups.get(key);
+      normalizeWorkActionKeys(item).forEach((actionKey) => {
+        if (Object.prototype.hasOwnProperty.call(group.counts, actionKey)) group.counts[actionKey] += 1;
+      });
+      const createdAt = String(item?.created_at || item?.createdAt || "");
+      if (createdAt && (!group.latestAt || createdAt > group.latestAt)) group.latestAt = createdAt;
+      if (!group.property && property) group.property = property;
+    });
+    return [...groups.values()].sort((a, b) => String(b.latestAt || "").localeCompare(String(a.latestAt || "")));
+  }
+
+  function buildWorkPropertyTitle(group) {
+    const property = group?.property || null;
+    const fallbackAddress = String(group?.item?.property_address || group?.item?.propertyAddress || "").trim() || "주소 정보 없음";
+    const sourceType = String(property?.sourceType || "").trim();
+    const floor = String(property?.floor || "").trim() || '-';
+    const area = formatAreaPyeong(property?.exclusivearea || property?.commonarea || null);
+    return {
+      sourceType,
+      sourceLabel: sourceType === 'auction' ? '경매' : sourceType === 'onbid' ? '공매' : sourceType === 'realtor' ? '중개' : sourceType === 'general' ? '일반' : '물건',
+      address: String(property?.address || fallbackAddress).trim() || fallbackAddress,
+      meta: `${floor} | ${area === '-' ? '-' : `${area}평`}`,
+    };
+  }
+
+  function renderWorkManagement() {
+    if (!els.workMgmtActors || !els.workMgmtRows || !els.workMgmtEmpty) return;
+    const items = Array.isArray(state.workMgmt.items) ? state.workMgmt.items : [];
+    const actors = getWorkActors(items);
+    const actorIds = new Set(actors.map((row) => row.id));
+    if (!state.workMgmt.selectedActorId || !actorIds.has(state.workMgmt.selectedActorId)) {
+      const firstWithItems = actors.find((row) => row.count > 0);
+      state.workMgmt.selectedActorId = firstWithItems?.id || actors[0]?.id || '';
+    }
+
+    if (els.workMgmtDate && els.workMgmtDate.value !== state.workMgmt.dateKey) {
+      els.workMgmtDate.value = state.workMgmt.dateKey || getKstDateKey();
+    }
+    if (els.workMgmtMeta) {
+      const propertyCount = new Set(items.map((item) => String(item?.property_id || item?.propertyIdentityKey || item?.property_identity_key || item?.property_item_no || item?.propertyItemNo || item?.property_address || '').trim()).filter(Boolean)).size;
+      els.workMgmtMeta.textContent = `${formatDate(state.workMgmt.dateKey)} 기준 · 담당자 ${actors.length.toLocaleString('ko-KR')}명 · 수정 물건 ${propertyCount.toLocaleString('ko-KR')}건`;
+    }
+
+    els.workMgmtActors.innerHTML = actors.map((actor) => {
+      const isActive = actor.id === state.workMgmt.selectedActorId;
+      const cls = `work-actor-chip${isActive ? ' is-active' : ''}${actor.count ? '' : ' is-muted'}`;
+      return `<button type="button" class="${cls}" data-actor-id="${escapeAttr(actor.id)}"><span>${escapeHtml(actor.name)}</span></button>`;
+    }).join('');
+
+    const propertyRows = state.workMgmt.selectedActorId ? buildWorkPropertyRows(state.workMgmt.selectedActorId) : [];
+    if (!actors.length || !propertyRows.length) {
+      els.workMgmtRows.innerHTML = '';
+      els.workMgmtEmpty.classList.remove('hidden');
+      els.workMgmtEmpty.textContent = actors.length ? '선택한 담당자의 업무 로그가 없습니다.' : '표시할 업무 로그가 없습니다.';
+      return;
+    }
+
+    els.workMgmtEmpty.classList.add('hidden');
+    const actionDefs = getWorkActionDefs();
+    els.workMgmtRows.innerHTML = propertyRows.map((group) => {
+      const title = buildWorkPropertyTitle(group);
+      const actionHtml = actionDefs
+        .filter(([key]) => (group.counts[key] || 0) > 0)
+        .map(([key, label, tone]) => `<div class="work-action-pill is-${tone}">${escapeHtml(label)} <strong>${escapeHtml(String(group.counts[key] || 0))}건</strong></div>`)
+        .join('');
+      return `
+        <div class="work-row">
+          <div class="work-property-node">
+            <div class="work-property-card">
+              <span class="work-source-tag is-${escapeAttr(title.sourceType || 'general')}">${escapeHtml(title.sourceLabel)}</span>
+              <span class="work-property-text">${escapeHtml(title.address)} | ${escapeHtml(title.meta)}</span>
+            </div>
+          </div>
+          <div class="work-action-list">${actionHtml}</div>
+        </div>`;
+    }).join('');
+  }
+
+  async function loadWorkManagement(options = {}) {
+    const force = !!options.force;
+    if (state.workMgmt.loading && !force) return state.workMgmt.items;
+    const dateKey = normalizeDateInputValue(options.dateKey || els.workMgmtDate?.value || state.workMgmt.dateKey) || getKstDateKey();
+    state.workMgmt.loading = true;
+    state.workMgmt.dateKey = dateKey;
+    if (els.workMgmtDate) els.workMgmtDate.value = dateKey;
+    if (els.btnWorkMgmtRefresh) els.btnWorkMgmtRefresh.disabled = true;
+    try {
+      const data = await api(`/properties?daily_report=1&admin_view=1&date=${encodeURIComponent(dateKey)}`, { auth: true });
+      state.workMgmt.items = Array.isArray(data?.items) ? data.items : [];
+      state.workMgmt.loadedAt = Date.now();
+      renderWorkManagement();
+      return state.workMgmt.items;
+    } finally {
+      state.workMgmt.loading = false;
+      if (els.btnWorkMgmtRefresh) els.btnWorkMgmtRefresh.disabled = false;
+    }
   }
 
   function normalizeProperty(item) {
