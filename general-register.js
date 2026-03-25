@@ -17,7 +17,15 @@
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
-    ? Shared.createApiClient({ baseUrl: API_BASE })
+    ? Shared.createApiClient({
+        baseUrl: API_BASE,
+        networkErrorFactory: (fetchErr) => {
+          const detail = String(fetchErr?.message || "").trim();
+          const err = new Error(detail ? `네트워크 연결 또는 서버 응답에 실패했습니다. (${detail})` : "네트워크 연결 또는 서버 응답에 실패했습니다.");
+          err.cause = fetchErr;
+          return err;
+        },
+      })
     : null;
   const REG_LOG_LABELS = {
     address: "주소",
@@ -468,6 +476,7 @@
   function readNum(fd, key) {
     const v = String(fd.get(key) || '').trim();
     if (!v) return null;
+    if (Shared && typeof Shared.parseFlexibleNumber === 'function') return Shared.parseFlexibleNumber(v);
     const n = Number(v.replace(/,/g, ''));
     return Number.isFinite(n) ? n : null;
   }
@@ -489,14 +498,16 @@
 
   async function api(path, options = {}) {
     if (sharedApi) return sharedApi(path, options);
+    const method = String(options.method || 'GET').toUpperCase();
+    const hasBody = !['GET', 'HEAD'].includes(method);
     const res = await fetch(`${API_BASE}${path}`, {
-      method: options.method || 'GET',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      method,
+      headers: { ...(hasBody ? { 'Content-Type': 'application/json' } : {}), Accept: 'application/json' },
+      body: hasBody ? JSON.stringify(options.body || {}) : undefined,
     });
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch {}
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
     if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
     return data;
   }

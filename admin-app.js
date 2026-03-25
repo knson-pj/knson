@@ -32,6 +32,7 @@
   }
 
   function formatMoneyInputValue(value) {
+    if (Shared && typeof Shared.formatMoneyInputValue === "function") return Shared.formatMoneyInputValue(value);
     if (value === null || value === undefined) return "";
     const raw = String(value).trim();
     if (!raw) return "";
@@ -44,6 +45,7 @@
   }
 
   function bindAmountInputMask(input) {
+    if (Shared && typeof Shared.bindAmountInputMask === "function") return Shared.bindAmountInputMask(input);
     if (!input || input.dataset.amountMaskBound === "true") return;
     input.dataset.amountMaskBound = "true";
     input.addEventListener("input", () => {
@@ -56,6 +58,7 @@
   }
 
   function configureFreeDecimalInput(input) {
+    if (Shared && typeof Shared.configureFreeDecimalInput === "function") return Shared.configureFreeDecimalInput(input);
     if (!input) return;
     input.setAttribute("type", "text");
     input.setAttribute("inputmode", "decimal");
@@ -63,6 +66,7 @@
   }
 
   function configureAmountInput(input) {
+    if (Shared && typeof Shared.configureAmountInput === "function") return Shared.configureAmountInput(input);
     if (!input) return;
     input.setAttribute("type", "text");
     input.setAttribute("inputmode", "numeric");
@@ -71,6 +75,7 @@
   }
 
   function configureFormNumericUx(form, options = {}) {
+    if (Shared && typeof Shared.configureFormNumericUx === "function") return Shared.configureFormNumericUx(form, options);
     if (!form?.elements) return;
     const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
     const amountNames = Array.isArray(options.amountNames) ? options.amountNames : [];
@@ -94,6 +99,55 @@
 
   const API_BASE = (window.KNSN && typeof window.KNSN.getApiBase === "function") ? window.KNSN.getApiBase() : "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
+  const sharedApi = (Shared && typeof Shared.createApiClient === "function")
+    ? Shared.createApiClient({
+        baseUrl: API_BASE,
+        loadSession,
+        getAuthToken: async (options = {}) => {
+          if (!options.auth) return "";
+          if (isSupabaseMode() && K && typeof K.sbGetAccessToken === "function") {
+            try {
+              const token = await K.sbGetAccessToken();
+              if (token) {
+                state.session = loadSession() || state.session;
+                return String(token).trim();
+              }
+            } catch {}
+          }
+          return String(state.session?.token || loadSession()?.token || "").trim();
+        },
+        ensureAuthToken: async (options = {}) => {
+          if (!options.auth || !isSupabaseMode() || !K || typeof K.sbSyncLocalSession !== "function") return "";
+          try { await K.sbSyncLocalSession(true); } catch {}
+          state.session = loadSession() || state.session;
+          return String(state.session?.token || "").trim();
+        },
+        handleUnauthorized: async ({ path, options }) => {
+          if (!options.auth || !isSupabaseMode()) return false;
+          try {
+            if (K && typeof K.sbGetAccessToken === "function") {
+              const nextToken = await K.sbGetAccessToken({ forceRefresh: true });
+              if (nextToken) {
+                state.session = loadSession() || state.session;
+                return true;
+              }
+            }
+            if (K && typeof K.sbSyncLocalSession === "function") {
+              await K.sbSyncLocalSession(true);
+              state.session = loadSession() || state.session;
+              return !!state.session?.token;
+            }
+          } catch {}
+          return false;
+        },
+        networkErrorFactory: (fetchErr) => {
+          const detail = String(fetchErr?.message || "").trim();
+          const err = new Error(detail ? `네트워크 연결 또는 서버 응답에 실패했습니다. (${detail})` : "네트워크 연결 또는 서버 응답에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+          err.cause = fetchErr;
+          return err;
+        },
+      })
+    : null;
 
   const state = {
     session: loadSession(),
@@ -3405,31 +3459,12 @@ function bindEvents() {
   // API
   // ---------------------------
   async function api(path, options = {}) {
+    if (sharedApi) return sharedApi(path, options);
     const method = (options.method || "GET").toUpperCase();
     const headers = { Accept: "application/json" };
 
-    let token = "";
     if (options.auth) {
-      if (isSupabaseMode() && K && typeof K.sbGetAccessToken === "function") {
-        try {
-          token = await K.sbGetAccessToken();
-          state.session = loadSession();
-        } catch {}
-      }
-      if (!token) {
-        token = state.session?.token || "";
-      }
-      if (!token) {
-        state.session = loadSession();
-        token = state.session?.token || "";
-      }
-      if (!token && isSupabaseMode()) {
-        try {
-          await K.sbSyncLocalSession(true);
-          state.session = loadSession();
-          token = state.session?.token || "";
-        } catch {}
-      }
+      const token = String(state.session?.token || loadSession()?.token || "").trim();
       if (!token) {
         const err = new Error("로그인이 필요합니다.");
         err.code = "LOGIN_REQUIRED";
@@ -3458,21 +3493,6 @@ function bindEvents() {
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-
-    if (res.status === 401 && options.auth && !options._retried && isSupabaseMode()) {
-      try {
-        if (K && typeof K.sbGetAccessToken === "function") {
-          const nextToken = await K.sbGetAccessToken({ forceRefresh: true });
-          if (nextToken) {
-            state.session = loadSession();
-            return api(path, { ...options, _retried: true });
-          }
-        }
-        await K.sbSyncLocalSession(true);
-        state.session = loadSession();
-        return api(path, { ...options, _retried: true });
-      } catch {}
-    }
 
     if (!res.ok) {
       const err = new Error(data?.message || `API 오류 (${res.status})`);
@@ -4038,7 +4058,7 @@ function bindEvents() {
     try {
       if (!v) {
         sessionStorage.removeItem(SESSION_KEY);
-        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+        try { localStorage.removeItem(SESSION_KEY); } catch {}
         return;
       }
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(v));

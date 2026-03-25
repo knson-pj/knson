@@ -19,7 +19,15 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   const Shared = window.KNSN_SHARED || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
-    ? Shared.createApiClient({ baseUrl: API_BASE })
+    ? Shared.createApiClient({
+        baseUrl: API_BASE,
+        networkErrorFactory: (fetchErr) => {
+          const detail = String(fetchErr?.message || "").trim();
+          const err = new Error(detail ? `네트워크 연결 또는 서버 응답에 실패했습니다. (${detail})` : "네트워크 연결 또는 서버 응답에 실패했습니다.");
+          err.cause = fetchErr;
+          return err;
+        },
+      })
     : null;
 
   // 이미 로그인되어 있으면 바로 이동
@@ -31,8 +39,12 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
         if (sbEnabled && K && typeof K.sbHardSignOut === "function") await K.sbHardSignOut();
         else if (sbEnabled && K && typeof K.sbSignOut === "function") await K.sbSignOut();
       } catch {}
-      try { sessionStorage.removeItem(SESSION_KEY); } catch {}
-      try { localStorage.removeItem(SESSION_KEY); } catch {}
+      try { if (Shared && typeof Shared.clearSession === "function") Shared.clearSession(); }
+      catch {}
+      if (!Shared || typeof Shared.clearSession !== "function") {
+        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+        try { localStorage.removeItem(SESSION_KEY); } catch {}
+      }
       try {
         if (urlObj) {
           urlObj.searchParams.delete("logout");
@@ -116,13 +128,9 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   }
 
   function saveSession(session) {
-    if (Shared && typeof Shared.saveSession === "function") {
-      Shared.saveSession(session);
-      return;
-    }
+    if (Shared && typeof Shared.saveSession === "function") return Shared.saveSession(session);
     try {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      // 과거 버전 세션 정리
       try { localStorage.removeItem(SESSION_KEY); } catch {}
     } catch {}
   }
@@ -137,14 +145,16 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
 
   async function api(path, options = {}) {
     if (sharedApi) return sharedApi(path, options);
+    const method = String(options.method || "GET").toUpperCase();
+    const hasBody = !["GET", "HEAD"].includes(method);
     const res = await fetch(`${API_BASE}${path}`, {
-      method: options.method || "GET",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      method,
+      headers: { ...(hasBody ? { "Content-Type": "application/json" } : {}), Accept: "application/json" },
+      body: hasBody ? JSON.stringify(options.body || {}) : undefined,
     });
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch {}
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
     if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
     return data;
   }

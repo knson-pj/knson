@@ -1565,11 +1565,9 @@
   }
 
   function toNumber(v) {
-    if (Shared && typeof Shared.toNumber === "function") {
-      const n = Shared.toNumber(v);
-      return Number.isFinite(n) ? n : 0;
-    }
-    const n = Number(String(v ?? "").replace(/[^0-9.-]/g, ""));
+    const n = Shared && typeof Shared.toNumber === "function"
+      ? Shared.toNumber(v)
+      : (K && typeof K.toNumber === "function" ? K.toNumber(v) : Number(String(v ?? "").replace(/[^0-9.-]/g, "")));
     return Number.isFinite(n) ? n : 0;
   }
 
@@ -1644,6 +1642,7 @@
   }
 
   function escapeAttr(v) {
+    if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
     return escapeHtml(v);
   }
 

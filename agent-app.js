@@ -12,6 +12,26 @@
 
   function loadSession() { return (Shared && typeof Shared.loadSession === "function") ? Shared.loadSession() : (K ? K.loadSession() : null); }
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
+  const API_BASE = K && typeof K.getApiBase === "function" ? K.getApiBase() : "https://knson.vercel.app/api";
+  const sharedApiJson = (Shared && typeof Shared.createApiClient === "function")
+    ? Shared.createApiClient({
+        baseUrl: API_BASE,
+        getAuthToken: () => getSessionToken(),
+        ensureAuthToken: async () => {
+          if (isSupabaseMode() && K && typeof K.sbSyncLocalSession === "function") {
+            try { await K.sbSyncLocalSession(); } catch {}
+            state.session = loadSession() || state.session;
+          }
+          return getSessionToken();
+        },
+        networkErrorFactory: (fetchErr) => {
+          const detail = String(fetchErr?.message || "").trim();
+          const err = new Error(detail ? `네트워크 연결 또는 서버 응답에 실패했습니다. (${detail})` : "네트워크 연결 또는 서버 응답에 실패했습니다.");
+          err.cause = fetchErr;
+          return err;
+        },
+      })
+    : null;
 
   const parseFlexibleNumber = (Shared && typeof Shared.parseFlexibleNumber === "function")
     ? Shared.parseFlexibleNumber
@@ -298,7 +318,17 @@
   }
 
   async function apiJson(path, options = {}) {
-    const base = K && typeof K.getApiBase === "function" ? K.getApiBase() : "";
+    if (sharedApiJson) {
+      const data = await sharedApiJson(path, {
+        method: options.method || (options.json !== undefined ? "POST" : "GET"),
+        headers: options.headers || {},
+        json: options.json,
+        auth: options.auth !== false,
+      });
+      if (data?.ok === false) throw new Error(extractApiErrorText(data, 200));
+      return data;
+    }
+    const base = API_BASE;
     const token = getSessionToken();
     const headers = {
       Accept: "application/json",
@@ -1596,6 +1626,7 @@
   }
 
   function formatDate(v) {
+    if (Shared && typeof Shared.formatDate === "function") return Shared.formatDate(v);
     const s = String(v || "").trim();
     if (!s) return "";
     const d = new Date(s);

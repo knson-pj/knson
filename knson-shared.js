@@ -178,6 +178,7 @@
 
   function buildJsonBody(options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, "rawBody")) return options.rawBody;
+    if (Object.prototype.hasOwnProperty.call(options, "json")) return JSON.stringify(options.json || {});
     return JSON.stringify(options.body || {});
   }
 
