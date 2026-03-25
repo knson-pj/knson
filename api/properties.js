@@ -288,21 +288,29 @@ async function handleActivityLog(req, res) {
       const requestedActorId = cleanText(url.searchParams.get('actor_id'), 120);
       const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
       const actorId = ctx.role === 'admin' && requestedActorId ? requestedActorId : ctx.userId;
+      const actorName = cleanText(ctx.name || ctx.email || '', 120);
       const baseSelect = 'id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at';
-      let query = `/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}`;
+      let rows = [];
       if (adminViewRequested) {
+        let query = `/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}`;
         if (requestedActorId) {
           query += `&actor_id=eq.${encodeURIComponent(requestedActorId)}`;
         }
         query += '&order=actor_name.asc.nullslast,created_at.desc';
+        rows = await supabaseRest(query);
       } else {
-        query += `&actor_id=eq.${encodeURIComponent(actorId)}&order=created_at.desc`;
+        const byActorId = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
+        rows = await supabaseRest(byActorId);
+        if ((!Array.isArray(rows) || !rows.length) && actorName) {
+          const byActorName = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(actorName)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
+          rows = await supabaseRest(byActorName);
+        }
       }
-      const rows = await supabaseRest(query);
       return send(res, 200, {
         ok: true,
         date,
         actorId: adminViewRequested ? (requestedActorId || null) : actorId,
+        actorName: adminViewRequested ? null : actorName,
         adminView: adminViewRequested,
         counts: summarizeActivityRows(rows),
         items: Array.isArray(rows) ? rows : [],
