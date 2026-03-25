@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260325-shell1";
+  const ADMIN_FAST_BUILD = "20260325-ui1";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -824,7 +824,6 @@ function bindEvents() {
     const f = state.propertyFilters || {};
     return !!(
       String(f.activeCard || '').trim() ||
-      String(f.status || '').trim() ||
       String(f.keyword || '').trim() ||
       String(f.area || '').trim() ||
       String(f.priceRange || '').trim() ||
@@ -896,12 +895,12 @@ function bindEvents() {
       return Number(count || 0);
     };
 
-    const [total, auction, onbid, realtorTotal, realtorDirect, general] = await Promise.all([
+    const [total, auction, onbid, realtorTotal, realtorNaver, general] = await Promise.all([
       countRows(),
       countRows((q) => q.eq("source_type", "auction")),
       countRows((q) => q.eq("source_type", "onbid")),
       countRows((q) => q.eq("source_type", "realtor")),
-      countRows((q) => q.eq("source_type", "realtor").eq("submitter_type", "realtor")),
+      countRows((q) => q.eq("source_type", "realtor").not("source_url", "is", null)),
       countRows((q) => q.eq("source_type", "general")),
     ]);
 
@@ -909,8 +908,8 @@ function bindEvents() {
       total,
       auction,
       onbid,
-      realtor_direct: realtorDirect,
-      realtor_naver: Math.max(0, realtorTotal - realtorDirect),
+      realtor_naver: realtorNaver,
+      realtor_direct: Math.max(0, realtorTotal - realtorNaver),
       general,
     };
   }
@@ -1090,10 +1089,15 @@ function bindEvents() {
       opinion: opinionText,
       geocodeStatus: firstText(item.geocode_status, item.geocodeStatus, raw.geocode_status, ""),
       geocodedAt: firstText(item.geocoded_at, item.geocodedAt, ""),
-      isDirectSubmission: !!(
-        firstText(item.submitterName, item.submitter_name, raw.submitter_name, raw.submitterName, "") ||
-        firstText(item.brokerOfficeName, item.broker_office_name, raw.broker_office_name, raw.brokerOfficeName, "")
-      ),
+      isDirectSubmission: (() => {
+        const submitterType = firstText(item.submitterType, item.submitter_type, raw.submitterType, raw.submitter_type, "").toLowerCase();
+        const sourceUrlValue = firstText(item.sourceUrl, item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
+        const submitterNameValue = firstText(item.submitterName, item.submitter_name, raw.submitter_name, raw.submitterName, "");
+        if (sourceType !== "realtor") return false;
+        if (submitterType === "realtor") return true;
+        if (sourceUrlValue) return false;
+        return !!submitterNameValue;
+      })(),
       _raw: item,
     };
   }
@@ -2053,7 +2057,8 @@ function sortGuUnitsByAdjacency(...args) {
 
   function sourceLabel(v) {
     if (v === "auction") return "경매";
-    if (v === "gongmae") return "공매";
+    if (v === "gongmae" || v === "onbid") return "공매";
+    if (v === "realtor") return "중개";
     return "일반";
   }
 

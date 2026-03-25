@@ -577,7 +577,42 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
   display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);
 }
 .toolbar .select,.toolbar .input{height:32px;font-size:12px;}
-#propKeyword,#agKeyword{max-width:200px;}
+#propKeyword,#agKeyword{max-width:none;}
+
+.toolbar.toolbar-admin-properties,
+.toolbar.toolbar-agent-properties{
+  display:grid;
+  align-items:center;
+  gap:var(--sp-2);
+}
+.toolbar.toolbar-admin-properties{
+  grid-template-columns:minmax(240px,1.6fr) repeat(3,minmax(130px,1fr));
+}
+.toolbar.toolbar-agent-properties{
+  grid-template-columns:minmax(240px,1.6fr) repeat(3,minmax(130px,1fr)) auto auto auto;
+}
+.toolbar.toolbar-admin-properties .input,
+.toolbar.toolbar-admin-properties .select,
+.toolbar.toolbar-agent-properties .input,
+.toolbar.toolbar-agent-properties .select{
+  width:100%;
+  max-width:none;
+  min-width:0;
+}
+.toolbar.toolbar-agent-properties .btn-add-circle{justify-self:start;}
+
+@media(max-width:1200px){
+  .toolbar.toolbar-agent-properties{grid-template-columns:minmax(220px,1.4fr) repeat(3,minmax(120px,1fr)) auto auto auto;}
+}
+@media(max-width:960px){
+  .toolbar.toolbar-admin-properties,
+  .toolbar.toolbar-agent-properties{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media(max-width:640px){
+  .toolbar.toolbar-admin-properties,
+  .toolbar.toolbar-agent-properties{grid-template-columns:1fr;}
+  .toolbar.toolbar-agent-properties .btn-add-circle{justify-self:start;}
+}
 
 /* ══════════════════════════════════════════════════
    SIDEBAR GROUP CSS (접이식)

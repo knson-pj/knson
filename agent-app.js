@@ -194,7 +194,6 @@
     els.agPagination = $("#agPagination");
 
     // Filters
-    els.agStatusFilter = $("#agStatusFilter");
     els.agAreaFilter = $("#agAreaFilter");
     els.agPriceFilter = $("#agPriceFilter");
     els.agRatioFilter = $("#agRatioFilter");
@@ -601,7 +600,6 @@
     });
 
     // Filters
-    if (els.agStatusFilter) els.agStatusFilter.addEventListener("change", (e) => { state.filters.status = e.target.value; state.page = 1; renderTable(); });
     if (els.agAreaFilter) els.agAreaFilter.addEventListener("change", (e) => { state.filters.area = e.target.value; state.page = 1; renderTable(); });
     if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
     if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
@@ -1090,11 +1088,11 @@
 
   function normalizeProperty(item) {
     const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
-    const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || "").toString().toLowerCase();
+    const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || raw.source_type || "").toString().trim().toLowerCase();
     const sourceType =
-      rawSource === "auction" ? "auction" :
-      rawSource === "gongmae" || rawSource === "public" || rawSource === "onbid" ? "onbid" :
-      rawSource === "realtor" ? "realtor" :
+      ["auction", "courtauction"].includes(rawSource) ? "auction" :
+      ["gongmae", "public", "onbid"].includes(rawSource) ? "onbid" :
+      ["realtor", "realtor_naver", "realtor_direct", "naver", "broker", "중개"].includes(rawSource) ? "realtor" :
       "general";
 
     return {
@@ -1118,10 +1116,15 @@
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, ""),
       opinion: firstText(item.opinion, item.memo, raw.opinion, raw.memo, ""),
       createdAt: firstText(item.date, item.date_uploaded, item.createdAt, raw.date, ""),
-      isDirectSubmission: !!(
-        firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, "") ||
-        firstText(item.broker_office_name, item.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, "")
-      ),
+      isDirectSubmission: (() => {
+        const submitterType = firstText(item.submitter_type, item.submitterType, raw.submitter_type, raw.submitterType, "").toLowerCase();
+        const sourceUrlValue = firstText(item.source_url, item.sourceUrl, raw.source_url, raw.sourceUrl, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
+        const submitterNameValue = firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, "");
+        if (sourceType !== "realtor") return false;
+        if (submitterType === "realtor") return true;
+        if (sourceUrlValue) return false;
+        return !!submitterNameValue;
+      })(),
       _raw: item,
     };
   }
@@ -1159,13 +1162,6 @@
       }
     }
 
-    // 상태 필터
-    if (f.status) {
-      rows = rows.filter((r) => {
-        const s = String(r.status || "").toLowerCase();
-        return s === f.status || s.includes(f.status);
-      });
-    }
 
     // 면적 필터
     if (f.area) {

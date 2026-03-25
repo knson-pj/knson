@@ -6,7 +6,7 @@
   <meta name="supabase-url" content="" /><meta name="supabase-anon-key" content="" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260325-v3" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260325-ui1" />
 </head>
 <body>
 
@@ -85,12 +85,11 @@
     <section id="ag-view-list" class="ag-view hidden">
       <section class="panel">
         <div class="panel-title-row"><h2>전체 현황</h2></div>
-        <div class="toolbar">
-          <select id="agStatusFilter" class="select"><option value="">전체 상태</option><option value="active">진행중</option><option value="hold">보류</option><option value="closed">종결</option><option value="review">검토중</option></select>
+        <div class="toolbar toolbar-agent-properties">
+          <input id="agKeyword" class="input toolbar-keyword" type="text" placeholder="주소 / 지역 검색" />
           <select id="agAreaFilter" class="select"><option value="">전체 면적</option><option value="0-5">5평 미만</option><option value="5-10">5~10평</option><option value="10-20">10~20평</option><option value="20-30">20~30평</option><option value="30-50">30~50평</option><option value="50-">50평 이상</option></select>
           <select id="agPriceFilter" class="select"><option value="">전체 가격</option><option value="0-1">1억 미만</option><option value="1-3">1~3억</option><option value="3-5">3~5억</option><option value="5-10">5~10억</option><option value="10-20">10~20억</option><option value="20-">20억 이상</option></select>
           <select id="agRatioFilter" class="select"><option value="">전체 비율</option><option value="50">50% 이하</option></select>
-          <input id="agKeyword" class="input" type="text" placeholder="주소 / 지역 검색" />
           <button id="agFavFilter" class="btn-add-circle btn-fav-circle" type="button" title="관심물건만 보기">★</button>
           <button id="agDayFilter" class="btn-add-circle btn-day-circle" type="button" title="당일 입찰기일">D</button>
           <button id="btnNewProperty" class="btn-add-circle" type="button" title="신규 물건 등록">+</button>
@@ -150,7 +149,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./knson-core.js?v=20260320-agent"></script>
-<script src="./agent-app.js?v=20260325-rollback1"></script>
+<script src="./agent-app.js?v=20260325-ui1"></script>
 
 <script>
 (function(){
