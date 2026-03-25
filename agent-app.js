@@ -1495,13 +1495,9 @@
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
       if (!currentUserId) throw new Error("로그인 정보가 만료되었습니다. 다시 로그인해 주세요.");
-      if (!K || typeof K.initSupabase !== "function") throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
-      const sb = K.initSupabase();
-      if (!sb) throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
-      try { if (typeof K.sbSyncLocalSession === "function") await K.sbSyncLocalSession(); } catch {}
+      try { if (K && typeof K.sbSyncLocalSession === "function") await K.sbSyncLocalSession(); } catch {}
 
       const targetId = String(item?._raw?.id || item.id || item.globalId || "").trim();
-      const targetCol = item?._raw?.id ? "id" : "global_id";
       if (!targetId) throw new Error("수정 대상 물건 식별자를 찾을 수 없습니다.");
 
       const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
@@ -1560,24 +1556,8 @@
       patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
-      let query = sb.from("properties").update(patch).eq(targetCol, targetId).eq("assignee_id", currentUserId).select("*").limit(1);
-      const { data, error } = await query;
-      if (error) {
-        const message = String(error?.message || "").trim();
-        if (/not allowed/i.test(message)) {
-          throw new Error("현재 물건 수정은 DB 정책에 의해 차단되었습니다. 잠긴 항목과 assignee_id 배정을 다시 확인해 주세요.");
-        }
-        throw error;
-      }
-      const updatedRow = Array.isArray(data) ? (data[0] || null) : data;
-      if (!updatedRow) {
-        throw new Error("수정 가능한 물건을 찾지 못했습니다. assignee_id 배정 상태를 다시 확인해 주세요.");
-      }
-
-      let activityError = "";
-      if (workCategories.length) {
-        try {
-          await recordDailyReportEntries(buildActivityLogEntries(workCategories, {
+      const activityEntries = workCategories.length
+        ? buildActivityLogEntries(workCategories, {
             ...item,
             floor: floorVal || item.floor,
             totalfloor: totalFloorVal || item.totalfloor,
@@ -1586,18 +1566,29 @@
             opinion: patch.memo || item.opinion,
             _raw: { ...(item._raw || {}), raw: newRaw },
           }, {
-            propertyId: updatedRow?.id || item.id || item.globalId || targetId,
+            propertyId: item?._raw?.id || item.id || item.globalId || targetId,
             identityKey: newRaw.registrationIdentityKey || buildRegistrationMatchKey({ ...item, raw: newRaw, _raw: { ...(item._raw || {}), raw: newRaw } }),
             changedFields,
             dailyIssueText: newOpinionText,
-          }));
-        } catch (logErr) {
-          activityError = logErr?.message || "일일업무일지 기록 실패";
-        }
+          })
+        : [];
+
+      const response = await apiJson('/properties', {
+        method: 'PATCH',
+        json: {
+          targetId,
+          patch,
+          activityEntries,
+        },
+      });
+      const updatedRow = response?.item || null;
+      if (!updatedRow) {
+        throw new Error("수정 가능한 물건을 찾지 못했습니다. assignee_id 배정 상태를 다시 확인해 주세요.");
       }
 
       closeEditModal();
       await loadProperties();
+      const activityError = String(response?.activityLogError || "").trim();
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
     } catch (err) {

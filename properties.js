@@ -248,6 +248,20 @@ function normalizeActivityEntry(entry, ctx) {
   };
 }
 
+async function insertActivityEntries(entries, ctx) {
+  const rows = (Array.isArray(entries) ? entries : []).map((entry) => normalizeActivityEntry(entry, ctx)).filter(Boolean);
+  if (!rows.length) return { createdCount: 0 };
+  const created = await supabaseRest('/rest/v1/property_activity_logs', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    json: rows,
+  });
+  return {
+    createdCount: Array.isArray(created) ? created.length : 0,
+    items: Array.isArray(created) ? created : [],
+  };
+}
+
 async function handleActivityLog(req, res) {
   if (!hasSupabaseAdminEnv()) {
     return send(res, 501, { ok: false, message: '일일업무일지 기능은 Supabase 환경에서만 사용할 수 있습니다.' });

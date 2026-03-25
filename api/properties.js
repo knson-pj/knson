@@ -248,6 +248,20 @@ function normalizeActivityEntry(entry, ctx) {
   };
 }
 
+async function insertActivityEntries(entries, ctx) {
+  const rows = (Array.isArray(entries) ? entries : []).map((entry) => normalizeActivityEntry(entry, ctx)).filter(Boolean);
+  if (!rows.length) return { createdCount: 0 };
+  const created = await supabaseRest('/rest/v1/property_activity_logs', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    json: rows,
+  });
+  return {
+    createdCount: Array.isArray(created) ? created.length : 0,
+    items: Array.isArray(created) ? created : [],
+  };
+}
+
 async function handleActivityLog(req, res) {
   if (!hasSupabaseAdminEnv()) {
     return send(res, 501, { ok: false, message: '일일업무일지 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
@@ -462,7 +476,26 @@ async function handleSupabaseWrite(req, res) {
       useAnon: useRequesterJwt,
     });
     const item = Array.isArray(rows) ? (rows[0] || null) : rows;
-    return send(res, 200, { ok: true, item });
+
+    let activityLogError = '';
+    let activityLoggedCount = 0;
+    if (Array.isArray(body.activityEntries) && body.activityEntries.length) {
+      try {
+        const mappedEntries = body.activityEntries.map((entry) => ({
+          ...entry,
+          propertyId: entry?.propertyId || entry?.property_id || item?.id || current?.id || targetId,
+          propertyIdentityKey: entry?.propertyIdentityKey || entry?.property_identity_key || item?.raw?.registrationIdentityKey || current?.raw?.registrationIdentityKey || null,
+          propertyItemNo: entry?.propertyItemNo || entry?.property_item_no || item?.item_no || current?.item_no || null,
+          propertyAddress: entry?.propertyAddress || entry?.property_address || item?.address || current?.address || null,
+        }));
+        const activityRes = await insertActivityEntries(mappedEntries, ctx);
+        activityLoggedCount = Number(activityRes?.createdCount || 0);
+      } catch (logErr) {
+        activityLogError = logErr?.message || '일일업무일지 기록 실패';
+      }
+    }
+
+    return send(res, 200, { ok: true, item, activityLoggedCount, activityLogError: activityLogError || null });
   }
 
   return send(res, 405, { ok: false, message: 'Method Not Allowed' });
