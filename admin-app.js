@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260325-adminsplit1";
+  const ADMIN_FAST_BUILD = "20260325-adminstable1";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -181,7 +181,10 @@
   function callAdminModule(moduleKey, fnName, args) {
     const mod = AdminModules[moduleKey];
     if (!mod || typeof mod[fnName] !== "function") {
-      throw new Error(`[admin-app] module not ready: ${moduleKey}.${fnName}`);
+      const msg = `[admin-app] module not ready: ${moduleKey}.${fnName}`;
+      console.error(msg);
+      setGlobalMsg("관리자 화면 일부 스크립트가 누락되었습니다. 새로고침 후에도 같으면 배포 파일 연결을 확인해 주세요.");
+      return undefined;
     }
     return mod[fnName](...(Array.isArray(args) ? args : []));
   }
@@ -289,7 +292,7 @@
     bindEvents();
     resetStaffForm();
     renderSessionUI();
-    ensureLoginThenLoad();
+    Promise.resolve(ensureLoginThenLoad()).catch((err) => handleAsyncError(err, "초기 로딩 실패"));
   }
 
   function cacheEls() {
