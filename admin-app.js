@@ -209,10 +209,19 @@
         showResultBox,
         setGlobalMsg,
         goLoginPage,
+        handleAsyncError,
+        setModalOpen,
         loadProperties,
         ensureAuxiliaryPropertiesForAdmin,
         getAuxiliaryPropertiesSnapshot,
         buildRegisterLogContext,
+        getFilteredProperties,
+        getPagedProperties,
+        renderAdminPropertiesPagination,
+        pruneSelectedPropertyIds,
+        togglePropertySelection,
+        toggleSelectAllProperties,
+        updatePropertySelectionControls,
         buildRegistrationMatchKey,
         buildRegistrationSnapshotFromItem,
         buildRegistrationSnapshotFromDbRow,
@@ -236,6 +245,20 @@
         formatAreaPyeong,
         chunkArray,
         invalidatePropertyCollections,
+        parseFlexibleNumber,
+        formatMoneyInputValue,
+        configureFormNumericUx,
+        fetchPropertyDetail,
+        updatePropertyRowResilient,
+        getStaffNameById,
+        loadRegistrationLog,
+        renderRegistrationLog,
+        loadOpinionHistory,
+        renderOpinionHistory,
+        appendOpinionEntry,
+        mergePropertyRaw,
+        formatScheduleHtml,
+        buildKakaoMapLink,
       },
     };
     return window.KNSN_ADMIN_RUNTIME;
@@ -1415,79 +1438,13 @@ function bindEvents() {
 
     if (els.sumAgents) els.sumAgents.textContent = fmt(staff.filter(s => normalizeRole(s.role) === "staff").length);
   }
-
-  function getFilteredProperties() {
-    const f = state.propertyFilters;
-    const kw = (f.keyword || "").toLowerCase().trim();
-
-    return state.properties.filter((p) => {
-      // 카드 클릭 필터
-      if (f.activeCard && f.activeCard !== "all") {
-        if (f.activeCard === "realtor_naver") {
-          if (p.sourceType !== "realtor" || p.isDirectSubmission) return false;
-        } else if (f.activeCard === "realtor_direct") {
-          if (p.sourceType !== "realtor" || !p.isDirectSubmission) return false;
-        } else if (["auction", "onbid", "general"].includes(f.activeCard)) {
-          if (p.sourceType !== f.activeCard) return false;
-        }
-      }
-
-      // 상태 필터
-      if (f.status) {
-        if ((p.status || "") !== f.status && !(p.status || "").includes(f.status)) return false;
-      }
-
-      // 면적 필터 (전용면적 평)
-      if (f.area) {
-        const [minStr, maxStr] = f.area.split("-");
-        const min = parseFloat(minStr) || 0;
-        const max = maxStr ? parseFloat(maxStr) : Infinity;
-        const area = p.exclusivearea;
-        if (area == null || area <= 0) return false;
-        if (area < min || (max !== Infinity && area >= max)) return false;
-      }
-
-      // 가격대 필터: 경매/공매 → 현재가(lowprice), 중개/일반 → 매각가(priceMain)
-      if (f.priceRange) {
-        const [minStr, maxStr] = f.priceRange.split("-");
-        const min = (parseFloat(minStr) || 0) * 100000000;
-        const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
-        const isAuctionType = p.sourceType === "auction" || p.sourceType === "onbid";
-        const price = isAuctionType ? (p.lowprice ?? p.priceMain) : p.priceMain;
-        if (!price || price <= 0) return false;
-        if (price < min || (max !== Infinity && price >= max)) return false;
-      }
-
-      // 50% 이하 비율 필터 (경매/공매만)
-      if (f.ratio50) {
-        if (p.sourceType !== "auction" && p.sourceType !== "onbid") return false;
-        if (!p.priceMain || !p.lowprice || p.priceMain <= 0) return false;
-        if ((p.lowprice / p.priceMain) > 0.5) return false;
-      }
-
-      // 키워드 필터
-      if (kw) {
-        const hay = [
-          p.itemNo, p.address, p.assetType, p.floor, p.totalfloor,
-          p.rightsAnalysis, p.siteInspection, p.opinion,
-          (p.assignedAgentName || getStaffNameById(p.assignedAgentId)),
-          p.regionGu, p.regionDong, p.status,
-        ].filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(kw)) return false;
-      }
-
-      return true;
-    });
+  function getFilteredProperties(...args) {
+    return callAdminModule("propertiesTab", "getFilteredProperties", args);
+  }
+  function getPagedProperties(...args) {
+    return callAdminModule("propertiesTab", "getPagedProperties", args);
   }
 
-
-  function getPagedProperties(rows) {
-    const totalPages = Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
-    if (state.propertyPage > totalPages) state.propertyPage = totalPages;
-    if (state.propertyPage < 1) state.propertyPage = 1;
-    const start = (state.propertyPage - 1) * state.propertyPageSize;
-    return { totalPages, rows: rows.slice(start, start + state.propertyPageSize) };
-  }
 
   // ---------------------------
   // Registration Log 유틸
@@ -1979,246 +1936,39 @@ function bindEvents() {
   function esc(v) {
     return String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
   }
-
-  function renderAdminPropertiesPagination(totalPages) {
-    if (!els.adminPropertiesPagination) return;
-    els.adminPropertiesPagination.innerHTML = "";
-    if (totalPages <= 1) {
-      els.adminPropertiesPagination.classList.add("hidden");
-      return;
-    }
-    els.adminPropertiesPagination.classList.remove("hidden");
-
-    const cur = state.propertyPage;
-    const scrollTop = () => {
-      const wrap = els.propertiesTableBody?.closest(".table-wrap");
-      if (wrap) window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - 120, behavior: "smooth" });
-    };
-    const go = async (page) => {
-      state.propertyPage = Math.max(1, Math.min(totalPages, page));
-      if (state.propertyMode === 'page') {
-        try {
-          await loadProperties({ refreshSummary: false });
-        } catch (err) {
-          handleAsyncError(err, '물건 목록 로드 실패');
-        }
-      } else {
-        renderPropertiesTable();
-      }
-      scrollTop();
-    };
-
-    const frag = document.createDocumentFragment();
-    const addBtn = (label, page, disabled = false, active = false, title = "") => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = active ? "pager-num is-active" : (typeof label === "number" ? "pager-num" : "pager-btn");
-      b.textContent = String(label);
-      b.disabled = disabled;
-      if (title) b.title = title;
-      if (!disabled) b.addEventListener("click", () => { void go(page); });
-      frag.appendChild(b);
-    };
-
-    addBtn("<<", cur - 20, cur - 20 < 1, false, "20페이지 뒤로");
-    addBtn("<", cur - 10, cur - 10 < 1, false, "10페이지 뒤로");
-    addBtn("이전", cur - 1, cur <= 1);
-
-    const blockSize = 10;
-    const blockStart = Math.floor((cur - 1) / blockSize) * blockSize + 1;
-    const blockEnd = Math.min(totalPages, blockStart + blockSize - 1);
-    for (let p = blockStart; p <= blockEnd; p++) {
-      addBtn(p, p, false, p === cur);
-    }
-
-    addBtn("다음", cur + 1, cur >= totalPages);
-    addBtn(">", cur + 10, cur + 10 > totalPages, false, "10페이지 앞으로");
-    addBtn(">>", cur + 20, cur + 20 > totalPages, false, "20페이지 앞으로");
-
-    els.adminPropertiesPagination.appendChild(frag);
+  function renderAdminPropertiesPagination(...args) {
+    return callAdminModule("propertiesTab", "renderAdminPropertiesPagination", args);
+  }
+  function pruneSelectedPropertyIds(...args) {
+    return callAdminModule("propertiesTab", "pruneSelectedPropertyIds", args);
+  }
+  function togglePropertySelection(...args) {
+    return callAdminModule("propertiesTab", "togglePropertySelection", args);
+  }
+  function toggleSelectAllProperties(...args) {
+    return callAdminModule("propertiesTab", "toggleSelectAllProperties", args);
+  }
+  function updatePropertySelectionControls(...args) {
+    return callAdminModule("propertiesTab", "updatePropertySelectionControls", args);
+  }
+  async function deleteSelectedProperties(...args) {
+    return callAdminModule("propertiesTab", "deleteSelectedProperties", args);
+  }
+  async function deleteAllProperties(...args) {
+    return callAdminModule("propertiesTab", "deleteAllProperties", args);
+  }
+  function renderPropertiesTable(...args) {
+    return callAdminModule("propertiesTab", "renderPropertiesTable", args);
   }
 
-  function pruneSelectedPropertyIds() {
-    const valid = new Set(state.properties.map((p) => String(p.id || p.globalId || "")).filter(Boolean));
-    state.selectedPropertyIds = new Set([...state.selectedPropertyIds].filter((id) => valid.has(String(id))));
-    updatePropertySelectionControls();
-  }
-
-  function togglePropertySelection(id, checked) {
-    const key = String(id || "").trim();
-    if (!key) return;
-    if (checked) state.selectedPropertyIds.add(key);
-    else state.selectedPropertyIds.delete(key);
-    updatePropertySelectionControls();
-  }
-
-  function toggleSelectAllProperties(checked) {
-    const rows = state.propertyMode === 'page' ? state.properties : getPagedProperties(getFilteredProperties()).rows;
-    rows.forEach((p) => {
-      const key = String(p.id || p.globalId || "").trim();
-      if (!key) return;
-      if (checked) state.selectedPropertyIds.add(key);
-      else state.selectedPropertyIds.delete(key);
-    });
-    renderPropertiesTable();
-  }
-
-  function updatePropertySelectionControls() {
-    const rows = state.propertyMode === 'page' ? state.properties : getPagedProperties(getFilteredProperties()).rows;
-    const ids = rows.map((p) => String(p.id || p.globalId || "").trim()).filter(Boolean);
-    const selectedVisible = ids.filter((id) => state.selectedPropertyIds.has(id));
-    if (els.propSelectAll) {
-      els.propSelectAll.checked = ids.length > 0 && selectedVisible.length === ids.length;
-      els.propSelectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < ids.length;
-    }
-    if (els.btnDeleteSelectedProperties) {
-      const cnt = state.selectedPropertyIds.size;
-      els.btnDeleteSelectedProperties.disabled = cnt === 0;
-      els.btnDeleteSelectedProperties.textContent = cnt > 0 ? `선택 삭제 (${cnt})` : '선택 삭제';
-    }
-  }
-
-  async function deleteSelectedProperties() {
-    const ids = [...state.selectedPropertyIds].filter(Boolean);
-    if (!ids.length) {
-      alert('삭제할 물건을 먼저 선택해 주세요.');
-      return;
-    }
-    const ok = window.confirm(`선택한 ${ids.length}건의 물건을 삭제할까요?`);
-    if (!ok) return;
-
-    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    if (sb) {
-      for (const chunk of chunkArray(ids, 100)) {
-        const pureIds = chunk.filter((v) => !String(v).includes(':'));
-        const globalIds = chunk.filter((v) => String(v).includes(':'));
-        if (pureIds.length) {
-          const { error } = await sb.from('properties').delete().in('id', pureIds);
-          if (error) throw error;
-        }
-        if (globalIds.length) {
-          const { error } = await sb.from('properties').delete().in('global_id', globalIds);
-          if (error) throw error;
-        }
-      }
-    } else {
-      await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
-    }
-
-    state.selectedPropertyIds.clear();
-    invalidatePropertyCollections();
-    await loadProperties();
-  }
-
-
-  async function deleteAllProperties() {
-    const total = Number(state.propertySummary?.total || state.propertyTotalCount || (Array.isArray(state.properties) ? state.properties.length : 0));
-    if (!total) {
-      alert('삭제할 물건이 없습니다.');
-      return;
-    }
-    const ok = window.confirm(`현재 등록된 물건 ${total.toLocaleString('ko-KR')}건을 전체삭제할까요? 이 작업은 되돌릴 수 없습니다.`);
-    if (!ok) return;
-    const ok2 = window.confirm('정말로 전체삭제를 진행할까요?');
-    if (!ok2) return;
-
-    await api('/admin/properties', { method: 'DELETE', auth: true, body: { all: true } });
-
-    state.selectedPropertyIds.clear();
-    invalidatePropertyCollections();
-    await loadProperties();
-    alert('전체삭제가 완료되었습니다.');
-  }
-
-  function renderPropertiesTable() {
-    const pageMode = state.propertyMode === 'page';
-    const rows = pageMode ? state.properties : getFilteredProperties();
-    const totalPages = pageMode
-      ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
-      : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
-    const displayRows = pageMode ? rows : getPagedProperties(rows).rows;
-
-    els.propertiesTableBody.innerHTML = "";
-
-    if (!rows.length) {
-      els.propertiesEmpty.classList.remove("hidden");
-      updatePropertySelectionControls();
-      renderAdminPropertiesPagination(0);
-      return;
-    }
-    els.propertiesEmpty.classList.add("hidden");
-
-    const frag = document.createDocumentFragment();
-    for (const p of displayRows) {
-      const rowId = String(p.id || p.globalId || "").trim();
-      const tr = document.createElement("tr");
-      if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
-      const kindLabel = p.sourceType === "auction" ? "경매" : p.sourceType === "onbid" ? "공매" : p.sourceType === "realtor" ? "중개" : "일반";
-      const moveLink = buildKakaoMapLink(p);
-      const currentPrice = p.lowprice != null ? formatMoneyKRW(p.lowprice) : "-";
-      const rate = formatPercent(p.priceMain, p.lowprice, p._raw || {});
-
-      tr.innerHTML = `
-        <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
-        <td>${escapeHtml(p.itemNo || "-")}</td>
-        <td><span class="kind-text ${escapeAttr(p.sourceType === "auction" ? "kind-auction" : p.sourceType === "onbid" ? "kind-gongmae" : p.sourceType === "realtor" ? "kind-realtor" : "kind-general")}">${escapeHtml(kindLabel)}</span></td>
-        <td class="text-cell"><button type="button" class="address-trigger">${escapeHtml(p.address || "-")}</button></td>
-        <td>${escapeHtml(p.assetType || "-")}</td>
-        <td>${escapeHtml(String(p.floor || "-"))}</td>
-        <td>${escapeHtml(String(p.totalfloor || "-"))}</td>
-        <td>${escapeHtml(formatDate(p.useapproval) || "-")}</td>
-        <td>${p.commonarea != null ? escapeHtml(formatAreaPyeong(p.commonarea)) : "-"}</td>
-        <td>${p.exclusivearea != null ? escapeHtml(formatAreaPyeong(p.exclusivearea)) : "-"}</td>
-        <td>${p.priceMain != null ? formatMoneyKRW(p.priceMain) : "-"}</td>
-        <td>${escapeHtml(currentPrice)}</td>
-        <td>${escapeHtml(rate)}</td>
-        <td class="schedule-cell">${formatScheduleHtml(p)}</td>
-        <td>${escapeHtml(statusLabel(p.status) || p.status || "-")}</td>
-        <td>${moveLink ? `<a class="map-link" href="${escapeAttr(moveLink)}" target="_blank" rel="noopener noreferrer">이동</a>` : "-"}</td>
-        <td>${escapeHtml(formatDate(p.createdAt) || "-")}</td>
-        <td>${escapeHtml((p.assignedAgentName || getStaffNameById(p.assignedAgentId)) || "미배정")}</td>
-        <td class="text-cell">${escapeHtml(p.rightsAnalysis || "-")}</td>
-        <td class="text-cell">${escapeHtml(p.siteInspection || "-")}</td>
-        <td class="text-cell opinion-cell">${escapeHtml(p.opinion || "-")}</td>
-      `;
-
-      const checkbox = tr.querySelector('.prop-row-check');
-      if (checkbox) {
-        checkbox.addEventListener('click', (e) => e.stopPropagation());
-        checkbox.addEventListener('change', (e) => {
-          togglePropertySelection(rowId, !!e.target.checked);
-          tr.classList.toggle('row-selected', !!e.target.checked);
-        });
-      }
-
-      const addressTrigger = tr.querySelector('.address-trigger');
-      if (addressTrigger) {
-        addressTrigger.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void openPropertyEditModal(p);
-        });
-      }
-      frag.appendChild(tr);
-    }
-    els.propertiesTableBody.appendChild(frag);
-    updatePropertySelectionControls();
-    renderAdminPropertiesPagination(totalPages);
-  }
 
   // ---------------------------
   // Property Edit Modal
   // ---------------------------
-  async function ensureStaffForPropertyModal() {
-    try {
-      await syncSupabaseSessionIfNeeded();
-      const res = await api("/admin/staff", { auth: true });
-      state.staff = dedupeStaff(res?.items || []);
-      renderSummary();
-    } catch (err) {
-      console.warn("ensureStaffForPropertyModal failed", err);
-    }
+  async function ensureStaffForPropertyModal(...args) {
+    return callAdminModule("propertiesTab", "ensureStaffForPropertyModal", args);
   }
+
 
   function formatModalAreaValue(sourceType, value) {
     if (value == null || value === "") return "";
@@ -2236,165 +1986,16 @@ function bindEvents() {
       if (field) field.classList.toggle('hidden', hide);
     });
   }
-
-  async function openPropertyEditModal(item) {
-    if (!els.propertyEditModalAdmin || !els.aemForm) return;
-
-    const user = state.session?.user;
-    const isAdmin = user?.role === "admin";
-
-    let workingItem = item;
-
-    if (!isAdmin) {
-      const myId = user?.id || "";
-      const assignedId = workingItem?.assignedAgentId || "";
-      if (assignedId && myId && assignedId !== myId) {
-        alert("본인에게 배정된 물건만 수정할 수 있습니다.");
-        return;
-      }
-    }
-    const sb = isSupabaseMode() ? K.initSupabase() : null;
-    const detailTargetId = String(workingItem?.id || workingItem?.globalId || '').trim();
-    if (sb && detailTargetId) {
-      try {
-        const detailed = await fetchPropertyDetail(sb, detailTargetId);
-        if (detailed) workingItem = detailed;
-      } catch (err) {
-        console.warn('property detail load failed', err);
-      }
-    }
-
-    state.editingProperty = workingItem;
-
-    if (isAdmin) {
-      await ensureStaffForPropertyModal();
-    }
-
-    const f = els.aemForm;
-    const setVal = (name, v) => {
-      const el = f.elements[name];
-      if (!el) return;
-      el.value = v == null ? "" : String(v);
-    };
-
-    setVal("itemNo", workingItem.itemNo);
-    setVal("sourceType", workingItem.sourceType);
-    populateAssigneeSelect(workingItem.assignedAgentId || workingItem.assigneeId || workingItem.assignee_id || "");
-    setVal("submitterType", workingItem.submitterType);
-    setVal("address", workingItem.address);
-    setVal("assetType", workingItem.assetType);
-    setVal("floor", workingItem.floor ?? "");
-    setVal("totalfloor", workingItem.totalfloor ?? "");
-    setVal("commonarea", formatModalAreaValue(workingItem.sourceType, workingItem.commonarea ?? ""));
-    setVal("exclusivearea", formatModalAreaValue(workingItem.sourceType, workingItem.exclusivearea ?? ""));
-    setVal("sitearea", formatModalAreaValue(workingItem.sourceType, workingItem.sitearea ?? ""));
-    setVal("useapproval", workingItem.useapproval ?? "");
-    setVal("status", workingItem.status ?? "");
-    setVal("priceMain", formatMoneyInputValue(workingItem.priceMain ?? ""));
-    setVal("lowprice", formatMoneyInputValue(workingItem.lowprice ?? ""));
-    setVal("dateMain", toInputDateTimeLocal(workingItem.dateMain) ?? "");
-    setVal("sourceUrl", workingItem.sourceUrl ?? "");
-    setVal("date", formatDate(workingItem.createdAt) ?? "");
-    setVal("realtorname", workingItem.realtorname ?? "");
-    setVal("realtorphone", workingItem.realtorphone ?? "");
-    setVal("realtorcell", workingItem.realtorcell ?? "");
-    setVal("rightsAnalysis", workingItem.rightsAnalysis ?? "");
-    setVal("siteInspection", workingItem.siteInspection ?? "");
-    setVal("opinion", "");   // 매일 신규 작성 — 기존 내용 불러오지 않음
-    setVal("latitude", workingItem.latitude ?? "");
-    setVal("longitude", workingItem.longitude ?? "");
-
-    configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea", "latitude", "longitude"], amountNames: ["priceMain", "lowprice"] });
-    toggleBrokerFieldsBySource(workingItem.sourceType);
-
-    // opinion 잠금 해제 (항상 신규 작성 가능)
-    const opinionEl = f.elements["opinion"];
-    if (opinionEl) opinionEl.disabled = false;
-
-    // 물건 History 렌더
-    renderOpinionHistory(els.aemHistoryList, loadOpinionHistory(workingItem), true);
-    renderRegistrationLog(els.aemRegistrationLogList, loadRegistrationLog(workingItem));
-
-    const sourceTypeEl = f.elements["sourceType"];
-    if (sourceTypeEl) {
-      sourceTypeEl.onchange = () => toggleBrokerFieldsBySource(sourceTypeEl.value);
-    }
-
-    const hasText = (v) => v != null && String(v).trim() !== "";
-    const hasNum = (v) => v != null && String(v).trim() !== "" && !Number.isNaN(Number(v));
-
-    const lockIfHas = (name, has) => {
-      const el = f.elements[name];
-      if (!el) return;
-      el.disabled = !isAdmin && has;
-    };
-
-    lockIfHas("itemNo", hasText(workingItem.itemNo));
-    lockIfHas("address", hasText(workingItem.address));
-    lockIfHas("assetType", hasText(workingItem.assetType));
-    lockIfHas("floor", hasText(workingItem.floor));
-    lockIfHas("totalfloor", hasText(workingItem.totalfloor));
-    lockIfHas("commonarea", hasNum(workingItem.commonarea));
-    lockIfHas("exclusivearea", hasNum(workingItem.exclusivearea));
-    lockIfHas("sitearea", hasNum(workingItem.sitearea));
-    lockIfHas("useapproval", hasText(workingItem.useapproval));
-    lockIfHas("status", hasText(workingItem.status));
-    lockIfHas("priceMain", hasNum(workingItem.priceMain));
-    lockIfHas("lowprice", hasNum(workingItem.lowprice));
-    lockIfHas("dateMain", hasText(workingItem.dateMain));
-    lockIfHas("sourceUrl", hasText(workingItem.sourceUrl));
-    lockIfHas("realtorname", hasText(workingItem.realtorname));
-    lockIfHas("realtorphone", hasText(workingItem.realtorphone));
-    lockIfHas("realtorcell", hasText(workingItem.realtorcell));
-    lockIfHas("rightsAnalysis", hasText(workingItem.rightsAnalysis));
-    lockIfHas("siteInspection", hasText(workingItem.siteInspection));
-    // opinion은 항상 신규 작성 가능 — lockIfHas 제외
-
-    if (f.elements["sourceType"]) f.elements["sourceType"].disabled = !isAdmin;
-    if (f.elements["assigneeId"]) f.elements["assigneeId"].disabled = !isAdmin;
-    if (f.elements["submitterType"]) f.elements["submitterType"].disabled = !isAdmin;
-    if (f.elements["date"]) f.elements["date"].disabled = true;
-    if (els.aemDelete) els.aemDelete.classList.toggle("hidden", !isAdmin);
-
-    setAemMsg("");
-    setModalOpen(true);
-    els.propertyEditModalAdmin.classList.remove("hidden");
-    els.propertyEditModalAdmin.setAttribute("aria-hidden", "false");
+  async function openPropertyEditModal(...args) {
+    return callAdminModule("propertiesTab", "openPropertyEditModal", args);
+  }
+  function populateAssigneeSelect(...args) {
+    return callAdminModule("propertiesTab", "populateAssigneeSelect", args);
+  }
+  function closePropertyEditModal(...args) {
+    return callAdminModule("propertiesTab", "closePropertyEditModal", args);
   }
 
-  function populateAssigneeSelect(selectedId) {
-    const sel = els.aemForm?.elements["assigneeId"];
-    if (!sel) return;
-    const seen = new Set();
-    const staffRows = state.staff
-      .map((s) => normalizeStaff(s))
-      .filter((s) => normalizeRole(s.role) === "staff" && String(s.id || '').trim())
-      .filter((s) => {
-        const key = String(s.id || '').trim();
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
-    const options = ['<option value="">미배정</option>'];
-    staffRows.forEach((s) => {
-      options.push(`<option value="${escapeAttr(s.id)}">${escapeHtml(s.name || s.email || '담당자')}</option>`);
-    });
-    if (selectedId && !staffRows.some((s) => String(s.id) === String(selectedId))) {
-      options.push(`<option value="${escapeAttr(selectedId)}">${escapeHtml(getStaffNameById(selectedId) || '담당자')}</option>`);
-    }
-    sel.innerHTML = options.join('');
-    sel.value = selectedId || "";
-  }
-
-  function closePropertyEditModal() {
-    if (!els.propertyEditModalAdmin) return;
-    els.propertyEditModalAdmin.classList.add("hidden");
-    els.propertyEditModalAdmin.setAttribute("aria-hidden", "true");
-    state.editingProperty = null;
-    setAemMsg("");
-    setModalOpen(false);
-  }
 
   function toInputDateTimeLocal(value) {
     const s = String(value || "").trim();
@@ -2416,201 +2017,16 @@ function bindEvents() {
     els.aemMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
     els.aemMsg.textContent = text || "";
   }
-
-  async function savePropertyEditModal() {
-    const item = state.editingProperty;
-    if (!item || !els.aemForm) return;
-
-    const user = state.session?.user;
-    const isAdmin = user?.role === "admin";
-
-    const fd = new FormData(els.aemForm);
-    const readStr = (k) => String(fd.get(k) || "").trim();
-    const readNum = (k) => parseFlexibleNumber(fd.get(k));
-
-    const newOpinionText = readStr("opinion");
-    const opinionHistory = appendOpinionEntry(
-      loadOpinionHistory(item),
-      newOpinionText,
-      state.session?.user
-    );
-
-    const patch = {
-      id: item.id || "",
-      globalId: item.globalId || "",
-      itemNo: readStr("itemNo") || null,
-      sourceType: readStr("sourceType") || null,
-      assigneeId: readStr("assigneeId") || null,
-      submitterType: readStr("submitterType") || null,
-      address: readStr("address") || null,
-      assetType: readStr("assetType") || null,
-      floor: readStr("floor") || null,
-      totalfloor: readStr("totalfloor") || null,
-      commonarea: readNum("commonarea"),
-      exclusivearea: readNum("exclusivearea"),
-      sitearea: readNum("sitearea"),
-      useapproval: readStr("useapproval") || null,
-      status: readStr("status") || null,
-      priceMain: readNum("priceMain"),
-      lowprice: readNum("lowprice"),
-      dateMain: readStr("dateMain") || null,
-      sourceUrl: readStr("sourceUrl") || null,
-      realtorname: readStr("realtorname") || null,
-      realtorphone: readStr("realtorphone") || null,
-      realtorcell: readStr("realtorcell") || null,
-      rightsAnalysis: readStr("rightsAnalysis") || null,
-      siteInspection: readStr("siteInspection") || null,
-      opinion: opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null),
-      opinionHistory,
-      latitude: readNum("latitude"),
-      longitude: readNum("longitude"),
-    };
-
-    if (!isAdmin) {
-      const allowIfEmpty = (k, oldVal) => {
-        const v = patch[k];
-        const isEmptyOld = oldVal == null || String(oldVal).trim() === "";
-        const isEmptyOldNum = oldVal == null || String(oldVal).trim() === "" || Number.isNaN(Number(oldVal));
-        const ok = (typeof v === "number") ? isEmptyOldNum : isEmptyOld;
-        if (!ok) delete patch[k];
-      };
-      ["itemNo","address","assetType","floor","totalfloor","useapproval","status","dateMain","sourceUrl","realtorname","realtorphone","realtorcell","rightsAnalysis","siteInspection"].forEach((k)=>allowIfEmpty(k, item[k]));
-      ["commonarea","exclusivearea","sitearea","priceMain","lowprice","latitude","longitude"].forEach((k)=>allowIfEmpty(k, item[k]));
-      delete patch.sourceType;
-      delete patch.assigneeId;
-      delete patch.submitterType;
-    }
-
-    const targetId = patch.id || patch.globalId;
-    if (!targetId) {
-      setAemMsg("저장 실패: 물건 식별자(id)가 없습니다.");
-      return;
-    }
-
-    try {
-      if (els.aemSave) els.aemSave.disabled = true;
-      setAemMsg("");
-
-      await updatePropertyAdmin(targetId, patch, isAdmin, item);
-
-      setAemMsg("저장 완료", false);
-      closePropertyEditModal();
-      invalidatePropertyCollections();
-      await loadProperties();
-    } catch (err) {
-      console.error(err);
-      setAemMsg(err?.message || "저장 실패");
-    } finally {
-      if (els.aemSave) els.aemSave.disabled = false;
-    }
+  async function savePropertyEditModal(...args) {
+    return callAdminModule("propertiesTab", "savePropertyEditModal", args);
+  }
+  async function updatePropertyAdmin(...args) {
+    return callAdminModule("propertiesTab", "updatePropertyAdmin", args);
+  }
+  async function handleDeleteProperty(...args) {
+    return callAdminModule("propertiesTab", "handleDeleteProperty", args);
   }
 
-  async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
-    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    if (sb) {
-      const nextRaw = mergePropertyRaw(item, patch);
-      const dbPatch = {
-        item_no: patch.itemNo,
-        source_type: patch.sourceType,
-        assignee_id: patch.assigneeId,
-        submitter_type: patch.submitterType,
-        address: patch.address,
-        asset_type: patch.assetType,
-        floor: patch.floor,
-        total_floor: patch.totalfloor,
-        exclusive_area: patch.exclusivearea,
-        common_area: patch.commonarea,
-        site_area: patch.sitearea,
-        use_approval: patch.useapproval || null,
-        status: patch.status,
-        price_main: patch.priceMain,
-        lowprice: patch.lowprice,
-        date_main: patch.dateMain || null,
-        source_url: patch.sourceUrl,
-        broker_office_name: patch.realtorname,
-        submitter_phone: patch.realtorcell,
-        memo: patch.opinion,
-        latitude: patch.latitude,
-        longitude: patch.longitude,
-        raw: nextRaw,
-      };
-      Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
-      try {
-        await updatePropertyRowResilient(sb, targetId, dbPatch);
-        return;
-      } catch (error) {
-        if (!isAdmin || error?.code !== "NO_ROWS_UPDATED") throw error;
-      }
-    }
-
-    const payload = { ...patch, raw: mergePropertyRaw(item, patch) };
-    const candidates = [];
-    if (isAdmin) {
-      candidates.push({ path: `/admin/properties`, method: "PATCH" });
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PATCH" });
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: "PUT" });
-    }
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: "PATCH" });
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: "PUT" });
-    candidates.push({ path: `/properties/update`, method: "POST" });
-    candidates.push({ path: `/admin/properties/update`, method: "POST" });
-
-    let lastErr = null;
-    for (const c of candidates) {
-      try {
-        await api(c.path, { method: c.method, auth: true, body: payload });
-        return;
-      } catch (e) {
-        lastErr = e;
-        const msg = String(e?.message || "");
-        if (msg.includes("404") || msg.includes("405") || msg.includes("not found")) continue;
-      }
-    }
-    throw lastErr || new Error("저장 실패");
-  }
-
-  async function handleDeleteProperty() {
-    const item = state.editingProperty;
-    if (!item) return;
-
-    const targetId = String(item.id || item.globalId || "").trim();
-    if (!targetId) {
-      setAemMsg("삭제 실패: 물건 식별자(id)가 없습니다.");
-      return;
-    }
-
-    const label = item.address || item.itemNo || targetId;
-    if (!window.confirm(`물건 '${label}'을(를) 삭제할까요?`)) return;
-
-    try {
-      if (els.aemDelete) els.aemDelete.disabled = true;
-      setAemMsg("");
-
-      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-      if (sb) {
-        const isPureId = !String(targetId).includes(":");
-        if (isPureId) {
-          const { error } = await sb.from("properties").delete().eq("id", targetId);
-          if (error) throw error;
-        } else {
-          const { error } = await sb.from("properties").delete().eq("global_id", targetId);
-          if (error) throw error;
-        }
-      } else {
-        await api("/admin/properties", { method: "DELETE", auth: true, body: { ids: [targetId] } });
-      }
-
-      state.selectedPropertyIds.delete(targetId);
-      closePropertyEditModal();
-      invalidatePropertyCollections();
-      await loadProperties();
-    } catch (err) {
-      console.error(err);
-      setAemMsg(err?.message || "삭제 실패");
-    } finally {
-      if (els.aemDelete) els.aemDelete.disabled = false;
-    }
-  }
 
   // ---------------------------
   // Staff CRUD
