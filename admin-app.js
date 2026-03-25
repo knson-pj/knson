@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260325-adminstable1";
+  const ADMIN_FAST_BUILD = "20260325-dashboard1";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -151,7 +151,7 @@
 
   const state = {
     session: loadSession(),
-    activeTab: "properties",
+    activeTab: "home",
     properties: [],
     editingProperty: null,
     staff: [],
@@ -290,8 +290,10 @@
     configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     setupChrome();
     bindEvents();
+    callAdminModule("dashboard", "bindEvents", []);
     resetStaffForm();
     renderSessionUI();
+    setActiveTab(state.activeTab);
     Promise.resolve(ensureLoginThenLoad()).catch((err) => handleAsyncError(err, "초기 로딩 실패"));
   }
 
@@ -333,10 +335,22 @@
       tabsPanel: $("#tabsPanel"),
 
       // panels
+      tabHome: $("#tab-home"),
       tabProperties: $("#tab-properties"),
       tabCsv: $("#tab-csv"),
       tabStaff: $("#tab-staff"),
       tabRegions: $("#tab-regions"),
+      tabWorkmgmt: $("#tab-workmgmt"),
+
+      // home/workmgmt
+      sumTodayTotal: $("#sumTodayTotal"),
+      sumTodayDetail: $("#sumTodayDetail"),
+      workMgmtDate: $("#workMgmtDate"),
+      btnWorkMgmtRefresh: $("#btnWorkMgmtRefresh"),
+      workMgmtMeta: $("#workMgmtMeta"),
+      workMgmtActors: $("#workMgmtActors"),
+      workMgmtRows: $("#workMgmtRows"),
+      workMgmtEmpty: $("#workMgmtEmpty"),
 
       // properties table
       btnDeleteSelectedProperties: $("#btnDeleteSelectedProperties"),
@@ -545,9 +559,11 @@ function bindEvents() {
         setActiveTab(key);
 
         if (state.session?.user?.role === "admin") {
+          if (key === "home") renderSummary();
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
           if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { renderAssignmentTable(); }).catch((e)=>handleAsyncError(e,"지역 데이터 로드 실패"));
           if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
+          if (key === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
         }
       });
     }
@@ -724,11 +740,13 @@ function bindEvents() {
     });
 
     const map = {
+      home: els.tabHome,
       properties: els.tabProperties,
       csv: els.tabCsv,
       staff: els.tabStaff,
       regions: els.tabRegions,
       geocoding: els.tabGeocoding,
+      workmgmt: els.tabWorkmgmt,
     };
     Object.entries(map).forEach(([key, panel]) => {
       if (!panel) return;
@@ -1058,6 +1076,7 @@ function bindEvents() {
       renderPropertiesTable();
       renderSummary();
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
+      if (state.activeTab === 'home') renderSummary();
       return;
     }
 
@@ -1073,6 +1092,7 @@ function bindEvents() {
     renderPropertiesTable();
     renderSummary();
     updateGeocodeStatusBar();
+    if (state.activeTab === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
   }
 
 
@@ -1419,27 +1439,11 @@ function bindEvents() {
     renderSummary();
   }
 
-  function renderSummary() {
-    const props = getAuxiliaryPropertiesSnapshot();
-    const staff = state.staff;
-    const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
-    const summary = state.propertySummary || {
-      total: props.length,
-      auction: props.filter((p) => p.sourceType === "auction").length,
-      onbid: props.filter((p) => p.sourceType === "onbid").length,
-      realtor_naver: props.filter((p) => p.sourceType === "realtor" && !p.isDirectSubmission).length,
-      realtor_direct: props.filter((p) => p.sourceType === "realtor" && p.isDirectSubmission).length,
-      general: props.filter((p) => p.sourceType === "general").length,
-    };
-
-    if (els.sumTotal) els.sumTotal.textContent = fmt(summary.total);
-    if (els.sumAuction) els.sumAuction.textContent = fmt(summary.auction);
-    if (els.sumGongmae) els.sumGongmae.textContent = fmt(summary.onbid);
-    if (els.sumNaverRealtor) els.sumNaverRealtor.textContent = fmt(summary.realtor_naver);
-    if (els.sumDirectRealtor) els.sumDirectRealtor.textContent = fmt(summary.realtor_direct);
-    if (els.sumGeneral) els.sumGeneral.textContent = fmt(summary.general);
-
-    if (els.sumAgents) els.sumAgents.textContent = fmt(staff.filter(s => normalizeRole(s.role) === "staff").length);
+  function renderSummary(...args) {
+    return callAdminModule("dashboard", "renderSummary", args);
+  }
+  async function refreshWorkMgmt(...args) {
+    return callAdminModule("dashboard", "refreshWorkMgmt", args);
   }
   function getFilteredProperties(...args) {
     return callAdminModule("propertiesTab", "getFilteredProperties", args);
