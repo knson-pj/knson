@@ -701,40 +701,6 @@ function bindEvents() {
     return out instanceof Promise ? await out : out;
   }
 
-  function setActiveTab(tab) {
-    state.activeTab = tab || "home";
-
-    if (els.adminTabs) {
-      [...els.adminTabs.querySelectorAll(".tab")].forEach((el) => {
-        el.classList.toggle("is-active", el.dataset.tab === state.activeTab);
-      });
-    }
-
-    const map = {
-      home: els.tabHome,
-      properties: els.tabProperties,
-      csv: els.tabCsv,
-      staff: els.tabStaff,
-      regions: els.tabRegions,
-      geocoding: els.tabGeocoding,
-      workmgmt: els.tabWorkmgmt,
-    };
-    Object.entries(map).forEach(([key, panel]) => {
-      if (!panel) return;
-      panel.classList.toggle("hidden", key !== state.activeTab);
-    });
-
-    if (state.activeTab !== "csv") {
-      if (els.csvFileInput) els.csvFileInput.value = "";
-      if (els.csvResultBox) {
-        els.csvResultBox.textContent = "";
-        els.csvResultBox.className = "result-box hidden csv-result-inline";
-      }
-    }
-
-    callAdminModule("shell", "syncChromeForTab", [state.activeTab]);
-  }
-
   function renderSessionUI() {
     return callAdminModule("shell", "renderSessionUI", []);
   }

@@ -1,352 +1,1954 @@
-(() => {
-  const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
-  const mod = {};
-  const localState = {
-    activeActorId: 'all',
-    dateKey: '',
-    data: null,
-    loading: false,
-  };
+/* ═══════════════════════════════════════════════════
+   agent-app.js  —  담당자 전용 페이지 (배정된 물건 관리)
+   ═══════════════════════════════════════════════════ */
+(function () {
+  "use strict";
 
-  function runtime() {
-    return window.KNSN_ADMIN_RUNTIME || {};
+  const K = window.KNSN || null;
+  const Shared = window.KNSN_SHARED || null;
+  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => [...document.querySelectorAll(sel)];
+
+  function loadSession() { return (Shared && typeof Shared.loadSession === "function") ? Shared.loadSession() : (K ? K.loadSession() : null); }
+  function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
+  const API_BASE = K && typeof K.getApiBase === "function" ? K.getApiBase() : "https://knson.vercel.app/api";
+  const sharedApiJson = (Shared && typeof Shared.createApiClient === "function")
+    ? Shared.createApiClient({
+        baseUrl: API_BASE,
+        getAuthToken: () => getSessionToken(),
+        ensureAuthToken: async () => {
+          if (isSupabaseMode() && K && typeof K.sbSyncLocalSession === "function") {
+            try { await K.sbSyncLocalSession(); } catch {}
+            state.session = loadSession() || state.session;
+          }
+          return getSessionToken();
+        },
+        networkErrorFactory: (fetchErr) => {
+          const detail = String(fetchErr?.message || "").trim();
+          const err = new Error(detail ? `네트워크 연결 또는 서버 응답에 실패했습니다. (${detail})` : "네트워크 연결 또는 서버 응답에 실패했습니다.");
+          err.cause = fetchErr;
+          return err;
+        },
+      })
+    : null;
+
+  const parseFlexibleNumber = (Shared && typeof Shared.parseFlexibleNumber === "function")
+    ? Shared.parseFlexibleNumber
+    : function parseFlexibleNumber(value) {
+        if (value === null || value === undefined) return null;
+        if (typeof value === "number") return Number.isFinite(value) ? value : null;
+        const s = String(value).trim();
+        if (!s) return null;
+        const n = Number(s.replace(/,/g, ""));
+        return Number.isFinite(n) ? n : null;
+      };
+
+  const formatMoneyInputValue = (Shared && typeof Shared.formatMoneyInputValue === "function")
+    ? Shared.formatMoneyInputValue
+    : function formatMoneyInputValue(value) {
+        if (value === null || value === undefined) return "";
+        const raw = String(value).trim();
+        if (!raw) return "";
+        const digits = raw.replace(/[^\d-]/g, "");
+        if (!digits || digits === "-") return "";
+        const sign = digits.startsWith("-") ? "-" : "";
+        const body = digits.replace(/-/g, "");
+        if (!body) return sign;
+        return sign + body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      };
+
+  const bindAmountInputMask = (Shared && typeof Shared.bindAmountInputMask === "function")
+    ? Shared.bindAmountInputMask
+    : function bindAmountInputMask(input) {
+        if (!input || input.dataset.amountMaskBound === "true") return;
+        input.dataset.amountMaskBound = "true";
+        input.addEventListener("input", () => {
+          const formatted = formatMoneyInputValue(input.value);
+          if (input.value !== formatted) input.value = formatted;
+        });
+        input.addEventListener("blur", () => {
+          input.value = formatMoneyInputValue(input.value);
+        });
+      };
+
+  const configureFreeDecimalInput = (Shared && typeof Shared.configureFreeDecimalInput === "function")
+    ? Shared.configureFreeDecimalInput
+    : function configureFreeDecimalInput(input) {
+        if (!input) return;
+        input.setAttribute("type", "text");
+        input.setAttribute("inputmode", "decimal");
+        input.removeAttribute("step");
+      };
+
+  const configureAmountInput = (Shared && typeof Shared.configureAmountInput === "function")
+    ? Shared.configureAmountInput
+    : function configureAmountInput(input) {
+        if (!input) return;
+        input.setAttribute("type", "text");
+        input.setAttribute("inputmode", "numeric");
+        input.removeAttribute("step");
+        bindAmountInputMask(input);
+      };
+
+  const configureFormNumericUx = (Shared && typeof Shared.configureFormNumericUx === "function")
+    ? Shared.configureFormNumericUx
+    : function configureFormNumericUx(form, options = {}) {
+        if (!form?.elements) return;
+        const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
+        const amountNames = Array.isArray(options.amountNames) ? options.amountNames : [];
+        decimalNames.forEach((name) => configureFreeDecimalInput(form.elements[name]));
+        amountNames.forEach((name) => configureAmountInput(form.elements[name]));
+      };
+
+  const FAVS_KEY_PREFIX = "knson_favs_v1_";
+  const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
+
+  function getFavsKey() {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return FAVS_KEY_PREFIX + uid;
   }
 
-  function ctx() {
-    const rt = runtime();
+  function loadFavorites() {
+    try {
+      const raw = localStorage.getItem(getFavsKey());
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch { return new Set(); }
+  }
+
+  function saveFavorites() {
+    try {
+      localStorage.setItem(getFavsKey(), JSON.stringify([...state.favorites]));
+    } catch {}
+  }
+
+  function toggleFavorite(id) {
+    if (state.favorites.has(id)) state.favorites.delete(id);
+    else state.favorites.add(id);
+    saveFavorites();
+  }
+
+  const state = {
+    session: loadSession(),
+    properties: [],
+    favorites: new Set(),           // 즐겨찾기 property id 집합
+    filters: {
+      activeCard: "",
+      status: "",
+      keyword: "",
+      area: "",
+      priceRange: "",
+      ratio50: "",
+      favOnly: false,
+      todayBid: false,        // 당일 입찰기일 필터
+    },
+    page: 1,
+    pageSize: 30,
+    editingProperty: null,
+    dailyReport: {
+      dateKey: "",
+      counts: { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 },
+      loadedAt: 0,
+      loading: false,
+    },
+  };
+
+  const els = {};
+
+  // ── Init ──
+  function init() {
+    cacheEls();
+    configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
+    bindEvents();
+    setupChrome();
+    ensureLoginThenLoad();
+  }
+
+  function cacheEls() {
+    els.agentUserBadge = $("#agentUserBadge");
+    els.btnAgentLogout = $("#btnAgentLogout");
+    els.btnChangeMyPassword = $("#btnChangeMyPassword");
+    els.btnDailyReport = $("#btnDailyReport");
+    els.globalMsg = $("#globalMsg");
+
+    els.dailyReportModal = $("#dailyReportModal");
+    els.dailyReportClose = $("#dailyReportClose");
+    els.dailyReportDone = $("#dailyReportDone");
+    els.dailyReportTotal = $("#dailyReportTotal");
+    els.dailyReportLead = $("#dailyReportLead");
+    els.dailyReportFlow = $("#dailyReportFlow");
+    els.dailyReportNote = $("#dailyReportNote");
+
+    // Summary
+    els.agSumTotal = $("#agSumTotal");
+    els.agSumAuction = $("#agSumAuction");
+    els.agSumGongmae = $("#agSumGongmae");
+    els.agSumNaverRealtor = $("#agSumNaverRealtor");
+    els.agSumDirectRealtor = $("#agSumDirectRealtor");
+    els.agSumGeneral = $("#agSumGeneral");
+
+    // Table
+    els.agTableBody = $("#agTableBody");
+    els.agEmpty = $("#agEmpty");
+    els.agPagination = $("#agPagination");
+
+    // Filters
+    els.agStatusFilter = $("#agStatusFilter");
+    els.agAreaFilter = $("#agAreaFilter");
+    els.agPriceFilter = $("#agPriceFilter");
+    els.agRatioFilter = $("#agRatioFilter");
+    els.agKeyword = $("#agKeyword");
+    els.agFavFilter = $("#agFavFilter");
+    els.agDayFilter = $("#agDayFilter");
+    els.btnNewProperty = $("#btnNewProperty");
+    els.newPropertyModal = $("#newPropertyModal");
+    els.npmClose = $("#npmClose");
+    els.npmCancel = $("#npmCancel");
+    els.newPropertyForm = $("#newPropertyForm");
+    els.npmSave = $("#npmSave");
+    els.npmMsg = $("#npmMsg");
+    els.npmRealtorFields = $("#npmRealtorFields");
+    els.npmOwnerFields = $("#npmOwnerFields");
+
+    // Edit modal
+    els.agEditModal = $("#agEditModal");
+    els.agEditForm = $("#agEditForm");
+    els.agEditClose = $("#agEditClose");
+    els.agEditCancel = $("#agEditCancel");
+    els.agEditSave = $("#agEditSave");
+    els.agEditMsg = $("#agEditMsg");
+    els.agHistoryList = $("#agHistoryList");
+    els.agRegistrationLogList = $("#agRegistrationLogList");
+
+    // Password modal
+    els.pwdModal = $("#passwordChangeModal");
+    els.pwdForm = $("#passwordChangeForm");
+    els.pwdClose = $("#pwdModalClose");
+    els.pwdCancel = $("#pwdCancel");
+    els.pwdMsg = $("#pwdMsg");
+  }
+
+  function getTodayDateKey(input) {
+    const d = input ? new Date(input) : new Date();
+    if (!d || Number.isNaN(d.getTime())) return "";
+    try {
+      const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(d);
+      const year = parts.find((p) => p.type === "year")?.value || "";
+      const month = parts.find((p) => p.type === "month")?.value || "";
+      const day = parts.find((p) => p.type === "day")?.value || "";
+      return year && month && day ? `${year}-${month}-${day}` : "";
+    } catch {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+  }
+
+  function getDailyReportNoteKey() {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return `${DAILY_REPORT_NOTE_PREFIX}${uid}_${getTodayDateKey()}`;
+  }
+
+  function loadDailyReportNote() {
+    try {
+      return String(localStorage.getItem(getDailyReportNoteKey()) || "");
+    } catch {
+      return "";
+    }
+  }
+
+  function saveDailyReportNote(value) {
+    try {
+      localStorage.setItem(getDailyReportNoteKey(), String(value || ""));
+    } catch {}
+  }
+
+  function getActorIdentity(user) {
     return {
-      rt,
-      state: rt.state || {},
-      els: rt.els || {},
-      api: rt.adminApi,
-      utils: rt.utils || {},
+      id: String(user?.id || user?.email || "").trim(),
+      name: String(user?.name || user?.email || "").trim(),
     };
   }
 
-  function esc(v) {
-    const { utils } = ctx();
-    if (typeof utils.escapeHtml === 'function') return utils.escapeHtml(v);
-    return String(v ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
-  }
-
-  function getTodayDateKey(baseDate) {
-    const d = baseDate ? new Date(baseDate) : new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  function parseDate(value) {
-    const { utils } = ctx();
-    if (typeof utils.parseFlexibleDate === 'function') return utils.parseFlexibleDate(value);
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-
-  function sameDay(dateLike, dateKey) {
-    const d = parseDate(dateLike);
-    if (!d) return false;
-    return getTodayDateKey(d) === dateKey;
-  }
-
-  function sourceLabel(sourceType) {
-    const { utils } = ctx();
-    if (typeof utils.sourceLabel === 'function') return utils.sourceLabel(sourceType);
-    const map = { auction: '경매', onbid: '공매', realtor: '중개', general: '일반' };
-    return map[String(sourceType || '').trim()] || '일반';
-  }
-
-  function sourceClass(sourceType) {
-    const map = { auction: 'is-auction', onbid: 'is-onbid', realtor: 'is-realtor', general: 'is-general' };
-    return map[String(sourceType || '').trim()] || 'is-general';
-  }
-
-  function actionLabel(actionType) {
-    const map = {
-      rights_analysis: '권리분석',
-      site_inspection: '현장조사',
-      daily_issue: '금일이슈',
-      new_property: '신규등록',
-      property_update: '기본정보수정',
-    };
-    return map[String(actionType || '').trim()] || '기타';
-  }
-
-  function actionClass(actionType) {
-    const map = {
-      rights_analysis: 'is-rights',
-      site_inspection: 'is-site',
-      daily_issue: 'is-edit',
-      new_property: 'is-new',
-      property_update: 'is-edit',
-    };
-    return map[String(actionType || '').trim()] || 'is-edit';
-  }
-
-  function formatTodayDetail(parts, usingFullData) {
-    if (!parts.total) {
-      return usingFullData
-        ? '<span class="hs-muted">금일 신규 등록 물건이 없습니다.</span>'
-        : '<span class="hs-muted">금일 신규 등록 물건이 없습니다. (현재 로딩 데이터 기준)</span>';
-    }
-    const bits = [];
-    if (parts.auction) bits.push(`<span class="hs-auction">경매</span> ${Number(parts.auction).toLocaleString('ko-KR')}건`);
-    if (parts.onbid) bits.push(`공매 ${Number(parts.onbid).toLocaleString('ko-KR')}건`);
-    if (parts.realtor) bits.push(`<span class="hs-naver">중개</span> ${Number(parts.realtor).toLocaleString('ko-KR')}건`);
-    if (parts.general) bits.push(`<span class="hs-general">일반</span> ${Number(parts.general).toLocaleString('ko-KR')}건`);
-    const suffix = usingFullData ? '입니다.' : '입니다. (현재 로딩 데이터 기준)';
-    return bits.join(', ') + ' ' + suffix;
-  }
-
-  mod.renderSummary = function renderSummary() {
-    const { state, els, utils } = ctx();
-    const props = typeof utils.getAuxiliaryPropertiesSnapshot === 'function' ? (utils.getAuxiliaryPropertiesSnapshot() || []) : (state.properties || []);
-    const staff = Array.isArray(state.staff) ? state.staff : [];
-    const fmt = (n) => Number(n || 0).toLocaleString('ko-KR');
-    const summary = state.propertySummary || {
-      total: props.length,
-      auction: props.filter((p) => p.sourceType === 'auction').length,
-      onbid: props.filter((p) => p.sourceType === 'onbid').length,
-      realtor_naver: props.filter((p) => p.sourceType === 'realtor' && !p.isDirectSubmission).length,
-      realtor_direct: props.filter((p) => p.sourceType === 'realtor' && p.isDirectSubmission).length,
-      general: props.filter((p) => p.sourceType === 'general').length,
-    };
-
-    if (els.sumTotal) els.sumTotal.textContent = fmt(summary.total);
-    if (els.sumAuction) els.sumAuction.textContent = fmt(summary.auction);
-    if (els.sumGongmae) els.sumGongmae.textContent = fmt(summary.onbid);
-    if (els.sumNaverRealtor) els.sumNaverRealtor.textContent = fmt(summary.realtor_naver);
-    if (els.sumDirectRealtor) els.sumDirectRealtor.textContent = fmt(summary.realtor_direct);
-    if (els.sumGeneral) els.sumGeneral.textContent = fmt(summary.general);
-    if (els.sumAgents) els.sumAgents.textContent = fmt(staff.filter((s) => String(utils.normalizeRole ? utils.normalizeRole(s.role) : s.role) === 'staff').length);
-
-    const dateKey = getTodayDateKey();
-    const todayParts = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
-    for (const item of Array.isArray(props) ? props : []) {
-      const rawCreatedAt = item?.createdAt || item?._raw?.created_at || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
-      if (!sameDay(rawCreatedAt, dateKey)) continue;
-      todayParts.total += 1;
-      const key = String(item?.sourceType || '').trim();
-      if (todayParts[key] !== undefined) todayParts[key] += 1;
-    }
-    if (els.sumTodayTotal) els.sumTodayTotal.textContent = fmt(todayParts.total);
-    if (els.sumTodayDetail) {
-      const usingFullData = Array.isArray(state.propertiesFullCache);
-      els.sumTodayDetail.innerHTML = formatTodayDetail(todayParts, usingFullData);
-    }
+  const DAILY_REPORT_ACTION_KEYS = {
+    rightsAnalysis: "rights_analysis",
+    siteInspection: "site_inspection",
+    dailyIssue: "daily_issue",
+    newProperty: "new_property",
   };
 
-  function buildActorBuckets(items) {
-    const buckets = new Map();
-    for (const row of Array.isArray(items) ? items : []) {
-      const actorId = String(row?.actor_id || '').trim() || 'unknown';
-      const actorName = String(row?.actor_name || '미상').trim() || '미상';
-      const existing = buckets.get(actorId) || { actorId, actorName, items: [] };
-      existing.items.push(row);
-      buckets.set(actorId, existing);
-    }
-    return [...buckets.values()].sort((a, b) => a.actorName.localeCompare(b.actorName, 'ko'));
+  function emptyDailyReportCounts() {
+    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 };
   }
 
-  function findPropertyLike(row) {
-    const { state } = ctx();
-    const all = Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length ? state.propertiesFullCache : (state.properties || []);
-    const propertyId = String(row?.property_id || '').trim();
-    const itemNo = String(row?.property_item_no || '').trim();
-    const address = String(row?.property_address || '').trim();
-    const identityKey = String(row?.property_identity_key || '').trim();
-    return all.find((item) => {
+  function getSessionToken() {
+    return String(state.session?.token || "").trim();
+  }
+
+  function extractApiErrorText(data, status) {
+    const parts = [];
+    const push = (value) => {
+      const text = String(value || "").trim();
+      if (!text) return;
+      if (parts.includes(text)) return;
+      parts.push(text);
+    };
+
+    if (data && typeof data === "object") {
+      push(data.message);
+      const details = data.details;
+      if (typeof details === "string") {
+        push(details);
+      } else if (details && typeof details === "object") {
+        push(details.message);
+        push(details.hint);
+        push(details.details);
+        push(details.error_description);
+        push(details.error);
+      }
+    } else {
+      push(data);
+    }
+
+    if (!parts.length) push(`요청 실패 (${status})`);
+    return parts.join("\n");
+  }
+
+  async function apiJson(path, options = {}) {
+    if (sharedApiJson) {
+      const data = await sharedApiJson(path, {
+        method: options.method || (options.json !== undefined ? "POST" : "GET"),
+        headers: options.headers || {},
+        json: options.json,
+        auth: options.auth !== false,
+      });
+      if (data?.ok === false) throw new Error(extractApiErrorText(data, 200));
+      return data;
+    }
+    const base = API_BASE;
+    const token = getSessionToken();
+    const headers = {
+      Accept: "application/json",
+      ...(options.headers || {}),
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (options.json !== undefined) headers["Content-Type"] = "application/json";
+    const res = await fetch(`${base}${path}`, {
+      method: options.method || (options.json !== undefined ? "POST" : "GET"),
+      headers,
+      body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text || null; }
+    if (!res.ok || data?.ok === false) {
+      throw new Error(extractApiErrorText(data, res.status));
+    }
+    return data;
+  }
+
+  function setGlobalMsg(text, isError = true) {
+    if (!els.globalMsg) return;
+    const msg = String(text || "").trim();
+    if (!msg) {
+      els.globalMsg.classList.add("hidden");
+      els.globalMsg.textContent = "";
+      els.globalMsg.style.color = "";
+      return;
+    }
+    els.globalMsg.textContent = msg;
+    els.globalMsg.classList.remove("hidden");
+    if (isError) {
+      els.globalMsg.style.color = "";
+      els.globalMsg.style.borderColor = "";
+      els.globalMsg.style.background = "";
+    } else {
+      els.globalMsg.style.color = "var(--text)";
+    }
+  }
+
+  async function refreshDailyReportSummary(options = {}) {
+    const dateKey = String(options.dateKey || getTodayDateKey()).trim();
+    if (!dateKey) return state.dailyReport.counts || emptyDailyReportCounts();
+    if (state.dailyReport.loading && !options.force) return state.dailyReport.counts || emptyDailyReportCounts();
+    state.dailyReport.loading = true;
+    try {
+      const data = await apiJson(`/properties?daily_report=1&date=${encodeURIComponent(dateKey)}`);
+      const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
+      state.dailyReport = {
+        dateKey,
+        counts: nextCounts,
+        items: Array.isArray(data?.items) ? data.items : [],
+        loadedAt: Date.now(),
+        loading: false,
+      };
+      renderDailyReport();
+      return nextCounts;
+    } catch (err) {
+      state.dailyReport.loading = false;
+      if (!options.silent) throw err;
+      return state.dailyReport.counts || emptyDailyReportCounts();
+    }
+  }
+
+  function getDailyReportActorName() {
+    return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
+  }
+
+  function getPropertyKindLabel(sourceType) {
+    const map = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    return map[String(sourceType || "").trim()] || "일반";
+  }
+
+  function getPropertyKindClass(sourceType) {
+    const map = { auction: "auction", onbid: "onbid", realtor: "realtor", general: "general" };
+    return map[String(sourceType || "").trim()] || "general";
+  }
+
+  function findPropertyForActivityRow(row) {
+    const propertyId = String(row?.property_id || "").trim();
+    const propertyItemNo = String(row?.property_item_no || "").trim();
+    const propertyAddress = String(row?.property_address || "").trim();
+    const identityKey = String(row?.property_identity_key || "").trim();
+    return state.properties.find((item) => {
       const raw = item?._raw || {};
-      const inner = raw?.raw || {};
-      const itemIds = [item.id, item.globalId, raw.id, raw.global_id].map((v) => String(v || '').trim()).filter(Boolean);
-      const itemIdentityKey = String(inner.registrationIdentityKey || '').trim();
-      const itemItemNo = String(item.itemNo || '').trim();
-      const itemAddress = String(item.address || '').trim();
+      const rawInner = raw?.raw || {};
       return (
-        (propertyId && itemIds.includes(propertyId)) ||
-        (identityKey && itemIdentityKey && itemIdentityKey === identityKey) ||
-        (itemNo && itemItemNo && itemItemNo === itemNo) ||
-        (!propertyId && !identityKey && itemAddress && address && itemAddress === address)
+        (propertyId && [item.id, item.globalId, raw.id, raw.global_id].map((v) => String(v || "").trim()).includes(propertyId)) ||
+        (propertyItemNo && String(item.itemNo || "").trim() === propertyItemNo) ||
+        (propertyAddress && String(item.address || "").trim() === propertyAddress) ||
+        (identityKey && String(rawInner.registrationIdentityKey || "").trim() === identityKey)
       );
     }) || null;
   }
 
-  function groupWorkRows(items) {
+  function groupDailyReportItems(items) {
     const groups = [];
     const map = new Map();
-    for (const row of Array.isArray(items) ? items : []) {
-      const actorId = String(row?.actor_id || '').trim() || 'unknown';
-      const key = String(row?.property_id || row?.property_identity_key || row?.property_item_no || row?.property_address || row?.id || '').trim();
-      if (!key) continue;
-      const groupKey = `${actorId}::${key}`;
-      let bucket = map.get(groupKey);
-      if (!bucket) {
-        const item = findPropertyLike(row);
-        bucket = {
-          actorId,
-          actorName: String(row?.actor_name || '미상').trim() || '미상',
+    (Array.isArray(items) ? items : []).forEach((row) => {
+      const key = String(row?.property_id || row?.property_identity_key || row?.property_item_no || row?.property_address || row?.id || "").trim();
+      if (!key) return;
+      let group = map.get(key);
+      if (!group) {
+        const matched = findPropertyForActivityRow(row);
+        group = {
+          key,
+          item: matched,
           row,
-          item,
-          latestAt: String(row?.created_at || row?.action_date || '').trim(),
-          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
+          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0 },
         };
-        map.set(groupKey, bucket);
-        groups.push(bucket);
+        map.set(key, group);
+        groups.push(group);
       }
-      const actionType = String(row?.action_type || '').trim();
-      if (bucket.counts[actionType] !== undefined) bucket.counts[actionType] += 1;
-      const at = String(row?.created_at || row?.action_date || '').trim();
-      if (at && (!bucket.latestAt || at > bucket.latestAt)) bucket.latestAt = at;
-    }
-    return groups.sort((a, b) => {
-      if (a.actorName !== b.actorName) return a.actorName.localeCompare(b.actorName, 'ko');
-      return String(b.latestAt || '').localeCompare(String(a.latestAt || ''));
+      const action = String(row?.action_type || "").trim();
+      if (group.counts[action] !== undefined) group.counts[action] += 1;
     });
+    return groups;
   }
 
-  function buildPropertyTitle(group) {
-    const { utils } = ctx();
+  function buildDailyReportPropertyTitle(group) {
     const item = group?.item;
     const row = group?.row || {};
-    const address = String(item?.address || row?.property_address || '-').trim();
-    const floor = String(item?.floor || '').trim();
-    const area = item?.exclusivearea != null && item?.exclusivearea !== ''
-      ? `${typeof utils.formatAreaPyeong === 'function' ? utils.formatAreaPyeong(item.exclusivearea) : item.exclusivearea}평`
-      : '';
-    const parts = [address];
-    if (floor) parts.push(floor);
-    if (area) parts.push(area);
-    return parts.join(' | ');
+    const address = String(item?.address || row?.property_address || "-").trim();
+    const floor = String(item?.floor || "").trim();
+    const area = item?.exclusivearea != null && item?.exclusivearea !== "" ? `${fmtArea(item.exclusivearea)}평` : "";
+    const meta = [floor, area].filter(Boolean).join(" | ");
+    return meta ? `${address} | ${meta}` : address;
   }
 
-  function renderActorChips(actors) {
-    const { els } = ctx();
-    if (!els.workMgmtActors) return;
-    const selected = localState.activeActorId || 'all';
-    const allTotal = actors.reduce((sum, actor) => sum + actor.items.length, 0);
-    els.workMgmtActors.innerHTML = [
-      `<button type="button" class="work-actor-chip ${selected === 'all' ? 'is-active' : ''}" data-actor-id="all">전체 <strong>${Number(allTotal).toLocaleString('ko-KR')}</strong></button>`,
-      ...actors.map((actor) => `
-        <button type="button" class="work-actor-chip ${selected === actor.actorId ? 'is-active' : ''}" data-actor-id="${esc(actor.actorId)}">
-          ${esc(actor.actorName)} <strong>${Number(actor.items.length).toLocaleString('ko-KR')}</strong>
-        </button>`)
-    ].join('');
+  function renderDailyReport() {
+    const counts = state.dailyReport?.counts || emptyDailyReportCounts();
+    const total = Number(counts.total || 0);
+    if (els.dailyReportTotal) els.dailyReportTotal.textContent = String(total);
+    if (els.dailyReportLead) {
+      els.dailyReportLead.textContent = `금일은 총 ${total}건 정보를 수정등록 하셨네요.`;
+    }
+    if (els.dailyReportFlow) {
+      const groups = groupDailyReportItems(state.dailyReport?.items || []);
+      if (!groups.length) {
+        els.dailyReportFlow.innerHTML = '<div class="daily-report-flow-empty">아직 오늘 기록된 업무가 없습니다.</div>';
+      } else {
+        const actorName = esc(getDailyReportActorName());
+        els.dailyReportFlow.innerHTML = `
+          <div class="daily-report-flow-inner">
+            <div class="daily-report-agent-col">
+              <div class="daily-report-agent-node">${actorName}</div>
+            </div>
+            <div class="daily-report-tree-col">
+              ${groups.map((group) => {
+                const item = group.item;
+                const kindLabel = getPropertyKindLabel(item?.sourceType);
+                const kindClass = getPropertyKindClass(item?.sourceType);
+                const title = buildDailyReportPropertyTitle(group);
+                const actions = [
+                  ["rights_analysis", "권리분석"],
+                  ["site_inspection", "현장조사"],
+                  ["daily_issue", "금일이슈사항"],
+                  ["new_property", "신규물건등록"],
+                ].filter(([key]) => Number(group.counts[key] || 0) > 0);
+                return `
+                <div class="daily-report-row">
+                  <div class="daily-report-prop-node">
+                    <span class="daily-report-prop-kind ${kindClass}">${esc(kindLabel)}</span>
+                    <span class="daily-report-prop-title">${esc(title)}</span>
+                  </div>
+                  <div class="daily-report-actions-col">
+                    ${actions.map(([key, label]) => `<div class="daily-report-action-node"><span>${esc(label)}</span> <strong>${Number(group.counts[key] || 0)}건</strong></div>`).join("")}
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>
+          </div>`;
+      }
+    }
   }
 
-  function renderWorkRows(groups) {
-    const { els } = ctx();
-    if (!els.workMgmtRows || !els.workMgmtEmpty) return;
-    if (!groups.length) {
-      els.workMgmtRows.innerHTML = '';
-      els.workMgmtEmpty.classList.remove('hidden');
+  async function openDailyReportModal() {
+    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
+    renderDailyReport();
+    if (!els.dailyReportModal) return;
+    document.body.classList.add("modal-open");
+    els.dailyReportModal.classList.remove("hidden");
+    els.dailyReportModal.setAttribute("aria-hidden", "false");
+    try {
+      await refreshDailyReportSummary({ force: true });
+      setGlobalMsg("");
+    } catch (err) {
+      setGlobalMsg(err?.message || "일일업무일지 조회 실패");
+    }
+  }
+
+  function closeDailyReportModal() {
+    if (els.dailyReportModal) {
+      els.dailyReportModal.classList.add("hidden");
+      els.dailyReportModal.setAttribute("aria-hidden", "true");
+    }
+    document.body.classList.remove("modal-open");
+  }
+
+  function buildActivityLogEntries(actionKeys, propertyLike, options = {}) {
+    const identityKey = String(
+      options.identityKey ||
+      propertyLike?.registrationIdentityKey ||
+      propertyLike?._raw?.raw?.registrationIdentityKey ||
+      buildRegistrationMatchKey(propertyLike) ||
+      ""
+    ).trim();
+    const propertyId = String(options.propertyId || propertyLike?.id || propertyLike?.globalId || propertyLike?.global_id || "").trim();
+    const propertyItemNo = String(propertyLike?.itemNo || propertyLike?.item_no || propertyLike?._raw?.item_no || "").trim();
+    const propertyAddress = String(propertyLike?.address || propertyLike?.location || propertyLike?._raw?.address || propertyLike?.raw?.address || "").trim();
+    return (Array.isArray(actionKeys) ? actionKeys : []).filter(Boolean).map((key) => ({
+      actionType: DAILY_REPORT_ACTION_KEYS[key] || String(key || "").trim(),
+      propertyId: propertyId || null,
+      propertyIdentityKey: identityKey || null,
+      propertyItemNo: propertyItemNo || null,
+      propertyAddress: propertyAddress || null,
+      changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
+      note: key === "dailyIssue" ? (String(options.dailyIssueText || "").trim() || null) : null,
+      actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
+    }));
+  }
+
+  async function recordDailyReportEntries(entries) {
+    const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.actionType);
+    if (!safeEntries.length) return;
+    await apiJson('/properties', {
+      method: 'POST',
+      json: { action: 'daily_report_log', entries: safeEntries },
+    });
+    if (els.dailyReportModal && !els.dailyReportModal.classList.contains('hidden')) {
+      await refreshDailyReportSummary({ force: true, silent: true });
+    }
+  }
+
+  function setupChrome() {
+    if (K && typeof K.mountThemeToggle === "function") {
+      K.mountThemeToggle(document.querySelector(".top-actions"), { className: "theme-toggle" });
+    }
+  }
+
+  function bindEvents() {
+    // Logout
+    if (els.btnAgentLogout) {
+      els.btnAgentLogout.addEventListener("click", async () => {
+        try {
+          if (K && K.supabaseEnabled && K.supabaseEnabled()) {
+            const sb = K.initSupabase();
+            if (sb) await sb.auth.signOut().catch(() => {});
+          }
+        } catch {}
+        try { sessionStorage.removeItem("knson_bms_session_v1"); } catch {}
+        location.replace("./login.html");
+      });
+    }
+
+    // 요약 카드 클릭 → 필터
+    document.querySelectorAll(".summary-card[data-card]").forEach((card) => {
+      card.addEventListener("click", () => {
+        const key = card.dataset.card || "";
+        const next = state.filters.activeCard === key ? "" : key;
+        state.filters.activeCard = next;
+        document.querySelectorAll(".summary-card[data-card]").forEach((c) => {
+          c.classList.toggle("is-active", c.dataset.card === next && next !== "");
+        });
+        state.page = 1;
+        renderTable();
+      });
+    });
+
+    // Filters
+    if (els.agStatusFilter) els.agStatusFilter.addEventListener("change", (e) => { state.filters.status = e.target.value; state.page = 1; renderTable(); });
+    if (els.agAreaFilter) els.agAreaFilter.addEventListener("change", (e) => { state.filters.area = e.target.value; state.page = 1; renderTable(); });
+    if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
+    if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
+    if (els.agKeyword) els.agKeyword.addEventListener("input", debounce((e) => { state.filters.keyword = String(e.target.value || "").trim(); state.page = 1; renderTable(); }, 150));
+    if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
+      state.filters.favOnly = !state.filters.favOnly;
+      els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
+      state.page = 1;
+      renderTable();
+    });
+
+    if (els.agDayFilter) els.agDayFilter.addEventListener("click", () => {
+      state.filters.todayBid = !state.filters.todayBid;
+      els.agDayFilter.classList.toggle("is-active", state.filters.todayBid);
+      state.page = 1;
+      renderTable();
+    });
+
+    if (els.btnDailyReport) els.btnDailyReport.addEventListener("click", openDailyReportModal);
+    if (els.dailyReportClose) els.dailyReportClose.addEventListener("click", closeDailyReportModal);
+    if (els.dailyReportDone) els.dailyReportDone.addEventListener("click", closeDailyReportModal);
+    if (els.dailyReportModal) {
+      els.dailyReportModal.addEventListener("click", (e) => {
+        if (e.target?.dataset?.close === "true") closeDailyReportModal();
+      });
+    }
+    if (els.dailyReportNote) {
+      els.dailyReportNote.addEventListener("input", debounce(() => {
+        saveDailyReportNote(els.dailyReportNote.value || "");
+      }, 120));
+    }
+
+    // 신규 물건 등록 모달
+    if (els.btnNewProperty) els.btnNewProperty.addEventListener("click", openNewPropertyModal);
+    if (els.npmClose) els.npmClose.addEventListener("click", closeNewPropertyModal);
+    if (els.npmCancel) els.npmCancel.addEventListener("click", closeNewPropertyModal);
+    if (els.newPropertyModal) {
+      els.newPropertyModal.addEventListener("click", (e) => {
+        if (e.target?.dataset?.close === "true") closeNewPropertyModal();
+      });
+    }
+    if (els.newPropertyForm) {
+      els.newPropertyForm.addEventListener("change", (e) => {
+        if (e.target.name !== "submitterKind") return;
+        const isRealtor = e.target.value === "realtor";
+        if (els.npmRealtorFields) els.npmRealtorFields.classList.toggle("hidden", !isRealtor);
+        if (els.npmOwnerFields) els.npmOwnerFields.classList.toggle("hidden", isRealtor);
+        els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
+          const radio = card.querySelector("input[type=radio]");
+          card.classList.toggle("is-active", !!radio?.checked);
+        });
+      });
+      els.newPropertyForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        submitNewProperty().catch((err) => setNpmMsg(err?.message || "등록 실패"));
+      });
+    }
+
+    // Edit modal
+    if (els.agEditClose) els.agEditClose.addEventListener("click", closeEditModal);
+    if (els.agEditCancel) els.agEditCancel.addEventListener("click", closeEditModal);
+    if (els.agEditModal) {
+      els.agEditModal.addEventListener("click", (e) => {
+        if (e.target?.dataset?.close === "true") closeEditModal();
+      });
+    }
+    if (els.agEditForm) els.agEditForm.addEventListener("submit", (e) => { e.preventDefault(); saveProperty(); });
+
+    // Password modal
+    if (els.btnChangeMyPassword) els.btnChangeMyPassword.addEventListener("click", openPwdModal);
+    if (els.pwdClose) els.pwdClose.addEventListener("click", closePwdModal);
+    if (els.pwdCancel) els.pwdCancel.addEventListener("click", closePwdModal);
+    if (els.pwdForm) els.pwdForm.addEventListener("submit", (e) => { e.preventDefault(); changePassword(); });
+  }
+
+  // ── Auth ──
+  async function ensureLoginThenLoad() {
+    const user = state.session?.user;
+    if (!user) { location.replace("./login.html"); return; }
+
+    // 관리자면 관리자 페이지로 보냄
+    if (String(user.role || "").toLowerCase() === "admin") {
+      location.replace("./admin-index.html");
       return;
     }
-    els.workMgmtEmpty.classList.add('hidden');
-    els.workMgmtRows.innerHTML = groups.map((group) => {
-      const item = group.item;
-      const sourceType = String(item?.sourceType || '').trim() || 'general';
-      const sourceText = sourceLabel(sourceType);
-      const title = buildPropertyTitle(group);
-      const metaParts = [group.actorName];
-      const itemNo = String(item?.itemNo || group?.row?.property_item_no || '').trim();
-      if (itemNo) metaParts.push(itemNo);
-      const actionNodes = Object.entries(group.counts)
-        .filter(([, count]) => Number(count || 0) > 0)
-        .map(([key, count]) => `<div class="work-action-pill ${actionClass(key)}"><span>${esc(actionLabel(key))}</span> <strong>${Number(count).toLocaleString('ko-KR')}건</strong></div>`)
-        .join('');
-      return `
-        <div class="work-row">
-          <div class="work-property-node">
-            <div class="work-property-card">
-              <span class="work-source-tag ${sourceClass(sourceType)}">${esc(sourceText)}</span>
-              <span class="work-property-text">${esc(title)}</span>
-              <span class="work-property-meta">${esc(metaParts.join(' · '))}</span>
-            </div>
-          </div>
-          <div class="work-action-list">${actionNodes}</div>
-        </div>`;
-    }).join('');
-  }
 
-  function renderWorkMgmt() {
-    const { els } = ctx();
-    const items = Array.isArray(localState.data?.items) ? localState.data.items : [];
-    const actors = buildActorBuckets(items);
-    const selectedActorId = localState.activeActorId || 'all';
-    const filteredItems = selectedActorId === 'all'
-      ? items
-      : items.filter((row) => String(row?.actor_id || '').trim() === selectedActorId);
-    const groups = groupWorkRows(filteredItems);
-    renderActorChips(actors);
-    renderWorkRows(groups);
-    if (els.workMgmtMeta) {
-      const actorText = selectedActorId === 'all'
-        ? `담당자 ${Number(actors.length).toLocaleString('ko-KR')}명`
-        : `선택 담당자 ${Number(actors.find((actor) => actor.actorId === selectedActorId)?.items.length || 0).toLocaleString('ko-KR')}건`;
-      const totalText = `업무 로그 ${Number(items.length).toLocaleString('ko-KR')}건`;
-      els.workMgmtMeta.textContent = `${localState.dateKey || getTodayDateKey()} 기준 · ${actorText} · ${totalText}`;
+    renderSessionUI();
+
+    if (isSupabaseMode()) {
+      try { await K.sbSyncLocalSession(); state.session = loadSession(); } catch {}
     }
+
+    // 세션 확정 후 즐겨찾기 로드 (userId 기반 키)
+    state.favorites = loadFavorites();
+
+    await loadProperties();
   }
 
-  mod.refreshWorkMgmt = async function refreshWorkMgmt(options = {}) {
-    const { els, api, utils } = ctx();
-    if (localState.loading && !options.force) return localState.data;
-    const dateKey = String(options.dateKey || els.workMgmtDate?.value || localState.dateKey || getTodayDateKey()).trim() || getTodayDateKey();
-    localState.loading = true;
-    localState.dateKey = dateKey;
-    if (els.workMgmtDate && els.workMgmtDate.value !== dateKey) els.workMgmtDate.value = dateKey;
+  function renderSessionUI() {
+    const user = state.session?.user;
+    if (!user) return;
+    if (els.agentUserBadge) els.agentUserBadge.textContent = user.name || user.email || "";
+    if (els.btnAgentLogout) els.btnAgentLogout.classList.remove("hidden");
+    if (els.btnChangeMyPassword && isSupabaseMode()) els.btnChangeMyPassword.classList.remove("hidden");
+  }
+
+  // ── Load Data ──
+  function rowAssignedToUid(row, uid) {
+    const target = String(uid || "").trim();
+    if (!target) return false;
+    const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
+    return [row?.assignee_id, row?.assigneeId, row?.assignedAgentId, row?.assigned_agent_id, raw.assignee_id, raw.assigneeId, raw.assignedAgentId, raw.assigned_agent_id]
+      .some((v) => String(v || "").trim() === target);
+  }
+
+  async function fetchPropertiesBatch(sb, from, pageSize, uid) {
+    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
+    const filters = [
+      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid},raw->>assigned_agent_id.eq.${uid}`,
+      `assignee_id.eq.${uid}`
+    ];
+    let lastError = null;
+    for (const filter of filters) {
+      const { data, error } = await queryBase().or(filter);
+      if (!error) {
+        const rows = Array.isArray(data) ? data : [];
+        return rows.filter((row) => rowAssignedToUid(row, uid));
+      }
+      lastError = error;
+    }
+    throw lastError;
+  }
+
+  async function fetchAllAssignedProperties(sb, uid) {
+    const out = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const rows = await fetchPropertiesBatch(sb, from, pageSize, uid);
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
+  }
+
+  async function loadProperties() {
     try {
-      const data = await api(`/properties?daily_report=1&admin_view=1&date=${encodeURIComponent(dateKey)}`, { auth: true });
-      localState.data = {
-        date: dateKey,
-        counts: data?.counts || {},
-        items: Array.isArray(data?.items) ? data.items : [],
-      };
-      renderWorkMgmt();
-      return localState.data;
+      const sb = isSupabaseMode() ? K.initSupabase() : null;
+      if (!sb) { state.properties = []; renderAll(); return; }
+
+      const uid = String(state.session?.user?.id || "").trim();
+      if (!uid) { state.properties = []; renderAll(); return; }
+
+      try { await K.sbSyncLocalSession(); state.session = loadSession() || state.session; } catch {}
+      const rows = await fetchAllAssignedProperties(sb, uid);
+      state.properties = Array.isArray(rows) ? rows.map(normalizeProperty) : [];
+      renderAll();
     } catch (err) {
-      if (typeof utils.setGlobalMsg === 'function') utils.setGlobalMsg(err?.message || '업무 관리 로드 실패');
-      throw err;
+      console.error("loadProperties error:", err);
+      state.properties = [];
+      renderAll();
+    }
+  }
+
+  // ── Normalize ──
+  const REG_LOG_LABELS = {
+    itemNo: "물건번호",
+    address: "주소",
+    assetType: "세부유형",
+    floor: "층수",
+    totalfloor: "총층",
+    commonArea: "공용면적",
+    exclusiveArea: "전용면적",
+    siteArea: "토지면적",
+    useapproval: "사용승인일",
+    status: "진행상태",
+    priceMain: "매매가",
+    sourceUrl: "원문링크",
+    realtorName: "중개사무소명",
+    realtorPhone: "유선전화",
+    realtorCell: "휴대폰번호",
+    submitterName: "등록자명",
+    submitterPhone: "등록자 연락처",
+    memo: "메모/의견",
+  };
+
+  function hasMeaningfulValue(value) {
+    if (PropertyDomain && typeof PropertyDomain.hasMeaningfulValue === "function") return PropertyDomain.hasMeaningfulValue(value);
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string") return value.trim() !== "";
+    return true;
+  }
+
+  function normalizeCompareValue(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.normalizeCompareValue === "function") {
+      return PropertyDomain.normalizeCompareValue(field, value, {
+        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
+    if (value === null || value === undefined) return "";
+    if (["priceMain", "commonArea", "exclusiveArea", "siteArea"].includes(field)) {
+      const n = toNum(value);
+      return n == null ? "" : String(n);
+    }
+    return String(value).trim().replace(/\s+/g, " ");
+  }
+
+  function formatFieldValueForLog(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.formatFieldValueForLog === "function") {
+      return PropertyDomain.formatFieldValueForLog(field, value, {
+        amountFields: ["priceMain"],
+        numericFields: ["commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
+    if (value === null || value === undefined) return "";
+    if (["priceMain"].includes(field)) {
+      const n = toNum(value);
+      return n == null ? "" : Number(n).toLocaleString("ko-KR");
+    }
+    if (["commonArea", "exclusiveArea", "siteArea"].includes(field)) {
+      const n = toNum(value);
+      if (n == null) return "";
+      return Number.isInteger(n) ? String(n) : String(n).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    }
+    return String(value).trim();
+  }
+
+  function buildRegisterLogContext(route, user) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegisterLogContext === "function") return PropertyDomain.buildRegisterLogContext(route, { user });
+    return {
+      at: new Date().toISOString(),
+      route: String(route || "등록").trim(),
+      actor: String(user?.name || user?.email || "").trim(),
+    };
+  }
+
+  function parseFloorNumberForLog(value) {
+    if (PropertyDomain && typeof PropertyDomain.parseFloorNumberForLog === "function") return PropertyDomain.parseFloorNumberForLog(value);
+    const s = String(value || "").trim();
+    if (!s) return "";
+    let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
+    if (m) return `b${m[1]}`;
+    m = s.match(/(-?\d+)/);
+    return m ? String(Number(m[1])) : "";
+  }
+
+  function compactAddressText(value) {
+    if (PropertyDomain && typeof PropertyDomain.compactAddressText === "function") return PropertyDomain.compactAddressText(value);
+    return String(value || "").trim().replace(/\s+/g, "");
+  }
+
+  function parseAddressIdentityParts(address) {
+    if (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === "function") return PropertyDomain.parseAddressIdentityParts(address);
+    const text = String(address || "").trim().replace(/\s+/g, " ");
+    const compact = compactAddressText ? compactAddressText(text) : text.replace(/\s+/g, "");
+    if (!compact) return { dong: "", mainNo: "", subNo: "" };
+
+    const suffixSet = new Set(["동", "읍", "면", "리"]);
+    let end = -1;
+    for (let i = compact.length - 1; i >= 0; i -= 1) {
+      if (suffixSet.has(compact[i])) {
+        end = i;
+        break;
+      }
+    }
+    if (end < 0) return { dong: "", mainNo: "", subNo: "" };
+
+    let start = 0;
+    for (let i = end - 1; i >= 0; i -= 1) {
+      if (/[시군구읍면리동]/.test(compact[i])) {
+        start = i + 1;
+        break;
+      }
+    }
+
+    const dong = compact.slice(start, end + 1);
+    if (!/^[가-힣A-Za-z0-9]+(?:동|읍|면|리)$/.test(dong)) {
+      return { dong: "", mainNo: "", subNo: "" };
+    }
+
+    const tail = compact.slice(end + 1);
+    const lot = tail.match(/(산?\d+)(?:-(\d+))?/);
+    if (!lot) return { dong, mainNo: "", subNo: "" };
+    return { dong, mainNo: lot[1] || "", subNo: lot[2] || "" };
+  }
+
+  function extractHoNumberForLog(data) {
+    if (PropertyDomain && typeof PropertyDomain.extractHoNumberForLog === "function") return PropertyDomain.extractHoNumberForLog(data);
+    const explicitValues = [data?.ho, data?.unit, data?.room, data?.raw?.ho, data?.raw?.unit, data?.raw?.room];
+    for (const value of explicitValues) {
+      const s = String(value || "").trim();
+      if (!s) continue;
+      let m = s.match(/(\d{1,5})\s*호/);
+      if (m) return String(Number(m[1]));
+      if (!/층|동/.test(s)) {
+        m = s.match(/^\D*(\d{1,5})\D*$/);
+        if (m) return String(Number(m[1]));
+      }
+    }
+    const texts = [
+      data?.address, data?.raw?.address, data?.raw?.물건명, data?.raw?.상세주소,
+      data?.memo, data?.raw?.memo, data?.raw?.opinion, data?.raw?.detailAddress
+    ].filter(Boolean).join(" ");
+    const m = texts.match(/(\d{1,5})\s*호/);
+    return m ? String(Number(m[1])) : "";
+  }
+
+  function buildRegistrationMatchKey(data) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationMatchKey === "function") return PropertyDomain.buildRegistrationMatchKey(data);
+    const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, ""));
+    const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, "")) || "0";
+    const hoKey = extractHoNumberForLog(data) || "0";
+    if (!parts.dong || !parts.mainNo) return "";
+    return `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey}|${hoKey}`;
+  }
+
+  function attachRegistrationIdentity(raw, data) {
+    if (PropertyDomain && typeof PropertyDomain.attachRegistrationIdentity === "function") return PropertyDomain.attachRegistrationIdentity(raw, data);
+    const nextRaw = { ...(raw || {}) };
+    const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, nextRaw.address, ""));
+    const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, nextRaw.floor, ""));
+    const hoKey = extractHoNumberForLog(data);
+    const key = parts.dong && parts.mainNo ? `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey || "0"}|${hoKey || "0"}` : "";
+    nextRaw.registrationIdentityKey = key;
+    nextRaw.registrationIdentity = {
+      dong: parts.dong || "",
+      mainNo: parts.mainNo || "",
+      subNo: parts.subNo || "",
+      floor: floorKey || "",
+      ho: hoKey || "",
+    };
+    return nextRaw;
+  }
+  function buildRegistrationSnapshotFromItem(item) {
+    const raw = item?._raw?.raw || {};
+    return {
+      itemNo: firstText(item?.itemNo, raw.itemNo, ""),
+      address: firstText(item?.address, raw.address, ""),
+      assetType: firstText(item?.assetType, raw.assetType, raw["세부유형"], ""),
+      floor: firstText(item?.floor, raw.floor, ""),
+      totalfloor: firstText(item?.totalfloor, raw.totalfloor, raw.total_floor, raw.totalFloor, ""),
+      commonArea: raw.commonArea ?? null,
+      exclusiveArea: item?.exclusivearea ?? raw.exclusiveArea ?? null,
+      siteArea: raw.siteArea ?? null,
+      useapproval: firstText(raw.useapproval, raw.useApproval, ""),
+      status: firstText(item?.status, raw.status, ""),
+      priceMain: item?.priceMain ?? raw.priceMain ?? null,
+      sourceUrl: firstText(raw.sourceUrl, item?._raw?.source_url, ""),
+      realtorName: firstText(raw.realtorName, raw.realtorname, item?._raw?.broker_office_name, ""),
+      realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
+      realtorCell: firstText(raw.realtorCell, raw.realtorcell, item?._raw?.submitter_phone, ""),
+      submitterName: firstText(item?._raw?.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      submitterPhone: firstText(item?._raw?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
+      memo: firstText(item?._raw?.memo, raw.memo, raw.opinion, ""),
+    };
+  }
+
+  function buildRegistrationSnapshotFromDbRow(row) {
+    const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
+    return {
+      itemNo: firstText(row?.item_no, raw.itemNo, ""),
+      address: firstText(row?.address, raw.address, ""),
+      assetType: firstText(row?.asset_type, raw.assetType, raw["세부유형"], ""),
+      floor: firstText(raw.floor, row?.floor, ""),
+      totalfloor: firstText(raw.totalfloor, row?.total_floor, row?.totalfloor, ""),
+      commonArea: row?.common_area ?? raw.commonArea ?? null,
+      exclusiveArea: row?.exclusive_area ?? raw.exclusiveArea ?? null,
+      siteArea: row?.site_area ?? raw.siteArea ?? null,
+      useapproval: firstText(row?.use_approval, raw.useapproval, raw.useApproval, ""),
+      status: firstText(row?.status, raw.status, ""),
+      priceMain: row?.price_main ?? raw.priceMain ?? null,
+      sourceUrl: firstText(row?.source_url, raw.sourceUrl, ""),
+      realtorName: firstText(row?.broker_office_name, raw.realtorName, raw.realtorname, ""),
+      realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
+      realtorCell: firstText(row?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
+      submitterName: firstText(row?.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      submitterPhone: firstText(row?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
+      memo: firstText(row?.memo, raw.memo, raw.opinion, ""),
+      raw,
+    };
+  }
+
+  function buildRegistrationChanges(prevSnapshot, nextSnapshot) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationChanges === "function") {
+      return PropertyDomain.buildRegistrationChanges(prevSnapshot, nextSnapshot, REG_LOG_LABELS, {
+        amountFields: ["priceMain"],
+        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
+    const changes = [];
+    Object.keys(REG_LOG_LABELS).forEach((field) => {
+      const nextValue = nextSnapshot?.[field];
+      if (!hasMeaningfulValue(nextValue)) return;
+      const prevNorm = normalizeCompareValue(field, prevSnapshot?.[field]);
+      const nextNorm = normalizeCompareValue(field, nextValue);
+      if (prevNorm === nextNorm) return;
+      changes.push({
+        field,
+        label: REG_LOG_LABELS[field],
+        before: formatFieldValueForLog(field, prevSnapshot?.[field]) || "-",
+        after: formatFieldValueForLog(field, nextValue) || "-",
+      });
+    });
+    return changes;
+  }
+
+  function appendRegistrationCreateLog(raw, context) {
+    if (PropertyDomain && typeof PropertyDomain.ensureRegistrationCreatedLog === "function") return PropertyDomain.ensureRegistrationCreatedLog(raw, context);
+    const nextRaw = { ...(raw || {}) };
+    const firstAt = firstText(nextRaw.firstRegisteredAt, context?.at, new Date().toISOString());
+    const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
+    if (!current.length) current.push({ type: "created", at: firstAt, route: context?.route || "등록", actor: context?.actor || "" });
+    nextRaw.firstRegisteredAt = firstAt;
+    nextRaw.registrationLog = current;
+    return nextRaw;
+  }
+
+  function appendRegistrationChangeLog(raw, context, changes) {
+    if (PropertyDomain && typeof PropertyDomain.appendRegistrationLog === "function") return PropertyDomain.appendRegistrationLog(raw, context, changes);
+    const nextRaw = appendRegistrationCreateLog(raw, context);
+    if (Array.isArray(changes) && changes.length) {
+      nextRaw.registrationLog = [...nextRaw.registrationLog, {
+        type: "changed",
+        at: context?.at || new Date().toISOString(),
+        route: context?.route || "등록",
+        actor: context?.actor || "",
+        changes: changes.map((entry) => ({ ...entry })),
+      }];
+    }
+    return nextRaw;
+  }
+
+  function mergeMeaningfulShallow(baseObj, incomingObj) {
+    const out = { ...(baseObj || {}) };
+    Object.entries(incomingObj || {}).forEach(([key, value]) => {
+      if (!hasMeaningfulValue(value)) return;
+      out[key] = value;
+    });
+    return out;
+  }
+
+  function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
+    const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
+    const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
+    const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
+    const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot);
+    const nextRow = { ...base };
+    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo"].forEach((key) => {
+      if (hasMeaningfulValue(incomingRow?.[key])) nextRow[key] = incomingRow[key];
+    });
+    if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
+    if (!hasMeaningfulValue(nextRow.item_no) && hasMeaningfulValue(incomingRow?.item_no)) nextRow.item_no = incomingRow.item_no;
+    if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) nextRow.source_type = incomingRow.source_type;
+    const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
+    nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergedRaw, context, changes), nextSnapshot);
+    return { row: nextRow, changes };
+  }
+
+  function buildRegistrationDbRowForCreate(row, context) {
+    return { ...(row || {}), raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row) };
+  }
+
+  function findExistingPropertyByRegistrationKey(data, items) {
+    const targetKey = buildRegistrationMatchKey(data);
+    if (!targetKey) return null;
+    for (const item of Array.isArray(items) ? items : []) {
+      if (buildRegistrationMatchKey(buildRegistrationSnapshotFromItem(item)) === targetKey) return item;
+    }
+    return null;
+  }
+
+  async function findExistingPropertyForRegistration(sb, data) {
+    const address = firstText(data?.address, data?.raw?.address, "");
+    const dongToken = ((address.match(/([가-힣A-Za-z0-9]+동)/) || [null, ""])[1] || "").trim();
+    try {
+      let query = sb.from("properties").select("*").limit(500);
+      if (dongToken) query = query.ilike("address", `%${dongToken}%`);
+      const { data: rows, error } = await query;
+      if (error) return null;
+      return findExistingPropertyByRegistrationKey(data, Array.isArray(rows) ? rows.map(normalizeProperty) : []);
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeProperty(item) {
+    const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
+    const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || "").toString().toLowerCase();
+    const sourceType =
+      rawSource === "auction" ? "auction" :
+      rawSource === "gongmae" || rawSource === "public" || rawSource === "onbid" ? "onbid" :
+      rawSource === "realtor" ? "realtor" :
+      "general";
+
+    return {
+      id: String(item.id || item.global_id || ""),
+      globalId: String(item.globalId || item.global_id || ""),
+      sourceType,
+      itemNo: firstText(item.item_no, item.itemNo, raw.itemNo, ""),
+      address: firstText(item.address, item.location, raw.address, ""),
+      assetType: firstText(item.asset_type, item.assetType, raw.assetType, raw["세부유형"], "-"),
+      floor: firstText(raw.floor, raw.floorText, raw["해당층"], item.floor, ""),
+      totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], item.total_floor, item.totalfloor, ""),
+      useapproval: firstText(raw.useapproval, raw.useApproval, item.use_approval, ""),
+      commonarea: toNum(raw.commonArea ?? raw.commonarea ?? item.common_area ?? item.commonarea),
+      exclusivearea: toNum(raw.exclusiveArea ?? raw.exclusivearea ?? item.exclusive_area ?? item.exclusivearea ?? raw["전용면적(평)"]),
+      sitearea: toNum(raw.siteArea ?? raw.sitearea ?? item.site_area ?? item.sitearea),
+      priceMain: toNum(raw.priceMain ?? item.price_main ?? item.priceMain ?? raw["감정가(원)"]),
+      lowprice: toNum(raw.currentPrice ?? raw.lowprice ?? item.lowprice ?? item.low_price ?? raw["최저입찰가(원)"] ?? raw["매각가"]),
+      status: firstText(item.status, raw.status, ""),
+      dateMain: firstText(raw.dateMain, item.date_main, item.dateMain, raw["입찰일자"], ""),
+      rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, ""),
+      siteInspection: firstText(raw.siteInspection, raw.site_inspection, ""),
+      opinion: firstText(item.opinion, item.memo, raw.opinion, raw.memo, ""),
+      createdAt: firstText(item.date, item.date_uploaded, item.createdAt, raw.date, ""),
+      isDirectSubmission: !!(
+        firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, "") ||
+        firstText(item.broker_office_name, item.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, "")
+      ),
+      _raw: item,
+    };
+  }
+
+  // ── Render ──
+  function renderAll() {
+    renderSummary();
+    renderTable();
+    if (els.dailyReportModal && !els.dailyReportModal.classList.contains("hidden")) renderDailyReport();
+  }
+
+  function renderSummary() {
+    const p = state.properties;
+    const fmt = (n) => Number(n).toLocaleString("ko-KR");
+    if (els.agSumTotal) els.agSumTotal.textContent = fmt(p.length);
+    if (els.agSumAuction) els.agSumAuction.textContent = fmt(p.filter((r) => r.sourceType === "auction").length);
+    if (els.agSumGongmae) els.agSumGongmae.textContent = fmt(p.filter((r) => r.sourceType === "onbid").length);
+    if (els.agSumNaverRealtor) els.agSumNaverRealtor.textContent = fmt(p.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission).length);
+    if (els.agSumDirectRealtor) els.agSumDirectRealtor.textContent = fmt(p.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission).length);
+    if (els.agSumGeneral) els.agSumGeneral.textContent = fmt(p.filter((r) => r.sourceType === "general").length);
+  }
+
+  function getFilteredProps() {
+    let rows = state.properties;
+    const f = state.filters;
+
+    // 카드 클릭 필터
+    if (f.activeCard && f.activeCard !== "all") {
+      if (f.activeCard === "realtor_naver") {
+        rows = rows.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission);
+      } else if (f.activeCard === "realtor_direct") {
+        rows = rows.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission);
+      } else {
+        rows = rows.filter((r) => r.sourceType === f.activeCard);
+      }
+    }
+
+    // 상태 필터
+    if (f.status) {
+      rows = rows.filter((r) => {
+        const s = String(r.status || "").toLowerCase();
+        return s === f.status || s.includes(f.status);
+      });
+    }
+
+    // 면적 필터
+    if (f.area) {
+      const [minStr, maxStr] = f.area.split("-");
+      const min = parseFloat(minStr) || 0;
+      const max = maxStr ? parseFloat(maxStr) : Infinity;
+      rows = rows.filter((r) => {
+        const area = r.exclusivearea;
+        return area != null && area > 0 && area >= min && (max === Infinity || area < max);
+      });
+    }
+
+    // 가격대 필터
+    if (f.priceRange) {
+      const [minStr, maxStr] = f.priceRange.split("-");
+      const min = (parseFloat(minStr) || 0) * 100000000;
+      const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
+      rows = rows.filter((r) => {
+        const isAuctionType = r.sourceType === "auction" || r.sourceType === "onbid";
+        const price = isAuctionType ? (r.lowprice ?? r.priceMain) : r.priceMain;
+        return price && price > 0 && price >= min && (max === Infinity || price < max);
+      });
+    }
+
+    // 50% 이하 비율 필터
+    if (f.ratio50) {
+      rows = rows.filter((r) => {
+        if (r.sourceType !== "auction" && r.sourceType !== "onbid") return false;
+        if (!r.priceMain || !r.lowprice || r.priceMain <= 0) return false;
+        return (r.lowprice / r.priceMain) <= 0.5;
+      });
+    }
+
+    // 당일 입찰기일 필터 (경매/공매만)
+    if (f.todayBid) {
+      const d = new Date();
+      const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      rows = rows.filter((r) => {
+        if (r.sourceType !== "auction" && r.sourceType !== "onbid") return false;
+        return String(r.dateMain || "").trim().startsWith(todayStr);
+      });
+    }
+
+    // 관심물건 필터
+    if (f.favOnly) {
+      rows = rows.filter((r) => state.favorites.has(r.id));
+    }
+
+    // 키워드 필터
+    if (f.keyword) {
+      const kw = f.keyword.toLowerCase();
+      rows = rows.filter((r) =>
+        (r.address || "").toLowerCase().includes(kw) ||
+        (r.itemNo || "").toLowerCase().includes(kw) ||
+        (r.opinion || "").toLowerCase().includes(kw)
+      );
+    }
+
+    return rows;
+  }
+
+  function renderTable() {
+    if (!els.agTableBody) return;
+    const rows = getFilteredProps();
+    const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
+    if (state.page > totalPages) state.page = totalPages;
+    const start = (state.page - 1) * state.pageSize;
+    const paged = rows.slice(start, start + state.pageSize);
+
+    els.agTableBody.innerHTML = "";
+    if (!paged.length) {
+      if (els.agEmpty) els.agEmpty.classList.remove("hidden");
+      renderPagination(0);
+      return;
+    }
+    if (els.agEmpty) els.agEmpty.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+    for (const p of paged) frag.appendChild(renderRow(p));
+    els.agTableBody.appendChild(frag);
+    renderPagination(totalPages);
+  }
+
+  function renderRow(p) {
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
+    const kindLabel = kindMap[p.sourceType] || "일반";
+    const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
+    const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
+    const rate = calcRate(p.priceMain, p.lowprice);
+    const statusLabel = normalizeStatus(p.status);
+    const isFav = state.favorites.has(p.id);
+
+    // ☆ 버튼 셀 — 클릭해도 모달 열리지 않음
+    const favTd = document.createElement("td");
+    favTd.className = "fav-col";
+    const favBtn = document.createElement("button");
+    favBtn.type = "button";
+    favBtn.className = "btn-fav" + (isFav ? " is-active" : "");
+    favBtn.textContent = isFav ? "★" : "☆";
+    favBtn.title = isFav ? "관심 해제" : "관심 등록";
+    favBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFavorite(p.id);
+      const nowFav = state.favorites.has(p.id);
+      favBtn.textContent = nowFav ? "★" : "☆";
+      favBtn.title = nowFav ? "관심 해제" : "관심 등록";
+      favBtn.classList.toggle("is-active", nowFav);
+      // 관심물건 필터 활성 중이면 즉시 리렌더
+      if (state.filters.favOnly) { state.page = 1; renderTable(); }
+    });
+    favTd.appendChild(favBtn);
+    tr.appendChild(favTd);
+
+    tr.insertAdjacentHTML("beforeend",
+      "<td>" + esc(p.itemNo || "-") + "</td>" +
+      '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      "<td>" + esc(p.address || "-") + "</td>" +
+      "<td>" + esc(p.assetType || "-") + "</td>" +
+      "<td>" + esc(p.floor || "-") + "</td>" +
+      "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
+      "<td>" + esc(appraisal) + "</td>" +
+      "<td>" + esc(current) + "</td>" +
+      "<td>" + esc(rate) + "</td>" +
+      "<td>" + esc(formatDate(p.dateMain) || "-") + "</td>" +
+      "<td>" + esc(statusLabel) + "</td>" +
+      "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
+      "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
+      "<td>" + esc((p.opinion || "-").slice(0, 30)) + "</td>"
+    );
+
+    tr.addEventListener("click", () => openEditModal(p));
+    return tr;
+  }
+
+  function renderPagination(totalPages) {
+    if (!els.agPagination) return;
+    els.agPagination.innerHTML = "";
+    if (totalPages <= 1) { els.agPagination.classList.add("hidden"); return; }
+    els.agPagination.classList.remove("hidden");
+
+    const cur = state.page;
+    const go = (page) => {
+      state.page = Math.max(1, Math.min(totalPages, page));
+      renderTable();
+    };
+
+    const frag = document.createDocumentFragment();
+    const addBtn = (label, page, disabled, active, title = "") => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = active ? "pager-num is-active" : (typeof label === "number" ? "pager-num" : "pager-btn");
+      b.textContent = String(label);
+      b.disabled = disabled;
+      if (title) b.title = title;
+      if (!disabled) b.addEventListener("click", () => go(page));
+      frag.appendChild(b);
+    };
+
+    addBtn("<<", cur - 20, cur - 20 < 1, false, "20페이지 뒤로");
+    addBtn("<", cur - 10, cur - 10 < 1, false, "10페이지 뒤로");
+    addBtn("이전", cur - 1, cur <= 1);
+
+    const blockSize = 10;
+    const blockStart = Math.floor((cur - 1) / blockSize) * blockSize + 1;
+    const blockEnd = Math.min(totalPages, blockStart + blockSize - 1);
+    for (let p = blockStart; p <= blockEnd; p++) addBtn(p, p, false, p === cur);
+
+    addBtn("다음", cur + 1, cur >= totalPages);
+    addBtn(">", cur + 10, cur + 10 > totalPages, false, "10페이지 앞으로");
+    addBtn(">>", cur + 20, cur + 20 > totalPages, false, "20페이지 앞으로");
+
+    els.agPagination.appendChild(frag);
+  }
+
+  // ── Edit Modal ──
+  function getAgentEditableSnapshot(item) {
+    const raw = item?._raw?.raw || {};
+    const row = item?._raw || {};
+    return {
+      floor: firstText(raw.floor, row.floor, item?.floor, ""),
+      totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, row.total_floor, row.totalfloor, item?.totalfloor, ""),
+      useapproval: firstText(raw.useapproval, raw.useApproval, row.use_approval, item?.useapproval, ""),
+      commonarea: raw.commonArea ?? raw.commonarea ?? row.common_area ?? row.commonarea ?? item?.commonarea ?? null,
+      exclusivearea: raw.exclusiveArea ?? raw.exclusivearea ?? row.exclusive_area ?? row.exclusivearea ?? item?.exclusivearea ?? null,
+      sitearea: raw.siteArea ?? raw.sitearea ?? row.site_area ?? row.sitearea ?? item?.sitearea ?? null,
+      priceMain: raw.priceMain ?? row.price_main ?? item?.priceMain ?? null,
+      currentPrice: raw.currentPrice ?? raw.lowprice ?? row.lowprice ?? row.low_price ?? item?.lowprice ?? null,
+      dateMain: firstText(raw.dateMain, row.date_main, item?.dateMain, ""),
+      rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
+      siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
+      opinion: firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
+    };
+  }
+
+  function maybeAssignInitialColumnValue(patch, key, nextValue, currentValue) {
+    const currentText = currentValue == null ? "" : String(currentValue).trim();
+    const hasCurrent = currentText !== "";
+    if (nextValue == null || nextValue === "") {
+      if (!hasCurrent) patch[key] = null;
+      return;
+    }
+    if (!hasCurrent) patch[key] = nextValue;
+  }
+
+  function openEditModal(item) {
+    state.editingProperty = item;
+    if (!els.agEditForm) return;
+    const f = els.agEditForm;
+    const view = getAgentEditableSnapshot(item);
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+
+    configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
+
+    setVal(f, "itemNo", item.itemNo);
+    setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
+    setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
+    setVal(f, "status", item.status);
+    setVal(f, "address", item.address);
+    setVal(f, "floor", view.floor);
+    setVal(f, "totalfloor", view.totalfloor);
+    setVal(f, "useapproval", formatDate(view.useapproval));
+    setVal(f, "commonarea", view.commonarea != null ? fmtArea(view.commonarea) : "");
+    setVal(f, "exclusivearea", view.exclusivearea != null ? fmtArea(view.exclusivearea) : "");
+    setVal(f, "sitearea", view.sitearea != null ? fmtArea(view.sitearea) : "");
+    setVal(f, "priceMain", view.priceMain != null ? formatMoneyInputValue(view.priceMain) : "");
+    setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
+    setVal(f, "dateMain", view.dateMain || "");
+    setVal(f, "rightsAnalysis", view.rightsAnalysis);
+    setVal(f, "siteInspection", view.siteInspection);
+    setVal(f, "opinion", "");
+
+    ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
+      const el = f.elements[name];
+      if (el) {
+        el.readOnly = true;
+        el.classList.add("agent-lock-input");
+      }
+    });
+
+    if (els.agEditMsg) els.agEditMsg.textContent = "";
+    renderOpinionHistory(els.agHistoryList, loadOpinionHistory(item), false);
+    renderRegistrationLog(els.agRegistrationLogList, loadRegistrationLog(item));
+    els.agEditModal.classList.remove("hidden");
+    els.agEditModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeEditModal() {
+    state.editingProperty = null;
+    if (els.agEditModal) {
+      els.agEditModal.classList.add("hidden");
+      els.agEditModal.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  async function saveProperty() {
+    const item = state.editingProperty;
+    if (!item) return;
+    const f = els.agEditForm;
+    const readStr = (name) => String((f.elements[name]?.value) || "").trim();
+    const readNum = (name) => parseFlexibleNumber(f.elements[name]?.value);
+    const newOpinionText = readStr("opinion");
+    const opinionHistory = appendOpinionEntry(loadOpinionHistory(item), newOpinionText, state.session?.user);
+
+    const currentUserId = String(state.session?.user?.id || "").trim();
+    const patch = {};
+    const rightsVal = readStr("rightsAnalysis") || null;
+    const siteVal = readStr("siteInspection") || null;
+    const floorVal = readStr("floor") || null;
+    const totalFloorVal = readStr("totalfloor") || null;
+    const useApprovalVal = readStr("useapproval") || null;
+    const commonAreaVal = readNum("commonarea");
+    const exclusiveAreaVal = readNum("exclusivearea");
+    const siteAreaVal = readNum("sitearea");
+    const priceMainVal = readNum("priceMain");
+    const currentPriceVal = readNum("currentPrice");
+    const dateMainVal = readStr("dateMain") || null;
+
+    patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
+
+    try {
+      if (els.agEditSave) els.agEditSave.disabled = true;
+      if (!currentUserId) throw new Error("로그인 정보가 만료되었습니다. 다시 로그인해 주세요.");
+      if (!K || typeof K.initSupabase !== "function") throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
+      const sb = K.initSupabase();
+      if (!sb) throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
+      try { if (typeof K.sbSyncLocalSession === "function") await K.sbSyncLocalSession(); } catch {}
+
+      const targetId = String(item?._raw?.id || item.id || item.globalId || "").trim();
+      const targetCol = item?._raw?.id ? "id" : "global_id";
+      if (!targetId) throw new Error("수정 대상 물건 식별자를 찾을 수 없습니다.");
+
+      const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
+      const newRaw = sanitizePropertyRawForSave(existingRaw, {
+        floor: floorVal,
+        totalfloor: totalFloorVal,
+        useapproval: useApprovalVal,
+        commonArea: commonAreaVal,
+        exclusiveArea: exclusiveAreaVal,
+        siteArea: siteAreaVal,
+        priceMain: priceMainVal,
+        currentPrice: currentPriceVal,
+        dateMain: dateMainVal,
+        rightsAnalysis: rightsVal,
+        siteInspection: siteVal,
+        ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
+        opinionHistory,
+      });
+
+      maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
+      maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
+      maybeAssignInitialColumnValue(patch, "exclusive_area", exclusiveAreaVal, item?._raw?.exclusive_area);
+      maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
+      maybeAssignInitialColumnValue(patch, "price_main", priceMainVal, item?._raw?.price_main);
+      maybeAssignInitialColumnValue(patch, "date_main", dateMainVal, item?._raw?.date_main);
+
+      const workCategories = [];
+      const changedFields = {};
+      const prev = getAgentEditableSnapshot(item);
+      if (rightsVal && rightsVal !== String(prev.rightsAnalysis || "").trim()) {
+        workCategories.push("rightsAnalysis");
+        changedFields.rightsAnalysis = ["rightsAnalysis"];
+      }
+      if (siteVal && siteVal !== String(prev.siteInspection || "").trim()) {
+        workCategories.push("siteInspection");
+        changedFields.siteInspection = ["siteInspection"];
+      }
+      if (newOpinionText) {
+        workCategories.push("dailyIssue");
+        changedFields.dailyIssue = ["opinion"];
+      }
+      patch.raw = newRaw;
+      Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
+
+      let query = sb.from("properties").update(patch).eq(targetCol, targetId).eq("assignee_id", currentUserId).select("*").limit(1);
+      const { data, error } = await query;
+      if (error) {
+        const message = String(error?.message || "").trim();
+        if (/not allowed/i.test(message)) {
+          throw new Error("현재 물건 수정은 DB 정책에 의해 차단되었습니다. 잠긴 항목과 assignee_id 배정을 다시 확인해 주세요.");
+        }
+        throw error;
+      }
+      const updatedRow = Array.isArray(data) ? (data[0] || null) : data;
+      if (!updatedRow) {
+        throw new Error("수정 가능한 물건을 찾지 못했습니다. assignee_id 배정 상태를 다시 확인해 주세요.");
+      }
+
+      let activityError = "";
+      if (workCategories.length) {
+        try {
+          await recordDailyReportEntries(buildActivityLogEntries(workCategories, {
+            ...item,
+            floor: floorVal || item.floor,
+            totalfloor: totalFloorVal || item.totalfloor,
+            rightsAnalysis: rightsVal || item.rightsAnalysis,
+            siteInspection: siteVal || item.siteInspection,
+            opinion: patch.memo || item.opinion,
+            _raw: { ...(item._raw || {}), raw: newRaw },
+          }, {
+            propertyId: updatedRow?.id || item.id || item.globalId || targetId,
+            identityKey: newRaw.registrationIdentityKey || buildRegistrationMatchKey({ ...item, raw: newRaw, _raw: { ...(item._raw || {}), raw: newRaw } }),
+            changedFields,
+            dailyIssueText: newOpinionText,
+          }));
+        } catch (logErr) {
+          activityError = logErr?.message || "일일업무일지 기록 실패";
+        }
+      }
+
+      closeEditModal();
+      await loadProperties();
+      if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
+      else setGlobalMsg("");
+    } catch (err) {
+      if (els.agEditMsg) els.agEditMsg.textContent = err?.message || "저장 실패";
     } finally {
-      localState.loading = false;
+      if (els.agEditSave) els.agEditSave.disabled = false;
     }
-  };
+  }
 
-  mod.bindEvents = function bindEvents() {
-    const { els } = ctx();
-    if (els.workMgmtDate && !els.workMgmtDate.value) {
-      els.workMgmtDate.value = getTodayDateKey();
-      localState.dateKey = els.workMgmtDate.value;
+  // ── Password Change ──
+  function openPwdModal() {
+    if (els.pwdModal) { els.pwdModal.classList.remove("hidden"); els.pwdModal.setAttribute("aria-hidden", "false"); }
+    if (els.pwdMsg) els.pwdMsg.textContent = "";
+  }
+  function closePwdModal() {
+    if (els.pwdModal) { els.pwdModal.classList.add("hidden"); els.pwdModal.setAttribute("aria-hidden", "true"); }
+  }
+  async function changePassword() {
+    const f = els.pwdForm;
+    const pw = String(f.elements.newPassword?.value || "").trim();
+    const pw2 = String(f.elements.confirmPassword?.value || "").trim();
+    if (!pw || pw.length < 8) { if (els.pwdMsg) els.pwdMsg.textContent = "비밀번호는 8자 이상이어야 합니다."; return; }
+    if (pw !== pw2) { if (els.pwdMsg) els.pwdMsg.textContent = "비밀번호가 일치하지 않습니다."; return; }
+    try {
+      const sb = isSupabaseMode() ? K.initSupabase() : null;
+      if (!sb) throw new Error("Supabase 연동 필요");
+      const { error } = await sb.auth.updateUser({ password: pw });
+      if (error) throw error;
+      alert("비밀번호가 변경되었습니다.");
+      closePwdModal();
+    } catch (err) {
+      if (els.pwdMsg) els.pwdMsg.textContent = err?.message || "변경 실패";
     }
-    if (els.btnWorkMgmtRefresh && els.btnWorkMgmtRefresh.dataset.bound !== 'true') {
-      els.btnWorkMgmtRefresh.dataset.bound = 'true';
-      els.btnWorkMgmtRefresh.addEventListener('click', () => {
-        mod.refreshWorkMgmt({ force: true }).catch(() => {});
-      });
-    }
-    if (els.workMgmtDate && els.workMgmtDate.dataset.bound !== 'true') {
-      els.workMgmtDate.dataset.bound = 'true';
-      els.workMgmtDate.addEventListener('change', () => {
-        localState.dateKey = String(els.workMgmtDate.value || '').trim() || getTodayDateKey();
-        mod.refreshWorkMgmt({ force: true }).catch(() => {});
-      });
-    }
-    if (els.workMgmtActors && els.workMgmtActors.dataset.bound !== 'true') {
-      els.workMgmtActors.dataset.bound = 'true';
-      els.workMgmtActors.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-actor-id]');
-        if (!btn) return;
-        localState.activeActorId = String(btn.dataset.actorId || 'all').trim() || 'all';
-        renderWorkMgmt();
-      });
-    }
-  };
+  }
 
-  AdminModules.dashboard = mod;
+  // ── Utilities ──
+  function firstText(...args) {
+    if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...args);
+    for (const v of args) {
+      if (v == null) continue;
+      const s = String(v).trim();
+      if (s) return s;
+    }
+    return "";
+  }
+
+  function toNum(v) {
+    if (Shared && typeof Shared.toNullableNumber === "function") return Shared.toNullableNumber(v);
+    if (v == null || v === "") return null;
+    const n = Number(String(v).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function esc(v) {
+    if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
+    return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function formatEok(n) {
+    if (n == null) return "-";
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return "-";
+    if (v >= 100000000) return (v / 100000000).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1") + " 억원";
+    if (v >= 10000) return (v / 10000).toFixed(0) + " 만원";
+    return v.toLocaleString() + " 원";
+  }
+
+  function fmtArea(v) {
+    const n = toNum(v);
+    if (n == null || n <= 0) return "-";
+    return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+
+  function calcRate(appraisal, current) {
+    const a = Number(appraisal || 0);
+    const c = Number(current || 0);
+    if (!a || !c || a <= 0) return "-";
+    return (c / a * 100).toFixed(1) + "%";
+  }
+
+  function normalizeStatus(v) {
+    const s = String(v || "").trim().toLowerCase();
+    if (!s) return "-";
+    const map = { active: "진행중", hold: "보류", closed: "종결", review: "검토중" };
+    return map[s] || v || "-";
+  }
+
+  function formatDate(v) {
+    if (Shared && typeof Shared.formatDate === "function") return Shared.formatDate(v);
+    const s = String(v || "").trim();
+    if (!s) return "";
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return s.slice(0, 10);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  function setVal(form, name, value) {
+    const el = form.elements[name];
+    if (!el) return;
+    el.value = value || "";
+  }
+
+  // ── 신규 물건 등록 모달 ──
+  function openNewPropertyModal() {
+    if (!els.newPropertyModal || !els.newPropertyForm) return;
+    els.newPropertyForm.reset();
+    configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
+    if (els.npmRealtorFields) els.npmRealtorFields.classList.remove("hidden");
+    if (els.npmOwnerFields) els.npmOwnerFields.classList.add("hidden");
+    els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
+      const radio = card.querySelector("input[type=radio]");
+      card.classList.toggle("is-active", !!radio?.checked);
+    });
+    setNpmMsg("");
+    document.body.classList.add("modal-open");
+    els.newPropertyModal.classList.remove("hidden");
+    els.newPropertyModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeNewPropertyModal() {
+    if (!els.newPropertyModal) return;
+    els.newPropertyModal.classList.add("hidden");
+    els.newPropertyModal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+    setNpmMsg("");
+  }
+
+  function setNpmMsg(text, isError = true) {
+    if (!els.npmMsg) return;
+    els.npmMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
+    els.npmMsg.textContent = text || "";
+  }
+
+  function extractSchemaMissingColumn(err) {
+    const msg = String(err?.message || err || "");
+    const m = msg.match(/Could not find the '([^']+)' column of 'properties' in the schema cache/i);
+    return m ? String(m[1] || "").trim() : "";
+  }
+
+  function omitKeys(obj, keys) {
+    const drop = new Set((Array.isArray(keys) ? keys : []).map((v) => String(v || "").trim()).filter(Boolean));
+    return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
+  }
+
+  function sanitizeJsonValue(value, depth = 0, seen) {
+    if (value == null) return value;
+    if (depth > 6) return undefined;
+    const t = typeof value;
+    if (t === "string" || t === "number" || t === "boolean") return value;
+    if (t !== "object") return undefined;
+    const bag = seen || new WeakSet();
+    if (bag.has(value)) return undefined;
+    bag.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const out = [];
+        for (const item of value.slice(0, 500)) {
+          const v = sanitizeJsonValue(item, depth + 1, bag);
+          if (v !== undefined) out.push(v);
+        }
+        return out;
+      }
+      const out = {};
+      for (const [k, v] of Object.entries(value)) {
+        if (k === "raw") continue;
+        const sv = sanitizeJsonValue(v, depth + 1, bag);
+        if (sv !== undefined) out[k] = sv;
+      }
+      return out;
+    } finally {
+      bag.delete(value);
+    }
+  }
+
+  function sanitizePropertyRawForSave(raw, overrides = {}) {
+    const base = raw && typeof raw === "object" ? (sanitizeJsonValue(raw, 0) || {}) : {};
+    if (base && typeof base === "object") delete base.raw;
+    const merged = { ...(base || {}), ...(overrides || {}) };
+    if (Array.isArray(merged.opinionHistory)) {
+      merged.opinionHistory = merged.opinionHistory.slice(-200).map((entry) => ({
+        date: String(entry?.date || "").trim(),
+        text: String(entry?.text || "").trim(),
+        author: String(entry?.author || "").trim(),
+      })).filter((entry) => entry.date || entry.text || entry.author);
+    }
+    return merged;
+  }
+
+  async function insertPropertyRowResilient(_sb, row) {
+    const saveRes = await apiJson(`/properties`, { method: "POST", json: { row } });
+    return saveRes?.item || null;
+  }
+
+  async function updatePropertyRowResilient(_sb, targetId, patch) {
+    const saveRes = await apiJson(`/properties`, { method: "PATCH", json: { targetId, patch } });
+    return saveRes?.item || { id: targetId };
+  }
+
+  async function submitNewProperty() {
+    const f = els.newPropertyForm;
+    const fd = new FormData(f);
+    const readStr = (k) => String(fd.get(k) || "").trim();
+    const readNum = (k) => parseFlexibleNumber(fd.get(k));
+
+    const submitterKind = readStr("submitterKind") || "realtor";
+    const sourceType = submitterKind === "realtor" ? "realtor" : "general";
+    const address = readStr("address");
+    const assetType = readStr("assetType");
+    const priceMain = readNum("priceMain");
+
+    if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
+
+    const actorName = String(state.session?.user?.name || state.session?.user?.email || "").trim();
+    let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
+    if (submitterKind === "realtor") {
+      realtorName = readStr("realtorname");
+      realtorPhone = readStr("realtorphone") || null;
+      realtorCell = readStr("realtorcell");
+      submitterName = actorName || readStr("submitterName") || null;
+      submitterPhone = realtorCell;
+      if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
+    } else {
+      submitterName = readStr("submitterName") || actorName || "";
+      submitterPhone = readStr("submitterPhone");
+      if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
+    }
+
+    const currentUserId = String(state.session?.user?.id || "").trim() || null;
+    const payload = {
+      source_type: sourceType,
+      is_general: true,
+      address,
+      asset_type: assetType,
+      price_main: priceMain,
+      use_approval: readStr("useapproval") || null,
+      common_area: readNum("commonarea"),
+      exclusive_area: readNum("exclusivearea"),
+      site_area: readNum("sitearea"),
+      assignee_id: currentUserId,
+      broker_office_name: realtorName,
+      submitter_name: submitterName || null,
+      submitter_phone: submitterPhone,
+      memo: readStr("opinion") || null,
+      raw: {
+        sourceType,
+        submitterType: submitterKind === "realtor" ? "realtor" : "owner",
+        address, assetType, priceMain,
+        floor: readStr("floor") || null,
+        totalfloor: readStr("totalfloor") || null,
+        useapproval: readStr("useapproval") || null,
+        commonArea: readNum("commonarea"),
+        exclusiveArea: readNum("exclusivearea"),
+        siteArea: readNum("sitearea"),
+        realtorName, realtorPhone, realtorCell,
+        submitterName, submitterPhone,
+        opinion: readStr("opinion") || null,
+        assigneeId: currentUserId,
+        assignedAgentId: currentUserId,
+        registeredByAgent: true,
+        registeredByName: actorName || null,
+      },
+    };
+
+    if (els.npmSave) els.npmSave.disabled = true;
+    setNpmMsg("");
+    try {
+      const sb = isSupabaseMode() ? K.initSupabase() : null;
+      if (!sb) throw new Error("Supabase 연동이 필요합니다.");
+      const regContext = buildRegisterLogContext("담당자 등록", state.session?.user);
+      let existing = await findExistingPropertyForRegistration(sb, payload.raw);
+      if (!existing) existing = findExistingPropertyByRegistrationKey(payload.raw, state.properties);
+      let savedPropertyId = null;
+      let savedIdentityKey = "";
+      let activityError = "";
+      if (existing) {
+        const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
+        const saveRes = await apiJson(`/properties`, {
+          method: "PATCH",
+          json: { targetId: existing.id || existing.globalId, patch: merged.row },
+        });
+        const updated = saveRes?.item || null;
+        savedPropertyId = updated?.id || existing.id || existing.globalId || null;
+        savedIdentityKey = merged.row?.raw?.registrationIdentityKey || existing?._raw?.raw?.registrationIdentityKey || buildRegistrationMatchKey(merged.row) || "";
+        setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
+      } else {
+        const createRow = buildRegistrationDbRowForCreate(payload, regContext);
+        const saveRes = await apiJson(`/properties`, {
+          method: "POST",
+          json: { row: createRow },
+        });
+        const inserted = saveRes?.item || null;
+        savedPropertyId = inserted?.id || null;
+        savedIdentityKey = createRow?.raw?.registrationIdentityKey || buildRegistrationMatchKey(createRow) || "";
+        setNpmMsg("등록되었습니다.", false);
+      }
+      try {
+        await recordDailyReportEntries(buildActivityLogEntries(["newProperty"], payload, {
+          propertyId: savedPropertyId,
+          identityKey: savedIdentityKey,
+          changedFields: { newProperty: ["registration"] },
+        }));
+      } catch (logErr) {
+        activityError = logErr?.message || "일일업무일지 기록 실패";
+      }
+      if (activityError) setGlobalMsg(`물건 등록은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
+      else setGlobalMsg("");
+      setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
+    } finally {
+      if (els.npmSave) els.npmSave.disabled = false;
+    }
+  }
+
+  function loadRegistrationLog(item) {
+    const raw = item?._raw?.raw || {};
+    if (Array.isArray(raw.registrationLog) && raw.registrationLog.length) return raw.registrationLog;
+    const createdAt = firstText(raw.firstRegisteredAt, item?.createdAt, item?._raw?.created_at, item?._raw?.createdAt, "");
+    if (!createdAt) return [];
+    return [{ type: "created", at: createdAt, route: "최초 등록", actor: "" }];
+  }
+
+  function formatRegLogAt(value) {
+    const s = String(value || "").trim();
+    if (!s) return "";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
+  }
+
+  function renderRegistrationLog(container, history) {
+    if (!container) return;
+    const list = Array.isArray(history) ? history : [];
+    if (!list.length) {
+      container.innerHTML = '<div class="history-empty">등록 LOG가 없습니다.</div>';
+      return;
+    }
+    const reversed = list.slice().reverse();
+    container.innerHTML = reversed.map((entry) => {
+      const meta = [formatRegLogAt(entry.at || entry.date || ""), entry.route || "", entry.actor || ""]
+        .filter(Boolean)
+        .map((v) => `<span>${esc(v)}</span>`)
+        .join("");
+      if (entry.type === "created") {
+        return `<div class="reglog-item"><div class="reglog-meta">${meta}</div><div class="reglog-badge">최초 등록</div></div>`;
+      }
+      const changes = (Array.isArray(entry.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
+      const rows = changes.length
+        ? `<div class="reglog-changes">${changes.map((change) => `<div class="reglog-change-row"><span class="reglog-label">${esc(change.label || "")}</span><span class="reglog-arrow">${esc(change.before || "-")}</span><span class="reglog-sep">→</span><span class="reglog-arrow is-next">${esc(change.after || "-")}</span></div>`).join("")}</div>`
+        : `<div class="reglog-badge">변경 없음</div>`;
+      return `<div class="reglog-item"><div class="reglog-meta">${meta}</div>${rows}</div>`;
+    }).join("");
+  }
+
+  // ── Opinion History 유틸 ──
+  function loadOpinionHistory(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
+    const raw = item?._raw?.raw || {};
+    const hist = raw.opinionHistory;
+    if (Array.isArray(hist)) return hist;
+    const legacy = String(item?.opinion || raw.opinion || "").trim();
+    if (legacy) {
+      return [{ date: formatDate(item?.createdAt) || "unknown", text: legacy, author: "" }];
+    }
+    return [];
+  }
+
+  function appendOpinionEntry(history, newText, user) {
+    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
+    const text = String(newText || "").trim();
+    if (!text) return history;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const author = String(user?.name || user?.email || "").trim();
+    return [...history, { date: today, text, author }];
+  }
+
+  function renderOpinionHistory(container, history, isAdmin) {
+    if (!container) return;
+    if (!history.length) {
+      container.innerHTML = '<div class="history-empty">등록된 의견이 없습니다.</div>';
+      return;
+    }
+    const reversed = [...history].reverse();
+    container.innerHTML = reversed.map((entry) =>
+      `<div class="history-item">
+        <div class="history-meta">
+          <span class="history-date">${esc(entry.date || "")}</span>
+          ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
+        </div>
+        <div class="history-text">${esc(entry.text || "")}</div>
+      </div>`
+    ).join("");
+    // isAdmin=false → 편집 버튼 없음 (담당자 읽기 전용)
+  }
+
+  function debounce(fn, ms) {
+    if (Shared && typeof Shared.debounce === "function") return Shared.debounce(fn, ms);
+    let t;
+    return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
+  }
+
+  // ── Start ──
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
