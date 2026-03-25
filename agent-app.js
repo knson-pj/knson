@@ -279,10 +279,11 @@
     siteInspection: "site_inspection",
     dailyIssue: "daily_issue",
     newProperty: "new_property",
+    propertyUpdate: "property_update",
   };
 
   function emptyDailyReportCounts() {
-    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 };
+    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0, propertyUpdate: 0 };
   }
 
   function getSessionToken() {
@@ -426,6 +427,34 @@
     }) || null;
   }
 
+  function getActivityFieldLabel(key) {
+    const map = {
+      floor: "층수",
+      totalfloor: "총층",
+      useapproval: "사용승인일",
+      commonarea: "공용면적",
+      exclusivearea: "전용면적",
+      sitearea: "토지면적",
+      priceMain: "감정가(매각가)",
+      currentPrice: "현재가격",
+      dateMain: "주요일정",
+      rightsAnalysis: "권리분석",
+      siteInspection: "현장조사",
+      opinion: "금일이슈사항",
+    };
+    const raw = String(key || "").trim();
+    return map[raw] || raw;
+  }
+
+  function normalizeTextForCompare(value) {
+    return String(value == null ? "" : value).trim();
+  }
+
+  function normalizeNumberForCompare(value) {
+    const num = parseFlexibleNumber(value);
+    return num == null ? "" : String(num);
+  }
+
   function groupDailyReportItems(items) {
     const groups = [];
     const map = new Map();
@@ -439,13 +468,21 @@
           key,
           item: matched,
           row,
-          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0 },
+          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
+          propertyUpdateFields: new Set(),
         };
         map.set(key, group);
         groups.push(group);
       }
       const action = String(row?.action_type || "").trim();
       if (group.counts[action] !== undefined) group.counts[action] += 1;
+      if (action === "property_update") {
+        const fields = Array.isArray(row?.changed_fields) ? row.changed_fields : [];
+        fields.forEach((field) => {
+          const label = getActivityFieldLabel(field);
+          if (label) group.propertyUpdateFields.add(label);
+        });
+      }
     });
     return groups;
   }
@@ -489,6 +526,7 @@
                   ["site_inspection", "현장조사"],
                   ["daily_issue", "금일이슈사항"],
                   ["new_property", "신규물건등록"],
+                  ["property_update", "기본정보수정"],
                 ].filter(([key]) => Number(group.counts[key] || 0) > 0);
                 return `
                 <div class="daily-report-row">
@@ -497,7 +535,13 @@
                     <span class="daily-report-prop-title">${esc(title)}</span>
                   </div>
                   <div class="daily-report-actions-col">
-                    ${actions.map(([key, label]) => `<div class="daily-report-action-node"><span>${esc(label)}</span> <strong>${Number(group.counts[key] || 0)}건</strong></div>`).join("")}
+                    ${actions.map(([key, label]) => {
+                      const count = Number(group.counts[key] || 0);
+                      const fieldText = key === "property_update" && group.propertyUpdateFields?.size
+                        ? Array.from(group.propertyUpdateFields).slice(0, 4).join(", ")
+                        : "";
+                      return `<div class="daily-report-action-node"><span>${esc(label)}</span> <strong>${count}건</strong>${fieldText ? `<small>${esc(fieldText)}</small>` : ""}</div>`;
+                    }).join("")}
                   </div>
                 </div>`;
               }).join("")}
@@ -1487,17 +1531,31 @@
       const workCategories = [];
       const changedFields = {};
       const prev = getAgentEditableSnapshot(item);
-      if (rightsVal && rightsVal !== String(prev.rightsAnalysis || "").trim()) {
+      if (normalizeTextForCompare(rightsVal) !== normalizeTextForCompare(prev.rightsAnalysis)) {
         workCategories.push("rightsAnalysis");
         changedFields.rightsAnalysis = ["rightsAnalysis"];
       }
-      if (siteVal && siteVal !== String(prev.siteInspection || "").trim()) {
+      if (normalizeTextForCompare(siteVal) !== normalizeTextForCompare(prev.siteInspection)) {
         workCategories.push("siteInspection");
         changedFields.siteInspection = ["siteInspection"];
       }
       if (newOpinionText) {
         workCategories.push("dailyIssue");
         changedFields.dailyIssue = ["opinion"];
+      }
+      const propertyUpdateFields = [];
+      if (normalizeTextForCompare(floorVal) !== normalizeTextForCompare(prev.floor)) propertyUpdateFields.push("floor");
+      if (normalizeTextForCompare(totalFloorVal) !== normalizeTextForCompare(prev.totalfloor)) propertyUpdateFields.push("totalfloor");
+      if (normalizeTextForCompare(useApprovalVal) !== normalizeTextForCompare(prev.useapproval)) propertyUpdateFields.push("useapproval");
+      if (normalizeNumberForCompare(commonAreaVal) !== normalizeNumberForCompare(prev.commonarea)) propertyUpdateFields.push("commonarea");
+      if (normalizeNumberForCompare(exclusiveAreaVal) !== normalizeNumberForCompare(prev.exclusivearea)) propertyUpdateFields.push("exclusivearea");
+      if (normalizeNumberForCompare(siteAreaVal) !== normalizeNumberForCompare(prev.sitearea)) propertyUpdateFields.push("sitearea");
+      if (normalizeNumberForCompare(priceMainVal) !== normalizeNumberForCompare(prev.priceMain)) propertyUpdateFields.push("priceMain");
+      if (normalizeNumberForCompare(currentPriceVal) !== normalizeNumberForCompare(prev.currentPrice)) propertyUpdateFields.push("currentPrice");
+      if (normalizeTextForCompare(dateMainVal) !== normalizeTextForCompare(prev.dateMain)) propertyUpdateFields.push("dateMain");
+      if (propertyUpdateFields.length) {
+        workCategories.push("propertyUpdate");
+        changedFields.propertyUpdate = propertyUpdateFields;
       }
       patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);

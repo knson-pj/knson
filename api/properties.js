@@ -195,12 +195,14 @@ function summarizeActivityRows(rows) {
     rights_analysis: 'rightsAnalysis',
     site_inspection: 'siteInspection',
     daily_issue: 'dailyIssue',
+    property_update: 'propertyUpdate',
   };
   const buckets = {
     newProperty: new Set(),
     rightsAnalysis: new Set(),
     siteInspection: new Set(),
     dailyIssue: new Set(),
+    propertyUpdate: new Set(),
   };
   for (const row of Array.isArray(rows) ? rows : []) {
     const bucket = defs[String(row?.action_type || '').trim()];
@@ -221,8 +223,9 @@ function summarizeActivityRows(rows) {
     rightsAnalysis: buckets.rightsAnalysis.size,
     siteInspection: buckets.siteInspection.size,
     dailyIssue: buckets.dailyIssue.size,
+    propertyUpdate: buckets.propertyUpdate.size,
   };
-  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue;
+  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.propertyUpdate;
   return counts;
 }
 
