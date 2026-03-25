@@ -195,12 +195,14 @@ function summarizeActivityRows(rows) {
     rights_analysis: 'rightsAnalysis',
     site_inspection: 'siteInspection',
     daily_issue: 'dailyIssue',
+    property_update: 'propertyUpdate',
   };
   const buckets = {
     newProperty: new Set(),
     rightsAnalysis: new Set(),
     siteInspection: new Set(),
     dailyIssue: new Set(),
+    propertyUpdate: new Set(),
   };
   for (const row of Array.isArray(rows) ? rows : []) {
     const bucket = defs[String(row?.action_type || '').trim()];
@@ -221,8 +223,9 @@ function summarizeActivityRows(rows) {
     rightsAnalysis: buckets.rightsAnalysis.size,
     siteInspection: buckets.siteInspection.size,
     dailyIssue: buckets.dailyIssue.size,
+    propertyUpdate: buckets.propertyUpdate.size,
   };
-  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue;
+  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.propertyUpdate;
   return counts;
 }
 
@@ -242,6 +245,20 @@ function normalizeActivityEntry(entry, ctx) {
       : kstDateKey(),
     changed_fields: normalizeChangedFields(entry?.changedFields || entry?.changed_fields),
     note: cleanText(entry?.note, 4000),
+  };
+}
+
+async function insertActivityEntries(entries, ctx) {
+  const rows = (Array.isArray(entries) ? entries : []).map((entry) => normalizeActivityEntry(entry, ctx)).filter(Boolean);
+  if (!rows.length) return { createdCount: 0 };
+  const created = await supabaseRest('/rest/v1/property_activity_logs', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    json: rows,
+  });
+  return {
+    createdCount: Array.isArray(created) ? created.length : 0,
+    items: Array.isArray(created) ? created : [],
   };
 }
 
@@ -455,7 +472,26 @@ async function handleSupabaseWrite(req, res) {
       json: patch,
     });
     const item = Array.isArray(rows) ? (rows[0] || null) : rows;
-    return send(res, 200, { ok: true, item });
+
+    let activityLogError = '';
+    let activityLoggedCount = 0;
+    if (Array.isArray(body.activityEntries) && body.activityEntries.length) {
+      try {
+        const mappedEntries = body.activityEntries.map((entry) => ({
+          ...entry,
+          propertyId: entry?.propertyId || entry?.property_id || item?.id || current?.id || targetId,
+          propertyIdentityKey: entry?.propertyIdentityKey || entry?.property_identity_key || item?.raw?.registrationIdentityKey || current?.raw?.registrationIdentityKey || null,
+          propertyItemNo: entry?.propertyItemNo || entry?.property_item_no || item?.item_no || current?.item_no || null,
+          propertyAddress: entry?.propertyAddress || entry?.property_address || item?.address || current?.address || null,
+        }));
+        const activityRes = await insertActivityEntries(mappedEntries, ctx);
+        activityLoggedCount = Number(activityRes?.createdCount || 0);
+      } catch (logErr) {
+        activityLogError = logErr?.message || '일일업무일지 기록 실패';
+      }
+    }
+
+    return send(res, 200, { ok: true, item, activityLoggedCount, activityLogError: activityLogError || null });
   }
 
   return send(res, 405, { ok: false, message: 'Method Not Allowed' });

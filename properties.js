@@ -195,12 +195,14 @@ function summarizeActivityRows(rows) {
     rights_analysis: 'rightsAnalysis',
     site_inspection: 'siteInspection',
     daily_issue: 'dailyIssue',
+    property_update: 'propertyUpdate',
   };
   const buckets = {
     newProperty: new Set(),
     rightsAnalysis: new Set(),
     siteInspection: new Set(),
     dailyIssue: new Set(),
+    propertyUpdate: new Set(),
   };
   for (const row of Array.isArray(rows) ? rows : []) {
     const bucket = defs[String(row?.action_type || '').trim()];
@@ -221,8 +223,9 @@ function summarizeActivityRows(rows) {
     rightsAnalysis: buckets.rightsAnalysis.size,
     siteInspection: buckets.siteInspection.size,
     dailyIssue: buckets.dailyIssue.size,
+    propertyUpdate: buckets.propertyUpdate.size,
   };
-  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue;
+  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.propertyUpdate;
   return counts;
 }
 
@@ -242,6 +245,20 @@ function normalizeActivityEntry(entry, ctx) {
       : kstDateKey(),
     changed_fields: normalizeChangedFields(entry?.changedFields || entry?.changed_fields),
     note: cleanText(entry?.note, 4000),
+  };
+}
+
+async function insertActivityEntries(entries, ctx) {
+  const rows = (Array.isArray(entries) ? entries : []).map((entry) => normalizeActivityEntry(entry, ctx)).filter(Boolean);
+  if (!rows.length) return { createdCount: 0 };
+  const created = await supabaseRest('/rest/v1/property_activity_logs', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    json: rows,
+  });
+  return {
+    createdCount: Array.isArray(created) ? created.length : 0,
+    items: Array.isArray(created) ? created : [],
   };
 }
 
