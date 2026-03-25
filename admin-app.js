@@ -230,6 +230,7 @@
         buildRegistrationSnapshotFromDbRow,
         buildRegistrationDbRowForExisting,
         buildRegistrationDbRowForCreate,
+        findExistingPropertyByRegistrationKey,
         normalizeRole,
         escapeHtml,
         escapeAttr,
@@ -252,6 +253,7 @@
         formatMoneyInputValue,
         configureFormNumericUx,
         fetchPropertyDetail,
+        insertPropertyRowResilient,
         updatePropertyRowResilient,
         getStaffNameById,
         loadRegistrationLog,
@@ -262,6 +264,7 @@
         mergePropertyRaw,
         formatScheduleHtml,
         buildKakaoMapLink,
+        isSupabaseMode,
       },
     };
     return window.KNSN_ADMIN_RUNTIME;
@@ -291,6 +294,7 @@
     setupChrome();
     bindEvents();
     callAdminModule("dashboard", "bindEvents", []);
+    callAdminModule("newPropertyModal", "bindEvents", []);
     resetStaffForm();
     renderSessionUI();
     setActiveTab(state.activeTab);
@@ -667,28 +671,6 @@ function bindEvents() {
 
     // 신규 물건 등록 모달
     if (els.btnNewProperty) els.btnNewProperty.addEventListener("click", openNewPropertyModal);
-    if (els.npmClose) els.npmClose.addEventListener("click", closeNewPropertyModal);
-    if (els.npmCancel) els.npmCancel.addEventListener("click", closeNewPropertyModal);
-    if (els.newPropertyModal) {
-      els.newPropertyModal.addEventListener("click", (e) => {
-        if (e.target?.dataset?.close === "true") closeNewPropertyModal();
-      });
-    }
-    if (els.newPropertyForm) {
-      els.newPropertyForm.addEventListener("change", (e) => {
-        if (e.target.name !== "submitterKind") return;
-        const isRealtor = e.target.value === "realtor";
-        if (els.npmRealtorFields) els.npmRealtorFields.classList.toggle("hidden", !isRealtor);
-        if (els.npmOwnerFields) els.npmOwnerFields.classList.toggle("hidden", isRealtor);
-        els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
-          card.classList.toggle("is-active", !!card.querySelector("input[type=radio]")?.checked);
-        });
-      });
-      els.newPropertyForm.addEventListener("submit", (e) => {
-        e.preventDefault();
-        submitNewProperty().catch((err) => setNpmMsg(err?.message || "등록 실패"));
-      });
-    }
 
     // geocoding
     if (els.btnGeocodeRun) els.btnGeocodeRun.addEventListener("click", () => {
@@ -1188,33 +1170,16 @@ function bindEvents() {
   // ---------------------------
   // 신규 물건 등록 모달
   // ---------------------------
-  function openNewPropertyModal() {
-    if (!els.newPropertyModal || !els.newPropertyForm) return;
-    els.newPropertyForm.reset();
-    configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
-    if (els.npmRealtorFields) els.npmRealtorFields.classList.remove("hidden");
-    if (els.npmOwnerFields) els.npmOwnerFields.classList.add("hidden");
-    els.newPropertyForm.querySelectorAll(".npm-type-card").forEach((card) => {
-      card.classList.toggle("is-active", !!card.querySelector("input[type=radio]")?.checked);
-    });
-    setNpmMsg("");
-    setModalOpen(true);
-    els.newPropertyModal.classList.remove("hidden");
-    els.newPropertyModal.setAttribute("aria-hidden", "false");
+  function openNewPropertyModal(...args) {
+    return callAdminModule("newPropertyModal", "openNewPropertyModal", args);
   }
 
-  function closeNewPropertyModal() {
-    if (!els.newPropertyModal) return;
-    els.newPropertyModal.classList.add("hidden");
-    els.newPropertyModal.setAttribute("aria-hidden", "true");
-    setModalOpen(false);
-    setNpmMsg("");
+  function closeNewPropertyModal(...args) {
+    return callAdminModule("newPropertyModal", "closeNewPropertyModal", args);
   }
 
-  function setNpmMsg(text, isError = true) {
-    if (!els.npmMsg) return;
-    els.npmMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
-    els.npmMsg.textContent = text || "";
+  function setNpmMsg(...args) {
+    return callAdminModule("newPropertyModal", "setNpmMsg", args);
   }
 
   function extractSchemaMissingColumn(err) {
@@ -1263,91 +1228,8 @@ function bindEvents() {
     throw new Error("properties update failed after schema fallback retries");
   }
 
-  async function submitNewProperty() {
-    const f = els.newPropertyForm;
-    const fd = new FormData(f);
-    const readStr = (k) => String(fd.get(k) || "").trim();
-    const readNum = (k) => parseFlexibleNumber(fd.get(k));
-
-    const submitterKind = readStr("submitterKind") || "realtor";
-    const sourceType = submitterKind === "realtor" ? "realtor" : "general";
-    const address = readStr("address");
-    const assetType = readStr("assetType");
-    const priceMain = readNum("priceMain");
-
-    if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
-
-    const actorName = String(state.session?.user?.name || state.session?.user?.email || "").trim();
-    let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
-    if (submitterKind === "realtor") {
-      realtorName = readStr("realtorname");
-      realtorPhone = readStr("realtorphone") || null;
-      realtorCell = readStr("realtorcell");
-      submitterName = actorName || readStr("submitterName") || null;
-      submitterPhone = realtorCell;
-      if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
-    } else {
-      submitterName = readStr("submitterName") || actorName || "";
-      submitterPhone = readStr("submitterPhone");
-      if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
-    }
-
-    const payload = {
-      source_type: sourceType,
-      is_general: true,
-      address,
-      asset_type: assetType,
-      price_main: priceMain,
-      use_approval: readStr("useapproval") || null,
-      common_area: readNum("commonarea"),
-      exclusive_area: readNum("exclusivearea"),
-      site_area: readNum("sitearea"),
-      broker_office_name: realtorName,
-      submitter_name: submitterName || null,
-      submitter_phone: submitterPhone,
-      memo: readStr("opinion") || null,
-      raw: {
-        sourceType,
-        submitterType: submitterKind === "realtor" ? "realtor" : "owner",
-        address, assetType, priceMain,
-        floor: readStr("floor") || null,
-        totalfloor: readStr("totalfloor") || null,
-        useapproval: readStr("useapproval") || null,
-        commonArea: readNum("commonarea"),
-        exclusiveArea: readNum("exclusivearea"),
-        siteArea: readNum("sitearea"),
-        realtorName, realtorPhone, realtorCell,
-        submitterName, submitterPhone,
-        opinion: readStr("opinion") || null,
-        registeredByAdmin: true,
-        registeredByName: actorName || null,
-      },
-    };
-
-    if (els.npmSave) els.npmSave.disabled = true;
-    setNpmMsg("");
-    try {
-      const sb = isSupabaseMode() ? K.initSupabase() : null;
-      const regContext = buildRegisterLogContext("관리자 등록", state.session?.user);
-      if (sb) {
-        await ensureAuxiliaryPropertiesForAdmin();
-        const existing = findExistingPropertyByRegistrationKey(payload.raw, getAuxiliaryPropertiesSnapshot());
-        if (existing) {
-          const merged = buildRegistrationDbRowForExisting(existing, payload, regContext);
-          await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
-          setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
-        } else {
-          await insertPropertyRowResilient(sb, buildRegistrationDbRowForCreate(payload, regContext));
-          setNpmMsg("등록되었습니다.", false);
-        }
-      } else {
-        await api("/public-listings", { method: "POST", body: payload });
-        setNpmMsg("등록되었습니다.", false);
-      }
-      setTimeout(() => { closeNewPropertyModal(); invalidatePropertyCollections(); loadProperties(); }, 700);
-    } finally {
-      if (els.npmSave) els.npmSave.disabled = false;
-    }
+  async function submitNewProperty(...args) {
+    return callAdminModule("newPropertyModal", "submitNewProperty", args);
   }
 
   function sanitizeOnbidOpinion(opinion, memo, address) {
