@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260324-adminfast4";
+  const ADMIN_FAST_BUILD = "20260325-adminsplit1";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -176,6 +176,72 @@
 
   const els = {};
 
+  const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
+
+  function callAdminModule(moduleKey, fnName, args) {
+    const mod = AdminModules[moduleKey];
+    if (!mod || typeof mod[fnName] !== "function") {
+      throw new Error(`[admin-app] module not ready: ${moduleKey}.${fnName}`);
+    }
+    return mod[fnName](...(Array.isArray(args) ? args : []));
+  }
+
+  function exposeAdminRuntime() {
+    window.KNSN_ADMIN_RUNTIME = {
+      state,
+      els,
+      K,
+      Shared,
+      PropertyDomain,
+      API_BASE,
+      adminApi: api,
+      isSupabaseMode,
+      utils: {
+        syncSupabaseSessionIfNeeded,
+        normalizeStaff,
+        dedupeStaff,
+        normalizeProperty,
+        hydrateAssignedAgentNames,
+        renderSummary,
+        renderPropertiesTable,
+        setActiveTab,
+        setFormBusy,
+        showResultBox,
+        setGlobalMsg,
+        goLoginPage,
+        loadProperties,
+        ensureAuxiliaryPropertiesForAdmin,
+        getAuxiliaryPropertiesSnapshot,
+        buildRegisterLogContext,
+        buildRegistrationMatchKey,
+        buildRegistrationSnapshotFromItem,
+        buildRegistrationSnapshotFromDbRow,
+        buildRegistrationDbRowForExisting,
+        buildRegistrationDbRowForCreate,
+        normalizeRole,
+        escapeHtml,
+        escapeAttr,
+        formatDate,
+        toNumber,
+        firstText,
+        toNullableNumber,
+        parseFlexibleDate,
+        normalizeAddress,
+        extractGuDong,
+        normalizeStatus,
+        sourceLabel,
+        statusLabel,
+        formatMoneyKRW,
+        formatPercent,
+        formatAreaPyeong,
+        chunkArray,
+        invalidatePropertyCollections,
+      },
+    };
+    return window.KNSN_ADMIN_RUNTIME;
+  }
+
+
   function isSupabaseMode() {
     return !!(K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase());
   }
@@ -193,6 +259,7 @@
 
   function init() {
     cacheEls();
+    exposeAdminRuntime();
     configureFormNumericUx(els.aemForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea", "latitude", "longitude"], amountNames: ["priceMain", "lowprice"] });
     configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     setupChrome();
@@ -991,17 +1058,8 @@ function bindEvents() {
     const isAdmin = user?.role === 'admin';
     return ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: !!options.forceRefresh });
   }
-
-  async function loadStaff() {
-    await syncSupabaseSessionIfNeeded();
-
-    const res = await api("/admin/staff", { auth: true });
-    state.staff = dedupeStaff(res?.items || []);
-    renderStaffTable();
-    renderAssignmentTable();
-    renderSummary();
-    hydrateAssignedAgentNames();
-    renderPropertiesTable();
+  async function loadStaff(...args) {
+    return callAdminModule("staffRegions", "loadStaff", args);
   }
 
   function normalizeProperty(item) {
@@ -2557,566 +2615,42 @@ function bindEvents() {
   // ---------------------------
   // Staff CRUD
   // ---------------------------
-  function setStaffFormMode(mode = "create") {
-    const editing = mode === "edit";
-    const emailEl = els.staffForm?.elements.email;
-    const passwordEl = els.staffForm?.elements.password;
-
-    if (emailEl) {
-      emailEl.disabled = editing;
-      if (editing) emailEl.removeAttribute("required");
-      else emailEl.setAttribute("required", "required");
-    }
-    if (passwordEl) {
-      passwordEl.disabled = editing;
-      if (editing) {
-        passwordEl.value = "";
-        passwordEl.removeAttribute("required");
-        passwordEl.placeholder = "비밀번호는 본인 메뉴에서 변경";
-      } else {
-        passwordEl.setAttribute("required", "required");
-        passwordEl.placeholder = "신규 생성 시만 입력";
-      }
-    }
-    if (els.btnStaffSave) els.btnStaffSave.textContent = editing ? "프로필 저장" : "계정 생성";
+  function setStaffFormMode(...args) {
+    return callAdminModule("staffRegions", "setStaffFormMode", args);
   }
-
-  function fillStaffForm(staff) {
-    if (!els.staffForm) return;
-    els.staffForm.elements.id.value = staff.id || "";
-    if (els.staffForm.elements.email) els.staffForm.elements.email.value = "";
-    els.staffForm.elements.name.value = staff.name || "";
-    els.staffForm.elements.role.value = staff.role || "staff";
-    if (els.staffForm.elements.password) els.staffForm.elements.password.value = "";
-    setStaffFormMode("edit");
+  function fillStaffForm(...args) {
+    return callAdminModule("staffRegions", "fillStaffForm", args);
   }
-
-  function resetStaffForm() {
-    if (!els.staffForm) return;
-    els.staffForm.reset();
-    els.staffForm.elements.id.value = "";
-    els.staffForm.elements.role.value = "staff";
-    setStaffFormMode("create");
+  function resetStaffForm(...args) {
+    return callAdminModule("staffRegions", "resetStaffForm", args);
   }
-
-  async function handleSaveStaff(e) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const id = String(fd.get("id") || "").trim();
-    const payload = {
-      email: String(fd.get("email") || "").trim(),
-      name: String(fd.get("name") || "").trim(),
-      role: String(fd.get("role") || "staff"),
-      password: String(fd.get("password") || ""),
-    };
-
-    if (!payload.name) return alert("이름을 입력해 주세요.");
-    if (!id && !payload.email) return alert("로그인 이메일을 입력해 주세요.");
-    if (!id && !payload.password) return alert("신규 계정은 초기 비밀번호가 필요합니다.");
-
-    try {
-      setFormBusy(e.currentTarget, true);
-      let saved = null;
-      if (id) {
-        const res = await api(`/admin/staff/${encodeURIComponent(id)}`, {
-          method: "PATCH",
-          auth: true,
-          body: {
-            name: payload.name,
-            role: payload.role,
-          },
-        });
-        saved = res?.item || null;
-        if (saved) {
-          state.staff = state.staff.map((row) => String(row.id) === String(id) ? normalizeStaff(saved) : row);
-        }
-      } else {
-        const res = await api("/admin/staff", {
-          method: "POST",
-          auth: true,
-          body: payload,
-        });
-        saved = res?.item || null;
-        if (saved) {
-          state.staff = [normalizeStaff(saved), ...state.staff.filter((row) => String(row.id) !== String(saved.id))];
-        }
-      }
-      resetStaffForm();
-      if (saved) {
-        renderStaffTable();
-        renderAssignmentTable();
-        renderSummary();
-      } else {
-        await loadStaff();
-      }
-      alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "저장 실패");
-    } finally {
-      setFormBusy(e.currentTarget, false);
-    }
+  async function handleSaveStaff(...args) {
+    return callAdminModule("staffRegions", "handleSaveStaff", args);
   }
-
-
-  function renderStaffTable() {
-    if (!els.staffTableBody || !els.staffEmpty) return;
-    els.staffTableBody.innerHTML = "";
-
-    const rows = Array.isArray(state.staff) ? state.staff.slice() : [];
-    if (!rows.length) {
-      els.staffEmpty.classList.remove("hidden");
-      return;
-    }
-    els.staffEmpty.classList.add("hidden");
-
-    const roleLabelOf = (role) => {
-      const r = String(role || "staff").toLowerCase();
-      if (r === "admin") return "관리자";
-      if (r === "other") return "기타";
-      return "담당자";
-    };
-
-    const frag = document.createDocumentFragment();
-    rows.forEach((staff) => {
-      const tr = document.createElement("tr");
-      const assignedCount = Array.isArray(staff.assignedRegions) ? staff.assignedRegions.length : 0;
-      tr.innerHTML = `
-        <td>${escapeHtml(staff.name || staff.email || "-")}</td>
-        <td>${escapeHtml(roleLabelOf(staff.role))}</td>
-        <td>${assignedCount}</td>
-        <td>${escapeHtml(formatDate(staff.createdAt) || "-")}</td>
-        <td>
-          <div class="action-row">
-            <button class="btn btn-secondary btn-sm" data-act="edit" data-id="${escapeAttr(staff.id)}">수정</button>
-            <button class="btn btn-ghost btn-sm" data-act="delete" data-id="${escapeAttr(staff.id)}">삭제</button>
-          </div>
-        </td>
-      `;
-      frag.appendChild(tr);
-    });
-
-    els.staffTableBody.appendChild(frag);
-
-    els.staffTableBody.querySelectorAll("button[data-act]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        const id = String(e.currentTarget.dataset.id || "");
-        const act = String(e.currentTarget.dataset.act || "");
-        const row = state.staff.find((staff) => String(staff.id) === id);
-        if (!row) return;
-
-        if (act === "edit") {
-          fillStaffForm(row);
-          setActiveTab("staff");
-          return;
-        }
-
-        if (act === "delete") {
-          if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
-          try {
-            await api(`/admin/staff/${encodeURIComponent(id)}`, {
-              method: "DELETE",
-              auth: true,
-            });
-            state.staff = state.staff.filter((staff) => String(staff.id) !== id);
-            renderStaffTable();
-            renderAssignmentTable();
-            renderSummary();
-            hydrateAssignedAgentNames();
-            renderPropertiesTable();
-          } catch (err) {
-            console.error(err);
-            alert(err.message || "삭제 실패");
-          }
-        }
-      });
-    });
+  function renderStaffTable(...args) {
+    return callAdminModule("staffRegions", "renderStaffTable", args);
   }
-
-  function renderAssignmentTable() {
-    if (!els.assignmentTableBody || !els.assignmentEmpty) return;
-    els.assignmentTableBody.innerHTML = "";
-
-    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
-    if (!agents.length) {
-      els.assignmentEmpty.classList.remove("hidden");
-      return;
-    }
-    els.assignmentEmpty.classList.add("hidden");
-
-    const regionOptions = getRegionOptionsFromProperties();
-    const frag = document.createDocumentFragment();
-
-    agents.forEach((agent) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${escapeHtml(agent.name || agent.email || "-")}</td>
-        <td>담당자</td>
-        <td>
-          <select class="assignment-select" data-agent-id="${escapeAttr(agent.id)}" multiple></select>
-        </td>
-      `;
-      frag.appendChild(tr);
-    });
-
-    els.assignmentTableBody.appendChild(frag);
-
-    els.assignmentTableBody.querySelectorAll(".assignment-select").forEach((sel) => {
-      const agentId = String(sel.dataset.agentId || "");
-      const agent = agents.find((a) => String(a.id) === agentId);
-      if (!agent) return;
-      regionOptions.forEach((region) => {
-        const opt = document.createElement("option");
-        opt.value = region;
-        opt.textContent = region;
-        opt.selected = Array.isArray(agent.assignedRegions) && agent.assignedRegions.includes(region);
-        sel.appendChild(opt);
-      });
-    });
+  function renderAssignmentTable(...args) {
+    return callAdminModule("staffRegions", "renderAssignmentTable", args);
   }
 
   // ---------------------------
   // CSV Import (Properties)
   // ---------------------------
-  async function handleCsvUpload() {
-    try {
-      const file = els.csvFileInput.files?.[0];
-      if (!file) return alert("CSV 파일을 선택해 주세요.");
-
-      const sourceType = String(els.csvImportSource.value || "auction"); // auction|onbid|realtor
-      const source =
-        sourceType === "auction" ? "auction" :
-        sourceType === "onbid" ? "gongmae" :
-        "general"; // realtor는 레거시 general로 전송
-
-      const csvText = await readCsvFileText(file, sourceType);
-
-      // Supabase import (admin only)
-      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-      if (sb) {
-        try { await K.sbSyncLocalSession(); } catch {}
-        if (state.session?.user?.role !== "admin") {
-          throw new Error("관리자만 CSV 업로드가 가능합니다.");
-        }
-
-        const rawRows = parseCsv(csvText);
-        const preparedRows = [];
-        for (const r of rawRows) {
-          const m = mapPropertyCsvRow(r, sourceType);
-          // itemNo 없으면 global_id = "sourceType:" 으로 중복돼 upsert 에러 유발
-          if (!m || !m.itemNo || !m.address) continue;
-          const built = buildSupabasePropertyRow(r, m, sourceType);
-          if (!built.global_id || built.global_id.endsWith(":")) continue;
-          preparedRows.push(built);
-        }
-
-        if (!preparedRows.length) throw new Error("유효한 행이 없습니다.");
-
-        const dedupedRows = dedupePropertyRowsByGlobalId(preparedRows);
-        const dedupedInFile = preparedRows.length - dedupedRows.length;
-        const regContext = buildRegisterLogContext(`CSV 업로드(${sourceType === "auction" ? "경매" : sourceType === "onbid" ? "공매" : "중개"})`, state.session?.user);
-        await ensureAuxiliaryPropertiesForAdmin();
-        const workingByKey = new Map();
-        getAuxiliaryPropertiesSnapshot().forEach((item) => {
-          const key = buildRegistrationMatchKey(buildRegistrationSnapshotFromItem(item));
-          if (key && !workingByKey.has(key)) workingByKey.set(key, item);
-        });
-        const finalRows = [];
-        let regUpdatedCount = 0;
-        for (const row of dedupedRows) {
-          const snap = buildRegistrationSnapshotFromDbRow(row);
-          const matchKey = buildRegistrationMatchKey(snap);
-          const existing = matchKey ? workingByKey.get(matchKey) : null;
-          if (existing) {
-            const merged = buildRegistrationDbRowForExisting(existing, row, regContext);
-            finalRows.push(merged.row);
-            workingByKey.set(matchKey, normalizeProperty({ ...merged.row, raw: merged.row.raw }));
-            if (merged.changes.length) regUpdatedCount += 1;
-          } else {
-            const created = buildRegistrationDbRowForCreate(row, regContext);
-            finalRows.push(created);
-            if (matchKey) workingByKey.set(matchKey, normalizeProperty({ ...created, raw: created.raw }));
-          }
-        }
-        const importResult = await upsertPropertiesResilient(sb, finalRows, { chunkSize: 200 });
-        const summaryParts = [
-          `업로드 완료`,
-          `처리: ${importResult.okCount}건`,
-        ];
-        if (dedupedInFile > 0) summaryParts.push(`파일내 중복 통합: ${dedupedInFile}건`);
-        if (regUpdatedCount > 0) summaryParts.push(`기존 물건 갱신(LOG): ${regUpdatedCount}건`);
-        if (importResult.failed.length > 0) {
-          summaryParts.push(`실패: ${importResult.failed.length}건`);
-          const preview = importResult.failed.slice(0, 5).map((v) => v.itemNo || v.globalId || "-").join(", ");
-          if (preview) summaryParts.push(`실패 예시: ${preview}`);
-        }
-
-        showResultBox(els.csvResultBox, summaryParts.join(" / "), importResult.failed.length > 0);
-        invalidatePropertyCollections();
-        await loadProperties();
-        return;
-      }
-
-      // Legacy (Vercel API)
-      const res = await api("/admin/import/properties-csv", {
-        method: "POST",
-        auth: true,
-        body: {
-          source: sourceType,
-          sourceType,     // new
-          csvText,
-          dedupeKey: "address",
-        },
-      });
-
-      const summary = [
-        `업로드 완료`,
-        `삽입: ${res?.inserted ?? 0}건`,
-        `중복 스킵: ${res?.duplicates ?? 0}건`,
-        `오류: ${res?.errors ?? 0}건`,
-      ].join(" / ");
-
-      showResultBox(els.csvResultBox, summary);
-      invalidatePropertyCollections();
-      await loadProperties();
-    } catch (err) {
-      console.error(err);
-      if (err?.code === "LOGIN_REQUIRED" || err?.status === 401) {
-        setGlobalMsg("로그인이 필요합니다. 다시 로그인해 주세요.");
-        goLoginPage(true);
-      }
-      showResultBox(els.csvResultBox, `업로드 실패: ${err.message}`, true);
-    }
+  async function handleCsvUpload(...args) {
+    return callAdminModule("csvTab", "handleCsvUpload", args);
   }
-
-    function mapPropertyCsvRow(row, sourceType) {
-    const pick = (...keys) => {
-      for (const k of keys) {
-        if (row[k] != null && String(row[k]).trim() !== "") return String(row[k]).trim();
-      }
-      return "";
-    };
-
-    const toNum = (v) => {
-      const n = toNumber(v);
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    const m2ToPyeong = (m2) => {
-      const n = toNum(m2);
-      return n ? (n / 3.305785) : 0;
-    };
-
-    const toISO = (v) => {
-      if (K && typeof K.toISODate === "function") return K.toISODate(v);
-      return null;
-    };
-
-    const parseAuctionAreas = (text) => {
-      const src = String(text || "");
-      const building = src.match(/건물[^0-9]*([0-9.,]+)\s*평/i);
-      const site = src.match(/대지권[^0-9]*([0-9.,]+)\s*평/i);
-      return {
-        building: building ? toNum(building[1]) : null,
-        site: site ? toNum(site[1]) : null,
-      };
-    };
-
-    let itemNo = "";
-    let address = "";
-    let status = "";
-    let priceMain = 0;
-    let lowprice = null;
-    let latitude = null;
-    let longitude = null;
-
-    let assetType = "";
-    let floor = null;
-    let totalfloor = null;
-    let commonArea = null;
-    let exclusiveArea = null;
-    let siteArea = null;
-    let useApproval = null;
-    let dateMain = null;
-    let sourceUrl = "";
-    let memo = "";
-
-    if (sourceType === "auction") {
-      // 사건번호 + 물건번호를 조합해야 고유 식별자가 됨
-      // ex) 사건번호=2025타경41814, 물건번호=1 → "2025타경41814(1)"
-      // 물건번호가 이미 사건번호를 포함한 형태(2025타경41814(1))면 그대로 사용
-      const caseNo = pick("사건번호", "caseNo", "");
-      const propNo = pick("물건번호", "");
-      if (caseNo && propNo) {
-        itemNo = propNo.includes(caseNo) ? propNo : `${caseNo}(${propNo})`;
-      } else {
-        itemNo = caseNo || propNo || pick("itemNo", "");
-      }
-      address = pick("주소(시군구동)", "주소", "소재지", "address");
-      status = pick("진행상태", "상태", "status");
-      priceMain = toNum(pick("감정가", "감정가(원)", "priceMain"));
-      lowprice = toNum(pick("최저가", "매각가", "lowprice")) || null;
-      assetType = pick("종별", "부동산유형", "assetType");
-      dateMain = toISO(pick("입찰일자", "입찰일", "dateMain")) || null;
-      memo = pick("경매현황", "비고", "memo");
-      const area = parseAuctionAreas(memo);
-      exclusiveArea = area.building;
-      siteArea = area.site;
-    } else if (sourceType === "onbid") {
-      itemNo = pick("물건관리번호", "itemNo", "물건번호");
-      address = pick("소재지", "주소", "address", "물건명");
-      status = pick("물건상태", "상태", "status");
-      priceMain = toNum(pick("감정가(원)", "감정가", "priceMain"));
-      lowprice = toNum(pick("최저입찰가(원)", "lowprice")) || null;
-      assetType = pick("용도", "부동산유형", "assetType");
-      dateMain = pick("입찰마감일시", "입찰마감", "dateMain") || null;
-      memo = pick("비고", "특이사항", "메모", "memo");
-      const bM2 = pick("건물 면적(㎡)", "건물 면적(m²)", "건물 면적(m2)", "건물면적(㎡)");
-      const tM2 = pick("토지 면적(㎡)", "토지 면적(m²)", "토지 면적(m2)", "토지면적(㎡)");
-      if (bM2) exclusiveArea = m2ToPyeong(bM2);
-      if (tM2) siteArea = m2ToPyeong(tM2);
-    } else {
-      itemNo = pick("매물ID", "itemNo", "물건번호");
-      address = pick("주소(통합)", "도로명주소", "지번주소", "주소", "address");
-      status = pick("거래유형", "status");
-      priceMain = toNum(pick("가격(표시)", "가격(원)", "가격(원본)", "매매가", "priceMain"));
-      assetType = pick("세부유형", "부동산유형명", "부동산유형", "assetType");
-      sourceUrl = pick("바로가기(엑셀)", "매물URL", "sourceUrl", "url");
-      memo = pick("매물특징", "memo");
-      floor = pick("해당층", "층수", "floor") || null;
-      totalfloor = pick("총층", "전체층", "totalfloor") || null;
-      const ex = pick("전용면적(평)", "전용면적", "exclusiveArea");
-      const common = pick("공용면적(평)", "공급/계약면적(평)", "공급면적(평)", "commonArea");
-      if (ex) exclusiveArea = toNum(ex);
-      if (common) commonArea = toNum(common);
-      const lat = pick("위도", "latitude", "lat");
-      const lng = pick("경도", "longitude", "lng");
-      latitude = lat ? Number(lat) : null;
-      longitude = lng ? Number(lng) : null;
-      useApproval = toISO(pick("사용승인일", "useApproval")) || null;
-    }
-
-    if (!address && !itemNo) return null;
-
-    return {
-      itemNo,
-      address,
-      status,
-      priceMain,
-      latitude: Number.isFinite(latitude) ? latitude : null,
-      longitude: Number.isFinite(longitude) ? longitude : null,
-      assetType,
-      commonArea,
-      exclusiveArea,
-      siteArea,
-      useApproval,
-      dateMain,
-      sourceUrl,
-      memo,
-      lowprice,
-      floor,
-      totalfloor,
-    };
+  function mapPropertyCsvRow(...args) {
+    return callAdminModule("csvTab", "mapPropertyCsvRow", args);
   }
-
-  function buildSupabasePropertyRow(rawRow, m, sourceType) {
-    const globalId = `${sourceType}:${m.itemNo}`;
-    const toNullNum = (v) => (v == null ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
-
-    const normalizedRaw = {
-      ...(rawRow || {}),
-      itemNo: String(m.itemNo || ""),
-      address: String(m.address || ""),
-      assetType: m.assetType || null,
-      floor: m.floor || null,
-      totalfloor: m.totalfloor || null,
-      commonArea: toNullNum(m.commonArea),
-      exclusiveArea: toNullNum(m.exclusiveArea),
-      siteArea: toNullNum(m.siteArea),
-      useapproval: m.useApproval || null,
-      dateMain: m.dateMain || null,
-      sourceUrl: m.sourceUrl || null,
-      opinion: sanitizeOnbidOpinion(sourceType === "onbid" ? null : m.memo, m.memo, m.address) || null,
-      memo: m.memo || null,
-      lowprice: toNullNum(m.lowprice),
-      currentPrice: toNullNum(m.lowprice),
-    };
-
-    const row = {
-      global_id: globalId,
-      item_no: String(m.itemNo || ""),
-      source_type: sourceType,
-      is_general: false,
-
-      address: String(m.address || ""),
-      asset_type: (m.assetType || "") || null,
-      exclusive_area: toNullNum(m.exclusiveArea),
-      common_area: toNullNum(m.commonArea),
-      site_area: toNullNum(m.siteArea),
-      use_approval: m.useApproval || null,
-      status: m.status || null,
-
-      price_main: toNullNum(m.priceMain),
-      date_main: m.dateMain || null,
-      source_url: m.sourceUrl || null,
-      memo: m.memo || null,
-
-      latitude: m.latitude,
-      longitude: m.longitude,
-
-      geocode_status: (m.latitude != null && m.longitude != null)
-        ? "ok"
-        : (sourceType === "realtor" ? null : "pending"),
-
-      raw: normalizedRaw,
-    };
-
-    return row;
+  function buildSupabasePropertyRow(...args) {
+    return callAdminModule("csvTab", "buildSupabasePropertyRow", args);
   }
-
-
-  function dedupePropertyRowsByGlobalId(rows) {
-    const map = new Map();
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const key = String(row?.global_id || "").trim();
-      if (!key) continue;
-      map.set(key, row);
-    }
-    return [...map.values()];
+  function dedupePropertyRowsByGlobalId(...args) {
+    return callAdminModule("csvTab", "dedupePropertyRowsByGlobalId", args);
   }
-
-  async function upsertPropertiesResilient(sb, rows, { chunkSize = 200 } = {}) {
-    const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
-    const failed = [];
-    let okCount = 0;
-
-    async function upsertBatch(batch) {
-      if (!batch.length) return;
-      const { error } = await sb.from("properties").upsert(batch, { onConflict: "global_id" });
-      if (!error) {
-        okCount += batch.length;
-        return;
-      }
-      if (batch.length === 1) {
-        const row = batch[0] || {};
-        failed.push({
-          globalId: row.global_id || "",
-          itemNo: row.item_no || "",
-          message: String(error.message || error.details || error.hint || "업서트 실패"),
-        });
-        return;
-      }
-      const mid = Math.ceil(batch.length / 2);
-      await upsertBatch(batch.slice(0, mid));
-      await upsertBatch(batch.slice(mid));
-    }
-
-    const chunks = (K && typeof K.chunk === "function") ? K.chunk(list, chunkSize) : chunkArray(list, chunkSize);
-    for (const chunk of chunks) {
-      await upsertBatch(chunk);
-    }
-
-    return { okCount, failed };
+  async function upsertPropertiesResilient(...args) {
+    return callAdminModule("csvTab", "upsertPropertiesResilient", args);
   }
 
   // ---------------------------
@@ -3124,92 +2658,17 @@ function bindEvents() {
   // Region Assignments
 
   // ---------------------------
-  function getRegionOptionsFromProperties() {
-    const set = new Set();
-    for (const p of getAuxiliaryPropertiesSnapshot()) {
-      if (p.regionGu) set.add(p.regionGu);
-      if (p.regionDong) set.add(p.regionDong);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
+  function getRegionOptionsFromProperties(...args) {
+    return callAdminModule("staffRegions", "getRegionOptionsFromProperties", args);
   }
-
-  async function handleSuggestGrouping() {
-    await ensureAuxiliaryPropertiesForAdmin();
-    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
-    if (!agents.length) return alert("담당자 계정을 먼저 등록해 주세요.");
-
-    const requestedCount = Math.max(1, Number(els.agentCountInput.value || 1));
-    const unitMode = els.regionUnitMode.value; // auto|gu|dong
-
-    const grouped = buildAutoRegionGrouping(getAuxiliaryPropertiesSnapshot(), requestedCount, unitMode);
-    state.lastGroupSuggestion = grouped;
-
-    renderGroupSuggestion(grouped, agents);
+  async function handleSuggestGrouping(...args) {
+    return callAdminModule("staffRegions", "handleSuggestGrouping", args);
   }
-
-  function renderGroupSuggestion(grouped, agents) {
-    els.groupSuggestBox.innerHTML = "";
-    if (!grouped || !grouped.groups?.length) {
-      els.groupSuggestBox.innerHTML = `<div class="muted">그룹 제안 결과가 없습니다.</div>`;
-      return;
-    }
-
-    const info = document.createElement("div");
-    info.className = "hint-box";
-    info.innerHTML = `
-      <div><strong>제안 기준:</strong> ${escapeHtml(grouped.unitLabel)} / 총 지역 ${grouped.totalRegions}개 / 그룹 ${grouped.groups.length}개</div>
-      <div class="muted small">※ 제안 결과는 아래 [배정 저장] 전에 테이블에서 수정 가능합니다.</div>
-    `;
-    els.groupSuggestBox.appendChild(info);
-
-    const frag = document.createDocumentFragment();
-    grouped.groups.forEach((g, idx) => {
-      const card = document.createElement("div");
-      card.className = "group-card";
-      const agentName = agents[idx]?.name || `미지정 그룹 ${idx + 1}`;
-      card.innerHTML = `
-        <h4>그룹 ${idx + 1} (${escapeHtml(agentName)})</h4>
-        <div class="group-chip-wrap">
-          ${g.regions.map(r => `<span class="group-chip">${escapeHtml(r)}</span>`).join("")}
-        </div>
-      `;
-      frag.appendChild(card);
-    });
-    els.groupSuggestBox.appendChild(frag);
-
-    // 실제 배정 테이블 반영(담당자 순서 기준)
-    const selects = [...els.assignmentTableBody.querySelectorAll(".assignment-select")];
-    selects.forEach((sel, idx) => {
-      const regions = grouped.groups[idx]?.regions || [];
-      [...sel.options].forEach((opt) => {
-        opt.selected = regions.includes(opt.value);
-      });
-    });
+  function renderGroupSuggestion(...args) {
+    return callAdminModule("staffRegions", "renderGroupSuggestion", args);
   }
-
-  async function handleSaveAssignments() {
-    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
-    if (!agents.length) return alert("담당자 계정이 없습니다.");
-
-    const rows = [...els.assignmentTableBody.querySelectorAll(".assignment-select")].map((sel) => {
-      const agentId = sel.dataset.agentId;
-      const assignedRegions = [...sel.selectedOptions].map((o) => o.value);
-      return { agentId, assignedRegions };
-    });
-
-    try {
-      await api("/admin/region-assignments", {
-        method: "POST",
-        auth: true,
-        body: { assignments: rows },
-      });
-
-      await loadStaff();
-      alert("담당자 지역 배정이 저장되었습니다.");
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "배정 저장 실패");
-    }
+  async function handleSaveAssignments(...args) {
+    return callAdminModule("staffRegions", "handleSaveAssignments", args);
   }
 
   /**
@@ -3218,241 +2677,21 @@ function bindEvents() {
    * - auto 모드에서 X > 구개수 이면 동 단위로 전환
    * - 같은 구 우선 배치 + (가능하면) 인접 구 함께 배치
    */
-  function buildAutoRegionGrouping(properties, agentCount, unitMode) {
-    const valid = properties.filter((p) => p.address);
-    const regionsByGu = new Map(); // gu => Set(dong)
-    for (const p of valid) {
-      const { gu, dong } = extractGuDong(p.address);
-      const rg = p.regionGu || gu;
-      const rd = p.regionDong || dong;
-      if (!rg) continue;
-      if (!regionsByGu.has(rg)) regionsByGu.set(rg, new Set());
-      if (rd) regionsByGu.get(rg).add(rd);
-    }
-
-    const guList = [...regionsByGu.keys()].sort((a, b) => a.localeCompare(b, "ko"));
-    const guCount = guList.length;
-
-    let mode = unitMode;
-    if (unitMode === "auto") {
-      mode = agentCount > guCount ? "dong" : "gu";
-    }
-
-    let regionUnits = [];
-    if (mode === "gu") {
-      regionUnits = guList.map((gu) => ({ key: gu, gu, weight: regionsByGu.get(gu)?.size || 1 }));
-    } else {
-      for (const gu of guList) {
-        const dongs = [...(regionsByGu.get(gu) || [])];
-        if (!dongs.length) {
-          regionUnits.push({ key: gu, gu, weight: 1 });
-          continue;
-        }
-        dongs.sort((a, b) => a.localeCompare(b, "ko")).forEach((dong) => {
-          regionUnits.push({ key: dong, gu, weight: 1 });
-        });
-      }
-    }
-
-    // 그룹 초기화
-    const groups = Array.from({ length: Math.max(1, agentCount) }, (_, i) => ({
-      idx: i,
-      regions: [],
-      guSet: new Set(),
-      totalWeight: 0,
-    }));
-
-    // gu 모드일 때 인접 구 기반 ordering(간단)
-    if (mode === "gu") {
-      regionUnits = sortGuUnitsByAdjacency(regionUnits);
-    } else {
-      // dong 모드: 같은 구끼리 붙게 정렬
-      regionUnits.sort((a, b) => {
-        if (a.gu !== b.gu) return a.gu.localeCompare(b.gu, "ko");
-        return a.key.localeCompare(b.key, "ko");
-      });
-    }
-
-    // 균등 분배 (가중치 기준 가장 작은 그룹에 할당)
-    for (const unit of regionUnits) {
-      const target = groups
-        .slice()
-        .sort((g1, g2) => {
-          if (g1.totalWeight !== g2.totalWeight) return g1.totalWeight - g2.totalWeight;
-          // 같은 구 이어붙이기 선호
-          const p1 = g1.guSet.has(unit.gu) ? -1 : 0;
-          const p2 = g2.guSet.has(unit.gu) ? -1 : 0;
-          if (p1 !== p2) return p1 - p2;
-          return g1.idx - g2.idx;
-        })[0];
-
-      target.regions.push(unit.key);
-      target.totalWeight += unit.weight || 1;
-      if (unit.gu) target.guSet.add(unit.gu);
-    }
-
-    return {
-      unit: mode,
-      unitLabel: mode === "gu" ? "구 단위" : "동 단위",
-      totalRegions: regionUnits.length,
-      groups: groups.map((g) => ({
-        regions: g.regions.sort((a, b) => a.localeCompare(b, "ko")),
-        totalWeight: g.totalWeight,
-      })),
-    };
+  function buildAutoRegionGrouping(...args) {
+    return callAdminModule("staffRegions", "buildAutoRegionGrouping", args);
   }
-
-  // 서울 기준 일부 인접맵(초기 내장, 필요시 서버/설정으로 확장 권장)
-  const GU_ADJ = {
-    "강남구": ["서초구", "송파구", "강동구", "성동구"],
-    "서초구": ["강남구", "동작구", "관악구", "용산구", "송파구"],
-    "송파구": ["강남구", "강동구", "광진구", "성동구", "서초구"],
-    "강동구": ["송파구", "강남구", "광진구"],
-    "마포구": ["서대문구", "은평구", "용산구", "영등포구"],
-    "서대문구": ["은평구", "마포구", "종로구", "중구"],
-    "영등포구": ["동작구", "구로구", "양천구", "마포구", "용산구"],
-    "구로구": ["금천구", "양천구", "영등포구"],
-    "양천구": ["강서구", "구로구", "영등포구"],
-    "관악구": ["동작구", "서초구", "금천구"],
-    "동작구": ["용산구", "영등포구", "관악구", "서초구"],
-    "용산구": ["중구", "마포구", "서초구", "동작구", "성동구"],
-    "성동구": ["광진구", "동대문구", "중구", "용산구", "강남구", "송파구"],
-    "광진구": ["성동구", "동대문구", "중랑구", "강동구", "송파구"],
-    "노원구": ["도봉구", "중랑구", "성북구"],
-    "도봉구": ["노원구", "강북구"],
-    "강북구": ["도봉구", "성북구", "종로구"],
-    "성북구": ["강북구", "종로구", "동대문구", "중랑구", "노원구"],
-    "종로구": ["중구", "서대문구", "성북구", "강북구", "은평구"],
-    "중구": ["종로구", "용산구", "성동구", "동대문구", "서대문구"],
-    "동대문구": ["중랑구", "성북구", "성동구", "중구", "광진구"],
-    "중랑구": ["노원구", "동대문구", "광진구", "성북구"],
-    "은평구": ["서대문구", "종로구", "마포구", "강북구"],
-    "강서구": ["양천구"],
-    "금천구": ["관악구", "구로구"],
-  };
-
-  function sortGuUnitsByAdjacency(units) {
-    const left = units.slice();
-    if (!left.length) return left;
-
-    const result = [];
-    // 시작점: weight 큰 구부터
-    left.sort((a, b) => (b.weight || 1) - (a.weight || 1));
-    result.push(left.shift());
-
-    while (left.length) {
-      const last = result[result.length - 1];
-      const adj = GU_ADJ[last.gu] || [];
-      let idx = left.findIndex((u) => adj.includes(u.gu));
-      if (idx < 0) idx = 0;
-      result.push(left.splice(idx, 1)[0]);
-    }
-
-    return result;
+function sortGuUnitsByAdjacency(...args) {
+    return callAdminModule("staffRegions", "sortGuUnitsByAdjacency", args);
   }
-
-
-  function readCsvFileText(file, sourceType) {
-    return file.arrayBuffer().then((buf) => {
-      const bytes = new Uint8Array(buf);
-      // BOM이 있으면 UTF-8 확정
-      if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
-        return new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
-      }
-      const preferred = sourceType === "realtor" ? "utf-8" : "euc-kr";
-      try {
-        const decoded = new TextDecoder(preferred, { fatal: true }).decode(bytes);
-        return decoded.replace(/^\uFEFF/, "");
-      } catch (_) {
-        try {
-          return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, "");
-        } catch (_2) {
-          return new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
-        }
-      }
-    });
+  function readCsvFileText(...args) {
+    return callAdminModule("csvTab", "readCsvFileText", args);
   }
 
   // ---------------------------
   // CSV Parser (simple, quotes support)
   // ---------------------------
-  function parseCsv(text) {
-    const rows = [];
-    let i = 0;
-    let field = "";
-    let row = [];
-    let inQuotes = false;
-
-    const pushField = () => {
-      row.push(field);
-      field = "";
-    };
-    const pushRow = () => {
-      if (row.length === 1 && row[0] === "" && rows.length === 0) {
-        row = [];
-        return;
-      }
-      rows.push(row);
-      row = [];
-    };
-
-    while (i < text.length) {
-      const ch = text[i];
-
-      if (inQuotes) {
-        if (ch === '"') {
-          if (text[i + 1] === '"') {
-            field += '"';
-            i += 2;
-            continue;
-          } else {
-            inQuotes = false;
-            i++;
-            continue;
-          }
-        } else {
-          field += ch;
-          i++;
-          continue;
-        }
-      } else {
-        if (ch === '"') {
-          inQuotes = true;
-          i++;
-          continue;
-        }
-        if (ch === ",") {
-          pushField();
-          i++;
-          continue;
-        }
-        if (ch === "\n") {
-          pushField();
-          pushRow();
-          i++;
-          continue;
-        }
-        if (ch === "\r") {
-          i++;
-          continue;
-        }
-        field += ch;
-        i++;
-      }
-    }
-
-    pushField();
-    if (row.length) pushRow();
-
-    if (!rows.length) return [];
-    const headers = rows[0].map((h) => String(h || "").trim());
-    return rows.slice(1)
-      .filter(r => r.some(v => String(v || "").trim() !== ""))
-      .map((r) => {
-        const obj = {};
-        headers.forEach((h, idx) => { obj[h] = r[idx] ?? ""; });
-        return obj;
-      });
+  function parseCsv(...args) {
+    return callAdminModule("csvTab", "parseCsv", args);
   }
 
   // ---------------------------
@@ -3508,299 +2747,38 @@ function bindEvents() {
   // ---------------------------
   let _geocodeKakaoReady = null;
   let _geocoder = null;
-
-  function getKakaoAppKey() {
-    const meta = document.querySelector('meta[name="kakao-app-key"]');
-    return String(meta?.getAttribute("content") || "").trim();
+  function getKakaoAppKey(...args) {
+    return callAdminModule("geocodingTab", "getKakaoAppKey", args);
   }
-
-  function loadKakaoMapsSDK(appKey) {
-    return new Promise((resolve, reject) => {
-      if (window.kakao?.maps?.services?.Geocoder) {
-        resolve();
-        return;
-      }
-      if (window.kakao?.maps?.load) {
-        window.kakao.maps.load(() => resolve());
-        return;
-      }
-      const s = document.createElement("script");
-      s.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=" + encodeURIComponent(appKey) + "&autoload=false&libraries=services";
-      s.async = true;
-      s.onload = () => {
-        if (!window.kakao?.maps?.load) {
-          reject(new Error("Kakao SDK 로드 실패"));
-          return;
-        }
-        window.kakao.maps.load(() => resolve());
-      };
-      s.onerror = () => reject(new Error("Kakao SDK 네트워크 오류"));
-      document.head.appendChild(s);
-    });
+  function loadKakaoMapsSDK(...args) {
+    return callAdminModule("geocodingTab", "loadKakaoMapsSDK", args);
   }
-
-  async function ensureKakaoGeocoder() {
-    if (_geocoder) return _geocoder;
-    const appKey = getKakaoAppKey();
-    if (!appKey) throw new Error("카카오 JavaScript 키가 설정되지 않았습니다.");
-    if (!_geocodeKakaoReady) {
-      _geocodeKakaoReady = loadKakaoMapsSDK(appKey);
-    }
-    await _geocodeKakaoReady;
-    _geocoder = new kakao.maps.services.Geocoder();
-    return _geocoder;
+  async function ensureKakaoGeocoder(...args) {
+    return callAdminModule("geocodingTab", "ensureKakaoGeocoder", args);
   }
-
-  function geocodeOneAddress(geocoder, address) {
-    return new Promise((resolve) => {
-      geocoder.addressSearch(address, (result, status) => {
-        if (status !== kakao.maps.services.Status.OK || !result?.length) {
-          resolve(null);
-          return;
-        }
-        const best = result[0];
-        const lat = Number(best.y);
-        const lng = Number(best.x);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-          resolve(null);
-          return;
-        }
-        resolve({ lat, lng });
-      });
-    });
+  function geocodeOneAddress(...args) {
+    return callAdminModule("geocodingTab", "geocodeOneAddress", args);
   }
-
-  function normalizeAddressForGeocode(rawAddress) {
-    let addr = String(rawAddress || "").trim();
-    if (!addr) return "";
-    addr = addr.replace(/\([^)]*\)/g, "").trim();
-    addr = addr.replace(/\s*외\s*\d*\s*필지?/g, "").trim();
-    addr = addr.replace(/\s+\d{1,5}동\s*\d{1,5}호\s*$/g, "").trim();
-    addr = addr.replace(/\s+(지하\s*)?\d{1,3}층.*$/g, "").trim();
-    addr = addr.replace(/[,;·\s]+$/, "").trim();
-    return addr;
+  function normalizeAddressForGeocode(...args) {
+    return callAdminModule("geocodingTab", "normalizeAddressForGeocode", args);
   }
-
-  function getGeocodeStats() {
-    const props = state.properties;
-    let pending = 0, ok = 0, failed = 0;
-    for (const p of props) {
-      const st = String(p.geocodeStatus || "").toLowerCase();
-      const hasCoords = (p.latitude != null && p.longitude != null);
-      if (st === "ok" || (hasCoords && st !== "failed" && st !== "pending")) { ok++; }
-      else if (st === "failed") { failed++; }
-      else if (st === "pending" || (!hasCoords && p.address)) { pending++; }
-    }
-    return { pending, ok, failed, total: props.length };
+  function getGeocodeStats(...args) {
+    return callAdminModule("geocodingTab", "getGeocodeStats", args);
   }
-
-  function updateGeocodeStatusBar() {
-    const stats = getGeocodeStats();
-
-    if (els.geocodePending) els.geocodePending.textContent = stats.pending.toLocaleString("ko-KR");
-    if (els.geocodeOk)      els.geocodeOk.textContent      = stats.ok.toLocaleString("ko-KR");
-    if (els.geocodeFailed)  els.geocodeFailed.textContent  = stats.failed.toLocaleString("ko-KR");
-
-    // 카드 active 스타일 (실패 0이면 실패 카드 dim)
-    if (els.geoStatFailed) els.geoStatFailed.classList.toggle("is-empty", stats.failed === 0);
-    if (els.geoStatPending) els.geoStatPending.classList.toggle("is-empty", stats.pending === 0);
-
-    if (els.btnGeocodeRun) {
-      els.btnGeocodeRun.disabled = stats.pending === 0 || state.geocodeRunning;
-      els.btnGeocodeRun.textContent = state.geocodeRunning ? "실행 중..." : "지오코딩 실행";
-    }
-    if (els.btnGeocodeRetryFailed) {
-      els.btnGeocodeRetryFailed.classList.toggle("hidden", stats.failed === 0);
-      els.btnGeocodeRetryFailed.disabled = stats.failed === 0 || state.geocodeRunning;
-    }
+  function updateGeocodeStatusBar(...args) {
+    return callAdminModule("geocodingTab", "updateGeocodeStatusBar", args);
   }
-
-  function renderGeocodeList(filter) {
-    if (!els.geocodeListWrap || !els.geocodeListBody) return;
-
-    // 카드 선택 강조
-    ["geoStatPending", "geoStatOk", "geoStatFailed"].forEach((key) => {
-      if (els[key]) els[key].classList.toggle("is-selected", els[key].dataset.geoFilter === filter);
-    });
-
-    const labelMap = { pending: "대기", ok: "완료", failed: "실패" };
-    const label = labelMap[filter] || filter;
-
-    const rows = getAuxiliaryPropertiesSnapshot().filter((p) => {
-      const st = String(p.geocodeStatus || "").toLowerCase();
-      const hasCoords = p.latitude != null && p.longitude != null;
-      if (filter === "ok")      return st === "ok" || (hasCoords && st !== "failed" && st !== "pending");
-      if (filter === "failed")  return st === "failed";
-      if (filter === "pending") return st === "pending" || (!hasCoords && !!p.address && st !== "ok" && st !== "failed");
-      return false;
-    });
-
-    if (els.geocodeListTitle) {
-      els.geocodeListTitle.textContent = `${label} 물건 ${rows.length.toLocaleString("ko-KR")}건`;
-    }
-
-    els.geocodeListBody.innerHTML = "";
-
-    if (!rows.length) {
-      if (els.geocodeListEmpty) els.geocodeListEmpty.classList.remove("hidden");
-      els.geocodeListWrap.classList.remove("hidden");
-      return;
-    }
-    if (els.geocodeListEmpty) els.geocodeListEmpty.classList.add("hidden");
-
-    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
-    const frag = document.createDocumentFragment();
-    rows.forEach((p) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML =
-        `<td>${escapeHtml(p.itemNo || "-")}</td>` +
-        `<td><span class="kind-text kind-${p.sourceType || "general"}">${escapeHtml(kindMap[p.sourceType] || "-")}</span></td>` +
-        `<td class="text-cell">${escapeHtml(p.address || "-")}</td>` +
-        `<td>${escapeHtml(p.geocodeStatus || "pending")}</td>` +
-        `<td>${escapeHtml(formatDate(p.createdAt) || "-")}</td>`;
-      frag.appendChild(tr);
-    });
-    els.geocodeListBody.appendChild(frag);
-    els.geocodeListWrap.classList.remove("hidden");
+  function renderGeocodeList(...args) {
+    return callAdminModule("geocodingTab", "renderGeocodeList", args);
   }
-
-  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-  async function saveGeocodeResult(sb, propertyId, coords, status) {
-    const basePatch = { geocode_status: status };
-    if (coords && status === "ok") {
-      basePatch.latitude = coords.lat;
-      basePatch.longitude = coords.lng;
-    }
-    const col = String(propertyId).includes(":") ? "global_id" : "id";
-
-    // 1차: geocoded_at 포함 시도
-    const fullPatch = { ...basePatch, geocoded_at: new Date().toISOString() };
-    const { error } = await sb.from("properties").update(fullPatch).eq(col, propertyId);
-
-    if (error) {
-      // geocoded_at 컬럼이 없으면 해당 컬럼 제외하고 재시도
-      if (String(error.message || "").includes("geocoded_at")) {
-        const { error: retryErr } = await sb.from("properties").update(basePatch).eq(col, propertyId);
-        if (retryErr) console.warn("saveGeocodeResult error:", propertyId, retryErr.message);
-      } else {
-        console.warn("saveGeocodeResult error:", propertyId, error.message);
-      }
-    }
+  function sleep(...args) {
+    return callAdminModule("geocodingTab", "sleep", args);
   }
-
-  async function runGeocoding(retryFailed) {
-    if (state.geocodeRunning) return;
-
-    const sb = isSupabaseMode() ? K.initSupabase() : null;
-    if (!sb) {
-      alert("Supabase 연동이 필요합니다.");
-      return;
-    }
-
-    // 1. 카카오 Maps JS SDK 로드 + Geocoder 준비
-    let geocoder;
-    try {
-      geocoder = await ensureKakaoGeocoder();
-    } catch (err) {
-      alert("카카오 SDK 로드 실패: " + (err.message || "알 수 없는 오류"));
-      return;
-    }
-
-    state.geocodeRunning = true;
-    updateGeocodeStatusBar();
-    if (els.geocodeProgress) els.geocodeProgress.classList.remove("hidden");
-    if (els.geocodeRunningText) els.geocodeRunningText.classList.remove("hidden");
-
-    try {
-      // 2. DB에서 대상 건 전체 조회 (1000건씩 페이징)
-      const statusFilter = retryFailed ? "failed" : "pending";
-      const allItems = [];
-      let from = 0;
-      const pageSize = 1000;
-      while (true) {
-        const { data, error: fetchErr } = await sb.from("properties")
-          .select("id,global_id,address,latitude,longitude,geocode_status")
-          .eq("geocode_status", statusFilter)
-          .not("address", "is", null)
-          .order("date_uploaded", { ascending: false })
-          .range(from, from + pageSize - 1);
-        if (fetchErr) throw fetchErr;
-        const rows = Array.isArray(data) ? data : [];
-        allItems.push(...rows);
-        if (rows.length < pageSize) break;
-        from += pageSize;
-      }
-
-      const items = allItems.filter((r) => String(r.address || "").trim());
-      if (!items.length) {
-        alert(retryFailed ? "재시도할 실패 건이 없습니다." : "지오코딩 대상이 없습니다.");
-        return;
-      }
-
-      // 3. 순차 처리
-      let processed = 0, okCount = 0, failCount = 0;
-      const total = items.length;
-
-      for (const item of items) {
-        const propId = item.id || item.global_id;
-        if (!propId) { processed++; continue; }
-
-        const rawAddr = String(item.address || "").trim();
-        const cleaned = normalizeAddressForGeocode(rawAddr);
-
-        if (!cleaned) {
-          await saveGeocodeResult(sb, propId, null, "failed");
-          failCount++;
-          processed++;
-          continue;
-        }
-
-        // 카카오 Maps JS SDK Geocoder 호출
-        const coords = await geocodeOneAddress(geocoder, cleaned);
-
-        // 첫 시도 실패 시 원본 주소로 재시도
-        let finalCoords = coords;
-        if (!finalCoords && cleaned !== rawAddr) {
-          finalCoords = await geocodeOneAddress(geocoder, rawAddr);
-        }
-
-        if (finalCoords) {
-          await saveGeocodeResult(sb, propId, finalCoords, "ok");
-          okCount++;
-        } else {
-          await saveGeocodeResult(sb, propId, null, "failed");
-          failCount++;
-        }
-
-        processed++;
-
-        // 진행률 업데이트
-        const pct = Math.round((processed / total) * 100);
-        if (els.geocodeProgressBar) els.geocodeProgressBar.style.width = pct + "%";
-        if (els.geocodeRunningText) {
-          els.geocodeRunningText.textContent = processed + "/" + total + " (성공 " + okCount + ", 실패 " + failCount + ")";
-        }
-
-        // 카카오 SDK는 콜백 기반이라 Rate Limit이 REST보다 관대하지만 안전하게 150ms 간격 유지
-        if (processed < total) await sleep(150);
-      }
-
-      alert("지오코딩 완료: 총 " + total + "건 중 성공 " + okCount + "건, 실패 " + failCount + "건");
-      invalidatePropertyCollections();
-      await ensureAuxiliaryPropertiesForAdmin({ forceRefresh: true });
-      await loadProperties();
-
-    } catch (err) {
-      console.error("runGeocoding error:", err);
-      alert(err?.message || "지오코딩 중 오류가 발생했습니다.");
-    } finally {
-      state.geocodeRunning = false;
-      if (els.geocodeProgress) els.geocodeProgress.classList.add("hidden");
-      if (els.geocodeRunningText) els.geocodeRunningText.classList.add("hidden");
-      if (els.geocodeProgressBar) els.geocodeProgressBar.style.width = "0%";
-      updateGeocodeStatusBar();
-    }
+  async function saveGeocodeResult(...args) {
+    return callAdminModule("geocodingTab", "saveGeocodeResult", args);
+  }
+  async function runGeocoding(...args) {
+    return callAdminModule("geocodingTab", "runGeocoding", args);
   }
 
   // ---------------------------
