@@ -219,6 +219,7 @@
     els.agEditSave = $("#agEditSave");
     els.agEditMsg = $("#agEditMsg");
     els.agHistoryList = $("#agHistoryList");
+    els.agRegistrationLogList = $("#agRegistrationLogList");
 
     // Password modal
     els.pwdModal = $("#passwordChangeModal");
@@ -1409,6 +1410,7 @@
 
     if (els.agEditMsg) els.agEditMsg.textContent = "";
     renderOpinionHistory(els.agHistoryList, loadOpinionHistory(item), false);
+    renderRegistrationLog(els.agRegistrationLogList, loadRegistrationLog(item));
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
   }
@@ -1848,6 +1850,51 @@
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }
+  }
+
+  function loadRegistrationLog(item) {
+    const raw = item?._raw?.raw || {};
+    if (Array.isArray(raw.registrationLog) && raw.registrationLog.length) return raw.registrationLog;
+    const createdAt = firstText(raw.firstRegisteredAt, item?.createdAt, item?._raw?.created_at, item?._raw?.createdAt, "");
+    if (!createdAt) return [];
+    return [{ type: "created", at: createdAt, route: "최초 등록", actor: "" }];
+  }
+
+  function formatRegLogAt(value) {
+    const s = String(value || "").trim();
+    if (!s) return "";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
+  }
+
+  function renderRegistrationLog(container, history) {
+    if (!container) return;
+    const list = Array.isArray(history) ? history : [];
+    if (!list.length) {
+      container.innerHTML = '<div class="history-empty">등록 LOG가 없습니다.</div>';
+      return;
+    }
+    const reversed = list.slice().reverse();
+    container.innerHTML = reversed.map((entry) => {
+      const meta = [formatRegLogAt(entry.at || entry.date || ""), entry.route || "", entry.actor || ""]
+        .filter(Boolean)
+        .map((v) => `<span>${esc(v)}</span>`)
+        .join("");
+      if (entry.type === "created") {
+        return `<div class="reglog-item"><div class="reglog-meta">${meta}</div><div class="reglog-badge">최초 등록</div></div>`;
+      }
+      const changes = (Array.isArray(entry.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
+      const rows = changes.length
+        ? `<div class="reglog-changes">${changes.map((change) => `<div class="reglog-change-row"><span class="reglog-label">${esc(change.label || "")}</span><span class="reglog-arrow">${esc(change.before || "-")}</span><span class="reglog-sep">→</span><span class="reglog-arrow is-next">${esc(change.after || "-")}</span></div>`).join("")}</div>`
+        : `<div class="reglog-badge">변경 없음</div>`;
+      return `<div class="reglog-item"><div class="reglog-meta">${meta}</div>${rows}</div>`;
+    }).join("");
   }
 
   // ── Opinion History 유틸 ──
