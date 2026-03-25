@@ -15,7 +15,6 @@
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
-  const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
@@ -125,27 +124,6 @@
     try {
       setBusy(true);
       setMsg('');
-
-      if (sbEnabled) {
-        const sb = K.initSupabase();
-        const regContext = buildRegisterLogContext('공개 등록');
-        let existingRow = null;
-        try { existingRow = await findExistingRowByRegistrationKey(sb, payload); } catch {}
-        if (existingRow) {
-          const merged = buildRowForExisting(existingRow, payload, regContext);
-          const col = String(existingRow.id || '').trim() ? 'id' : 'global_id';
-          const target = String(existingRow.id || existingRow.global_id || '').trim();
-          if (!target) throw new Error('기존 물건 식별자 확인 실패');
-          const { error } = await sb.from('properties').update(merged.row).eq(col, target);
-          if (error) throw error;
-        } else {
-          const row = buildRowForCreate(payload, regContext);
-          const { error } = await sb.from('properties').insert(row);
-          if (error) throw error;
-        }
-        done();
-        return;
-      }
 
       const res = await api('/public-listings', {
         method: 'POST',
