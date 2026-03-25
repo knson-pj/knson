@@ -6,11 +6,9 @@
   <meta name="supabase-url" content="" /><meta name="supabase-anon-key" content="" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260325-ui1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260325-ui2" />
 </head>
 <body>
-
-<button class="sidebar-toggle-btn" id="sidebarToggle">&#8249;</button>
 
 <aside class="admin-sidebar">
   <div class="sidebar-logo">
@@ -47,7 +45,6 @@
 
   </nav>
   <div class="sidebar-bottom">
-    <button class="theme-toggle sidebar-bottom-btn" id="themeToggle" title="테마 전환">C</button>
   </div>
 </aside>
 
@@ -149,14 +146,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./knson-core.js?v=20260320-agent"></script>
-<script src="./agent-app.js?v=20260325-ui1"></script>
+<script src="./agent-app.js?v=20260325-ui2"></script>
 
 <script>
 (function(){
   var TITLES={home:'홈',list:'전체 현황',dailyreport:'일일 업무 일지'};
-  var toggleBtn=document.getElementById('sidebarToggle');
-  toggleBtn.addEventListener('click',function(){var c=document.body.classList.toggle('sidebar-collapsed');toggleBtn.innerHTML=c?'&#8250;':'&#8249;';});
-
   /* 그룹 접이식 */
   document.querySelectorAll('.sidebar-group-btn').forEach(function(btn){
     var items=btn.closest('.sidebar-group').querySelector('.sidebar-group-items');

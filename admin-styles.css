@@ -262,7 +262,7 @@ a{text-decoration:none;color:inherit;}
 
 /* ── COLLAPSED ── */
 body.sidebar-collapsed .admin-sidebar{width:52px;}
-body.sidebar-collapsed .admin-content{margin-left:52px;}
+body.sidebar-collapsed .admin-content{margin-left:52px;width:calc(100vw - 52px);}
 body.sidebar-collapsed .sidebar-toggle-btn{left:40px;}
 body.sidebar-collapsed .sidebar-nav-label,
 body.sidebar-collapsed .sidebar-page-title,
@@ -281,6 +281,7 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
 ══════════════════════════════════════════════════ */
 .admin-content{
   margin-left:var(--sidebar-w);
+  width:calc(100vw - var(--sidebar-w));
   min-height:100vh;display:flex;flex-direction:column;
   overflow-x:hidden;transition:margin-left .2s ease;
 }
@@ -383,6 +384,31 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
   transition:all .12s;
 }
 .theme-toggle:hover{background:var(--surface-2);}
+
+.sidebar-bottom .theme-toggle{
+  width:32px;min-width:32px;height:32px;min-height:32px;padding:0;
+  font-size:13px;font-weight:700;
+}
+.top-actions .btn-ghost{
+  border-color:var(--border);
+  background:var(--surface);
+}
+.top-actions .btn-ghost:hover{
+  background:var(--surface-2);
+  border-color:var(--border-strong);
+}
+.admin-content,.admin-shell,.admin-main,.tab-panel,.panel,.sub-card,.table-wrap,.toolbar{
+  min-width:0;
+  max-width:100%;
+}
+.panel{overflow:hidden;}
+.table-wrap{max-width:100%;}
+.toolbar.toolbar-admin-properties{
+  grid-template-columns:minmax(0,2.2fr) repeat(3,minmax(0,1fr));
+}
+.toolbar.toolbar-agent-properties{
+  grid-template-columns:minmax(0,2.1fr) repeat(3,minmax(0,1fr)) auto auto auto;
+}
 
 /* ══════════════════════════════════════════════════
    PANEL / CARD
@@ -586,10 +612,10 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
   gap:var(--sp-2);
 }
 .toolbar.toolbar-admin-properties{
-  grid-template-columns:minmax(240px,1.6fr) repeat(3,minmax(130px,1fr));
+  grid-template-columns:minmax(0,2.2fr) repeat(3,minmax(0,1fr));
 }
 .toolbar.toolbar-agent-properties{
-  grid-template-columns:minmax(240px,1.6fr) repeat(3,minmax(130px,1fr)) auto auto auto;
+  grid-template-columns:minmax(0,2.1fr) repeat(3,minmax(0,1fr)) auto auto auto;
 }
 .toolbar.toolbar-admin-properties .input,
 .toolbar.toolbar-admin-properties .select,

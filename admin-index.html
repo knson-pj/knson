@@ -7,11 +7,9 @@
   <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260325-ui1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260325-ui2" />
 </head>
 <body>
-
-<button class="sidebar-toggle-btn" id="sidebarToggle">&#8249;</button>
 
 <aside class="admin-sidebar">
   <div class="sidebar-logo">
@@ -47,7 +45,6 @@
     </div>
   </nav>
   <div class="sidebar-bottom">
-    <button class="theme-toggle sidebar-bottom-btn" id="themeToggle" title="테마 전환">C</button>
     <a class="sidebar-bottom-btn" id="btnBackToMain" href="./index.html" title="메인으로">M</a>
   </div>
 </aside>
@@ -56,7 +53,6 @@
   <header class="admin-topbar">
     <div class="topbar-left"><h1 id="topbarTitle">홈</h1></div>
     <div class="top-actions">
-      <span id="adminUserBadge" class="badge badge-muted hidden">비로그인</span>
       <button id="btnAdminLoginOpen" class="btn btn-primary hidden">로그인</button>
       <button id="btnChangeMyPassword" class="btn btn-ghost hidden">내 비밀번호 변경</button>
       <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
@@ -257,7 +253,7 @@
 <script src="./admin-tab-properties.js?v=20260325-stable1"></script>
 <script src="./admin-tab-dashboard.js?v=20260325-rollback1"></script>
 <script src="./admin-tab-new-property.js?v=20260325-newprop1"></script>
-<script src="./admin-shell-bootstrap.js?v=20260325-rollback1"></script>
+<script src="./admin-shell-bootstrap.js?v=20260325-ui2"></script>
 <script src="./admin-app.js?v=20260325-ui1"></script>
 </body>
 </html>

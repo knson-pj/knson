@@ -566,7 +566,8 @@
 
   function setupChrome() {
     if (K && typeof K.mountThemeToggle === "function") {
-      K.mountThemeToggle(document.querySelector(".top-actions"), { className: "theme-toggle" });
+      const themeHost = document.querySelector(".sidebar-bottom") || document.querySelector(".top-actions");
+      K.mountThemeToggle(themeHost, { className: "theme-toggle sidebar-bottom-btn" });
     }
   }
 

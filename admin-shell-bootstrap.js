@@ -72,8 +72,11 @@
 
   mod.setupChrome = function setupChrome() {
     const { K, state } = ctx();
+    const themeHost = document.querySelector('.sidebar-bottom') || document.querySelector('.top-actions');
     if (K && typeof K.initTheme === 'function') {
-      K.initTheme({ container: document.querySelector('.top-actions'), className: 'theme-toggle' });
+      K.initTheme({ container: themeHost, className: 'theme-toggle sidebar-bottom-btn' });
+    } else if (K && typeof K.mountThemeToggle === 'function') {
+      K.mountThemeToggle(themeHost, { className: 'theme-toggle sidebar-bottom-btn' });
     }
     mod.syncChromeForTab(state.activeTab || 'home');
     updateSidebarUserName();
