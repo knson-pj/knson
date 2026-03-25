@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260325-dashboard1";
+  const ADMIN_FAST_BUILD = "20260325-shell1";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -265,6 +265,12 @@
         formatScheduleHtml,
         buildKakaoMapLink,
         isSupabaseMode,
+        loadAllCoreData,
+        renderAll,
+        loadSession,
+        saveSession,
+        goLoginPage,
+        setModalOpen,
       },
     };
     return window.KNSN_ADMIN_RUNTIME;
@@ -293,6 +299,7 @@
     configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     setupChrome();
     bindEvents();
+    callAdminModule("shell", "bindEvents", []);
     callAdminModule("dashboard", "bindEvents", []);
     callAdminModule("newPropertyModal", "bindEvents", []);
     resetStaffForm();
@@ -437,9 +444,7 @@
 
 
   function setupChrome() {
-    if (K && typeof K.initTheme === "function") {
-      K.initTheme({ container: document.querySelector(".top-actions"), className: "theme-toggle" });
-    }
+    return callAdminModule("shell", "setupChrome", []);
   }
 
   
@@ -525,10 +530,8 @@
   }
 
 function bindEvents() {
-    // login / logout
-    if (els.btnAdminLoginOpen) els.btnAdminLoginOpen.addEventListener("click", openLoginModal);
+    // auth / password
     if (els.btnChangeMyPassword) els.btnChangeMyPassword.addEventListener("click", openPasswordChangeModal);
-    if (els.btnAdminLogout) els.btnAdminLogout.addEventListener("click", logout);
 
     if (els.passwordChangeModal) {
       els.passwordChangeModal.addEventListener("click", (e) => {
@@ -694,134 +697,30 @@ function bindEvents() {
   }
 
   async function ensureLoginThenLoad() {
-    await syncSupabaseSessionIfNeeded();
-    state.session = loadSession();
-    renderSessionUI();
-    const user = state.session?.user;
-    const loggedIn = !!(state.session?.token && user);
-
-    if (!loggedIn) {
-      goLoginPage();
-      return;
-    }
-
-    // 담당자는 담당자 페이지로 리다이렉트
-    if (String(user.role || "").toLowerCase() !== "admin") {
-      location.replace("./agent-index.html");
-      return;
-    }
-
-    await loadAllCoreData();
-  }
-
-  function setActiveTab(tab) {
-    state.activeTab = tab;
-
-    [...els.adminTabs.querySelectorAll(".tab")].forEach((el) => {
-      el.classList.toggle("is-active", el.dataset.tab === tab);
-    });
-
-    const map = {
-      home: els.tabHome,
-      properties: els.tabProperties,
-      csv: els.tabCsv,
-      staff: els.tabStaff,
-      regions: els.tabRegions,
-      geocoding: els.tabGeocoding,
-      workmgmt: els.tabWorkmgmt,
-    };
-    Object.entries(map).forEach(([key, panel]) => {
-      if (!panel) return;
-      panel.classList.toggle("hidden", key !== tab);
-    });
-
-    // 탭 전환 시 폼/결과 초기화
-    if (tab !== "csv") {
-      if (els.csvFileInput) els.csvFileInput.value = "";
-      if (els.csvResultBox) {
-        els.csvResultBox.textContent = "";
-        els.csvResultBox.className = "result-box hidden csv-result-inline";
-      }
-    }
+    const out = callAdminModule("shell", "ensureLoginThenLoad", []);
+    return out instanceof Promise ? await out : out;
   }
 
   function renderSessionUI() {
-    const user = state.session?.user;
-    const loggedIn = !!(state.session?.token && user);
-
-    els.btnAdminLoginOpen?.classList.toggle("hidden", loggedIn);
-    els.btnChangeMyPassword?.classList.toggle("hidden", !loggedIn || !isSupabaseMode());
-    els.btnAdminLogout?.classList.toggle("hidden", !loggedIn);
-
-    if (!loggedIn) {
-      els.adminUserBadge.textContent = "비로그인";
-      els.adminUserBadge.className = "badge badge-muted";
-      return;
-    }
-
-    els.adminUserBadge.textContent = user.name || user.email || "";
-    els.adminUserBadge.className = "badge badge-admin";
-    document.body.classList.add("role-admin");
-
-    if (els.summaryPanel) els.summaryPanel.classList.remove("hidden");
+    return callAdminModule("shell", "renderSessionUI", []);
   }
 
-  function openLoginModal(){ goLoginPage(); }
+  function openLoginModal() {
+    return callAdminModule("shell", "openLoginModal", []);
+  }
 
   function closeLoginModal() {
-    els.adminLoginModal.classList.add("hidden");
-    els.adminLoginModal.setAttribute("aria-hidden", "true");
-    els.adminLoginForm.reset();
+    return callAdminModule("shell", "closeLoginModal", []);
   }
 
   async function onSubmitAdminLogin(e) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const name = String(fd.get("name") || "").trim();
-    const password = String(fd.get("password") || "");
-    if (!name || !password) return alert("이름/비밀번호를 입력해 주세요.");
-
-    try {
-      setFormBusy(e.currentTarget, true);
-      const res = await api("/auth/login", {
-        method: "POST",
-        body: { name, password },
-      });
-
-      if (res?.user?.role !== "admin") {
-        throw new Error("관리자 권한 계정만 접속 가능합니다.");
-      }
-
-      state.session = { token: res.token, user: res.user };
-      saveSession(state.session);
-      renderSessionUI();
-      closeLoginModal();
-      setGlobalMsg("");
-      await loadAllCoreData();
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "로그인 실패");
-    } finally {
-      setFormBusy(e.currentTarget, false);
-    }
+    const out = callAdminModule("shell", "onSubmitAdminLogin", [e]);
+    return out instanceof Promise ? await out : out;
   }
-  async function logout() {
-    // Supabase 사용 시 auth 세션까지 종료해야 로그아웃이 유지됩니다.
-    try {
-      if (K && typeof K.supabaseEnabled === "function" && K.supabaseEnabled() && K.initSupabase() && typeof K.sbHardSignOut === "function") {
-        await K.sbHardSignOut();
-      } else if (typeof K.sbSignOut === "function") {
-        await K.sbSignOut();
-      }
-    } catch {}
 
-    state.session = null;
-    saveSession(null);
-    renderSessionUI();
-    state.properties = [];
-    state.staff = [];
-    renderAll();
-    goLoginPage(true);
+  async function logout() {
+    const out = callAdminModule("shell", "logout", []);
+    return out instanceof Promise ? await out : out;
   }
 
   async function loadAllCoreData() {

@@ -258,36 +258,7 @@
 <script src="./admin-tab-properties.js?v=20260325-stable1"></script>
 <script src="./admin-tab-dashboard.js?v=20260325-dashboard1"></script>
 <script src="./admin-tab-new-property.js?v=20260325-newprop1"></script>
-<script src="./admin-app.js?v=20260325-newprop1"></script>
-<script>
-(function(){
-  var TITLES={home:'홈',properties:'전체 현황',csv:'물건 등록',staff:'등록 관리',regions:'담당 지역 설정',geocoding:'지오 코딩',workmgmt:'업무 관리'};
-  var toggleBtn=document.getElementById('sidebarToggle');
-  toggleBtn.addEventListener('click',function(){var c=document.body.classList.toggle('sidebar-collapsed');toggleBtn.innerHTML=c?'&#8250;':'&#8249;';});
-  document.querySelectorAll('.sidebar-group-btn').forEach(function(btn){
-    var items=btn.closest('.sidebar-group').querySelector('.sidebar-group-items');
-    items.style.maxHeight='0';
-    btn.addEventListener('click',function(){var o=this.classList.toggle('is-open');items.style.maxHeight=o?items.scrollHeight+'px':'0';this.querySelector('.sidebar-group-arrow').textContent=o?'∧':'∨';});
-  });
-  var titleEl=document.getElementById('topbarTitle');
-  function activate(t){
-    document.querySelectorAll('#sidebarNav .sidebar-nav-item').forEach(function(si){si.classList.toggle('is-active',si.dataset.tab===t);});
-    var active=document.querySelector('#sidebarNav .sidebar-nav-item.is-active');
-    if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(!gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
-    if(titleEl&&TITLES[t])titleEl.textContent=TITLES[t];
-  }
-  var ht=document.querySelectorAll('#adminTabs .tab');
-  document.querySelectorAll('#sidebarNav .sidebar-nav-item').forEach(function(item){item.addEventListener('click',function(){var t=this.dataset.tab;ht.forEach(function(h){if(h.dataset.tab===t)h.click();});activate(t);});});
-
-  /* 로고 옆 '관리자페이지' 클릭 → 홈으로 */
-  var homeBtn=document.getElementById('btnSidebarHome');
-  if(homeBtn){homeBtn.addEventListener('click',function(){ht.forEach(function(h){if(h.dataset.tab==='home')h.click();});activate('home');});}
-
-  var obs=new MutationObserver(function(){ht.forEach(function(t){if(t.classList.contains('is-active'))activate(t.dataset.tab);});});
-  ht.forEach(function(t){obs.observe(t,{attributes:true,attributeFilter:['class']});});
-  var badge=document.getElementById('adminUserBadge'),sn=document.getElementById('sidebarUserName');
-  if(badge&&sn){new MutationObserver(function(){var txt=badge.textContent.trim();if(txt&&txt!=='비로그인')sn.textContent=txt;}).observe(badge,{childList:true,subtree:true,characterData:true});}
-})();
-</script>
+<script src="./admin-shell-bootstrap.js?v=20260325-shell1"></script>
+<script src="./admin-app.js?v=20260325-shell1"></script>
 </body>
 </html>
