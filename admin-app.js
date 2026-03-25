@@ -308,6 +308,39 @@
     Promise.resolve(ensureLoginThenLoad()).catch((err) => handleAsyncError(err, "초기 로딩 실패"));
   }
 
+
+
+  function setActiveTab(tab) {
+    const next = String(tab || '').trim() || 'home';
+    const panelMap = {
+      home: els.tabHome,
+      properties: els.tabProperties,
+      csv: els.tabCsv,
+      staff: els.tabStaff,
+      regions: els.tabRegions,
+      geocoding: els.tabGeocoding,
+      workmgmt: els.tabWorkmgmt,
+    };
+    const active = panelMap[next] ? next : 'home';
+    state.activeTab = active;
+
+    if (els.adminTabs) {
+      els.adminTabs.querySelectorAll('.tab').forEach((btn) => {
+        btn.classList.toggle('is-active', btn.dataset.tab === active);
+      });
+    }
+
+    Object.entries(panelMap).forEach(([key, el]) => {
+      if (!el) return;
+      el.classList.toggle('hidden', key !== active);
+    });
+
+    try {
+      const shell = AdminModules.shell;
+      if (shell && typeof shell.syncChromeForTab === 'function') shell.syncChromeForTab(active);
+    } catch {}
+  }
+
   function cacheEls() {
     Object.assign(els, {
       // top
