@@ -16,7 +16,11 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
 
 
   const K = window.KNSN || null;
+  const Shared = window.KNSN_SHARED || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
+  const sharedApi = (Shared && typeof Shared.createApiClient === "function")
+    ? Shared.createApiClient({ baseUrl: API_BASE })
+    : null;
 
   // 이미 로그인되어 있으면 바로 이동
   (async () => {
@@ -112,6 +116,10 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   }
 
   function saveSession(session) {
+    if (Shared && typeof Shared.saveSession === "function") {
+      Shared.saveSession(session);
+      return;
+    }
     try {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
       // 과거 버전 세션 정리
@@ -120,6 +128,7 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   }
 
   function loadSession() {
+    if (Shared && typeof Shared.loadSession === "function") return Shared.loadSession();
     try {
       const raw = sessionStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
@@ -127,6 +136,7 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   }
 
   async function api(path, options = {}) {
+    if (sharedApi) return sharedApi(path, options);
     const res = await fetch(`${API_BASE}${path}`, {
       method: options.method || "GET",
       headers: { "Content-Type": "application/json", Accept: "application/json" },

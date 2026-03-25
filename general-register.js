@@ -13,7 +13,12 @@
   const typeCards = () => [...document.querySelectorAll('.type-card')];
 
   const K = window.KNSN || null;
+  const Shared = window.KNSN_SHARED || null;
+  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
   const sbEnabled = !!(K && K.supabaseEnabled && K.supabaseEnabled() && K.initSupabase());
+  const sharedApi = (Shared && typeof Shared.createApiClient === "function")
+    ? Shared.createApiClient({ baseUrl: API_BASE })
+    : null;
   const REG_LOG_LABELS = {
     address: "주소",
     assetType: "세부유형",
@@ -148,12 +153,16 @@
   });
 
   function hasMeaningfulValue(value) {
+    if (PropertyDomain && typeof PropertyDomain.hasMeaningfulValue === 'function') return PropertyDomain.hasMeaningfulValue(value);
     if (value === null || value === undefined) return false;
     if (typeof value === 'string') return value.trim() !== '';
     return true;
   }
 
   function normalizeCompareValue(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.normalizeCompareValue === 'function') {
+      return PropertyDomain.normalizeCompareValue(field, value, { numericFields: ['priceMain', 'commonArea', 'exclusiveArea', 'siteArea'] });
+    }
     if (value === null || value === undefined) return '';
     if (['priceMain', 'commonArea', 'exclusiveArea', 'siteArea'].includes(field)) {
       const n = Number(String(value).replace(/,/g, ''));
@@ -163,6 +172,9 @@
   }
 
   function formatFieldValueForLog(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.formatFieldValueForLog === 'function') {
+      return PropertyDomain.formatFieldValueForLog(field, value, { amountFields: ['priceMain'], numericFields: ['commonArea', 'exclusiveArea', 'siteArea'] });
+    }
     if (value === null || value === undefined) return '';
     if (['priceMain'].includes(field)) {
       const n = Number(String(value).replace(/,/g, ''));
@@ -177,10 +189,14 @@
   }
 
   function buildRegisterLogContext(route) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegisterLogContext === 'function') {
+      return PropertyDomain.buildRegisterLogContext(route, { actor: '공개 등록' });
+    }
     return { at: new Date().toISOString(), route: String(route || '등록').trim(), actor: '공개 등록' };
   }
 
   function parseFloorNumberForLog(value) {
+    if (PropertyDomain && typeof PropertyDomain.parseFloorNumberForLog === 'function') return PropertyDomain.parseFloorNumberForLog(value);
     const s = String(value || '').trim();
     if (!s) return '';
     let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
@@ -190,10 +206,12 @@
   }
 
   function compactAddressText(value) {
+    if (PropertyDomain && typeof PropertyDomain.compactAddressText === 'function') return PropertyDomain.compactAddressText(value);
     return String(value || '').trim().replace(/\s+/g, '');
   }
 
   function parseAddressIdentityParts(address) {
+    if (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === 'function') return PropertyDomain.parseAddressIdentityParts(address);
     const text = String(address || "").trim().replace(/\s+/g, " ");
     const compact = compactAddressText ? compactAddressText(text) : text.replace(/\s+/g, "");
     if (!compact) return { dong: "", mainNo: "", subNo: "" };
@@ -228,6 +246,7 @@
   }
 
   function extractHoNumberForLog(data) {
+    if (PropertyDomain && typeof PropertyDomain.extractHoNumberForLog === 'function') return PropertyDomain.extractHoNumberForLog(data);
     const explicitValues = [data?.ho, data?.unit, data?.room, data?.raw?.ho, data?.raw?.unit, data?.raw?.room];
     for (const value of explicitValues) {
       const s = String(value || '').trim();
@@ -245,6 +264,7 @@
   }
 
   function buildRegistrationMatchKey(data) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationMatchKey === 'function') return PropertyDomain.buildRegistrationMatchKey(data);
     const parts = parseAddressIdentityParts(data?.address || data?.raw?.address || '');
     const floorKey = parseFloorNumberForLog(data?.floor || data?.raw?.floor || '') || '0';
     const hoKey = extractHoNumberForLog(data) || '0';
@@ -253,6 +273,7 @@
   }
 
   function attachRegistrationIdentity(raw, data) {
+    if (PropertyDomain && typeof PropertyDomain.attachRegistrationIdentity === 'function') return PropertyDomain.attachRegistrationIdentity(raw, data);
     const nextRaw = { ...(raw || {}) };
     const parts = parseAddressIdentityParts(data?.address || data?.raw?.address || nextRaw.address || '');
     const floorKey = parseFloorNumberForLog(data?.floor || data?.raw?.floor || nextRaw.floor || '');
@@ -305,6 +326,12 @@
   }
 
   function buildRegistrationChanges(prevSnapshot, nextSnapshot) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationChanges === 'function') {
+      return PropertyDomain.buildRegistrationChanges(prevSnapshot, nextSnapshot, REG_LOG_LABELS, {
+        amountFields: ['priceMain'],
+        numericFields: ['commonArea', 'exclusiveArea', 'siteArea'],
+      });
+    }
     const changes = [];
     Object.keys(REG_LOG_LABELS).forEach((field) => {
       const nextValue = nextSnapshot?.[field];
@@ -323,6 +350,7 @@
   }
 
   function appendRegistrationCreateLog(raw, context) {
+    if (PropertyDomain && typeof PropertyDomain.ensureRegistrationCreatedLog === 'function') return PropertyDomain.ensureRegistrationCreatedLog(raw, context);
     const nextRaw = { ...(raw || {}) };
     const firstAt = String(nextRaw.firstRegisteredAt || context?.at || new Date().toISOString()).trim();
     const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
@@ -333,6 +361,7 @@
   }
 
   function appendRegistrationChangeLog(raw, context, changes) {
+    if (PropertyDomain && typeof PropertyDomain.appendRegistrationLog === 'function') return PropertyDomain.appendRegistrationLog(raw, context, changes);
     const nextRaw = appendRegistrationCreateLog(raw, context);
     if (Array.isArray(changes) && changes.length) {
       nextRaw.registrationLog = [...nextRaw.registrationLog, {
@@ -459,6 +488,7 @@
   }
 
   async function api(path, options = {}) {
+    if (sharedApi) return sharedApi(path, options);
     const res = await fetch(`${API_BASE}${path}`, {
       method: options.method || 'GET',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

@@ -5,67 +5,81 @@
   "use strict";
 
   const K = window.KNSN || null;
+  const Shared = window.KNSN_SHARED || null;
+  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => [...document.querySelectorAll(sel)];
 
-  function loadSession() { return K ? K.loadSession() : null; }
+  function loadSession() { return (Shared && typeof Shared.loadSession === "function") ? Shared.loadSession() : (K ? K.loadSession() : null); }
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
 
-  function parseFlexibleNumber(value) {
-    if (value === null || value === undefined) return null;
-    if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    const s = String(value).trim();
-    if (!s) return null;
-    const n = Number(s.replace(/,/g, ""));
-    return Number.isFinite(n) ? n : null;
-  }
+  const parseFlexibleNumber = (Shared && typeof Shared.parseFlexibleNumber === "function")
+    ? Shared.parseFlexibleNumber
+    : function parseFlexibleNumber(value) {
+        if (value === null || value === undefined) return null;
+        if (typeof value === "number") return Number.isFinite(value) ? value : null;
+        const s = String(value).trim();
+        if (!s) return null;
+        const n = Number(s.replace(/,/g, ""));
+        return Number.isFinite(n) ? n : null;
+      };
 
-  function formatMoneyInputValue(value) {
-    if (value === null || value === undefined) return "";
-    const raw = String(value).trim();
-    if (!raw) return "";
-    const digits = raw.replace(/[^\d-]/g, "");
-    if (!digits || digits === "-") return "";
-    const sign = digits.startsWith("-") ? "-" : "";
-    const body = digits.replace(/-/g, "");
-    if (!body) return sign;
-    return sign + body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  }
+  const formatMoneyInputValue = (Shared && typeof Shared.formatMoneyInputValue === "function")
+    ? Shared.formatMoneyInputValue
+    : function formatMoneyInputValue(value) {
+        if (value === null || value === undefined) return "";
+        const raw = String(value).trim();
+        if (!raw) return "";
+        const digits = raw.replace(/[^\d-]/g, "");
+        if (!digits || digits === "-") return "";
+        const sign = digits.startsWith("-") ? "-" : "";
+        const body = digits.replace(/-/g, "");
+        if (!body) return sign;
+        return sign + body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      };
 
-  function bindAmountInputMask(input) {
-    if (!input || input.dataset.amountMaskBound === "true") return;
-    input.dataset.amountMaskBound = "true";
-    input.addEventListener("input", () => {
-      const formatted = formatMoneyInputValue(input.value);
-      if (input.value !== formatted) input.value = formatted;
-    });
-    input.addEventListener("blur", () => {
-      input.value = formatMoneyInputValue(input.value);
-    });
-  }
+  const bindAmountInputMask = (Shared && typeof Shared.bindAmountInputMask === "function")
+    ? Shared.bindAmountInputMask
+    : function bindAmountInputMask(input) {
+        if (!input || input.dataset.amountMaskBound === "true") return;
+        input.dataset.amountMaskBound = "true";
+        input.addEventListener("input", () => {
+          const formatted = formatMoneyInputValue(input.value);
+          if (input.value !== formatted) input.value = formatted;
+        });
+        input.addEventListener("blur", () => {
+          input.value = formatMoneyInputValue(input.value);
+        });
+      };
 
-  function configureFreeDecimalInput(input) {
-    if (!input) return;
-    input.setAttribute("type", "text");
-    input.setAttribute("inputmode", "decimal");
-    input.removeAttribute("step");
-  }
+  const configureFreeDecimalInput = (Shared && typeof Shared.configureFreeDecimalInput === "function")
+    ? Shared.configureFreeDecimalInput
+    : function configureFreeDecimalInput(input) {
+        if (!input) return;
+        input.setAttribute("type", "text");
+        input.setAttribute("inputmode", "decimal");
+        input.removeAttribute("step");
+      };
 
-  function configureAmountInput(input) {
-    if (!input) return;
-    input.setAttribute("type", "text");
-    input.setAttribute("inputmode", "numeric");
-    input.removeAttribute("step");
-    bindAmountInputMask(input);
-  }
+  const configureAmountInput = (Shared && typeof Shared.configureAmountInput === "function")
+    ? Shared.configureAmountInput
+    : function configureAmountInput(input) {
+        if (!input) return;
+        input.setAttribute("type", "text");
+        input.setAttribute("inputmode", "numeric");
+        input.removeAttribute("step");
+        bindAmountInputMask(input);
+      };
 
-  function configureFormNumericUx(form, options = {}) {
-    if (!form?.elements) return;
-    const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
-    const amountNames = Array.isArray(options.amountNames) ? options.amountNames : [];
-    decimalNames.forEach((name) => configureFreeDecimalInput(form.elements[name]));
-    amountNames.forEach((name) => configureAmountInput(form.elements[name]));
-  }
+  const configureFormNumericUx = (Shared && typeof Shared.configureFormNumericUx === "function")
+    ? Shared.configureFormNumericUx
+    : function configureFormNumericUx(form, options = {}) {
+        if (!form?.elements) return;
+        const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
+        const amountNames = Array.isArray(options.amountNames) ? options.amountNames : [];
+        decimalNames.forEach((name) => configureFreeDecimalInput(form.elements[name]));
+        amountNames.forEach((name) => configureAmountInput(form.elements[name]));
+      };
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
   const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
@@ -745,12 +759,18 @@
   };
 
   function hasMeaningfulValue(value) {
+    if (PropertyDomain && typeof PropertyDomain.hasMeaningfulValue === "function") return PropertyDomain.hasMeaningfulValue(value);
     if (value === null || value === undefined) return false;
     if (typeof value === "string") return value.trim() !== "";
     return true;
   }
 
   function normalizeCompareValue(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.normalizeCompareValue === "function") {
+      return PropertyDomain.normalizeCompareValue(field, value, {
+        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
     if (value === null || value === undefined) return "";
     if (["priceMain", "commonArea", "exclusiveArea", "siteArea"].includes(field)) {
       const n = toNum(value);
@@ -760,6 +780,12 @@
   }
 
   function formatFieldValueForLog(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.formatFieldValueForLog === "function") {
+      return PropertyDomain.formatFieldValueForLog(field, value, {
+        amountFields: ["priceMain"],
+        numericFields: ["commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
     if (value === null || value === undefined) return "";
     if (["priceMain"].includes(field)) {
       const n = toNum(value);
@@ -774,6 +800,7 @@
   }
 
   function buildRegisterLogContext(route, user) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegisterLogContext === "function") return PropertyDomain.buildRegisterLogContext(route, { user });
     return {
       at: new Date().toISOString(),
       route: String(route || "등록").trim(),
@@ -782,6 +809,7 @@
   }
 
   function parseFloorNumberForLog(value) {
+    if (PropertyDomain && typeof PropertyDomain.parseFloorNumberForLog === "function") return PropertyDomain.parseFloorNumberForLog(value);
     const s = String(value || "").trim();
     if (!s) return "";
     let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
@@ -791,10 +819,12 @@
   }
 
   function compactAddressText(value) {
+    if (PropertyDomain && typeof PropertyDomain.compactAddressText === "function") return PropertyDomain.compactAddressText(value);
     return String(value || "").trim().replace(/\s+/g, "");
   }
 
   function parseAddressIdentityParts(address) {
+    if (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === "function") return PropertyDomain.parseAddressIdentityParts(address);
     const text = String(address || "").trim().replace(/\s+/g, " ");
     const compact = compactAddressText ? compactAddressText(text) : text.replace(/\s+/g, "");
     if (!compact) return { dong: "", mainNo: "", subNo: "" };
@@ -829,6 +859,7 @@
   }
 
   function extractHoNumberForLog(data) {
+    if (PropertyDomain && typeof PropertyDomain.extractHoNumberForLog === "function") return PropertyDomain.extractHoNumberForLog(data);
     const explicitValues = [data?.ho, data?.unit, data?.room, data?.raw?.ho, data?.raw?.unit, data?.raw?.room];
     for (const value of explicitValues) {
       const s = String(value || "").trim();
@@ -849,6 +880,7 @@
   }
 
   function buildRegistrationMatchKey(data) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationMatchKey === "function") return PropertyDomain.buildRegistrationMatchKey(data);
     const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, ""));
     const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, "")) || "0";
     const hoKey = extractHoNumberForLog(data) || "0";
@@ -857,6 +889,7 @@
   }
 
   function attachRegistrationIdentity(raw, data) {
+    if (PropertyDomain && typeof PropertyDomain.attachRegistrationIdentity === "function") return PropertyDomain.attachRegistrationIdentity(raw, data);
     const nextRaw = { ...(raw || {}) };
     const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, nextRaw.address, ""));
     const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, nextRaw.floor, ""));
@@ -922,6 +955,12 @@
   }
 
   function buildRegistrationChanges(prevSnapshot, nextSnapshot) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationChanges === "function") {
+      return PropertyDomain.buildRegistrationChanges(prevSnapshot, nextSnapshot, REG_LOG_LABELS, {
+        amountFields: ["priceMain"],
+        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
     const changes = [];
     Object.keys(REG_LOG_LABELS).forEach((field) => {
       const nextValue = nextSnapshot?.[field];
@@ -940,6 +979,7 @@
   }
 
   function appendRegistrationCreateLog(raw, context) {
+    if (PropertyDomain && typeof PropertyDomain.ensureRegistrationCreatedLog === "function") return PropertyDomain.ensureRegistrationCreatedLog(raw, context);
     const nextRaw = { ...(raw || {}) };
     const firstAt = firstText(nextRaw.firstRegisteredAt, context?.at, new Date().toISOString());
     const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
@@ -950,6 +990,7 @@
   }
 
   function appendRegistrationChangeLog(raw, context, changes) {
+    if (PropertyDomain && typeof PropertyDomain.appendRegistrationLog === "function") return PropertyDomain.appendRegistrationLog(raw, context, changes);
     const nextRaw = appendRegistrationCreateLog(raw, context);
     if (Array.isArray(changes) && changes.length) {
       nextRaw.registrationLog = [...nextRaw.registrationLog, {
@@ -1504,6 +1545,7 @@
 
   // ── Utilities ──
   function firstText(...args) {
+    if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...args);
     for (const v of args) {
       if (v == null) continue;
       const s = String(v).trim();
@@ -1513,12 +1555,14 @@
   }
 
   function toNum(v) {
+    if (Shared && typeof Shared.toNullableNumber === "function") return Shared.toNullableNumber(v);
     if (v == null || v === "") return null;
     const n = Number(String(v).replace(/[^0-9.-]/g, ""));
     return Number.isFinite(n) ? n : null;
   }
 
   function esc(v) {
+    if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
     return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
@@ -1777,6 +1821,7 @@
 
   // ── Opinion History 유틸 ──
   function loadOpinionHistory(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
     if (Array.isArray(hist)) return hist;
@@ -1788,6 +1833,7 @@
   }
 
   function appendOpinionEntry(history, newText, user) {
+    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
     const text = String(newText || "").trim();
     if (!text) return history;
     const d = new Date();
@@ -1816,6 +1862,7 @@
   }
 
   function debounce(fn, ms) {
+    if (Shared && typeof Shared.debounce === "function") return Shared.debounce(fn, ms);
     let t;
     return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
   }

@@ -5,19 +5,24 @@
   "use strict";
 
   const K = window.KNSN || null;
-  const toNumber = (K && typeof K.toNumber === "function") ? K.toNumber : (v) => {
-    if (v === null || v === undefined) return NaN;
-    if (typeof v === "number") return v;
-    const s = String(v).trim();
-    if (!s) return NaN;
-    const s2 = s.replace(/,/g, "");
-    const m = s2.match(/[+-]?\d+(\.\d+)?/);
-    if (!m) return NaN;
-    const n = Number(m[0]);
-    return Number.isFinite(n) ? n : NaN;
-  };
+  const Shared = window.KNSN_SHARED || null;
+  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+  const toNumber = (Shared && typeof Shared.toNumber === "function")
+    ? Shared.toNumber
+    : ((K && typeof K.toNumber === "function") ? K.toNumber : (v) => {
+        if (v === null || v === undefined) return NaN;
+        if (typeof v === "number") return v;
+        const s = String(v).trim();
+        if (!s) return NaN;
+        const s2 = s.replace(/,/g, "");
+        const m = s2.match(/[+-]?\d+(\.\d+)?/);
+        if (!m) return NaN;
+        const n = Number(m[0]);
+        return Number.isFinite(n) ? n : NaN;
+      });
 
   function parseFlexibleNumber(value) {
+    if (Shared && typeof Shared.parseFlexibleNumber === "function") return Shared.parseFlexibleNumber(value);
     if (value === null || value === undefined) return null;
     if (typeof value === "number") return Number.isFinite(value) ? value : null;
     const s = String(value).trim();
@@ -80,6 +85,7 @@
   }
 
   function normalizeRole(value) {
+    if (Shared && typeof Shared.normalizeRole === "function") return Shared.normalizeRole(value);
     const v = String(value || '').trim().toLowerCase();
     if (v === '관리자' || v === 'admin') return 'admin';
     if (v === '기타' || v === 'other') return 'other';
@@ -1399,6 +1405,7 @@ function bindEvents() {
   };
 
   function hasMeaningfulValue(value) {
+    if (PropertyDomain && typeof PropertyDomain.hasMeaningfulValue === "function") return PropertyDomain.hasMeaningfulValue(value);
     if (value === null || value === undefined) return false;
     if (typeof value === "string") return value.trim() !== "";
     return true;
@@ -1420,6 +1427,7 @@ function bindEvents() {
   }
 
   function buildRegisterLogContext(route, user) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegisterLogContext === "function") return PropertyDomain.buildRegisterLogContext(route, { user });
     return {
       at: new Date().toISOString(),
       route: String(route || "등록").trim(),
@@ -1428,6 +1436,11 @@ function bindEvents() {
   }
 
   function normalizeCompareValue(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.normalizeCompareValue === "function") {
+      return PropertyDomain.normalizeCompareValue(field, value, {
+        numericFields: ["priceMain", "lowprice", "commonArea", "exclusiveArea", "siteArea", "latitude", "longitude"],
+      });
+    }
     if (value === null || value === undefined) return "";
     if (["priceMain", "lowprice", "commonArea", "exclusiveArea", "siteArea", "latitude", "longitude"].includes(field)) {
       const n = toNullableNumber(value);
@@ -1437,6 +1450,12 @@ function bindEvents() {
   }
 
   function formatFieldValueForLog(field, value) {
+    if (PropertyDomain && typeof PropertyDomain.formatFieldValueForLog === "function") {
+      return PropertyDomain.formatFieldValueForLog(field, value, {
+        amountFields: ["priceMain", "lowprice"],
+        numericFields: ["commonArea", "exclusiveArea", "siteArea", "latitude", "longitude"],
+      });
+    }
     if (value === null || value === undefined) return "";
     if (["priceMain", "lowprice"].includes(field)) {
       const n = toNullableNumber(value);
@@ -1598,6 +1617,12 @@ function bindEvents() {
   }
 
   function buildRegistrationChanges(prevSnapshot, nextSnapshot) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationChanges === "function") {
+      return PropertyDomain.buildRegistrationChanges(prevSnapshot, nextSnapshot, REG_LOG_LABELS, {
+        amountFields: ["priceMain", "lowprice"],
+        numericFields: ["priceMain", "lowprice", "commonArea", "exclusiveArea", "siteArea", "latitude", "longitude"],
+      });
+    }
     const changes = [];
     Object.keys(REG_LOG_LABELS).forEach((field) => {
       const nextValue = nextSnapshot?.[field];
@@ -3828,12 +3853,14 @@ function bindEvents() {
   }
 
   function toNullableNumber(v) {
+    if (Shared && typeof Shared.toNullableNumber === "function") return Shared.toNullableNumber(v);
     if (v == null || v === "") return null;
     const n = Number(String(v).replace(/[^0-9.-]/g, ""));
     return Number.isFinite(n) ? n : null;
   }
 
   function firstText(...values) {
+    if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...values);
     for (const value of values) {
       if (value == null) continue;
       const s = String(value).trim();
@@ -3963,6 +3990,7 @@ function bindEvents() {
   }
 
   function debounce(fn, wait = 150) {
+    if (Shared && typeof Shared.debounce === "function") return Shared.debounce(fn, wait);
     let t = null;
     return (...args) => {
       clearTimeout(t);
@@ -3971,6 +3999,7 @@ function bindEvents() {
   }
 
   function escapeHtml(v) {
+    if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
     return String(v ?? "")
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
@@ -3980,6 +4009,7 @@ function bindEvents() {
   }
 
   function escapeAttr(v) {
+    if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
     return escapeHtml(v).replaceAll("`", "&#96;");
   }
 
@@ -3994,6 +4024,7 @@ function bindEvents() {
   }
 
   function loadSession() {
+    if (Shared && typeof Shared.loadSession === "function") return Shared.loadSession();
     try {
       const raw = sessionStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
@@ -4003,6 +4034,7 @@ function bindEvents() {
   }
 
   function saveSession(v) {
+    if (Shared && typeof Shared.saveSession === "function") return Shared.saveSession(v);
     try {
       if (!v) {
         sessionStorage.removeItem(SESSION_KEY);

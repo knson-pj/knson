@@ -31,6 +31,15 @@
   document.addEventListener("DOMContentLoaded", init);
 
   const K = window.KNSN || null;
+  const Shared = window.KNSN_SHARED || null;
+  const sharedApi = (Shared && typeof Shared.createApiClient === "function")
+    ? Shared.createApiClient({
+        baseUrl: API_BASE,
+        loadSession,
+        getAuthToken: async (options = {}) => options.auth ? String(state.session?.token || loadSession()?.token || "").trim() : "",
+        networkErrorFactory: () => new Error("서버 연결에 실패했습니다. (네트워크/CORS 확인)"),
+      })
+    : null;
 
   async function init() {
     // Keep session when moving to admin page (prevents pagehide auto-logout)
@@ -563,6 +572,7 @@
   }
 
   function normalizeRole(value) {
+    if (Shared && typeof Shared.normalizeRole === 'function') return Shared.normalizeRole(value);
     const v = String(value || '').trim().toLowerCase();
     if (v === '관리자' || v === 'admin') return 'admin';
     if (v === '기타' || v === 'other') return 'other';
@@ -1510,6 +1520,7 @@
 
   // ---- API (GET preflight 최소화) ----
   async function api(path, options = {}) {
+    if (sharedApi) return sharedApi(path, options);
     const method = (options.method || "GET").toUpperCase();
     const headers = { Accept: "application/json" };
 
@@ -1554,6 +1565,10 @@
   }
 
   function toNumber(v) {
+    if (Shared && typeof Shared.toNumber === "function") {
+      const n = Shared.toNumber(v);
+      return Number.isFinite(n) ? n : 0;
+    }
     const n = Number(String(v ?? "").replace(/[^0-9.-]/g, ""));
     return Number.isFinite(n) ? n : 0;
   }
@@ -1597,6 +1612,7 @@
   }
 
   function parseFlexibleDate(value) {
+    if (Shared && typeof Shared.parseFlexibleDate === "function") return Shared.parseFlexibleDate(value);
     const s = String(value || "").trim();
     if (!s) return null;
     let m = s.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
@@ -1618,6 +1634,7 @@
   }
 
   function escapeHtml(v) {
+    if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
     return String(v ?? "")
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
@@ -1631,6 +1648,7 @@
   }
 
   function debounce(fn, wait = 200) {
+    if (Shared && typeof Shared.debounce === "function") return Shared.debounce(fn, wait);
     let t = null;
     return (...args) => {
       clearTimeout(t);
@@ -1639,6 +1657,7 @@
   }
 
   function loadSession() {
+    if (Shared && typeof Shared.loadSession === "function") return Shared.loadSession();
     try {
       const raw = sessionStorage.getItem(SESSION_KEY);
       return raw ? JSON.parse(raw) : null;
@@ -1648,8 +1667,11 @@
   }
 
   function clearSession() {
-    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
-    try { localStorage.removeItem(SESSION_KEY); } catch {}
+    if (Shared && typeof Shared.clearSession === "function") Shared.clearSession();
+    else {
+      try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+    }
     state.session = null;
   }
 
