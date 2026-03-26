@@ -6,9 +6,9 @@
   <meta name="supabase-url" content="" /><meta name="supabase-anon-key" content="" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260325-ui2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260326-home1" />
 </head>
-<body>
+<body class="page-agent">
 
 <aside class="admin-sidebar">
   <div class="sidebar-logo">
@@ -167,7 +167,6 @@
     var active=document.querySelector('#agentSidebarNav .sidebar-nav-item.is-active');
     if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(!gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
     if(titleEl&&TITLES[viewName])titleEl.textContent=TITLES[viewName];
-    if(viewName==='dailyreport' && typeof window.__agentDailyReportEnter==='function'){window.__agentDailyReportEnter();}
   }
 
   document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(item){

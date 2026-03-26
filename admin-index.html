@@ -7,9 +7,9 @@
   <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260325-ui2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260326-home1" />
 </head>
-<body>
+<body class="page-admin">
 
 <aside class="admin-sidebar">
   <div class="sidebar-logo">
@@ -23,39 +23,61 @@
     </div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav">
+    <button class="sidebar-nav-item is-active" data-tab="home"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label">홈</span></button>
     <div class="sidebar-group">
       <button class="sidebar-group-btn" data-group="properties">
-        <span class="sidebar-nav-icon">🏢</span><span class="sidebar-nav-label">물건관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+        <span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">물건 관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
       </button>
       <div class="sidebar-group-items">
-        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="properties"><span class="sidebar-nav-icon">📋</span><span class="sidebar-nav-label">전체 현황</span></button>
-        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="csv"><span class="sidebar-nav-icon">📤</span><span class="sidebar-nav-label">물건 등록</span></button>
-        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="geocoding"><span class="sidebar-nav-icon">📍</span><span class="sidebar-nav-label">지오 코딩</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="properties"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">전체 리스트</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="csv"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">물건 등록</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="geocoding"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">지오 코딩</span></button>
       </div>
     </div>
     <div class="sidebar-group">
       <button class="sidebar-group-btn" data-group="staff">
-        <span class="sidebar-nav-icon">👥</span><span class="sidebar-nav-label">담당자관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+        <span class="sidebar-nav-icon">◌</span><span class="sidebar-nav-label">담당자 관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
       </button>
       <div class="sidebar-group-items">
-        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="staff"><span class="sidebar-nav-icon">👤</span><span class="sidebar-nav-label">등록 관리</span></button>
-        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="workmgmt"><span class="sidebar-nav-icon">📊</span><span class="sidebar-nav-label">업무 관리</span></button>
-        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="regions"><span class="sidebar-nav-icon">🗺️</span><span class="sidebar-nav-label">담당 지역 설정</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="staff"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">등록 관리</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="workmgmt"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">업무 관리</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-tab="regions"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">담당 지역 설정</span></button>
       </div>
     </div>
+    <button class="sidebar-nav-item sidebar-nav-settings" id="btnSidebarSettings" type="button"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">설정</span></button>
   </nav>
-  <div class="sidebar-bottom">
-    <a class="sidebar-bottom-btn" id="btnBackToMain" href="./index.html" title="메인으로">M</a>
-  </div>
+  <div class="sidebar-bottom"></div>
 </aside>
 
 <div class="admin-content">
   <header class="admin-topbar">
-    <div class="topbar-left"><h1 id="topbarTitle">홈</h1></div>
+    <div class="admin-topbar-search">
+      <span class="admin-topbar-search-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      </span>
+      <input id="adminGlobalSearch" type="text" class="admin-topbar-search-input" placeholder="검색" autocomplete="off" />
+    </div>
     <div class="top-actions">
+      <button class="topbar-icon-btn" type="button" aria-label="알림">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
+        <span class="topbar-icon-dot"></span>
+      </button>
       <button id="btnAdminLoginOpen" class="btn btn-primary hidden">로그인</button>
       <button id="btnChangeMyPassword" class="btn btn-ghost hidden">내 비밀번호 변경</button>
-      <button id="btnAdminLogout" class="btn btn-ghost hidden">로그아웃</button>
+      <div class="topbar-user-card">
+        <div class="topbar-user-avatar" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"></circle><path d="M5 19a7 7 0 0 1 14 0"></path></svg>
+        </div>
+        <div class="topbar-user-meta">
+          <div class="topbar-user-name-row">
+            <strong id="topbarUserName">관리자</strong>
+            <span class="topbar-user-caret">⌄</span>
+          </div>
+          <button id="btnAdminLogout" class="topbar-logout-link hidden" type="button">로그아웃</button>
+          <span id="adminUserBadge" class="badge badge-admin hidden" aria-hidden="true"></span>
+        </div>
+      </div>
+      <span id="topbarTitle" class="sr-only">홈 대시보드</span>
     </div>
   </header>
   <div id="globalMsg" class="global-msg hidden"></div>
@@ -73,24 +95,109 @@
   <div class="admin-shell"><main class="admin-main">
 
     <!-- 홈 -->
-    <section id="tab-home" class="tab-panel">
-      <div class="home-panel">
-        <p class="home-intro">관리자 전용 페이지 입니다.</p>
-        <div class="home-section">
-          <div class="home-section-tag">Total</div>
-          <div class="home-sentence-wrap">
-            <p class="home-sentence">현재 등록 매물수는&nbsp;총&nbsp;<strong class="hs-total" id="sumTotal">-</strong>건 이며,</p>
-            <p class="home-sentence"><span class="hs-auction">경매</span>&nbsp;<span id="sumAuction">-</span>&nbsp;건,&nbsp;공매&nbsp;<span id="sumGongmae">-</span>&nbsp;건,&nbsp;<span class="hs-naver">네이버중개</span>&nbsp;<span id="sumNaverRealtor">-</span>&nbsp;건,&nbsp;<span class="hs-direct">일반중개</span>&nbsp;<span id="sumDirectRealtor">-</span>&nbsp;건,&nbsp;&nbsp;<span class="hs-general">일반</span>&nbsp;<span class="hs-general-num" id="sumGeneral">-</span>&nbsp;건 입니다.</p>
-            <p class="home-sentence">등록된&nbsp;<span class="hs-agents-lbl">담당자수</span>는&nbsp;총&nbsp;<strong class="hs-agents" id="sumAgents">-</strong>&nbsp;명 입니다.</p>
+    <section id="tab-home" class="tab-panel admin-home-tab">
+      <div class="admin-home-page">
+        <h2 class="admin-page-heading">홈 대시보드</h2>
+
+        <article class="card-unit admin-home-overview">
+          <div class="admin-home-overview-copy">
+            <h3>전체 등록 물건</h3>
+            <div class="highlight-number" id="sumTotal">-</div>
+            <p class="admin-home-overview-sub">관리 중인 물건</p>
           </div>
-        </div>
-        <div class="home-section">
-          <div class="home-section-tag">Today</div>
-          <div class="home-sentence-wrap">
-            <p class="home-sentence">금일 신규 등록 물건은&nbsp;총&nbsp;<strong class="hs-total" id="sumTodayTotal">-</strong>&nbsp;건이며,</p>
-            <p class="home-sentence" id="sumTodayDetail"><span class="hs-muted">집계 중...</span></p>
+          <div class="admin-home-divider"></div>
+          <div class="admin-home-source-grid">
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-auction">경</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">경매</span>
+                  <strong id="sumAuction">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="homeProgressAuction" class="admin-home-progress-fill is-auction"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-onbid">$</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">공매</span>
+                  <strong id="sumGongmae">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="homeProgressOnbid" class="admin-home-progress-fill is-onbid"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-naver">N</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">네이버중개</span>
+                  <strong id="sumNaverRealtor">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="homeProgressNaver" class="admin-home-progress-fill is-naver"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-direct">문</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">일반중개</span>
+                  <strong id="sumDirectRealtor">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="homeProgressDirect" class="admin-home-progress-fill is-direct"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-general">일</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">일반</span>
+                  <strong id="sumGeneral">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="homeProgressGeneral" class="admin-home-progress-fill is-general"></span></div>
+            </div>
           </div>
-        </div>
+        </article>
+
+        <section class="admin-home-updates-block">
+          <h3 class="admin-page-heading admin-page-heading-sm">오늘의 업데이트</h3>
+          <div class="admin-home-updates-grid">
+            <article class="card-unit admin-home-updates-main">
+              <div>
+                <p class="admin-mini-label">신규 등록</p>
+                <div class="admin-mini-number" id="sumTodayTotal">-</div>
+              </div>
+              <div class="admin-home-updates-list">
+                <div class="admin-home-updates-row"><span>경매</span><strong id="sumTodayAuction">-</strong></div>
+                <div class="admin-home-updates-row"><span>공매</span><strong id="sumTodayOnbid">-</strong></div>
+                <div class="admin-home-updates-row"><span>네이버중개</span><strong id="sumTodayRealtor">-</strong></div>
+              </div>
+              <p id="sumTodayDetail" class="admin-home-updates-footnote hidden"></p>
+            </article>
+
+            <div class="admin-home-side-stack">
+              <article class="card-unit admin-home-mini-card">
+                <div class="admin-home-mini-icon is-staff">⌚</div>
+                <div class="admin-home-mini-copy">
+                  <p>담당자 수</p>
+                  <strong id="sumAgents">-</strong>
+                </div>
+              </article>
+              <article class="card-unit admin-home-mini-card">
+                <div class="admin-home-mini-icon is-geo">⌖</div>
+                <div class="admin-home-mini-copy">
+                  <p>지오코딩 대기</p>
+                  <strong id="homeGeoPending">-</strong>
+                </div>
+              </article>
+            </div>
+
+            <article class="card-unit admin-home-map-card" aria-hidden="true">
+              <div class="admin-home-map-art"></div>
+            </article>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -242,18 +349,37 @@
 
 <div id="passwordChangeModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card modal-card-sm"><div class="modal-header"><h3>비밀번호 변경</h3><button id="pwdModalClose" class="icon-btn">✕</button></div><form id="passwordChangeForm" class="modal-body"><label class="field"><span>새 비밀번호</span><input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><label class="field"><span>새 비밀번호 확인</span><input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><div class="modal-actions"><button id="pwdSave" class="btn btn-primary" type="submit">변경</button><button id="pwdCancel" class="btn btn-ghost" type="button">취소</button></div><div id="pwdMsg" class="note"></div></form></div></div>
 
+<nav class="admin-bottom-nav" id="adminBottomNav" aria-label="모바일 하단 메뉴">
+  <button type="button" class="admin-bottom-item is-active" data-tab="home">
+    <span class="admin-bottom-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V20h14V9.5"></path></svg></span>
+    <span>홈</span>
+  </button>
+  <button type="button" class="admin-bottom-item" data-tab="properties">
+    <span class="admin-bottom-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 8h10M7 12h10M7 16h6"></path></svg></span>
+    <span>물건 관리</span>
+  </button>
+  <button type="button" class="admin-bottom-item" data-tab="staff">
+    <span class="admin-bottom-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2"></circle><path d="M3.5 19a6 6 0 0 1 11 0"></path><path d="M14 18a4.5 4.5 0 0 1 6.5-3.9"></path></svg></span>
+    <span>담당자 관리</span>
+  </button>
+  <button type="button" class="admin-bottom-item" id="adminBottomSettings" data-action="settings">
+    <span class="admin-bottom-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-.33-1 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1-.33H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1-.33 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .33-1V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 .33 1 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.31.31.67.31 1.03s-.11.72-.31 1.03"></path></svg></span>
+    <span>설정</span>
+  </button>
+</nav>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./knson-core.js?v=20260320-split"></script>
   <script src="./knson-shared.js?v=20260325-shared1"></script>
-  <script src="./knson-property-domain.js?v=20260326-domain1"></script>
+  <script src="./knson-property-domain.js?v=20260325-shared1"></script>
 
 <script src="./admin-tab-staff-regions.js?v=20260325-split1"></script>
 <script src="./admin-tab-csv.js?v=20260325-split1"></script>
 <script src="./admin-tab-geocoding.js?v=20260325-stable1"></script>
 <script src="./admin-tab-properties.js?v=20260325-stable1"></script>
-<script src="./admin-tab-dashboard.js?v=20260325-rollback1"></script>
+<script src="./admin-tab-dashboard.js?v=20260326-home1"></script>
 <script src="./admin-tab-new-property.js?v=20260325-newprop1"></script>
-<script src="./admin-shell-bootstrap.js?v=20260325-ui2"></script>
-<script src="./admin-app.js?v=20260326-domain1"></script>
+<script src="./admin-shell-bootstrap.js?v=20260326-home1"></script>
+<script src="./admin-app.js?v=20260326-home1"></script>
 </body>
 </html>

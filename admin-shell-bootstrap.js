@@ -2,7 +2,7 @@
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
   const TITLE_MAP = {
-    home: '홈',
+    home: '홈 대시보드',
     properties: '전체 현황',
     csv: '물건 등록',
     staff: '등록 관리',
@@ -40,14 +40,24 @@
   function updateSidebarUserName() {
     const { els } = ctx();
     const sidebarName = document.getElementById('sidebarUserName');
-    if (!sidebarName || !els.adminUserBadge) return;
+    const topbarName = document.getElementById('topbarUserName');
+    if (!els.adminUserBadge) return;
     const txt = String(els.adminUserBadge.textContent || '').trim();
-    if (txt && txt !== '비로그인') sidebarName.textContent = txt;
+    if (txt && txt !== '비로그인') {
+      if (sidebarName) sidebarName.textContent = txt;
+      if (topbarName) topbarName.textContent = txt;
+      return;
+    }
+    if (sidebarName && txt) sidebarName.textContent = txt;
+    if (topbarName && txt) topbarName.textContent = txt;
   }
 
   mod.syncChromeForTab = function syncChromeForTab(tab) {
     const t = String(tab || '').trim() || 'home';
     document.querySelectorAll('#sidebarNav .sidebar-nav-item').forEach((item) => {
+      item.classList.toggle('is-active', item.dataset.tab === t);
+    });
+    document.querySelectorAll('#adminBottomNav .admin-bottom-item[data-tab]').forEach((item) => {
       item.classList.toggle('is-active', item.dataset.tab === t);
     });
 
@@ -120,6 +130,44 @@
         mod.syncChromeForTab(tab);
       });
     });
+
+    document.querySelectorAll('#adminBottomNav .admin-bottom-item[data-tab]').forEach((item) => {
+      if (item.dataset.bound === 'true') return;
+      item.dataset.bound = 'true';
+      item.addEventListener('click', () => {
+        const tab = item.dataset.tab;
+        clickHiddenTab(tab);
+        mod.syncChromeForTab(tab);
+      });
+    });
+
+    const bottomSettings = document.getElementById('adminBottomSettings');
+    if (bottomSettings && bottomSettings.dataset.bound !== 'true') {
+      bottomSettings.dataset.bound = 'true';
+      bottomSettings.addEventListener('click', () => {
+        els.btnChangeMyPassword?.click();
+      });
+    }
+
+    const sidebarSettings = document.getElementById('btnSidebarSettings');
+    if (sidebarSettings && sidebarSettings.dataset.bound !== 'true') {
+      sidebarSettings.dataset.bound = 'true';
+      sidebarSettings.addEventListener('click', () => {
+        els.btnChangeMyPassword?.click();
+      });
+    }
+
+    if (els.adminGlobalSearch && els.adminGlobalSearch.dataset.bound !== 'true') {
+      els.adminGlobalSearch.dataset.bound = 'true';
+      els.adminGlobalSearch.addEventListener('input', (e) => {
+        const value = String(e.target.value || '');
+        const activeTab = String(ctx().state.activeTab || 'home');
+        if (activeTab !== 'properties') return;
+        if (!els.propKeyword) return;
+        els.propKeyword.value = value;
+        els.propKeyword.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
 
     const homeBtn = document.getElementById('btnSidebarHome');
     if (homeBtn && homeBtn.dataset.bound !== 'true') {

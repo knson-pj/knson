@@ -115,6 +115,7 @@
       realtor_direct: props.filter((p) => p.sourceType === 'realtor' && p.isDirectSubmission).length,
       general: props.filter((p) => p.sourceType === 'general').length,
     };
+    const staffCount = staff.filter((s) => String(utils.normalizeRole ? utils.normalizeRole(s.role) : s.role) === 'staff').length;
 
     if (els.sumTotal) els.sumTotal.textContent = fmt(summary.total);
     if (els.sumAuction) els.sumAuction.textContent = fmt(summary.auction);
@@ -122,18 +123,42 @@
     if (els.sumNaverRealtor) els.sumNaverRealtor.textContent = fmt(summary.realtor_naver);
     if (els.sumDirectRealtor) els.sumDirectRealtor.textContent = fmt(summary.realtor_direct);
     if (els.sumGeneral) els.sumGeneral.textContent = fmt(summary.general);
-    if (els.sumAgents) els.sumAgents.textContent = fmt(staff.filter((s) => String(utils.normalizeRole ? utils.normalizeRole(s.role) : s.role) === 'staff').length);
+    if (els.sumAgents) els.sumAgents.textContent = fmt(staffCount);
+
+    const totalForRatio = Math.max(Number(summary.total) || 0, 1);
+    const setProgress = (el, value) => {
+      if (!el) return;
+      const ratio = Math.max(8, Math.min(100, Math.round(((Number(value) || 0) / totalForRatio) * 100)));
+      el.style.width = `${ratio}%`;
+    };
+    setProgress(els.homeProgressAuction, summary.auction);
+    setProgress(els.homeProgressOnbid, summary.onbid);
+    setProgress(els.homeProgressNaver, summary.realtor_naver);
+    setProgress(els.homeProgressDirect, summary.realtor_direct);
+    setProgress(els.homeProgressGeneral, summary.general);
 
     const dateKey = getTodayDateKey();
     const todayParts = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+    let geoPending = 0;
     for (const item of Array.isArray(props) ? props : []) {
       const rawCreatedAt = item?.createdAt || item?._raw?.created_at || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
-      if (!sameDay(rawCreatedAt, dateKey)) continue;
-      todayParts.total += 1;
-      const key = String(item?.sourceType || '').trim();
-      if (todayParts[key] !== undefined) todayParts[key] += 1;
+      if (sameDay(rawCreatedAt, dateKey)) {
+        todayParts.total += 1;
+        const key = String(item?.sourceType || '').trim();
+        if (todayParts[key] !== undefined) todayParts[key] += 1;
+      }
+      const status = String(item?.geocodeStatus || item?._raw?.geocode_status || '').trim().toLowerCase();
+      const lat = item?.latitude ?? item?._raw?.latitude;
+      const lng = item?.longitude ?? item?._raw?.longitude;
+      const hasCoords = lat !== null && lat !== undefined && lat !== '' && lng !== null && lng !== undefined && lng !== '';
+      const address = String(item?.address || item?._raw?.address || '').trim();
+      if (!hasCoords && address && status !== 'failed' && status !== 'ok') geoPending += 1;
     }
     if (els.sumTodayTotal) els.sumTodayTotal.textContent = fmt(todayParts.total);
+    if (els.sumTodayAuction) els.sumTodayAuction.textContent = fmt(todayParts.auction);
+    if (els.sumTodayOnbid) els.sumTodayOnbid.textContent = fmt(todayParts.onbid);
+    if (els.sumTodayRealtor) els.sumTodayRealtor.textContent = fmt(todayParts.realtor);
+    if (els.homeGeoPending) els.homeGeoPending.textContent = fmt(geoPending);
     if (els.sumTodayDetail) {
       const usingFullData = Array.isArray(state.propertiesFullCache);
       els.sumTodayDetail.innerHTML = formatTodayDetail(todayParts, usingFullData);
