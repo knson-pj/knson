@@ -7,7 +7,7 @@
   <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260326-home1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260326-home2" />
 </head>
 <body class="page-admin">
 
@@ -15,12 +15,6 @@
   <div class="sidebar-logo">
     <img src="./image/logo-main.png" alt="로고" class="sidebar-logo-img" />
     <button class="sidebar-page-title sidebar-nav-label sidebar-home-btn" id="btnSidebarHome" title="홈으로">관리자페이지</button>
-  </div>
-  <div class="sidebar-user-top">
-    <div class="sidebar-user-badge">
-      <div class="sidebar-user-dot"></div>
-      <span class="sidebar-user-name sidebar-nav-label" id="sidebarUserName">관리자</span>
-    </div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav">
     <button class="sidebar-nav-item is-active" data-tab="home"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label">홈</span></button>
@@ -44,43 +38,51 @@
         <button class="sidebar-nav-item sidebar-nav-sub" data-tab="regions"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">담당 지역 설정</span></button>
       </div>
     </div>
-    <button class="sidebar-nav-item sidebar-nav-settings" id="btnSidebarSettings" type="button"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">설정</span></button>
   </nav>
   <div class="sidebar-bottom"></div>
 </aside>
 
 <div class="admin-content">
   <header class="admin-topbar">
-    <div class="admin-topbar-search">
-      <span class="admin-topbar-search-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
-      </span>
-      <input id="adminGlobalSearch" type="text" class="admin-topbar-search-input" placeholder="검색" autocomplete="off" />
-    </div>
     <div class="top-actions">
       <button class="topbar-icon-btn" type="button" aria-label="알림">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
         <span class="topbar-icon-dot"></span>
       </button>
-      <button id="btnAdminLoginOpen" class="btn btn-primary hidden">로그인</button>
-      <button id="btnChangeMyPassword" class="btn btn-ghost hidden">내 비밀번호 변경</button>
-      <div class="topbar-user-card">
-        <div class="topbar-user-avatar" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"></circle><path d="M5 19a7 7 0 0 1 14 0"></path></svg>
-        </div>
-        <div class="topbar-user-meta">
-          <div class="topbar-user-name-row">
-            <strong id="topbarUserName">관리자</strong>
-            <span class="topbar-user-caret">⌄</span>
+      <button id="btnAdminLoginOpen" class="hidden" type="button">로그인</button>
+      <div class="topbar-user-menu" id="topbarUserMenu">
+        <button class="topbar-user-trigger" id="btnTopbarUserMenu" type="button" aria-haspopup="menu" aria-expanded="false">
+          <div class="topbar-user-card">
+            <div class="topbar-user-avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"></circle><path d="M5 19a7 7 0 0 1 14 0"></path></svg>
+            </div>
+            <div class="topbar-user-meta">
+              <div class="topbar-user-name-row">
+                <strong id="topbarUserName">관리자</strong>
+                <span class="topbar-user-caret">⌄</span>
+              </div>
+            </div>
           </div>
-          <button id="btnAdminLogout" class="topbar-logout-link hidden" type="button">로그아웃</button>
-          <span id="adminUserBadge" class="badge badge-admin hidden" aria-hidden="true"></span>
+        </button>
+        <div class="topbar-user-dropdown hidden" id="topbarUserDropdown" role="menu" aria-labelledby="btnTopbarUserMenu">
+          <button id="btnChangeMyPassword" class="topbar-menu-item hidden" type="button" role="menuitem">내 비밀번호 변경</button>
+          <button id="btnAdminLogout" class="topbar-menu-item hidden" type="button" role="menuitem">로그아웃</button>
         </div>
+        <span id="adminUserBadge" class="badge badge-admin hidden" aria-hidden="true"></span>
       </div>
       <span id="topbarTitle" class="sr-only">홈 대시보드</span>
     </div>
   </header>
   <div id="globalMsg" class="global-msg hidden"></div>
+  <div id="adminLoadingOverlay" class="admin-loading-overlay hidden" aria-live="polite" aria-busy="false">
+    <div class="admin-loading-box">
+      <span class="admin-loading-spinner" aria-hidden="true"></span>
+      <div class="admin-loading-copy">
+        <strong>로딩 중</strong>
+        <p id="adminLoadingLabel">데이터를 불러오는 중입니다.</p>
+      </div>
+    </div>
+  </div>
   <div style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;" aria-hidden="true">
     <div class="tabs" id="adminTabs">
       <button class="tab is-active" data-tab="home">홈</button>
@@ -377,9 +379,9 @@
 <script src="./admin-tab-csv.js?v=20260325-split1"></script>
 <script src="./admin-tab-geocoding.js?v=20260325-stable1"></script>
 <script src="./admin-tab-properties.js?v=20260325-stable1"></script>
-<script src="./admin-tab-dashboard.js?v=20260326-home1"></script>
+<script src="./admin-tab-dashboard.js?v=20260326-home2"></script>
 <script src="./admin-tab-new-property.js?v=20260325-newprop1"></script>
-<script src="./admin-shell-bootstrap.js?v=20260326-home1"></script>
-<script src="./admin-app.js?v=20260326-home1"></script>
+<script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
+<script src="./admin-app.js?v=20260326-home2"></script>
 </body>
 </html>

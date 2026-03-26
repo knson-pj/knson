@@ -81,13 +81,7 @@
   };
 
   mod.setupChrome = function setupChrome() {
-    const { K, state } = ctx();
-    const themeHost = document.querySelector('.sidebar-bottom') || document.querySelector('.top-actions');
-    if (K && typeof K.initTheme === 'function') {
-      K.initTheme({ container: themeHost, className: 'theme-toggle sidebar-bottom-btn' });
-    } else if (K && typeof K.mountThemeToggle === 'function') {
-      K.mountThemeToggle(themeHost, { className: 'theme-toggle sidebar-bottom-btn' });
-    }
+    const { state } = ctx();
     mod.syncChromeForTab(state.activeTab || 'home');
     updateSidebarUserName();
   };
@@ -186,7 +180,38 @@
     if (els.btnAdminLogout && els.btnAdminLogout.dataset.bound !== 'true') {
       els.btnAdminLogout.dataset.bound = 'true';
       els.btnAdminLogout.addEventListener('click', () => {
+        closeUserMenu();
         mod.logout().catch(() => {});
+      });
+    }
+
+    const userMenu = document.getElementById('topbarUserMenu');
+    const userTrigger = document.getElementById('btnTopbarUserMenu');
+    const userDropdown = document.getElementById('topbarUserDropdown');
+    const setUserMenuOpen = (open) => {
+      if (!userMenu || !userTrigger || !userDropdown) return;
+      userMenu.classList.toggle('is-open', !!open);
+      userDropdown.classList.toggle('hidden', !open);
+      userTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    const closeUserMenu = () => setUserMenuOpen(false);
+    if (userTrigger && userTrigger.dataset.bound !== 'true') {
+      userTrigger.dataset.bound = 'true';
+      userTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const next = !userMenu?.classList.contains('is-open');
+        setUserMenuOpen(next);
+      });
+    }
+    if (!window.__KNSN_ADMIN_USERMENU_BOUND__) {
+      window.__KNSN_ADMIN_USERMENU_BOUND__ = true;
+      document.addEventListener('click', (e) => {
+        if (!userMenu) return;
+        if (userMenu.contains(e.target)) return;
+        closeUserMenu();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeUserMenu();
       });
     }
 

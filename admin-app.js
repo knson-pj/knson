@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260325-ui1";
+  const ADMIN_FAST_BUILD = "20260326-home2";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -175,6 +175,7 @@
   };
 
   const els = {};
+  const loadingState = { activeKeys: new Set(), messages: new Map() };
 
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
 
@@ -206,6 +207,7 @@
         normalizeProperty,
         hydrateAssignedAgentNames,
         renderSummary,
+        setAdminLoading,
         renderPropertiesTable,
         setActiveTab,
         setFormBusy,
@@ -400,6 +402,8 @@
       homeProgressGeneral: $("#homeProgressGeneral"),
       adminGlobalSearch: $("#adminGlobalSearch"),
       topbarUserName: $("#topbarUserName"),
+      adminLoadingOverlay: $("#adminLoadingOverlay"),
+      adminLoadingLabel: $("#adminLoadingLabel"),
       workMgmtDate: $("#workMgmtDate"),
       btnWorkMgmtRefresh: $("#btnWorkMgmtRefresh"),
       workMgmtMeta: $("#workMgmtMeta"),
@@ -562,6 +566,24 @@
     els.globalMsg.classList.toggle("hidden", !m);
   }
 
+  function setAdminLoading(key, active, text = "데이터를 불러오는 중입니다.") {
+    const targetKey = String(key || "global").trim() || "global";
+    if (!els.adminLoadingOverlay) return;
+    if (active) {
+      loadingState.activeKeys.add(targetKey);
+      loadingState.messages.set(targetKey, String(text || "데이터를 불러오는 중입니다."));
+    } else {
+      loadingState.activeKeys.delete(targetKey);
+      loadingState.messages.delete(targetKey);
+    }
+    const visible = loadingState.activeKeys.size > 0;
+    const currentText = visible
+      ? String(loadingState.messages.get(Array.from(loadingState.activeKeys).slice(-1)[0]) || text || "데이터를 불러오는 중입니다.")
+      : "데이터를 불러오는 중입니다.";
+    if (els.adminLoadingLabel) els.adminLoadingLabel.textContent = currentText;
+    els.adminLoadingOverlay.classList.toggle("hidden", !visible);
+    els.adminLoadingOverlay.setAttribute("aria-busy", visible ? "true" : "false");
+  }
 
   function handleAsyncError(err, fallbackMsg = "요청 처리 중 오류가 발생했습니다.") {
     console.error(err);
@@ -946,11 +968,16 @@ function bindEvents() {
     const refreshSummary = options.refreshSummary !== false;
     const forceFull = !!options.forceFull;
     const forceRefreshFull = !!options.forceRefreshFull;
+    const loadingText = state.activeTab === "home"
+      ? "대시보드 데이터를 불러오는 중입니다."
+      : "물건 리스트를 불러오는 중입니다.";
 
-    // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
-    const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+    setAdminLoading("properties", true, loadingText);
+    try {
+      // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
 
-    if (sb) {
+      if (sb) {
       const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
       const currentSession = synced || loadSession() || state.session || null;
       if (currentSession) state.session = currentSession;
@@ -1017,6 +1044,9 @@ function bindEvents() {
     renderSummary();
     updateGeocodeStatusBar();
     if (state.activeTab === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
+    } finally {
+      setAdminLoading("properties", false);
+    }
   }
 
 

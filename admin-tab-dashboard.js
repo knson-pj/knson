@@ -319,6 +319,7 @@
     const dateKey = String(options.dateKey || els.workMgmtDate?.value || localState.dateKey || getTodayDateKey()).trim() || getTodayDateKey();
     localState.loading = true;
     localState.dateKey = dateKey;
+    if (typeof utils.setAdminLoading === 'function') utils.setAdminLoading('workmgmt', true, '업무 로그를 집계하는 중입니다.');
     if (els.workMgmtDate && els.workMgmtDate.value !== dateKey) els.workMgmtDate.value = dateKey;
     try {
       const data = await api(`/properties?daily_report=1&admin_view=1&date=${encodeURIComponent(dateKey)}`, { auth: true });
@@ -334,6 +335,7 @@
       throw err;
     } finally {
       localState.loading = false;
+      if (typeof utils.setAdminLoading === 'function') utils.setAdminLoading('workmgmt', false);
     }
   };
 
