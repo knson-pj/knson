@@ -1,6 +1,6 @@
 const { applyCors } = require('../../_lib/cors');
 const { getStore } = require('../../_lib/store');
-const { send, getJsonBody } = require('../../_lib/utils');
+const { send, getJsonBody, normalizePhone } = require('../../_lib/utils');
 const { requireAdmin } = require('../../_lib/auth');
 const {
   hasSupabaseAdminEnv,
@@ -39,6 +39,8 @@ module.exports = async function handler(req, res) {
       if (body.assignedRegions != null) patch.assignedRegions = body.assignedRegions;
       if (body.password != null) patch.password = body.password;
       if (body.email != null) patch.email = body.email;
+      if (body.position != null) patch.position = body.position;
+      if (body.phone != null) patch.phone = body.phone;
 
       try {
         const item = await updateStaff(targetId, patch);
@@ -100,6 +102,8 @@ module.exports = async function handler(req, res) {
     if (body.password != null && String(body.password || '').trim()) user.password = String(body.password || '').trim();
     if (body.assignedRegions != null) user.regions = Array.isArray(body.assignedRegions) ? body.assignedRegions : [];
     if (body.email != null) user.email = String(body.email || '').trim().toLowerCase();
+    if (body.position != null) user.position = String(body.position || '').trim();
+    if (body.phone != null) user.phone = normalizePhone(body.phone || '');
 
     return send(res, 200, {
       ok: true,

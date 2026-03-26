@@ -154,7 +154,7 @@ function isProfileReadIssue(err) {
 
 async function safeGetProfile(userId) {
   try {
-    const rows = await supabaseFetch(`/rest/v1/profiles?select=id,name,role,created_at&id=eq.${encodeURIComponent(userId)}&limit=1`);
+    const rows = await supabaseFetch(`/rest/v1/profiles?select=id,name,role,position,phone,created_at&id=eq.${encodeURIComponent(userId)}&limit=1`);
     return Array.isArray(rows) ? (rows[0] || null) : null;
   } catch (err) {
     if (isProfileReadIssue(err)) return null;
@@ -164,7 +164,7 @@ async function safeGetProfile(userId) {
 
 async function safeListProfiles() {
   try {
-    const rows = await supabaseFetch('/rest/v1/profiles?select=id,name,role,created_at&order=created_at.desc.nullslast,name.asc');
+    const rows = await supabaseFetch('/rest/v1/profiles?select=id,name,role,position,phone,created_at&order=created_at.desc.nullslast,name.asc');
     return Array.isArray(rows) ? rows : [];
   } catch (err) {
     if (isProfileReadIssue(err)) return [];
@@ -258,11 +258,33 @@ function pickAssignedRegionsFromUser(user) {
   return Array.isArray(regions) ? regions.filter(Boolean).map((v) => String(v)) : [];
 }
 
+function pickPosition({ profile, user }) {
+  return String(
+    profile?.position ||
+    user?.user_metadata?.position ||
+    user?.user_metadata?.job_title ||
+    user?.user_metadata?.title ||
+    ''
+  ).trim();
+}
+
+function pickPhone({ profile, user }) {
+  return String(
+    profile?.phone ||
+    user?.user_metadata?.phone ||
+    user?.user_metadata?.phone_number ||
+    user?.user_metadata?.mobile_phone ||
+    ''
+  ).replace(/[^\d]/g, '');
+}
+
 function normalizeStaffItem({ profile, user }) {
   return {
     id: profile?.id || user?.id || '',
     email: user?.email || '',
     name: pickDisplayName({ profile, user }),
+    position: pickPosition({ profile, user }),
+    phone: pickPhone({ profile, user }),
     role: mergeRoles(extractRoleCandidate(user), profile?.role) || 'staff',
     assignedRegions: pickAssignedRegionsFromUser(user),
     createdAt: profile?.created_at || user?.created_at || '',
@@ -304,7 +326,7 @@ async function listStaff() {
   return items;
 }
 
-async function createAuthUser({ email, password, name, role }) {
+async function createAuthUser({ email, password, name, role, position, phone }) {
   const normalizedRole = normalizeRole(role) || 'staff';
   const body = {
     email,
@@ -316,6 +338,8 @@ async function createAuthUser({ email, password, name, role }) {
     user_metadata: {
       display_name: name || '',
       role: normalizedRole,
+      position: String(position || '').trim(),
+      phone: String(phone || '').replace(/[^\d]/g, ''),
       assigned_regions: [],
     },
   };
@@ -333,6 +357,8 @@ async function createAuthUser({ email, password, name, role }) {
       id: user.id,
       name,
       role: normalizedRole,
+      position: String(position || '').trim(),
+      phone: String(phone || '').replace(/[^\d]/g, ''),
     });
   } catch (err) {
     if (!isProfileReadIssue(err)) throw err;
@@ -341,11 +367,13 @@ async function createAuthUser({ email, password, name, role }) {
   return user;
 }
 
-async function upsertProfile({ id, name, role }) {
+async function upsertProfile({ id, name, role, position, phone }) {
   const payload = [{
     id,
     name: name || '',
     role: normalizeRole(role) || 'staff',
+    position: String(position || '').trim(),
+    phone: String(phone || '').replace(/[^\d]/g, ''),
   }];
 
   const data = await supabaseFetch('/rest/v1/profiles?on_conflict=id', {
@@ -363,6 +391,8 @@ async function updateProfile(userId, patch = {}) {
   const payload = {};
   if (patch.name != null) payload.name = String(patch.name || '').trim();
   if (patch.role != null) payload.role = normalizeRole(patch.role) || 'staff';
+  if (patch.position != null) payload.position = String(patch.position || '').trim();
+  if (patch.phone != null) payload.phone = String(patch.phone || '').replace(/[^\d]/g, '');
   if (!Object.keys(payload).length) return null;
 
   const data = await supabaseFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
@@ -395,6 +425,8 @@ async function updateAuthUser(userId, patch = {}) {
     nextMeta.role = role;
     nextAppMeta.role = role;
   }
+  if (patch.position != null) nextMeta.position = String(patch.position || '').trim();
+  if (patch.phone != null) nextMeta.phone = String(patch.phone || '').replace(/[^\d]/g, '');
   if (patch.assignedRegions != null) {
     nextMeta.assigned_regions = Array.isArray(patch.assignedRegions)
       ? patch.assignedRegions.filter(Boolean).map((v) => String(v))

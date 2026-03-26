@@ -634,11 +634,15 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 /* ══════════════════════════════════════════════════
    STAFF FORM
 ══════════════════════════════════════════════════ */
-.staff-form{display:grid;grid-template-columns:minmax(200px,1fr) minmax(140px,.6fr) 130px minmax(190px,1fr) auto;gap:var(--sp-3);align-items:end;}
+.staff-form{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr)) repeat(3,minmax(140px,.9fr)) auto;gap:var(--sp-3);align-items:end;}
 .staff-password-field{min-width:0;}
 .staff-actions-field{display:grid;align-content:end;}
 .staff-actions-field>.field-spacer{display:block;visibility:hidden;font-size:12px;line-height:1;}
 .staff-action-row{align-items:center;gap:var(--sp-2);}
+.staff-phone-cell{white-space:nowrap;}
+.staff-role-cell,.staff-count-cell,.staff-date-cell{white-space:nowrap;}
+.staff-position-cell{min-width:96px;}
+
 .inline-btn-row{justify-content:flex-start;flex-wrap:nowrap;}
 .field-password-inline{grid-column:1/-1;}
 .input-action-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--sp-3);align-items:center;}

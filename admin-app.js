@@ -1248,6 +1248,8 @@ function bindEvents() {
       id: item.id || "",
       email: item.email || "",
       name: item.name || item.email || "",
+      position: String(item.position || item.jobTitle || item.job_title || "").trim(),
+      phone: String(item.phone || item.mobile || item.mobile_phone || item.phone_number || "").trim(),
       role: normalizeRole(item.role),
       assignedRegions: Array.isArray(item.assignedRegions)
         ? item.assignedRegions

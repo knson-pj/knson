@@ -7,7 +7,7 @@
   <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260326-home2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260326-staff2" />
 </head>
 <body class="page-admin">
 
@@ -45,10 +45,6 @@
 <div class="admin-content">
   <header class="admin-topbar">
     <div class="top-actions">
-      <button class="topbar-icon-btn" type="button" aria-label="알림">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
-        <span class="topbar-icon-dot"></span>
-      </button>
       <button id="btnAdminLoginOpen" class="hidden" type="button">로그인</button>
       <div class="topbar-user-menu" id="topbarUserMenu">
         <button class="topbar-user-trigger" id="btnTopbarUserMenu" type="button" aria-haspopup="menu" aria-expanded="false">
@@ -257,6 +253,8 @@
           <input type="hidden" name="id" />
           <label class="field"><span>로그인 이메일 *</span><input name="email" class="input" type="email" autocomplete="off" placeholder="예: staff01@knson.local" /></label>
           <label class="field"><span>이름 *</span><input name="name" class="input" type="text" required /></label>
+          <label class="field"><span>직급</span><input name="position" class="input" type="text" maxlength="40" placeholder="예: 팀장" /></label>
+          <label class="field"><span>전화번호</span><input name="phone" class="input" type="tel" inputmode="tel" maxlength="20" placeholder="예: 010-1234-5678" /></label>
           <label class="field"><span>권한</span><select name="role" class="select"><option value="staff">담당자</option><option value="admin">관리자</option></select></label>
           <label class="field staff-password-field"><span>초기 비밀번호 *</span><input name="password" class="input" type="password" autocomplete="new-password" /></label>
           <div class="field staff-actions-field">
@@ -269,7 +267,7 @@
         </form>
       </div>
       <div class="table-wrap">
-        <table class="table" id="staffTable"><thead><tr><th>이름</th><th>권한</th><th>담당지역 수</th><th>생성일</th><th>작업</th></tr></thead><tbody></tbody></table>
+        <table class="table" id="staffTable"><thead><tr><th>이름</th><th>직급</th><th>전화번호</th><th>권한</th><th>담당지역 수</th><th>생성일</th><th>작업</th></tr></thead><tbody></tbody></table>
         <div id="staffEmpty" class="empty hidden">담당자가 없습니다.</div>
       </div>
     </section>
@@ -375,13 +373,13 @@
   <script src="./knson-shared.js?v=20260325-shared1"></script>
   <script src="./knson-property-domain.js?v=20260325-shared1"></script>
 
-<script src="./admin-tab-staff-regions.js?v=20260325-split1"></script>
+<script src="./admin-tab-staff-regions.js?v=20260326-staff2"></script>
 <script src="./admin-tab-csv.js?v=20260325-split1"></script>
 <script src="./admin-tab-geocoding.js?v=20260325-stable1"></script>
 <script src="./admin-tab-properties.js?v=20260325-stable1"></script>
 <script src="./admin-tab-dashboard.js?v=20260326-home2"></script>
 <script src="./admin-tab-new-property.js?v=20260325-newprop1"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
-<script src="./admin-app.js?v=20260326-home2"></script>
+<script src="./admin-app.js?v=20260326-staff2"></script>
 </body>
 </html>

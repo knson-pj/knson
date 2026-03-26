@@ -1,6 +1,6 @@
 const { applyCors } = require('../../_lib/cors');
 const { getStore } = require('../../_lib/store');
-const { send, getJsonBody, id, nowIso } = require('../../_lib/utils');
+const { send, getJsonBody, id, nowIso, normalizePhone } = require('../../_lib/utils');
 const { requireAdmin } = require('../../_lib/auth');
 const {
   hasSupabaseAdminEnv,
@@ -28,13 +28,15 @@ module.exports = async function handler(req, res) {
       const name = String(body.name || '').trim();
       const password = String(body.password || '').trim();
       const role = body.role === 'admin' ? 'admin' : (body.role === 'other' ? 'other' : 'staff');
+      const position = String(body.position || '').trim();
+      const phone = normalizePhone(body.phone || '');
 
       if (!email || !name || !password) {
         return send(res, 400, { ok: false, message: 'email, name, password는 필수입니다.' });
       }
 
       try {
-        const user = await createAuthUser({ email, password, name, role });
+        const user = await createAuthUser({ email, password, name, role, position, phone });
         const item = await getStaff(user.id).catch(() => null);
         return send(res, 201, {
           ok: true,
@@ -43,6 +45,8 @@ module.exports = async function handler(req, res) {
             email: user.email || email,
             name,
             role,
+            position,
+            phone,
             assignedRegions: [],
             createdAt: user.created_at || new Date().toISOString(),
           },
@@ -82,6 +86,8 @@ module.exports = async function handler(req, res) {
     const name = String(body.name || '').trim();
     const password = String(body.password || '').trim();
     const role = body.role === 'admin' ? 'admin' : (body.role === 'other' ? 'other' : 'staff');
+    const position = String(body.position || '').trim();
+    const phone = normalizePhone(body.phone || '');
 
     if (!name || !password || !email) {
       return send(res, 400, { ok: false, message: 'email, name, password는 필수입니다.' });
@@ -97,6 +103,8 @@ module.exports = async function handler(req, res) {
       password,
       role,
       regions: [],
+      position,
+      phone,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };

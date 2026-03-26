@@ -81,8 +81,10 @@
     const { els } = ctx();
     if (!els.staffForm) return;
     els.staffForm.elements.id.value = staff.id || "";
-    if (els.staffForm.elements.email) els.staffForm.elements.email.value = "";
+    if (els.staffForm.elements.email) els.staffForm.elements.email.value = staff.email || "";
     els.staffForm.elements.name.value = staff.name || "";
+    if (els.staffForm.elements.position) els.staffForm.elements.position.value = staff.position || "";
+    if (els.staffForm.elements.phone) els.staffForm.elements.phone.value = staff.phone || "";
     els.staffForm.elements.role.value = staff.role || "staff";
     if (els.staffForm.elements.password) els.staffForm.elements.password.value = "";
     mod.setStaffFormMode("edit");
@@ -94,6 +96,8 @@
     els.staffForm.reset();
     els.staffForm.elements.id.value = "";
     els.staffForm.elements.role.value = "staff";
+    if (els.staffForm.elements.position) els.staffForm.elements.position.value = "";
+    if (els.staffForm.elements.phone) els.staffForm.elements.phone.value = "";
     mod.setStaffFormMode("create");
   };
 
@@ -106,6 +110,8 @@
     const payload = {
       email: String(fd.get("email") || "").trim(),
       name: String(fd.get("name") || "").trim(),
+      position: String(fd.get("position") || "").trim(),
+      phone: String(fd.get("phone") || "").trim(),
       role: String(fd.get("role") || "staff"),
       password: String(fd.get("password") || ""),
     };
@@ -121,7 +127,7 @@
         const res = await api(`/admin/staff/${encodeURIComponent(id)}`, {
           method: "PATCH",
           auth: true,
-          body: { name: payload.name, role: payload.role },
+          body: { name: payload.name, position: payload.position, phone: payload.phone, role: payload.role },
         });
         saved = res?.item || null;
         if (saved) {
@@ -181,9 +187,11 @@
       const assignedCount = Array.isArray(staff.assignedRegions) ? staff.assignedRegions.length : 0;
       tr.innerHTML = `
         <td>${escapeHtml(staff.name || staff.email || "-")}</td>
-        <td>${escapeHtml(roleLabelOf(staff.role))}</td>
-        <td>${assignedCount}</td>
-        <td>${escapeHtml(formatDate(staff.createdAt) || "-")}</td>
+        <td class="staff-position-cell">${escapeHtml(staff.position || "-")}</td>
+        <td class="staff-phone-cell">${escapeHtml(staff.phone || "-")}</td>
+        <td class="staff-role-cell">${escapeHtml(roleLabelOf(staff.role))}</td>
+        <td class="staff-count-cell">${assignedCount}</td>
+        <td class="staff-date-cell">${escapeHtml(formatDate(staff.createdAt) || "-")}</td>
         <td>
           <div class="action-row">
             <button class="btn btn-secondary btn-sm" data-act="edit" data-id="${escapeAttr(staff.id)}">수정</button>
