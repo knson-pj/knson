@@ -284,6 +284,76 @@ function mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId) {
   return out;
 }
 
+function collectActorNameCandidates(ctx) {
+  const values = [
+    ctx?.name,
+    ctx?.email,
+    ctx?.profile?.name,
+    ctx?.authUser?.user_metadata?.display_name,
+    ctx?.bearerUser?.user_metadata?.display_name,
+    ctx?.authUser?.email,
+    ctx?.bearerUser?.email,
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const s = cleanText(value, 120);
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+async function fetchRowsByActorNames(baseSelect, date, actorNames) {
+  const names = Array.isArray(actorNames) ? actorNames.filter(Boolean) : [];
+  if (!names.length) return [];
+  const merged = [];
+  const seen = new Set();
+  for (const name of names) {
+    const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(name)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`);
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = String(row?.id || '').trim();
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      merged.push(row);
+    }
+  }
+  return merged;
+}
+
+async function fetchRowsByAssignedProperties(baseSelect, date, actorId) {
+  const userId = cleanText(actorId, 120);
+  if (!userId) return [];
+  const propertyRows = await supabaseRest(`/rest/v1/properties?select=id,item_no,address,global_id,assignee_id&assignee_id=eq.${encodeURIComponent(userId)}&limit=5000`);
+  const props = Array.isArray(propertyRows) ? propertyRows : [];
+  if (!props.length) return [];
+
+  const idSet = new Set();
+  const itemNoSet = new Set();
+  const addressSet = new Set();
+  for (const row of props) {
+    const idVals = [row?.id, row?.global_id];
+    for (const value of idVals) {
+      const s = cleanText(value, 120);
+      if (s) idSet.add(s);
+    }
+    const itemNo = cleanText(row?.item_no, 120);
+    if (itemNo) itemNoSet.add(itemNo);
+    const address = cleanText(row?.address, 500);
+    if (address) addressSet.add(address);
+  }
+  if (!idSet.size && !itemNoSet.size && !addressSet.size) return [];
+
+  const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`);
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const propertyId = cleanText(row?.property_id, 120);
+    const itemNo = cleanText(row?.property_item_no, 120);
+    const address = cleanText(row?.property_address, 500);
+    return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
+  });
+}
+
 async function handleActivityLog(req, res) {
   if (!hasSupabaseAdminEnv()) {
     return send(res, 501, { ok: false, message: '일일업무일지 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
@@ -321,14 +391,14 @@ async function handleActivityLog(req, res) {
         query += '&order=actor_name.asc.nullslast,created_at.desc';
         rows = await supabaseRest(query);
       } else {
+        const actorNames = collectActorNameCandidates(ctx);
         const byActorId = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
         const rowsById = await supabaseRest(byActorId);
-        let rowsByName = [];
-        if (actorName) {
-          const byActorName = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(actorName)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
-          rowsByName = await supabaseRest(byActorName);
-        }
+        const rowsByName = await fetchRowsByActorNames(baseSelect, date, actorNames);
         rows = mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId);
+        if (!rows.length) {
+          rows = await fetchRowsByAssignedProperties(baseSelect, date, actorId);
+        }
       }
       return send(res, 200, {
         ok: true,
@@ -341,6 +411,8 @@ async function handleActivityLog(req, res) {
         debug: {
           queryMode: adminViewRequested ? 'admin_view' : 'self_view',
           actorIdRows: Array.isArray(rows) ? rows.filter((row) => String(row?.actor_id || '').trim() === String(actorId || '').trim()).length : 0,
+          actorNameCandidates: adminViewRequested ? [] : collectActorNameCandidates(ctx),
+          fallbackMode: adminViewRequested ? null : (Array.isArray(rows) && rows.length ? 'actor_or_name_or_assigned_property' : 'empty'),
         },
       });
     } catch (err) {

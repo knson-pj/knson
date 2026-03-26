@@ -275,6 +275,39 @@
     } catch {}
   }
 
+  function getDailyReportCacheKey(dateKey = getTodayDateKey()) {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return `knson_daily_report_cache_v1:${uid}:${String(dateKey || "").trim()}`;
+  }
+
+  function loadDailyReportCache(dateKey = getTodayDateKey()) {
+    try {
+      const raw = localStorage.getItem(getDailyReportCacheKey(dateKey));
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || typeof parsed !== "object") return null;
+      const counts = { ...emptyDailyReportCounts(), ...(parsed.counts || {}) };
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+      return { dateKey: String(parsed.dateKey || dateKey || "").trim(), counts, items, loadedAt: Number(parsed.loadedAt || 0) || 0 };
+    } catch {
+      return null;
+    }
+  }
+
+  function saveDailyReportCache(snapshot) {
+    try {
+      if (!snapshot || typeof snapshot !== "object") return;
+      const dateKey = String(snapshot.dateKey || getTodayDateKey()).trim();
+      if (!dateKey) return;
+      const payload = {
+        dateKey,
+        counts: { ...emptyDailyReportCounts(), ...(snapshot.counts || {}) },
+        items: Array.isArray(snapshot.items) ? snapshot.items : [],
+        loadedAt: Number(snapshot.loadedAt || Date.now()) || Date.now(),
+      };
+      localStorage.setItem(getDailyReportCacheKey(dateKey), JSON.stringify(payload));
+    } catch {}
+  }
+
   function getActorIdentity(user) {
     return {
       id: String(user?.id || user?.email || "").trim(),
@@ -386,18 +419,48 @@
     state.dailyReport.loading = true;
     try {
       const data = await apiJson(`/properties?daily_report=1&date=${encodeURIComponent(dateKey)}`);
-      const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
-      state.dailyReport = {
-        dateKey,
-        counts: nextCounts,
-        items: Array.isArray(data?.items) ? data.items : [],
-        loadedAt: Date.now(),
-        loading: false,
-      };
+      const fetchedCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
+      const fetchedItems = Array.isArray(data?.items) ? data.items : [];
+      const cache = loadDailyReportCache(dateKey);
+      const shouldUseCache = !fetchedItems.length && Number(fetchedCounts.total || 0) === 0 && Array.isArray(cache?.items) && cache.items.length > 0;
+      const nextSnapshot = shouldUseCache
+        ? {
+            dateKey,
+            counts: { ...emptyDailyReportCounts(), ...(cache?.counts || {}) },
+            items: Array.isArray(cache?.items) ? cache.items : [],
+            loadedAt: Number(cache?.loadedAt || Date.now()) || Date.now(),
+            loading: false,
+            fromCache: true,
+          }
+        : {
+            dateKey,
+            counts: fetchedCounts,
+            items: fetchedItems,
+            loadedAt: Date.now(),
+            loading: false,
+            fromCache: false,
+          };
+      state.dailyReport = nextSnapshot;
+      if (!shouldUseCache && (nextSnapshot.items.length || Number(nextSnapshot.counts.total || 0) > 0)) {
+        saveDailyReportCache(nextSnapshot);
+      }
       renderDailyReport();
-      return nextCounts;
+      return nextSnapshot.counts || emptyDailyReportCounts();
     } catch (err) {
       state.dailyReport.loading = false;
+      const cache = loadDailyReportCache(dateKey);
+      if (cache && Array.isArray(cache.items) && cache.items.length) {
+        state.dailyReport = {
+          dateKey,
+          counts: { ...emptyDailyReportCounts(), ...(cache.counts || {}) },
+          items: cache.items,
+          loadedAt: Number(cache.loadedAt || Date.now()) || Date.now(),
+          loading: false,
+          fromCache: true,
+        };
+        renderDailyReport();
+        return state.dailyReport.counts || emptyDailyReportCounts();
+      }
       if (!options.silent) throw err;
       return state.dailyReport.counts || emptyDailyReportCounts();
     }
