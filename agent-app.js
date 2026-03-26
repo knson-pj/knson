@@ -16,16 +16,7 @@
   const sharedApiJson = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
-        getAuthToken: async () => {
-          // 담당자 페이지는 목록 조회는 live Supabase session, API 호출은 저장된 bearer 를 사용한다.
-          // 둘이 어긋나면 신규등록은 보이는데 일일업무일지 actor 가 다른 사용자로 찍힐 수 있어
-          // 인증이 필요한 요청마다 먼저 local session 을 동기화해 최신 토큰을 사용한다.
-          if (isSupabaseMode() && K && typeof K.sbSyncLocalSession === "function") {
-            try { await K.sbSyncLocalSession(); } catch {}
-            state.session = loadSession() || state.session;
-          }
-          return getSessionToken();
-        },
+        getAuthToken: () => getSessionToken(),
         ensureAuthToken: async () => {
           if (isSupabaseMode() && K && typeof K.sbSyncLocalSession === "function") {
             try { await K.sbSyncLocalSession(); } catch {}
@@ -182,6 +173,7 @@
     els.globalMsg = $("#globalMsg");
 
     els.dailyReportModal = $("#dailyReportModal");
+    els.dailyReportView = $("#ag-view-dailyreport");
     els.dailyReportClose = $("#dailyReportClose");
     els.dailyReportDone = $("#dailyReportDone");
     els.dailyReportTotal = $("#dailyReportTotal");
@@ -272,39 +264,6 @@
   function saveDailyReportNote(value) {
     try {
       localStorage.setItem(getDailyReportNoteKey(), String(value || ""));
-    } catch {}
-  }
-
-  function getDailyReportCacheKey(dateKey = getTodayDateKey()) {
-    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
-    return `knson_daily_report_cache_v1:${uid}:${String(dateKey || "").trim()}`;
-  }
-
-  function loadDailyReportCache(dateKey = getTodayDateKey()) {
-    try {
-      const raw = localStorage.getItem(getDailyReportCacheKey(dateKey));
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed || typeof parsed !== "object") return null;
-      const counts = { ...emptyDailyReportCounts(), ...(parsed.counts || {}) };
-      const items = Array.isArray(parsed.items) ? parsed.items : [];
-      return { dateKey: String(parsed.dateKey || dateKey || "").trim(), counts, items, loadedAt: Number(parsed.loadedAt || 0) || 0 };
-    } catch {
-      return null;
-    }
-  }
-
-  function saveDailyReportCache(snapshot) {
-    try {
-      if (!snapshot || typeof snapshot !== "object") return;
-      const dateKey = String(snapshot.dateKey || getTodayDateKey()).trim();
-      if (!dateKey) return;
-      const payload = {
-        dateKey,
-        counts: { ...emptyDailyReportCounts(), ...(snapshot.counts || {}) },
-        items: Array.isArray(snapshot.items) ? snapshot.items : [],
-        loadedAt: Number(snapshot.loadedAt || Date.now()) || Date.now(),
-      };
-      localStorage.setItem(getDailyReportCacheKey(dateKey), JSON.stringify(payload));
     } catch {}
   }
 
@@ -412,6 +371,26 @@
     }
   }
 
+  function isDailyReportVisible() {
+    const modalVisible = !!(els.dailyReportModal && !els.dailyReportModal.classList.contains("hidden"));
+    const viewVisible = !!(els.dailyReportView && !els.dailyReportView.classList.contains("hidden"));
+    return modalVisible || viewVisible;
+  }
+
+  async function enterDailyReportView(options = {}) {
+    if (typeof window.showDailyReportView === "function" && options.skipSwitch !== true) {
+      try { window.showDailyReportView(); } catch {}
+    }
+    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
+    renderDailyReport();
+    try {
+      await refreshDailyReportSummary({ force: true });
+      setGlobalMsg("");
+    } catch (err) {
+      setGlobalMsg(err?.message || "일일업무일지 조회 실패");
+    }
+  }
+
   async function refreshDailyReportSummary(options = {}) {
     const dateKey = String(options.dateKey || getTodayDateKey()).trim();
     if (!dateKey) return state.dailyReport.counts || emptyDailyReportCounts();
@@ -419,48 +398,18 @@
     state.dailyReport.loading = true;
     try {
       const data = await apiJson(`/properties?daily_report=1&date=${encodeURIComponent(dateKey)}`);
-      const fetchedCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
-      const fetchedItems = Array.isArray(data?.items) ? data.items : [];
-      const cache = loadDailyReportCache(dateKey);
-      const shouldUseCache = !fetchedItems.length && Number(fetchedCounts.total || 0) === 0 && Array.isArray(cache?.items) && cache.items.length > 0;
-      const nextSnapshot = shouldUseCache
-        ? {
-            dateKey,
-            counts: { ...emptyDailyReportCounts(), ...(cache?.counts || {}) },
-            items: Array.isArray(cache?.items) ? cache.items : [],
-            loadedAt: Number(cache?.loadedAt || Date.now()) || Date.now(),
-            loading: false,
-            fromCache: true,
-          }
-        : {
-            dateKey,
-            counts: fetchedCounts,
-            items: fetchedItems,
-            loadedAt: Date.now(),
-            loading: false,
-            fromCache: false,
-          };
-      state.dailyReport = nextSnapshot;
-      if (!shouldUseCache && (nextSnapshot.items.length || Number(nextSnapshot.counts.total || 0) > 0)) {
-        saveDailyReportCache(nextSnapshot);
-      }
+      const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
+      state.dailyReport = {
+        dateKey,
+        counts: nextCounts,
+        items: Array.isArray(data?.items) ? data.items : [],
+        loadedAt: Date.now(),
+        loading: false,
+      };
       renderDailyReport();
-      return nextSnapshot.counts || emptyDailyReportCounts();
+      return nextCounts;
     } catch (err) {
       state.dailyReport.loading = false;
-      const cache = loadDailyReportCache(dateKey);
-      if (cache && Array.isArray(cache.items) && cache.items.length) {
-        state.dailyReport = {
-          dateKey,
-          counts: { ...emptyDailyReportCounts(), ...(cache.counts || {}) },
-          items: cache.items,
-          loadedAt: Number(cache.loadedAt || Date.now()) || Date.now(),
-          loading: false,
-          fromCache: true,
-        };
-        renderDailyReport();
-        return state.dailyReport.counts || emptyDailyReportCounts();
-      }
       if (!options.silent) throw err;
       return state.dailyReport.counts || emptyDailyReportCounts();
     }
@@ -579,18 +528,11 @@
   }
 
   async function openDailyReportModal() {
-    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
-    renderDailyReport();
+    await enterDailyReportView();
     if (!els.dailyReportModal) return;
     document.body.classList.add("modal-open");
     els.dailyReportModal.classList.remove("hidden");
     els.dailyReportModal.setAttribute("aria-hidden", "false");
-    try {
-      await refreshDailyReportSummary({ force: true });
-      setGlobalMsg("");
-    } catch (err) {
-      setGlobalMsg(err?.message || "일일업무일지 조회 실패");
-    }
   }
 
   function closeDailyReportModal() {
@@ -626,13 +568,14 @@
 
   async function recordDailyReportEntries(entries) {
     const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.actionType);
-    if (!safeEntries.length) return null;
-    const result = await apiJson('/properties', {
+    if (!safeEntries.length) return;
+    await apiJson('/properties', {
       method: 'POST',
       json: { action: 'daily_report_log', entries: safeEntries },
     });
-    await refreshDailyReportSummary({ force: true, silent: true });
-    return result || null;
+    if (els.dailyReportModal && !els.dailyReportModal.classList.contains('hidden')) {
+      await refreshDailyReportSummary({ force: true, silent: true });
+    }
   }
 
   function setupChrome() {
@@ -703,6 +646,7 @@
         saveDailyReportNote(els.dailyReportNote.value || "");
       }, 120));
     }
+    window.__agentDailyReportEnter = () => enterDailyReportView({ skipSwitch: true });
 
     // 신규 물건 등록 모달
     if (els.btnNewProperty) els.btnNewProperty.addEventListener("click", openNewPropertyModal);
@@ -1205,7 +1149,7 @@
   function renderAll() {
     renderSummary();
     renderTable();
-    if (els.dailyReportModal && !els.dailyReportModal.classList.contains("hidden")) renderDailyReport();
+    if (isDailyReportVisible()) renderDailyReport();
   }
 
   function renderSummary() {

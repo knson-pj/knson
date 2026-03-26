@@ -146,9 +146,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./knson-core.js?v=20260320-agent"></script>
-<script src="./knson-shared.js?v=20260325-shared1"></script>
-<script src="./knson-property-domain.js?v=20260326-domain1"></script>
-<script src="./agent-app.js?v=20260326-domain1"></script>
+<script src="./agent-app.js?v=20260325-ui2"></script>
 
 <script>
 (function(){
@@ -169,6 +167,7 @@
     var active=document.querySelector('#agentSidebarNav .sidebar-nav-item.is-active');
     if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(!gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
     if(titleEl&&TITLES[viewName])titleEl.textContent=TITLES[viewName];
+    if(viewName==='dailyreport' && typeof window.__agentDailyReportEnter==='function'){window.__agentDailyReportEnter();}
   }
 
   document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(item){
