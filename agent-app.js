@@ -16,7 +16,16 @@
   const sharedApiJson = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
-        getAuthToken: () => getSessionToken(),
+        getAuthToken: async () => {
+          // 담당자 페이지는 목록 조회는 live Supabase session, API 호출은 저장된 bearer 를 사용한다.
+          // 둘이 어긋나면 신규등록은 보이는데 일일업무일지 actor 가 다른 사용자로 찍힐 수 있어
+          // 인증이 필요한 요청마다 먼저 local session 을 동기화해 최신 토큰을 사용한다.
+          if (isSupabaseMode() && K && typeof K.sbSyncLocalSession === "function") {
+            try { await K.sbSyncLocalSession(); } catch {}
+            state.session = loadSession() || state.session;
+          }
+          return getSessionToken();
+        },
         ensureAuthToken: async () => {
           if (isSupabaseMode() && K && typeof K.sbSyncLocalSession === "function") {
             try { await K.sbSyncLocalSession(); } catch {}
@@ -554,12 +563,13 @@
 
   async function recordDailyReportEntries(entries) {
     const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.actionType);
-    if (!safeEntries.length) return;
-    await apiJson('/properties', {
+    if (!safeEntries.length) return null;
+    const result = await apiJson('/properties', {
       method: 'POST',
       json: { action: 'daily_report_log', entries: safeEntries },
     });
     await refreshDailyReportSummary({ force: true, silent: true });
+    return result || null;
   }
 
   function setupChrome() {

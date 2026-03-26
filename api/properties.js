@@ -262,20 +262,24 @@ async function insertActivityEntries(entries, ctx) {
   };
 }
 
+
 function mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId) {
+  const idRows = Array.isArray(rowsById) ? rowsById : [];
+  const nameRows = Array.isArray(rowsByName) ? rowsByName : [];
   const out = [];
   const seen = new Set();
+  const allowLooseNameFallback = !idRows.length;
   const add = (row, source) => {
     if (!row || typeof row !== 'object') return;
-    const actorIdValue = cleanText(row.actor_id, 120);
-    if (source === 'name' && actorIdValue && actorId && actorIdValue !== actorId) return;
+    const actorIdValue = cleanText(row?.actor_id, 120);
+    if (source === 'name' && !allowLooseNameFallback && actorIdValue && actorId && actorIdValue !== actorId) return;
     const key = String(row.id || `${row.actor_id || ''}|${row.property_id || ''}|${row.property_identity_key || ''}|${row.property_item_no || ''}|${row.property_address || ''}|${row.action_type || ''}|${row.created_at || ''}`).trim();
     if (!key || seen.has(key)) return;
     seen.add(key);
     out.push(row);
   };
-  (Array.isArray(rowsById) ? rowsById : []).forEach((row) => add(row, 'id'));
-  (Array.isArray(rowsByName) ? rowsByName : []).forEach((row) => add(row, 'name'));
+  idRows.forEach((row) => add(row, 'id'));
+  nameRows.forEach((row) => add(row, 'name'));
   out.sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
   return out;
 }
@@ -334,6 +338,10 @@ async function handleActivityLog(req, res) {
         adminView: adminViewRequested,
         counts: summarizeActivityRows(rows),
         items: Array.isArray(rows) ? rows : [],
+        debug: {
+          queryMode: adminViewRequested ? 'admin_view' : 'self_view',
+          actorIdRows: Array.isArray(rows) ? rows.filter((row) => String(row?.actor_id || '').trim() === String(actorId || '').trim()).length : 0,
+        },
       });
     } catch (err) {
       const rawMessage = err?.message || '일일업무일지 조회 실패';
@@ -362,6 +370,8 @@ async function handleActivityLog(req, res) {
         ok: true,
         createdCount: Array.isArray(created) ? created.length : 0,
         items: Array.isArray(created) ? created : [],
+        actorId: ctx.userId,
+        actorName: cleanText(ctx.name || ctx.email || '', 120),
       });
     } catch (err) {
       const rawMessage = err?.message || '일일업무일지 기록 실패';

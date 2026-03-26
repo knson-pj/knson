@@ -583,8 +583,13 @@
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
+
+    // 관리자 화면에서는 브라우저 직결 Supabase update 를 타지 않고,
+    // 현재 실제 구현되어 있는 /api/properties PATCH 경로만 사용한다.
+    // 이전의 /admin/properties*, /properties/:id 경로는 이 레포에 존재하지 않아
+    // 외부 API_BASE 환경에서 preflight 실패 -> Failed to fetch 로 이어질 수 있다.
     if (sb && !isAdmin) {
-      const nextRaw = utils.mergePropertyRaw(item, patch);
       const dbPatch = {
         item_no: patch.itemNo,
         source_type: patch.sourceType,
@@ -608,35 +613,18 @@
         memo: patch.opinion,
         latitude: patch.latitude,
         longitude: patch.longitude,
-        raw: nextRaw,
+        raw: payload.raw,
       };
       Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
       await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
       return;
     }
-    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
-    const candidates = [];
-    if (isAdmin) {
-      candidates.push({ path: '/admin/properties', method: 'PATCH' });
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: 'PATCH' });
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: 'PUT' });
-    }
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: 'PATCH' });
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: 'PUT' });
-    candidates.push({ path: '/properties/update', method: 'POST' });
-    candidates.push({ path: '/admin/properties/update', method: 'POST' });
-    let lastErr = null;
-    for (const c of candidates) {
-      try {
-        await api(c.path, { method: c.method, auth: true, body: payload });
-        return;
-      } catch (e) {
-        lastErr = e;
-        const msg = String(e?.message || '');
-        if (msg.includes('404') || msg.includes('405') || msg.includes('not found')) continue;
-      }
-    }
-    throw lastErr || new Error('저장 실패');
+
+    await api('/properties', {
+      method: 'PATCH',
+      auth: true,
+      body: { targetId, patch: payload },
+    });
   };
 
   mod.handleDeleteProperty = async function handleDeleteProperty() {
