@@ -262,6 +262,24 @@ async function insertActivityEntries(entries, ctx) {
   };
 }
 
+function mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId) {
+  const out = [];
+  const seen = new Set();
+  const add = (row, source) => {
+    if (!row || typeof row !== 'object') return;
+    const actorIdValue = cleanText(row.actor_id, 120);
+    if (source === 'name' && actorIdValue && actorId && actorIdValue !== actorId) return;
+    const key = String(row.id || `${row.actor_id || ''}|${row.property_id || ''}|${row.property_identity_key || ''}|${row.property_item_no || ''}|${row.property_address || ''}|${row.action_type || ''}|${row.created_at || ''}`).trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(row);
+  };
+  (Array.isArray(rowsById) ? rowsById : []).forEach((row) => add(row, 'id'));
+  (Array.isArray(rowsByName) ? rowsByName : []).forEach((row) => add(row, 'name'));
+  out.sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
+  return out;
+}
+
 async function handleActivityLog(req, res) {
   if (!hasSupabaseAdminEnv()) {
     return send(res, 501, { ok: false, message: '일일업무일지 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
@@ -300,11 +318,13 @@ async function handleActivityLog(req, res) {
         rows = await supabaseRest(query);
       } else {
         const byActorId = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
-        rows = await supabaseRest(byActorId);
-        if ((!Array.isArray(rows) || !rows.length) && actorName) {
+        const rowsById = await supabaseRest(byActorId);
+        let rowsByName = [];
+        if (actorName) {
           const byActorName = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(actorName)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
-          rows = await supabaseRest(byActorName);
+          rowsByName = await supabaseRest(byActorName);
         }
+        rows = mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId);
       }
       return send(res, 200, {
         ok: true,

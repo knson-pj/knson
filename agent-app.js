@@ -559,9 +559,7 @@
       method: 'POST',
       json: { action: 'daily_report_log', entries: safeEntries },
     });
-    if (els.dailyReportModal && !els.dailyReportModal.classList.contains('hidden')) {
-      await refreshDailyReportSummary({ force: true, silent: true });
-    }
+    await refreshDailyReportSummary({ force: true, silent: true });
   }
 
   function setupChrome() {
@@ -1035,7 +1033,6 @@
   }
 
   function mergeMeaningfulShallow(baseObj, incomingObj) {
-    if (PropertyDomain && typeof PropertyDomain.mergeMeaningfulShallow === "function") return PropertyDomain.mergeMeaningfulShallow(baseObj, incomingObj);
     const out = { ...(baseObj || {}) };
     Object.entries(incomingObj || {}).forEach(([key, value]) => {
       if (!hasMeaningfulValue(value)) return;
@@ -1851,9 +1848,6 @@
   }
 
   function loadRegistrationLog(item) {
-    if (PropertyDomain && typeof PropertyDomain.loadRegistrationLog === "function") {
-      return PropertyDomain.loadRegistrationLog(item, { defaultRoute: "최초 등록" });
-    }
     const raw = item?._raw?.raw || {};
     if (Array.isArray(raw.registrationLog) && raw.registrationLog.length) return raw.registrationLog;
     const createdAt = firstText(raw.firstRegisteredAt, item?.createdAt, item?._raw?.created_at, item?._raw?.createdAt, "");

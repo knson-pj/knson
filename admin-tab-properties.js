@@ -583,7 +583,7 @@
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    if (sb) {
+    if (sb && !isAdmin) {
       const nextRaw = utils.mergePropertyRaw(item, patch);
       const dbPatch = {
         item_no: patch.itemNo,
@@ -611,12 +611,8 @@
         raw: nextRaw,
       };
       Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
-      try {
-        await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
-        return;
-      } catch (error) {
-        if (!isAdmin || error?.code !== 'NO_ROWS_UPDATED') throw error;
-      }
+      await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
+      return;
     }
     const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
     const candidates = [];
