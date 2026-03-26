@@ -362,6 +362,7 @@
   }
 
   function mergeMeaningfulShallow(baseObj, incomingObj) {
+    if (PropertyDomain && typeof PropertyDomain.mergeMeaningfulShallow === 'function') return PropertyDomain.mergeMeaningfulShallow(baseObj, incomingObj);
     const out = { ...(baseObj || {}) };
     Object.entries(incomingObj || {}).forEach(([key, value]) => {
       if (!hasMeaningfulValue(value)) return;

@@ -196,6 +196,36 @@
     return nextRaw;
   }
 
+  function loadRegistrationLog(item, options = {}) {
+    const raw = item?._raw?.raw || item?.raw || {};
+    if (Array.isArray(raw.registrationLog) && raw.registrationLog.length) return raw.registrationLog;
+    const createdAt = pickFirstText(
+      raw.firstRegisteredAt,
+      item?.createdAt,
+      item?._raw?.created_at,
+      item?._raw?.createdAt,
+      item?.created_at,
+      item?.createdAt,
+      ""
+    );
+    if (!createdAt) return [];
+    return [{
+      type: "created",
+      at: createdAt,
+      route: String(options.defaultRoute || "최초 등록").trim() || "최초 등록",
+      actor: String(options.defaultActor || "").trim(),
+    }];
+  }
+
+  function mergeMeaningfulShallow(baseObj, incomingObj) {
+    const out = { ...(baseObj || {}) };
+    Object.entries(incomingObj || {}).forEach(([key, value]) => {
+      if (!hasMeaningfulValue(value)) return;
+      out[key] = value;
+    });
+    return out;
+  }
+
   function loadOpinionHistory(item) {
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
@@ -234,6 +264,8 @@
     buildRegisterLogContext,
     ensureRegistrationCreatedLog,
     appendRegistrationLog,
+    loadRegistrationLog,
+    mergeMeaningfulShallow,
     loadOpinionHistory,
     appendOpinionEntry,
   };

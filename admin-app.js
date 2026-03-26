@@ -1364,6 +1364,7 @@ function bindEvents() {
   }
 
   function parseFloorNumberForLog(value) {
+    if (PropertyDomain && typeof PropertyDomain.parseFloorNumberForLog === "function") return PropertyDomain.parseFloorNumberForLog(value);
     const s = String(value || "").trim();
     if (!s) return "";
     let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
@@ -1377,6 +1378,7 @@ function bindEvents() {
   }
 
   function parseAddressIdentityParts(address) {
+    if (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === "function") return PropertyDomain.parseAddressIdentityParts(address);
     const text = String(address || "").trim().replace(/\s+/g, " ");
     const compact = compactAddressText ? compactAddressText(text) : text.replace(/\s+/g, "");
     if (!compact) return { dong: "", mainNo: "", subNo: "" };
@@ -1411,6 +1413,7 @@ function bindEvents() {
   }
 
   function extractHoNumberForLog(data) {
+    if (PropertyDomain && typeof PropertyDomain.extractHoNumberForLog === "function") return PropertyDomain.extractHoNumberForLog(data);
     const explicitValues = [data?.ho, data?.unit, data?.room, data?.raw?.ho, data?.raw?.unit, data?.raw?.room];
     for (const value of explicitValues) {
       const s = String(value || "").trim();
@@ -1431,6 +1434,7 @@ function bindEvents() {
   }
 
   function buildRegistrationMatchKey(data) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationMatchKey === "function") return PropertyDomain.buildRegistrationMatchKey(data);
     const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, ""));
     const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, "")) || "0";
     const hoKey = extractHoNumberForLog(data) || "0";
@@ -1439,6 +1443,7 @@ function bindEvents() {
   }
 
   function attachRegistrationIdentity(raw, data) {
+    if (PropertyDomain && typeof PropertyDomain.attachRegistrationIdentity === "function") return PropertyDomain.attachRegistrationIdentity(raw, data);
     const nextRaw = { ...(raw || {}) };
     const parts = parseAddressIdentityParts(firstText(data?.address, data?.raw?.address, nextRaw.address, ""));
     const floorKey = parseFloorNumberForLog(firstText(data?.floor, data?.raw?.floor, nextRaw.floor, ""));
@@ -1535,6 +1540,9 @@ function bindEvents() {
   }
 
   function loadRegistrationLog(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadRegistrationLog === "function") {
+      return PropertyDomain.loadRegistrationLog(item, { defaultRoute: "최초 등록" });
+    }
     const raw = item?._raw?.raw || {};
     if (Array.isArray(raw.registrationLog) && raw.registrationLog.length) return raw.registrationLog;
     const createdAt = firstText(raw.firstRegisteredAt, item?.createdAt, item?._raw?.created_at, item?._raw?.createdAt, "");
@@ -1543,6 +1551,7 @@ function bindEvents() {
   }
 
   function appendRegistrationCreateLog(raw, context) {
+    if (PropertyDomain && typeof PropertyDomain.ensureRegistrationCreatedLog === "function") return PropertyDomain.ensureRegistrationCreatedLog(raw, context);
     const nextRaw = { ...(raw || {}) };
     const firstAt = firstText(nextRaw.firstRegisteredAt, context?.at, new Date().toISOString());
     const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
@@ -1555,6 +1564,7 @@ function bindEvents() {
   }
 
   function appendRegistrationChangeLog(raw, context, changes) {
+    if (PropertyDomain && typeof PropertyDomain.appendRegistrationLog === "function") return PropertyDomain.appendRegistrationLog(raw, context, changes);
     const nextRaw = appendRegistrationCreateLog(raw, context);
     if (Array.isArray(changes) && changes.length) {
       nextRaw.registrationLog = [...nextRaw.registrationLog, {
@@ -1569,6 +1579,7 @@ function bindEvents() {
   }
 
   function mergeMeaningfulShallow(baseObj, incomingObj) {
+    if (PropertyDomain && typeof PropertyDomain.mergeMeaningfulShallow === "function") return PropertyDomain.mergeMeaningfulShallow(baseObj, incomingObj);
     const out = { ...(baseObj || {}) };
     Object.entries(incomingObj || {}).forEach(([key, value]) => {
       if (!hasMeaningfulValue(value)) return;
