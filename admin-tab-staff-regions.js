@@ -130,9 +130,6 @@
           body: { name: payload.name, position: payload.position, phone: payload.phone, role: payload.role },
         });
         saved = res?.item || null;
-        if (saved) {
-          state.staff = state.staff.map((row) => String(row.id) === String(id) ? normalizeStaff(saved) : row);
-        }
       } else {
         const res = await api("/admin/staff", {
           method: "POST",
@@ -140,18 +137,10 @@
           body: payload,
         });
         saved = res?.item || null;
-        if (saved) {
-          state.staff = [normalizeStaff(saved), ...state.staff.filter((row) => String(row.id) !== String(saved.id))];
-        }
       }
       mod.resetStaffForm();
-      if (saved) {
-        mod.renderStaffTable();
-        mod.renderAssignmentTable();
-        renderSummary();
-      } else {
-        await mod.loadStaff();
-      }
+      await mod.loadStaff();
+      renderSummary();
       alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
     } catch (err) {
       console.error(err);
