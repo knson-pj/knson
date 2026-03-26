@@ -322,18 +322,24 @@
           <button id="btnWorkMgmtRefresh" class="btn btn-secondary">새로고침</button>
         </div>
       </div>
-      <div class="work-mgmt-shell">
-        <div id="workMgmtMeta" class="work-mgmt-meta"></div>
-        <div id="workMgmtCanvas" class="work-mgmt-canvas">
-          <div><div id="workMgmtActors" class="work-mgmt-actors"></div></div>
-          <div class="work-mgmt-map">
-            <div class="work-mgmt-axis" aria-hidden="true"></div>
-            <div class="work-mgmt-rows-wrap">
-              <div id="workMgmtRows" class="work-mgmt-rows"></div>
-              <div id="workMgmtEmpty" class="empty hidden">표시할 업무 로그가 없습니다.</div>
-            </div>
-          </div>
+      <div class="workmgmt-shell-v2">
+        <div id="workMgmtMeta" class="workmgmt-meta-v2"></div>
+        <div id="workMgmtBoard" class="workmgmt-board">
+          <section class="workmgmt-col workmgmt-col-actors">
+            <div class="workmgmt-col-head"><span class="workmgmt-col-bar"></span><h3>담당자 현황</h3></div>
+            <div id="workMgmtActors" class="workmgmt-actor-list"></div>
+          </section>
+          <section class="workmgmt-col workmgmt-col-properties">
+            <div class="workmgmt-col-head"><span class="workmgmt-col-bar is-warm"></span><h3>관리 물건</h3></div>
+            <div id="workMgmtRows" class="workmgmt-property-list"></div>
+          </section>
+          <section class="workmgmt-col workmgmt-col-logs">
+            <div class="workmgmt-col-head"><span class="workmgmt-col-bar is-brand"></span><h3>업무 로그</h3></div>
+            <div id="workMgmtLogs" class="workmgmt-log-list"></div>
+            <div id="workMgmtEmpty" class="workmgmt-empty hidden">표시할 업무 로그가 없습니다.</div>
+          </section>
         </div>
+        <div id="workMgmtStats" class="workmgmt-stats"></div>
       </div>
     </section>
 
