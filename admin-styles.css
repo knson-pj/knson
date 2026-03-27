@@ -955,7 +955,7 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 ══════════════════════════════════════════════════ */
 .workmgmt-shell-v2{display:grid;gap:20px;}
 .workmgmt-meta-v2{font-size:13px;font-weight:600;color:var(--text-2);padding-left:2px;}
-.workmgmt-board{display:grid;grid-template-columns:minmax(220px,280px) minmax(320px,1fr) minmax(320px,420px);gap:24px;align-items:start;}
+.workmgmt-board{display:grid;grid-template-columns:minmax(220px,280px) minmax(360px,720px) minmax(320px,1fr);gap:24px;align-items:start;}
 .workmgmt-col{display:grid;gap:14px;min-width:0;}
 .workmgmt-col-head{display:flex;align-items:center;gap:10px;padding-left:2px;}
 .workmgmt-col-head h3{font-size:18px;font-weight:800;letter-spacing:-.02em;color:var(--text);}
@@ -977,13 +977,13 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .workmgmt-chip{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:-.01em;}
 .workmgmt-chip.is-soft{background:#f5f6f8;color:var(--text-2);}
 .workmgmt-chip.is-brand{background:rgba(243,115,33,.12);color:var(--brand);}
-.workmgmt-property-card{display:grid;grid-template-columns:112px minmax(0,1fr);gap:0;padding:6px;overflow:hidden;}
-.workmgmt-property-thumb{min-height:128px;border-radius:18px;display:flex;align-items:flex-end;justify-content:flex-start;padding:14px;color:#fff;font-size:14px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(180deg,#c7b18c 0%,#9f7a44 100%);}
-.workmgmt-property-thumb.is-auction{background:linear-gradient(180deg,#b581f2 0%,#7e22ce 100%);}
-.workmgmt-property-thumb.is-onbid{background:linear-gradient(180deg,#4a90ff 0%,#1d4ed8 100%);}
-.workmgmt-property-thumb.is-realtor{background:linear-gradient(180deg,#2ad06f 0%,#059669 100%);}
-.workmgmt-property-thumb.is-general{background:linear-gradient(180deg,#d8bf7a 0%,#b9891b 100%);}
-.workmgmt-property-body{display:grid;gap:10px;padding:14px 14px 14px 16px;min-width:0;}
+.workmgmt-property-card{display:block;padding:10px 12px;overflow:hidden;}
+
+
+
+
+
+.workmgmt-property-body{display:grid;gap:8px;padding:10px 12px;min-width:0;}.workmgmt-property-body.is-compact{padding:8px 10px;}
 .workmgmt-property-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .workmgmt-property-type{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#f5f6f8;color:var(--text-2);}
 .workmgmt-property-type.is-auction{background:rgba(147,51,234,.10);color:var(--c-auction);}
@@ -991,9 +991,9 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .workmgmt-property-type.is-realtor{background:rgba(5,150,105,.10);color:var(--c-realtor);}
 .workmgmt-property-type.is-general{background:rgba(217,119,6,.10);color:var(--c-general);}
 .workmgmt-property-mark{font-size:13px;color:var(--brand);}
-.workmgmt-property-title{font-size:18px;font-weight:800;line-height:1.34;letter-spacing:-.02em;color:var(--text);word-break:keep-all;}
+.workmgmt-property-title{font-size:18px;font-weight:800;line-height:1.4;letter-spacing:-.02em;color:var(--text);word-break:keep-all;}
 .workmgmt-property-address{font-size:12px;line-height:1.55;color:var(--text-2);word-break:break-word;}
-.workmgmt-property-meta-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;}
+.workmgmt-property-meta-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:2px;}
 .workmgmt-property-meta-text{font-size:12px;font-weight:600;color:var(--brand);}
 .workmgmt-property-amount{font-size:12px;font-weight:800;color:var(--text);white-space:nowrap;}
 .workmgmt-log-header{border:1px solid var(--border);background:linear-gradient(180deg,#fff9f5 0%,#ffffff 100%);border-radius:24px;padding:18px 20px;box-shadow:0 10px 30px rgba(0,0,0,.05);}
@@ -1017,7 +1017,7 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .workmgmt-empty{min-height:180px;display:grid;place-items:center;border:1px dashed var(--border-strong);border-radius:24px;background:var(--surface);font-size:13px;color:var(--text-3);padding:16px;}
 .workmgmt-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:4px;}
 .workmgmt-stat-card{border:1px solid var(--border);border-radius:22px;background:rgba(255,255,255,.84);backdrop-filter:blur(6px);padding:18px 20px;display:grid;gap:8px;box-shadow:0 8px 26px rgba(0,0,0,.04);}
-.workmgmt-stat-label{font-size:11px;font-weight:800;color:var(--text-2);text-transform:uppercase;letter-spacing:.07em;}
+.workmgmt-stat-label{font-size:12px;font-weight:800;color:var(--text-2);letter-spacing:-.01em;}
 .workmgmt-stat-value{font-size:32px;font-weight:900;letter-spacing:-.03em;color:var(--text);}
 .workmgmt-stat-card.is-brand .workmgmt-stat-value{color:var(--brand);}
 .workmgmt-stat-card.is-soft .workmgmt-stat-value{color:var(--c-onbid);}
@@ -1025,9 +1025,9 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .workmgmt-stat-card.is-danger .workmgmt-stat-value{color:var(--danger);}
 
 @media(max-width:1280px){
-  .workmgmt-board{grid-template-columns:minmax(220px,260px) minmax(300px,1fr) minmax(280px,360px);gap:20px;}
-  .workmgmt-property-card{grid-template-columns:96px minmax(0,1fr);}
-  .workmgmt-property-thumb{min-height:116px;}
+  .workmgmt-board{grid-template-columns:minmax(220px,250px) minmax(320px,620px) minmax(280px,1fr);gap:20px;}
+
+
 }
 @media(max-width:1080px){
   .workmgmt-board{grid-template-columns:1fr;}
@@ -1037,8 +1037,8 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 @media(max-width:720px){
   .panel-actions-inline.work-mgmt-actions{width:100%;justify-content:flex-start;flex-wrap:wrap;}
   .workmgmt-actor-list{grid-template-columns:1fr;}
-  .workmgmt-property-card{grid-template-columns:1fr;}
-  .workmgmt-property-thumb{min-height:88px;align-items:center;}
+
+
   .workmgmt-stats{grid-template-columns:1fr;}
   .workmgmt-col-head h3{font-size:16px;}
   .workmgmt-log-heading{font-size:18px;}

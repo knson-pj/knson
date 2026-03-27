@@ -261,31 +261,40 @@
     });
   }
 
-  function buildPropertyTitle(group) {
+  function formatFloorLabel(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    if (/층$/.test(raw)) return raw;
+    const numMatch = raw.match(/-?\d+/);
+    if (numMatch) return `${numMatch[0]}층`;
+    return raw;
+  }
+
+  function formatAreaLabel(value) {
     const { utils } = ctx();
+    if (value == null || value === '') return '';
+    const area = typeof utils.formatAreaPyeong === 'function' ? utils.formatAreaPyeong(value) : value;
+    return area ? `${area}평` : '';
+  }
+
+  function buildPropertyTitle(group) {
     const item = group?.item;
     const row = group?.row || {};
-    const address = String(item?.address || row?.property_address || '-').trim();
-    const floor = String(item?.floor || '').trim();
-    const area = item?.exclusivearea != null && item?.exclusivearea !== ''
-      ? `${typeof utils.formatAreaPyeong === 'function' ? utils.formatAreaPyeong(item.exclusivearea) : item.exclusivearea}평`
-      : '';
-    const parts = [address];
-    if (floor) parts.push(floor);
-    if (area) parts.push(area);
-    return parts.join(' | ');
+    return String(item?.address || row?.property_address || '-').trim();
   }
 
   function buildPropertySubMeta(group) {
     const item = group?.item || {};
     const row = group?.row || {};
     const parts = [];
-    const itemNo = String(item?.itemNo || row?.property_item_no || '').trim();
     const assetType = String(item?.assetType || item?.assettype || item?._raw?.asset_type || '').trim();
-    const status = String(item?.status || item?._raw?.status || '').trim();
-    if (itemNo) parts.push(itemNo);
+    const floor = formatFloorLabel(item?.floor || item?._raw?.floor || row?.property_floor || '');
+    const area = formatAreaLabel(item?.exclusivearea ?? item?.exclusive_area ?? item?.exclusiveArea ?? item?._raw?.exclusivearea ?? item?._raw?.exclusiveArea ?? row?.property_area);
+    const itemNo = String(item?.itemNo || row?.property_item_no || '').trim();
     if (assetType) parts.push(assetType);
-    if (status) parts.push(status);
+    if (floor) parts.push(floor);
+    if (area) parts.push(area);
+    if (itemNo) parts.push(itemNo);
     return parts.join(' · ');
   }
 
@@ -312,6 +321,64 @@
     return selectedActorId === 'all'
       ? items
       : items.filter((row) => String(row?.actor_id || '').trim() === selectedActorId);
+  }
+
+
+  function isSelectedActorProperty(item) {
+    const selectedActorId = localState.activeActorId || 'all';
+    if (selectedActorId === 'all') {
+      return candidateIds.length > 0;
+    }
+    const raw = item?._raw || {};
+    const candidateIds = [item?.assignedAgentId, item?.assigneeId, item?.assignee_id, raw.assignee_id, raw.assigneeId, raw.assignedAgentId]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+    return candidateIds.includes(selectedActorId);
+  }
+
+  function getAssignedProperties() {
+    const { state } = ctx();
+    const all = Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length ? state.propertiesFullCache : (state.properties || []);
+    return (Array.isArray(all) ? all : []).filter((item) => isSelectedActorProperty(item));
+  }
+
+  function getPropertyUniqueKey(input) {
+    const raw = input?._raw || {};
+    return String(
+      input?.globalId ||
+      input?.id ||
+      input?.itemNo ||
+      raw?.global_id ||
+      raw?.id ||
+      raw?.item_no ||
+      raw?.registrationIdentityKey ||
+      input?.address ||
+      ''
+    ).trim();
+  }
+
+  function getTodayPublicSubmissionCount(dateKey) {
+    const assigned = getAssignedProperties();
+    const unique = new Set();
+    for (const item of assigned) {
+      const createdAt = item?.createdAt || item?._raw?.created_at || item?._raw?.date_uploaded || item?._raw?.createdAt || '';
+      if (!sameDay(createdAt, dateKey)) continue;
+      const isPublic = String(item?.sourceType || '').trim() === 'general' || !!item?.isDirectSubmission;
+      if (!isPublic) continue;
+      const key = getPropertyUniqueKey(item);
+      if (key) unique.add(key);
+    }
+    return unique.size;
+  }
+
+  function getNewPropertyLogCount(items) {
+    const unique = new Set();
+    for (const row of Array.isArray(items) ? items : []) {
+      if (String(row?.action_type || '').trim() !== 'new_property') continue;
+      const key = pickPropertyKey(row);
+      if (key) unique.add(key);
+    }
+    return unique.size;
   }
 
   function ensureSelections(items, actors, groups) {
@@ -392,10 +459,7 @@
       const actionTotal = Object.values(group.counts).reduce((sum, v) => sum + Number(v || 0), 0);
       return `
         <button type="button" class="workmgmt-property-card ${selectedKey === group.propertyKey ? 'is-active' : 'is-dim'}" data-property-key="${esc(group.propertyKey)}">
-          <div class="workmgmt-property-thumb ${sourceClass(sourceType)}">
-            <span>${esc(sourceText)}</span>
-          </div>
-          <div class="workmgmt-property-body">
+          <div class="workmgmt-property-body is-compact">
             <div class="workmgmt-property-top">
               <span class="workmgmt-property-type ${sourceClass(sourceType)}">${esc(sourceText)}</span>
               <span class="workmgmt-property-mark">${selectedKey === group.propertyKey ? '●' : '○'}</span>
@@ -470,17 +534,17 @@
   function renderStats(groups, actors, allItems) {
     const container = document.getElementById('workMgmtStats');
     if (!container) return;
-    const selectedGroup = groups.find((group) => group.propertyKey === localState.activePropertyKey) || null;
-    const selectedActorLogs = localState.activeActorId === 'all'
-      ? allItems.length
-      : allItems.filter((row) => String(row?.actor_id || '').trim() === localState.activeActorId).length;
-    const selectedPropertyLogs = selectedGroup ? selectedGroup.rows.length : 0;
-    const selectedProperties = groups.length;
+    const assignedProperties = getAssignedProperties();
+    const assignedTotal = assignedProperties.length;
+    const managedTotal = groups.length;
+    const managedRate = assignedTotal > 0 ? ((managedTotal / assignedTotal) * 100) : 0;
+    const newPropertyCount = getNewPropertyLogCount(getSelectedActorItems(allItems));
+    const publicSubmissionCount = getTodayPublicSubmissionCount(localState.dateKey || getTodayDateKey());
     const stats = [
-      { label: '업무 로그', value: Number(allItems.length).toLocaleString('ko-KR'), accent: 'is-brand' },
-      { label: '담당자 수', value: Number(actors.length).toLocaleString('ko-KR'), accent: 'is-soft' },
-      { label: '선택 물건', value: Number(selectedProperties).toLocaleString('ko-KR'), accent: 'is-warm' },
-      { label: '선택 로그', value: Number(selectedPropertyLogs || selectedActorLogs).toLocaleString('ko-KR'), accent: 'is-danger' },
+      { label: '전체 배정 물건', value: Number(assignedTotal).toLocaleString('ko-KR'), accent: 'is-brand' },
+      { label: '관리 물건', value: Number(managedTotal).toLocaleString('ko-KR'), accent: 'is-soft' },
+      { label: '물건 관리율', value: `${managedRate.toFixed(2)}%`, accent: 'is-warm' },
+      { label: '신규 물건 등록수', value: Number(newPropertyCount + publicSubmissionCount).toLocaleString('ko-KR'), accent: 'is-danger' },
     ];
     container.innerHTML = stats.map((stat) => `
       <div class="workmgmt-stat-card ${stat.accent}">
