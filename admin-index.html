@@ -315,15 +315,14 @@
 
     <!-- 업무 관리 -->
     <section id="tab-workmgmt" class="panel tab-panel hidden">
-      <div class="panel-title-row">
-        <h2>업무 관리</h2>
+      <div class="panel-title-row workmgmt-header-row is-compact">
         <div class="panel-actions-inline work-mgmt-actions">
-          <label class="field work-mgmt-date-field"><span>기준일</span><input id="workMgmtDate" class="input" type="date" /></label>
+          <input id="workMgmtDate" class="input work-mgmt-date-input" type="date" />
           <button id="btnWorkMgmtRefresh" class="btn btn-secondary">새로고침</button>
         </div>
       </div>
       <div class="workmgmt-shell-v2">
-        <div id="workMgmtMeta" class="workmgmt-meta-v2"></div>
+        <div id="workMgmtMeta" class="workmgmt-meta-v2 hidden"></div>
         <div id="workMgmtBoard" class="workmgmt-board">
           <section class="workmgmt-col workmgmt-col-actors">
             <div class="workmgmt-col-head"><span class="workmgmt-col-bar"></span><h3>담당자 현황</h3></div>

@@ -3,7 +3,7 @@
   const mod = {};
   const localState = {
     activeActorId: 'all',
-    activePropertyKey: '',
+    activeGroupKey: '',
     dateKey: '',
     data: null,
     loading: false,
@@ -66,6 +66,108 @@
   function sourceClass(sourceType) {
     const map = { auction: 'is-auction', onbid: 'is-onbid', realtor: 'is-realtor', general: 'is-general' };
     return map[String(sourceType || '').trim()] || 'is-general';
+  }
+
+  function normalizeRole(role) {
+    const { utils } = ctx();
+    if (typeof utils.normalizeRole === 'function') return utils.normalizeRole(role);
+    return String(role || '').trim().toLowerCase();
+  }
+
+  function getAllProperties() {
+    const { state } = ctx();
+    return Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length
+      ? state.propertiesFullCache
+      : (state.properties || []);
+  }
+
+  function getAssigneeIds(item) {
+    const raw = item?._raw || {};
+    return [
+      item?.assignedAgentId,
+      item?.assigneeId,
+      item?.assignee_id,
+      raw.assignee_id,
+      raw.assigneeId,
+      raw.assignedAgentId,
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+  }
+
+  function getAssignedPropertyMap() {
+    const buckets = new Map();
+    for (const item of Array.isArray(getAllProperties()) ? getAllProperties() : []) {
+      const key = getPropertyUniqueKey(item);
+      for (const actorId of getAssigneeIds(item)) {
+        if (!actorId) continue;
+        const set = buckets.get(actorId) || new Set();
+        if (key) set.add(key);
+        buckets.set(actorId, set);
+      }
+    }
+    return buckets;
+  }
+
+  function getRegisteredStaffIds() {
+    const { state } = ctx();
+    return new Set((Array.isArray(state.staff) ? state.staff : [])
+      .filter((row) => normalizeRole(row?.role) === 'staff')
+      .map((row) => String(row?.id || row?.user_id || row?.uid || '').trim())
+      .filter(Boolean));
+  }
+
+  function getAllAssignedPropertyTotal() {
+    const staffIds = getRegisteredStaffIds();
+    const unique = new Set();
+    for (const item of Array.isArray(getAllProperties()) ? getAllProperties() : []) {
+      const ids = getAssigneeIds(item);
+      if (!ids.length) continue;
+      if (staffIds.size && !ids.some((id) => staffIds.has(id))) continue;
+      const key = getPropertyUniqueKey(item);
+      if (key) unique.add(key);
+    }
+    return unique.size;
+  }
+
+  function getRegisteredActors(items) {
+    const { state } = ctx();
+    const logBuckets = new Map();
+    for (const actor of buildLogActorBuckets(items)) {
+      logBuckets.set(actor.actorId, actor);
+    }
+    const assignedMap = getAssignedPropertyMap();
+    const staffRows = Array.isArray(state.staff) ? state.staff : [];
+    const staffActors = staffRows
+      .filter((row) => normalizeRole(row?.role) === 'staff')
+      .map((row) => {
+        const actorId = String(row?.id || row?.user_id || row?.uid || '').trim();
+        if (!actorId) return null;
+        const bucket = logBuckets.get(actorId);
+        const actorName = String(row?.name || bucket?.actorName || '미상').trim() || '미상';
+        return {
+          actorId,
+          actorName,
+          items: bucket?.items || [],
+          propertyKeys: assignedMap.get(actorId) || new Set(),
+          counts: bucket?.counts || { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
+          propertyCount: (assignedMap.get(actorId) || new Set()).size,
+        };
+      })
+      .filter(Boolean);
+    for (const bucket of logBuckets.values()) {
+      if (staffActors.some((actor) => actor.actorId === bucket.actorId)) continue;
+      const assignedSet = assignedMap.get(bucket.actorId) || new Set();
+      staffActors.push({
+        actorId: bucket.actorId,
+        actorName: bucket.actorName,
+        items: bucket.items,
+        propertyKeys: assignedSet,
+        counts: bucket.counts,
+        propertyCount: assignedSet.size || bucket.propertyKeys.size,
+      });
+    }
+    return staffActors.sort((a, b) => a.actorName.localeCompare(b.actorName, 'ko'));
   }
 
   function actionLabel(actionType) {
@@ -178,7 +280,7 @@
     ).trim();
   }
 
-  function buildActorBuckets(items) {
+  function buildLogActorBuckets(items) {
     const buckets = new Map();
     for (const row of Array.isArray(items) ? items : []) {
       const actorId = String(row?.actor_id || '').trim() || 'unknown';
@@ -206,8 +308,7 @@
   }
 
   function findPropertyLike(row) {
-    const { state } = ctx();
-    const all = Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length ? state.propertiesFullCache : (state.properties || []);
+    const all = getAllProperties();
     const propertyId = String(row?.property_id || '').trim();
     const itemNo = String(row?.property_item_no || '').trim();
     const address = String(row?.property_address || '').trim();
@@ -287,7 +388,7 @@
     const item = group?.item || {};
     const row = group?.row || {};
     const parts = [];
-    const assetType = String(item?.assetType || item?.assettype || item?._raw?.asset_type || '').trim();
+    const assetType = String(item?.assetType || item?.assettype || item?._raw?.asset_type || row?.property_asset_type || row?.asset_type || '').trim();
     const floor = formatFloorLabel(item?.floor || item?._raw?.floor || row?.property_floor || '');
     const area = formatAreaLabel(item?.exclusivearea ?? item?.exclusive_area ?? item?.exclusiveArea ?? item?._raw?.exclusivearea ?? item?._raw?.exclusiveArea ?? row?.property_area);
     const itemNo = String(item?.itemNo || row?.property_item_no || '').trim();
@@ -324,29 +425,16 @@
   }
 
 
-  function isSelectedActorProperty(item) {
-    const selectedActorId = localState.activeActorId || 'all';
-    const raw = item?._raw || {};
-    const candidateIds = [
-      item?.assignedAgentId,
-      item?.assigneeId,
-      item?.assignee_id,
-      raw.assignee_id,
-      raw.assigneeId,
-      raw.assignedAgentId,
-    ]
-      .map((v) => String(v || '').trim())
-      .filter(Boolean);
-    if (selectedActorId === 'all') {
-      return candidateIds.length > 0;
-    }
+  function isSelectedActorProperty(item, actorId = null) {
+    const selectedActorId = actorId || localState.activeActorId || 'all';
+    const candidateIds = getAssigneeIds(item);
+    if (selectedActorId === 'all') return candidateIds.length > 0;
     return candidateIds.includes(selectedActorId);
   }
 
-  function getAssignedProperties() {
-    const { state } = ctx();
-    const all = Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length ? state.propertiesFullCache : (state.properties || []);
-    return (Array.isArray(all) ? all : []).filter((item) => isSelectedActorProperty(item));
+  function getAssignedProperties(actorId = null) {
+    const all = getAllProperties();
+    return (Array.isArray(all) ? all : []).filter((item) => isSelectedActorProperty(item, actorId));
   }
 
   function getPropertyUniqueKey(input) {
@@ -364,8 +452,8 @@
     ).trim();
   }
 
-  function getTodayPublicSubmissionCount(dateKey) {
-    const assigned = getAssignedProperties();
+  function getTodayPublicSubmissionCount(dateKey, actorId = null) {
+    const assigned = getAssignedProperties(actorId);
     const unique = new Set();
     for (const item of assigned) {
       const createdAt = item?.createdAt || item?._raw?.created_at || item?._raw?.date_uploaded || item?._raw?.createdAt || '';
@@ -391,19 +479,18 @@
   function ensureSelections(items, actors, groups) {
     if (!actors.length) {
       localState.activeActorId = 'all';
-      localState.activePropertyKey = '';
+      localState.activeGroupKey = '';
       return;
     }
     if (localState.activeActorId !== 'all' && !actors.some((actor) => actor.actorId === localState.activeActorId)) {
       localState.activeActorId = 'all';
     }
-    const actorGroups = groups;
-    if (!actorGroups.length) {
-      localState.activePropertyKey = '';
+    if (!groups.length) {
+      localState.activeGroupKey = '';
       return;
     }
-    if (!localState.activePropertyKey || !actorGroups.some((group) => group.propertyKey === localState.activePropertyKey)) {
-      localState.activePropertyKey = actorGroups[0].propertyKey;
+    if (!localState.activeGroupKey || !groups.some((group) => group.groupKey === localState.activeGroupKey)) {
+      localState.activeGroupKey = groups[0].groupKey;
     }
   }
 
@@ -411,31 +498,36 @@
     const container = document.getElementById('workMgmtActors');
     if (!container) return;
     const selected = localState.activeActorId || 'all';
-    const totalLogs = actors.reduce((sum, actor) => sum + actor.items.length, 0);
-    const totalProps = actors.reduce((sum, actor) => sum + actor.propertyCount, 0);
+    const totalUpdates = actors.reduce((sum, actor) => {
+      const counts = actor.counts || {};
+      return sum + Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
+    }, 0);
+    const totalAssigned = getAllAssignedPropertyTotal();
     const allCard = `
       <button type="button" class="workmgmt-actor-card ${selected === 'all' ? 'is-active' : 'is-dim'}" data-actor-id="all">
         <div class="workmgmt-actor-head">
           <span class="workmgmt-actor-avatar is-all">전체</span>
           <div>
             <p class="workmgmt-actor-name">전체 담당자</p>
-            <p class="workmgmt-actor-sub">일일 업무 통합 보기</p>
+            <p class="workmgmt-actor-sub">등록된 담당자 전체 보기</p>
           </div>
         </div>
         <div class="workmgmt-actor-chips">
-          <span class="workmgmt-chip is-soft">${Number(totalProps).toLocaleString('ko-KR')} 관리 물건</span>
-          <span class="workmgmt-chip is-brand">${Number(totalLogs).toLocaleString('ko-KR')} 로그</span>
+          <span class="workmgmt-chip is-soft">${Number(totalAssigned).toLocaleString('ko-KR')} 배정 물건</span>
+          <span class="workmgmt-chip is-brand">${Number(totalUpdates).toLocaleString('ko-KR')} 업데이트</span>
         </div>
       </button>`;
     container.innerHTML = allCard + actors.map((actor) => {
-      const updateCount = actor.counts.rights_analysis + actor.counts.site_inspection + actor.counts.daily_issue + actor.counts.property_update;
+      const counts = actor.counts || {};
+      const updateCount = Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
+      const subText = (!actor.propertyCount && !actor.items.length) ? '금일 진행사항이 없습니다' : '담당자 업무 현황';
       return `
         <button type="button" class="workmgmt-actor-card ${selected === actor.actorId ? 'is-active' : 'is-dim'}" data-actor-id="${esc(actor.actorId)}">
           <div class="workmgmt-actor-head">
             <span class="workmgmt-actor-avatar">${esc(actorInitial(actor.actorName))}</span>
             <div>
               <p class="workmgmt-actor-name">${esc(actor.actorName)}</p>
-              <p class="workmgmt-actor-sub">담당자 업무 현황</p>
+              <p class="workmgmt-actor-sub">${esc(subText)}</p>
             </div>
           </div>
           <div class="workmgmt-actor-chips">
@@ -453,29 +545,29 @@
     if (!groups.length) {
       container.innerHTML = '';
       empty.classList.remove('hidden');
+      empty.textContent = '표시할 관리 물건이 없습니다.';
       return;
     }
     empty.classList.add('hidden');
-    const selectedKey = localState.activePropertyKey || '';
+    const selectedKey = localState.activeGroupKey || '';
     container.innerHTML = groups.map((group) => {
       const item = group.item || {};
       const sourceType = String(item?.sourceType || group?.row?.sourceType || '').trim() || 'general';
       const sourceText = sourceLabel(sourceType);
-      const amount = formatMoney(item?.lowprice ?? item?.priceMain ?? item?._raw?.lowprice ?? item?._raw?.priceMain);
-      const latestText = buildPropertySubMeta(group) || '세부 정보 없음';
-      const actionTotal = Object.values(group.counts).reduce((sum, v) => sum + Number(v || 0), 0);
+      const actionTotal = Object.values(group.counts || {}).reduce((sum, v) => sum + Number(v || 0), 0);
+      const address = buildPropertyTitle(group);
+      const meta = buildPropertySubMeta(group) || '세부 정보 없음';
       return `
-        <button type="button" class="workmgmt-property-card ${selectedKey === group.propertyKey ? 'is-active' : 'is-dim'}" data-property-key="${esc(group.propertyKey)}">
+        <button type="button" class="workmgmt-property-card ${selectedKey === group.groupKey ? 'is-active' : 'is-dim'}" data-group-key="${esc(group.groupKey)}">
           <div class="workmgmt-property-body is-compact">
             <div class="workmgmt-property-top">
               <span class="workmgmt-property-type ${sourceClass(sourceType)}">${esc(sourceText)}</span>
-              <span class="workmgmt-property-mark">${selectedKey === group.propertyKey ? '●' : '○'}</span>
+              <span class="workmgmt-property-mark">${selectedKey === group.groupKey ? '●' : '○'}</span>
             </div>
-            <h4 class="workmgmt-property-title">${esc(buildPropertyTitle(group))}</h4>
-            <p class="workmgmt-property-address">${esc(latestText)}</p>
+            <h4 class="workmgmt-property-title">${esc(address)}</h4>
+            <p class="workmgmt-property-address">${esc(meta)}</p>
             <div class="workmgmt-property-meta-row">
               <span class="workmgmt-property-meta-text">업무 ${Number(actionTotal).toLocaleString('ko-KR')}건</span>
-              <strong class="workmgmt-property-amount">${esc(amount)}</strong>
             </div>
           </div>
         </button>`;
@@ -485,7 +577,7 @@
   function buildLogTitle(row) {
     const actionType = String(row?.action_type || '').trim();
     const labels = {
-      daily_issue: '금일 이슈 등록',
+      daily_issue: '',
       rights_analysis: '권리분석 업데이트',
       site_inspection: '현장조사 기록',
       new_property: '신규 물건 등록',
@@ -507,46 +599,41 @@
     const container = document.getElementById('workMgmtLogs');
     const empty = document.getElementById('workMgmtEmpty');
     if (!container || !empty) return;
-    const selectedGroup = groups.find((group) => group.propertyKey === localState.activePropertyKey) || null;
+    const selectedGroup = groups.find((group) => group.groupKey === localState.activeGroupKey) || null;
     if (!selectedGroup) {
       container.innerHTML = '';
       empty.classList.remove('hidden');
+      empty.textContent = '표시할 업무 로그가 없습니다.';
       return;
     }
     empty.classList.add('hidden');
-    const sourceType = String(selectedGroup?.item?.sourceType || selectedGroup?.row?.sourceType || '').trim() || 'general';
-    const header = `
-      <div class="workmgmt-log-header ${sourceClass(sourceType)}">
-        <div>
-          <p class="workmgmt-log-kicker">${esc(sourceLabel(sourceType))} · ${esc(selectedGroup.actorName)}</p>
-          <h4 class="workmgmt-log-heading">${esc(buildPropertyTitle(selectedGroup))}</h4>
-        </div>
-      </div>`;
     const sortedRows = [...(selectedGroup.rows || [])].sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
     const body = sortedRows.map((row) => {
       const actionType = String(row?.action_type || '').trim();
+      const title = buildLogTitle(row);
+      const showTitle = actionType !== 'daily_issue' && !!title;
       return `
         <article class="workmgmt-log-card">
           <div class="workmgmt-log-top">
             <span class="workmgmt-log-badge ${actionClass(actionType)}">${esc(actionLabel(actionType))}</span>
             <span class="workmgmt-log-time">${esc(formatTime(row?.created_at || row?.action_date))}</span>
           </div>
-          <h5 class="workmgmt-log-title">${esc(buildLogTitle(row))}</h5>
-          <p class="workmgmt-log-desc">${esc(buildLogDescription(row))}</p>
+          ${showTitle ? `<h5 class="workmgmt-log-title">${esc(title)}</h5>` : ''}
+          <p class="workmgmt-log-desc${showTitle ? '' : ' is-tight'}">${esc(buildLogDescription(row))}</p>
         </article>`;
     }).join('');
-    container.innerHTML = header + body;
+    container.innerHTML = body || '<div class="workmgmt-empty">표시할 업무 로그가 없습니다.</div>';
   }
 
   function renderStats(groups, actors, allItems) {
     const container = document.getElementById('workMgmtStats');
     if (!container) return;
-    const assignedProperties = getAssignedProperties();
-    const assignedTotal = assignedProperties.length;
+    const assignedTotal = getAllAssignedPropertyTotal();
     const managedTotal = groups.length;
     const managedRate = assignedTotal > 0 ? ((managedTotal / assignedTotal) * 100) : 0;
+    const selectedActorId = localState.activeActorId || 'all';
     const newPropertyCount = getNewPropertyLogCount(getSelectedActorItems(allItems));
-    const publicSubmissionCount = getTodayPublicSubmissionCount(localState.dateKey || getTodayDateKey());
+    const publicSubmissionCount = getTodayPublicSubmissionCount(localState.dateKey || getTodayDateKey(), selectedActorId === 'all' ? null : selectedActorId);
     const stats = [
       { label: '전체 배정 물건', value: Number(assignedTotal).toLocaleString('ko-KR'), accent: 'is-brand' },
       { label: '관리 물건', value: Number(managedTotal).toLocaleString('ko-KR'), accent: 'is-soft' },
@@ -563,7 +650,7 @@
   function renderWorkMgmt() {
     const { els } = ctx();
     const items = Array.isArray(localState.data?.items) ? localState.data.items : [];
-    const actors = buildActorBuckets(items);
+    const actors = getRegisteredActors(items);
     const filteredItems = getSelectedActorItems(items);
     const groups = groupWorkRows(filteredItems);
     ensureSelections(items, actors, groups);
@@ -572,11 +659,7 @@
     renderLogCards(groups);
     renderStats(groups, actors, items);
     if (els.workMgmtMeta) {
-      const actorText = localState.activeActorId === 'all'
-        ? `담당자 ${Number(actors.length).toLocaleString('ko-KR')}명`
-        : `${esc(actors.find((actor) => actor.actorId === localState.activeActorId)?.actorName || '선택 담당자')} · 로그 ${Number(filteredItems.length).toLocaleString('ko-KR')}건`;
-      const propertyText = `물건 ${Number(groups.length).toLocaleString('ko-KR')}건`;
-      els.workMgmtMeta.textContent = `${localState.dateKey || getTodayDateKey()} 기준 · ${actorText} · ${propertyText}`;
+      els.workMgmtMeta.textContent = '';
     }
   }
   mod.refreshWorkMgmt = async function refreshWorkMgmt(options = {}) {
@@ -630,7 +713,7 @@
         const btn = e.target.closest('[data-actor-id]');
         if (!btn) return;
         localState.activeActorId = String(btn.dataset.actorId || 'all').trim() || 'all';
-        localState.activePropertyKey = '';
+        localState.activeGroupKey = '';
         renderWorkMgmt();
       });
     }
@@ -638,9 +721,9 @@
     if (propertyList && propertyList.dataset.bound !== 'true') {
       propertyList.dataset.bound = 'true';
       propertyList.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-property-key]');
+        const btn = e.target.closest('[data-group-key]');
         if (!btn) return;
-        localState.activePropertyKey = String(btn.dataset.propertyKey || '').trim();
+        localState.activeGroupKey = String(btn.dataset.groupKey || '').trim();
         renderWorkMgmt();
       });
     }
