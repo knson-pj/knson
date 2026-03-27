@@ -535,9 +535,9 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
 html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .table td.text-cell{white-space:normal;min-width:180px;word-break:keep-all;}
 
-.table td.indicator-cell{white-space:nowrap;min-width:92px;text-align:center;}
+.table td.indicator-cell{white-space:nowrap;min-width:92px;text-align:center;vertical-align:middle;}
 .detail-indicator{position:relative;display:inline-flex;align-items:center;justify-content:center;}
-.detail-ok-btn{appearance:none;border:0;background:none;padding:2px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+.detail-ok-btn{appearance:none;border:0;background:none;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:0 auto;}
 .detail-ok-icon{display:inline-block;width:28px;height:28px;border-radius:999px;background:#7ab800;position:relative;box-shadow:0 4px 10px rgba(122,184,0,.22);}
 .detail-ok-icon::before{content:'';position:absolute;left:8px;top:6px;width:8px;height:14px;border-right:4px solid #fff;border-bottom:4px solid #fff;transform:rotate(45deg);}
 .detail-ok-btn:hover .detail-ok-icon,.detail-indicator.is-open .detail-ok-icon{filter:brightness(.96);transform:translateY(-1px);}

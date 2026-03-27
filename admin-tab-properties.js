@@ -105,59 +105,6 @@
     headers.forEach((node) => node.classList.toggle('is-active', node.dataset.propSort === String(state?.propertySort?.key || '')));
   }
 
-  function buildRowLikeForPatch(item, patch, state, utils) {
-    const raw = utils.mergePropertyRaw(item, patch);
-    const assigneeId = Object.prototype.hasOwnProperty.call(patch || {}, 'assigneeId')
-      ? (patch.assigneeId || null)
-      : (item?.assignedAgentId || item?._raw?.assignee_id || null);
-    return {
-      ...(item?._raw || {}),
-      id: item?.id || item?._raw?.id || '',
-      global_id: item?.globalId || item?._raw?.global_id || '',
-      item_no: patch.itemNo ?? item?.itemNo ?? item?._raw?.item_no,
-      source_type: patch.sourceType ?? item?.sourceType ?? item?._raw?.source_type,
-      assignee_id: assigneeId,
-      submitter_type: patch.submitterType ?? item?.submitterType ?? item?._raw?.submitter_type,
-      address: patch.address ?? item?.address ?? item?._raw?.address,
-      asset_type: patch.assetType ?? item?.assetType ?? item?._raw?.asset_type,
-      floor: patch.floor ?? item?.floor ?? item?._raw?.floor,
-      total_floor: patch.totalfloor ?? item?.totalfloor ?? item?._raw?.total_floor,
-      common_area: patch.commonarea ?? item?.commonarea ?? item?._raw?.common_area,
-      exclusive_area: patch.exclusivearea ?? item?.exclusivearea ?? item?._raw?.exclusive_area,
-      site_area: patch.sitearea ?? item?.sitearea ?? item?._raw?.site_area,
-      use_approval: patch.useapproval ?? item?.useapproval ?? item?._raw?.use_approval,
-      status: patch.status ?? item?.status ?? item?._raw?.status,
-      price_main: patch.priceMain ?? item?.priceMain ?? item?._raw?.price_main,
-      lowprice: Object.prototype.hasOwnProperty.call(patch || {}, 'lowprice') ? patch.lowprice : (item?.lowprice ?? item?._raw?.lowprice),
-      date_main: patch.dateMain ?? item?.dateMain ?? item?._raw?.date_main,
-      source_url: patch.sourceUrl ?? item?.sourceUrl ?? item?._raw?.source_url,
-      broker_office_name: patch.realtorname ?? item?.realtorname ?? item?._raw?.broker_office_name,
-      submitter_phone: patch.realtorcell ?? item?.realtorcell ?? item?._raw?.submitter_phone,
-      memo: patch.opinion ?? item?.opinion ?? item?._raw?.memo,
-      latitude: Object.prototype.hasOwnProperty.call(patch || {}, 'latitude') ? patch.latitude : (item?.latitude ?? item?._raw?.latitude),
-      longitude: Object.prototype.hasOwnProperty.call(patch || {}, 'longitude') ? patch.longitude : (item?.longitude ?? item?._raw?.longitude),
-      created_at: item?.createdAt || item?._raw?.created_at || '',
-      date_uploaded: item?.dateUploaded || item?._raw?.date_uploaded || '',
-      raw,
-    };
-  }
-
-  function applyLocalPropertyPatch(targetId, patch, item) {
-    const { state, utils } = ctx();
-    const replaceOne = (entry) => {
-      const entryId = String(entry?.id || entry?.globalId || entry?._raw?.id || entry?._raw?.global_id || '').trim();
-      if (!entryId || entryId !== String(targetId || '').trim()) return entry;
-      const rowLike = buildRowLikeForPatch(entry, patch, state, utils);
-      const normalized = typeof utils.normalizeProperty === 'function' ? utils.normalizeProperty(rowLike) : rowLike;
-      normalized._raw = rowLike;
-      return normalized;
-    };
-    if (Array.isArray(state.properties)) state.properties = state.properties.map(replaceOne);
-    if (Array.isArray(state.propertiesFullCache)) state.propertiesFullCache = state.propertiesFullCache.map(replaceOne);
-    if (state.editingProperty) state.editingProperty = replaceOne(state.editingProperty);
-    if (typeof utils.hydrateAssignedAgentNames === 'function') utils.hydrateAssignedAgentNames();
-  }
-
   function formatModalAreaValue(sourceType, value) {
     if (value == null || value === '') return '';
     const n = Number(value);
@@ -714,11 +661,10 @@
       if (els.aemSave) els.aemSave.disabled = true;
       setAemMsg(els, '');
       await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
-      applyLocalPropertyPatch(targetId, patch, item);
       setAemMsg(els, '저장 완료', false);
       mod.closePropertyEditModal();
-      mod.renderPropertiesTable();
-      if (typeof utils.renderSummary === 'function') utils.renderSummary();
+      utils.invalidatePropertyCollections();
+      await utils.loadProperties({ refreshSummary: false });
     } catch (err) {
       console.error(err);
       setAemMsg(els, err?.message || '저장 실패');
@@ -803,7 +749,7 @@
       state.selectedPropertyIds.delete(targetId);
       mod.closePropertyEditModal();
       utils.invalidatePropertyCollections();
-      await utils.loadProperties();
+      await utils.loadProperties({ refreshSummary: false });
     } catch (err) {
       console.error(err);
       setAemMsg(els, err?.message || '삭제 실패');

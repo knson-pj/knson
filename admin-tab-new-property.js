@@ -194,7 +194,7 @@
       window.setTimeout(() => {
         mod.closeNewPropertyModal();
         utils.invalidatePropertyCollections?.();
-        utils.loadProperties?.();
+        utils.loadProperties?.({ refreshSummary: state.activeTab === 'home', homeOnly: state.activeTab === 'home' });
       }, 700);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
