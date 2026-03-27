@@ -326,13 +326,20 @@
 
   function isSelectedActorProperty(item) {
     const selectedActorId = localState.activeActorId || 'all';
+    const raw = item?._raw || {};
+    const candidateIds = [
+      item?.assignedAgentId,
+      item?.assigneeId,
+      item?.assignee_id,
+      raw.assignee_id,
+      raw.assigneeId,
+      raw.assignedAgentId,
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
     if (selectedActorId === 'all') {
       return candidateIds.length > 0;
     }
-    const raw = item?._raw || {};
-    const candidateIds = [item?.assignedAgentId, item?.assigneeId, item?.assignee_id, raw.assignee_id, raw.assigneeId, raw.assignedAgentId]
-      .map((v) => String(v || '').trim())
-      .filter(Boolean);
     return candidateIds.includes(selectedActorId);
   }
 
