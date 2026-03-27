@@ -987,6 +987,46 @@ function bindEvents() {
     return summary;
   }
 
+  function appendSummaryBucket(summary, item) {
+    if (!summary || !item) return summary;
+    const type = String(item?.sourceType || '').trim();
+    summary.total += 1;
+    if (type === 'auction') summary.auction += 1;
+    else if (type === 'onbid') summary.onbid += 1;
+    else if (type === 'realtor') {
+      if (item?.isDirectSubmission) summary.realtor_direct += 1;
+      else summary.realtor_naver += 1;
+    } else if (type === 'general') summary.general += 1;
+    return summary;
+  }
+
+  async function fetchExactHomeSummary(sb) {
+    const summary = {
+      total: 0,
+      auction: 0,
+      onbid: 0,
+      realtor_naver: 0,
+      realtor_direct: 0,
+      general: 0,
+    };
+    const pageSize = 1000;
+    let page = 1;
+    while (true) {
+      const from = Math.max(0, (page - 1) * pageSize);
+      const to = from + pageSize - 1;
+      const { data, error } = await sb
+        .from('properties')
+        .select(PROPERTY_HOME_SUMMARY_SELECT)
+        .range(from, to);
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      for (const row of rows) appendSummaryBucket(summary, normalizeProperty(row));
+      if (rows.length < pageSize) break;
+      page += 1;
+    }
+    return summary;
+  }
+
   async function fetchPropertySummary(sb) {
     if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
       return buildPropertySummaryFromRows(state.propertiesFullCache);
@@ -1071,12 +1111,10 @@ function bindEvents() {
 
       const needsExactHomeSummary = isAdmin && state.activeTab === 'home' && (refreshSummary || !state.propertySummary);
       const summaryPromise = needsExactHomeSummary
-        ? ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: false })
-            .then((rows) => buildPropertySummaryFromRows(rows))
-            .catch((err) => {
-              console.warn('property summary load failed', err);
-              return state.propertySummary;
-            })
+        ? fetchExactHomeSummary(sb).catch((err) => {
+            console.warn('property summary load failed', err);
+            return state.propertySummary;
+          })
         : ((refreshSummary || !state.propertySummary)
             ? fetchPropertySummary(sb).catch((err) => {
                 console.warn('property summary load failed', err);
