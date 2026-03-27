@@ -156,7 +156,10 @@
     const { state, utils } = ctx();
     const f = state.propertyFilters || {};
     const kw = String(f.keyword || '').toLowerCase().trim();
+    const sortKey = String(state?.propertySort?.key || '').trim();
+    const auctionOnlyForSort = sortKey === 'currentPrice' || sortKey === 'ratio';
     const filtered = (state.properties || []).filter((p) => {
+      if (auctionOnlyForSort && p.sourceType !== 'auction' && p.sourceType !== 'onbid') return false;
       if (f.activeCard && f.activeCard !== 'all') {
         if (f.activeCard === 'realtor_naver') {
           if (p.sourceType !== 'realtor' || p.isDirectSubmission) return false;
