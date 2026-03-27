@@ -1094,6 +1094,15 @@ function bindEvents() {
       renderPropertiesTable();
       renderSummary();
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
+      if (state.activeTab === 'home' && isAdmin && !needsFull) {
+        ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: false })
+          .then((fullData) => {
+            if (!Array.isArray(fullData) || !fullData.length) return;
+            state.propertySummary = null;
+            renderSummary();
+          })
+          .catch((err) => console.warn('home summary reconcile failed', err));
+      }
       if (state.activeTab === 'home') renderSummary();
       return;
     }
