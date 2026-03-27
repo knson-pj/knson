@@ -171,6 +171,7 @@
     propertyTotalCount: 0,
     propertySummary: null,
     propertiesFullCache: null,
+    propertySort: { key: '', direction: 'desc' },
     geocodeRunning: false,
   };
 
@@ -837,7 +838,7 @@ function bindEvents() {
     // 속도 개선용 경량 select에서 스키마 불일치(column does not exist)가 반복되어,
     // 가변 스키마 가능성이 큰 상세 필드는 raw 기준으로 파생한다.
     "id", "global_id", "item_no", "source_type", "is_general", "address", "assignee_id",
-    "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
+    "submitter_type", "broker_office_name", "submitter_name", "submitter_phone", "source_url",
     "memo", "latitude", "longitude", "date_uploaded", "created_at",
     "geocode_status", "geocoded_at", "raw"
   ].join(",");
@@ -964,27 +965,31 @@ function bindEvents() {
     return state.propertiesFullCache;
   }
 
+  function buildPropertySummaryFromRows(rows) {
+    const cached = Array.isArray(rows) ? rows : [];
+    const summary = {
+      total: cached.length,
+      auction: 0,
+      onbid: 0,
+      realtor_naver: 0,
+      realtor_direct: 0,
+      general: 0,
+    };
+    for (const item of cached) {
+      const type = String(item?.sourceType || '').trim();
+      if (type === 'auction') summary.auction += 1;
+      else if (type === 'onbid') summary.onbid += 1;
+      else if (type === 'realtor') {
+        if (item?.isDirectSubmission) summary.realtor_direct += 1;
+        else summary.realtor_naver += 1;
+      } else if (type === 'general') summary.general += 1;
+    }
+    return summary;
+  }
+
   async function fetchPropertySummary(sb) {
     if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
-      const cached = state.propertiesFullCache;
-      const summary = {
-        total: cached.length,
-        auction: 0,
-        onbid: 0,
-        realtor_naver: 0,
-        realtor_direct: 0,
-        general: 0,
-      };
-      for (const item of cached) {
-        const type = String(item?.sourceType || '').trim();
-        if (type === 'auction') summary.auction += 1;
-        else if (type === 'onbid') summary.onbid += 1;
-        else if (type === 'realtor') {
-          if (item?.isDirectSubmission) summary.realtor_direct += 1;
-          else summary.realtor_naver += 1;
-        } else if (type === 'general') summary.general += 1;
-      }
-      return summary;
+      return buildPropertySummaryFromRows(state.propertiesFullCache);
     }
 
     const countRows = async (builder) => {
@@ -1064,12 +1069,20 @@ function bindEvents() {
 
       const needsFull = forceFull || shouldUseFullPropertyDataset() || state.activeTab === 'regions' || state.activeTab === 'geocoding';
 
-      const summaryPromise = (refreshSummary || !state.propertySummary)
-        ? fetchPropertySummary(sb).catch((err) => {
-            console.warn('property summary load failed', err);
-            return state.propertySummary;
-          })
-        : Promise.resolve(state.propertySummary);
+      const needsExactHomeSummary = isAdmin && state.activeTab === 'home' && (refreshSummary || !state.propertySummary);
+      const summaryPromise = needsExactHomeSummary
+        ? ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: false })
+            .then((rows) => buildPropertySummaryFromRows(rows))
+            .catch((err) => {
+              console.warn('property summary load failed', err);
+              return state.propertySummary;
+            })
+        : ((refreshSummary || !state.propertySummary)
+            ? fetchPropertySummary(sb).catch((err) => {
+                console.warn('property summary load failed', err);
+                return state.propertySummary;
+              })
+            : Promise.resolve(state.propertySummary));
 
       if (needsFull) {
         const data = await ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: forceRefreshFull });
@@ -1094,15 +1107,6 @@ function bindEvents() {
       renderPropertiesTable();
       renderSummary();
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
-      if (state.activeTab === 'home' && isAdmin && !needsFull) {
-        ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: false })
-          .then((fullData) => {
-            if (!Array.isArray(fullData) || !fullData.length) return;
-            state.propertySummary = null;
-            renderSummary();
-          })
-          .catch((err) => console.warn('home summary reconcile failed', err));
-      }
       if (state.activeTab === 'home') renderSummary();
       return;
     }
@@ -1140,11 +1144,11 @@ function bindEvents() {
 
   function normalizeProperty(item) {
     const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
-    const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || "").toString().toLowerCase();
+    const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || raw.source_type || "").toString().trim().toLowerCase();
     const sourceType =
-      rawSource === "auction" ? "auction" :
-      rawSource === "gongmae" || rawSource === "public" || rawSource === "onbid" ? "onbid" :
-      rawSource === "realtor" ? "realtor" :
+      ["auction", "courtauction"].includes(rawSource) ? "auction" :
+      ["gongmae", "public", "onbid"].includes(rawSource) ? "onbid" :
+      ["realtor", "realtor_naver", "realtor_direct", "naver", "broker", "중개"].includes(rawSource) ? "realtor" :
       rawSource === "general" ? "general" :
       "general";
 
@@ -1211,8 +1215,10 @@ function bindEvents() {
         const sourceUrlValue = firstText(item.sourceUrl, item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
         const submitterNameValue = firstText(item.submitterName, item.submitter_name, raw.submitter_name, raw.submitterName, "");
         if (sourceType !== "realtor") return false;
-        if (submitterType === "realtor") return true;
         if (sourceUrlValue) return false;
+        if (rawSource === 'realtor_naver' || rawSource === 'naver' || rawSource === 'broker') return false;
+        if (rawSource === 'realtor_direct') return true;
+        if (submitterType === "realtor") return true;
         return !!submitterNameValue;
       })(),
       _raw: item,

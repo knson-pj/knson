@@ -24,6 +24,68 @@
     return (state.staff || []).find((s) => String(s.id || '').trim() === key)?.name || '';
   }
 
+
+  function getCurrentPriceValue(row) {
+    if (!row || row.lowprice == null || row.lowprice === '') return Number(row?.priceMain || 0) || 0;
+    return Number(row.lowprice || 0) || 0;
+  }
+
+  function getRatioValue(row, utils) {
+    const base = Number(row?.priceMain || 0);
+    const current = Number(getCurrentPriceValue(row) || 0);
+    if (Number.isFinite(base) && Number.isFinite(current) && base > 0 && current > 0) return current / base;
+    const raw = row?._raw || {};
+    const rawRate = raw && (raw["최저입찰가율(%)"] || raw.bidRate || raw.rate);
+    const numeric = Number(String(rawRate || '').replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(numeric) ? numeric / 100 : -1;
+  }
+
+  function applyPropertySort(rows, state, utils) {
+    const sortKey = String(state?.propertySort?.key || '').trim();
+    if (!sortKey) return rows;
+    const direction = String(state?.propertySort?.direction || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+    const sorted = [...rows];
+    const valueFor = (row) => {
+      if (sortKey === 'priceMain') return Number(row?.priceMain || 0) || 0;
+      if (sortKey === 'currentPrice') return getCurrentPriceValue(row);
+      if (sortKey === 'ratio') return getRatioValue(row, utils);
+      return 0;
+    };
+    sorted.sort((a, b) => {
+      const av = valueFor(a);
+      const bv = valueFor(b);
+      if (bv === av) return 0;
+      return (bv > av ? 1 : -1) * direction;
+    });
+    return sorted;
+  }
+
+  function bindPropertySortHeaders() {
+    const { state, els, utils } = ctx();
+    const headers = document.querySelectorAll('[data-prop-sort]');
+    headers.forEach((th) => {
+      if (th.dataset.boundSort === '1') return;
+      th.dataset.boundSort = '1';
+      th.addEventListener('click', async () => {
+        const key = String(th.dataset.propSort || '').trim();
+        if (!key) return;
+        state.propertySort = { key, direction: 'desc' };
+        headers.forEach((node) => node.classList.toggle('is-active', node === th));
+        state.propertyPage = 1;
+        try {
+          if (state.propertyMode === 'page') {
+            await utils.loadProperties({ refreshSummary: false, forceFull: true });
+          } else {
+            mod.renderPropertiesTable();
+          }
+        } catch (err) {
+          if (typeof utils.handleAsyncError === 'function') utils.handleAsyncError(err, '물건 목록 정렬 실패');
+        }
+      });
+    });
+    headers.forEach((node) => node.classList.toggle('is-active', node.dataset.propSort === String(state?.propertySort?.key || '')));
+  }
+
   function formatModalAreaValue(sourceType, value) {
     if (value == null || value === '') return '';
     const n = Number(value);
@@ -75,7 +137,7 @@
     const { state } = ctx();
     const f = state.propertyFilters || {};
     const kw = String(f.keyword || '').toLowerCase().trim();
-    return (state.properties || []).filter((p) => {
+    const filtered = (state.properties || []).filter((p) => {
       if (f.activeCard && f.activeCard !== 'all') {
         if (f.activeCard === 'realtor_naver') {
           if (p.sourceType !== 'realtor' || p.isDirectSubmission) return false;
@@ -121,6 +183,7 @@
       }
       return true;
     });
+    return applyPropertySort(filtered, state, utils);
   };
 
   mod.getPagedProperties = function getPagedProperties(rows) {
@@ -278,7 +341,7 @@
 
   mod.renderPropertiesTable = function renderPropertiesTable() {
     const { state, els, utils } = ctx();
-    const pageMode = state.propertyMode === 'page';
+    const pageMode = state.propertyMode === 'page' && !String(state?.propertySort?.key || '').trim();
     const rows = pageMode ? (state.properties || []) : mod.getFilteredProperties();
     const totalPages = pageMode
       ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
@@ -286,6 +349,7 @@
     const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
 
     if (!els.propertiesTableBody) return;
+    bindPropertySortHeaders();
     els.propertiesTableBody.innerHTML = '';
 
     if (!rows.length) {
@@ -301,32 +365,26 @@
       const rowId = String(p.id || p.globalId || '').trim();
       const tr = document.createElement('tr');
       if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
-      const kindLabel = p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? '중개' : '일반';
-      const moveLink = typeof utils.buildKakaoMapLink === 'function' ? utils.buildKakaoMapLink(p) : '';
-      const currentPrice = p.lowprice != null ? utils.formatMoneyKRW(p.lowprice) : '-';
-      const rate = utils.formatPercent(p.priceMain, p.lowprice, p._raw || {});
+      const kindLabel = p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반';
+      const currentPriceValue = getCurrentPriceValue(p);
+      const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
+      const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
       tr.innerHTML = `
         <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
-        <td>${utils.escapeHtml(p.itemNo || '-')}</td>
         <td><span class="kind-text ${utils.escapeAttr(p.sourceType === 'auction' ? 'kind-auction' : p.sourceType === 'onbid' ? 'kind-gongmae' : p.sourceType === 'realtor' ? 'kind-realtor' : 'kind-general')}">${utils.escapeHtml(kindLabel)}</span></td>
+        <td>${utils.escapeHtml(p.itemNo || '-')}</td>
         <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(p.address || '-')}</button></td>
         <td>${utils.escapeHtml(p.assetType || '-')}</td>
         <td>${utils.escapeHtml(String(p.floor || '-'))}</td>
-        <td>${utils.escapeHtml(String(p.totalfloor || '-'))}</td>
-        <td>${utils.escapeHtml(utils.formatDate(p.useapproval) || '-')}</td>
-        <td>${p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-'}</td>
         <td>${p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-'}</td>
         <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
         <td>${utils.escapeHtml(currentPrice)}</td>
         <td>${utils.escapeHtml(rate)}</td>
         <td class="schedule-cell">${typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-'}</td>
-        <td>${utils.escapeHtml(utils.statusLabel(p.status) || p.status || '-')}</td>
-        <td>${moveLink ? `<a class="map-link" href="${utils.escapeAttr(moveLink)}" target="_blank" rel="noopener noreferrer">이동</a>` : '-'}</td>
-        <td>${utils.escapeHtml(utils.formatDate(p.createdAt) || '-')}</td>
         <td>${utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정')}</td>
         <td class="text-cell">${utils.escapeHtml(p.rightsAnalysis || '-')}</td>
         <td class="text-cell">${utils.escapeHtml(p.siteInspection || '-')}</td>
-        <td class="text-cell opinion-cell">${utils.escapeHtml(p.opinion || '-')}</td>
+        <td>${utils.escapeHtml(utils.formatDate(p.createdAt) || '-')}</td>
       `;
       const checkbox = tr.querySelector('.prop-row-check');
       if (checkbox) {
@@ -583,13 +641,8 @@
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
-
-    // 관리자 화면에서는 브라우저 직결 Supabase update 를 타지 않고,
-    // 현재 실제 구현되어 있는 /api/properties PATCH 경로만 사용한다.
-    // 이전의 /admin/properties*, /properties/:id 경로는 이 레포에 존재하지 않아
-    // 외부 API_BASE 환경에서 preflight 실패 -> Failed to fetch 로 이어질 수 있다.
-    if (sb && !isAdmin) {
+    if (sb) {
+      const nextRaw = utils.mergePropertyRaw(item, patch);
       const dbPatch = {
         item_no: patch.itemNo,
         source_type: patch.sourceType,
@@ -613,18 +666,39 @@
         memo: patch.opinion,
         latitude: patch.latitude,
         longitude: patch.longitude,
-        raw: payload.raw,
+        raw: nextRaw,
       };
       Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
-      await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
-      return;
+      try {
+        await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
+        return;
+      } catch (error) {
+        if (!isAdmin || error?.code !== 'NO_ROWS_UPDATED') throw error;
+      }
     }
-
-    await api('/properties', {
-      method: 'PATCH',
-      auth: true,
-      body: { targetId, patch: payload },
-    });
+    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
+    const candidates = [];
+    if (isAdmin) {
+      candidates.push({ path: '/admin/properties', method: 'PATCH' });
+      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: 'PATCH' });
+      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: 'PUT' });
+    }
+    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: 'PATCH' });
+    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: 'PUT' });
+    candidates.push({ path: '/properties/update', method: 'POST' });
+    candidates.push({ path: '/admin/properties/update', method: 'POST' });
+    let lastErr = null;
+    for (const c of candidates) {
+      try {
+        await api(c.path, { method: c.method, auth: true, body: payload });
+        return;
+      } catch (e) {
+        lastErr = e;
+        const msg = String(e?.message || '');
+        if (msg.includes('404') || msg.includes('405') || msg.includes('not found')) continue;
+      }
+    }
+    throw lastErr || new Error('저장 실패');
   };
 
   mod.handleDeleteProperty = async function handleDeleteProperty() {

@@ -508,7 +508,7 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
   width:max-content;min-width:100%;
   border-collapse:separate;border-spacing:0;
 }
-#propertiesTable{min-width:1700px;}
+#propertiesTable{min-width:1380px;}
 #propertiesTable th,#propertiesTable td{font-size:12px;}
 #assignmentTable,#staffTable,#csvPreviewTable,#geocodeListTable{width:100%;min-width:100%;}
 .table th{
@@ -521,6 +521,11 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
   text-align:left;white-space:nowrap;
   border-bottom:1px solid var(--border);
 }
+.sortable-th{cursor:pointer;user-select:none;}
+.sortable-th::after{content:"↓";display:inline-block;margin-left:6px;font-size:10px;color:var(--brand);opacity:.5;}
+.sortable-th.is-active{color:var(--text);}
+.sortable-th.is-active::after{opacity:1;}
+.panel-title-row--compact{justify-content:flex-end;}
 .table td{
   padding:10px 12px;
   border-bottom:1px solid var(--gray-150);
@@ -1330,7 +1335,7 @@ body{
   width:52px;height:52px;border-radius:999px;display:flex;align-items:center;justify-content:center;
   color:#fff;font-size:22px;font-weight:800;box-shadow:var(--shadow-sm);
 }
-.admin-home-source-badge.is-auction{background:linear-gradient(180deg,#d9b16d 0%,#bf8d3b 100%);}
+.admin-home-source-badge.is-auction{background:var(--c-auction);}
 .admin-home-source-badge.is-onbid{background:var(--c-onbid);}
 .admin-home-source-badge.is-naver{background:#03c75a;}
 .admin-home-source-badge.is-direct,
@@ -1340,9 +1345,9 @@ body{
 .admin-home-source-copy strong{font-size:20px;font-weight:800;line-height:1.15;letter-spacing:-.03em;}
 .admin-home-progress{height:12px;border-radius:999px;background:#e5e7eb;overflow:hidden;}
 .admin-home-progress-fill{display:block;height:100%;border-radius:999px;min-width:12%;}
-.admin-home-progress-fill.is-auction{background:linear-gradient(90deg,#be8d42 0%,#d8b062 100%);}
+.admin-home-progress-fill.is-auction{background:var(--c-auction);}
 .admin-home-progress-fill.is-onbid{background:var(--c-onbid);}
-.admin-home-progress-fill.is-naver{background:linear-gradient(90deg,#81838d 0%,#6b7280 100%);}
+.admin-home-progress-fill.is-naver{background:#03c75a;}
 .admin-home-progress-fill.is-direct,
 .admin-home-progress-fill.is-general{background:linear-gradient(90deg,#c59d45 0%,#d8b062 100%);}
 .admin-home-updates-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(260px,.8fr) minmax(280px,.9fr);gap:20px;align-items:stretch;}
