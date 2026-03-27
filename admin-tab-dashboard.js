@@ -76,9 +76,7 @@
 
   function getAllProperties() {
     const { state } = ctx();
-    return Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length
-      ? state.propertiesFullCache
-      : (state.properties || []);
+    return Array.isArray(state.propertiesFullCache) ? state.propertiesFullCache : [];
   }
 
   function getAssigneeIds(item) {
@@ -93,6 +91,60 @@
     ]
       .map((v) => String(v || '').trim())
       .filter(Boolean);
+  }
+
+  function getPropertyIdentityKey(item) {
+    const raw = item?._raw || {};
+    const inner = raw?.raw || {};
+    return String(
+      item?.registrationIdentityKey ||
+      raw?.registrationIdentityKey ||
+      inner?.registrationIdentityKey ||
+      ''
+    ).trim();
+  }
+
+  function getPropertyIndex() {
+    const all = getAllProperties();
+    if (localState.propertyIndex && localState.propertyIndex.source === all) return localState.propertyIndex;
+
+    const { utils } = ctx();
+    const byId = new Map();
+    const byItemNo = new Map();
+    const byIdentity = new Map();
+    const addressBuckets = new Map();
+
+    const remember = (map, key, item) => {
+      const safeKey = String(key || '').trim();
+      if (!safeKey || map.has(safeKey)) return;
+      map.set(safeKey, item);
+    };
+
+    for (const item of Array.isArray(all) ? all : []) {
+      const raw = item?._raw || {};
+      remember(byId, item?.id, item);
+      remember(byId, item?.globalId, item);
+      remember(byId, raw?.id, item);
+      remember(byId, raw?.global_id, item);
+      remember(byItemNo, item?.itemNo, item);
+      remember(byItemNo, raw?.item_no, item);
+      remember(byIdentity, getPropertyIdentityKey(item), item);
+      const rawAddress = String(item?.address || raw?.address || '').trim();
+      if (rawAddress) {
+        const normalized = typeof utils.normalizeAddress === 'function' ? utils.normalizeAddress(rawAddress) : rawAddress;
+        const bucket = addressBuckets.get(normalized) || [];
+        bucket.push(item);
+        addressBuckets.set(normalized, bucket);
+      }
+    }
+
+    const byAddressUnique = new Map();
+    for (const [address, bucket] of addressBuckets.entries()) {
+      if (bucket.length === 1) byAddressUnique.set(address, bucket[0]);
+    }
+
+    localState.propertyIndex = { source: all, byId, byItemNo, byIdentity, byAddressUnique };
+    return localState.propertyIndex;
   }
 
   function getAssignedPropertyMap() {
@@ -308,21 +360,20 @@
   }
 
   function findPropertyLike(row) {
-    const all = getAllProperties();
+    const { utils } = ctx();
+    const index = getPropertyIndex();
     const propertyId = String(row?.property_id || '').trim();
-    const itemNo = String(row?.property_item_no || '').trim();
-    const address = String(row?.property_address || '').trim();
     const identityKey = String(row?.property_identity_key || '').trim();
-    return all.find((item) => {
-      const raw = item?._raw || {};
-      const inner = raw?.raw || {};
-      return (
-        (propertyId && [item.id, item.globalId, raw.id, raw.global_id].map((v) => String(v || '').trim()).includes(propertyId)) ||
-        (itemNo && String(item.itemNo || '').trim() === itemNo) ||
-        (address && String(item.address || '').trim() === address) ||
-        (identityKey && String(inner.registrationIdentityKey || '').trim() === identityKey)
-      );
-    }) || null;
+    const itemNo = String(row?.property_item_no || '').trim();
+    const rawAddress = String(row?.property_address || '').trim();
+    const normalizedAddress = rawAddress && typeof utils.normalizeAddress === 'function'
+      ? utils.normalizeAddress(rawAddress)
+      : rawAddress;
+    if (propertyId && index.byId.has(propertyId)) return index.byId.get(propertyId) || null;
+    if (identityKey && index.byIdentity.has(identityKey)) return index.byIdentity.get(identityKey) || null;
+    if (itemNo && index.byItemNo.has(itemNo)) return index.byItemNo.get(itemNo) || null;
+    if (normalizedAddress && index.byAddressUnique.has(normalizedAddress)) return index.byAddressUnique.get(normalizedAddress) || null;
+    return null;
   }
 
   function groupWorkRows(items) {
@@ -381,17 +432,18 @@
   function buildPropertyTitle(group) {
     const item = group?.item;
     const row = group?.row || {};
-    return String(item?.address || row?.property_address || '-').trim();
+    return String(item?.address || item?._raw?.address || row?.property_address || '-').trim();
   }
 
   function buildPropertySubMeta(group) {
     const item = group?.item || {};
     const row = group?.row || {};
+    const raw = item?._raw || {};
     const parts = [];
-    const assetType = String(item?.assetType || item?.assettype || item?._raw?.asset_type || row?.property_asset_type || row?.asset_type || '').trim();
-    const floor = formatFloorLabel(item?.floor || item?._raw?.floor || row?.property_floor || '');
-    const area = formatAreaLabel(item?.exclusivearea ?? item?.exclusive_area ?? item?.exclusiveArea ?? item?._raw?.exclusivearea ?? item?._raw?.exclusiveArea ?? row?.property_area);
-    const itemNo = String(item?.itemNo || row?.property_item_no || '').trim();
+    const assetType = String(item?.assetType || item?.assettype || raw?.asset_type || row?.property_asset_type || row?.asset_type || '').trim();
+    const floor = formatFloorLabel(item?.floor || raw?.floor || row?.property_floor || '');
+    const area = formatAreaLabel(item?.exclusivearea ?? item?.exclusive_area ?? item?.exclusiveArea ?? raw?.exclusivearea ?? raw?.exclusiveArea ?? row?.property_area);
+    const itemNo = String(item?.itemNo || raw?.item_no || row?.property_item_no || '').trim();
     if (assetType) parts.push(assetType);
     if (floor) parts.push(floor);
     if (area) parts.push(area);
@@ -671,6 +723,10 @@
     if (typeof utils.setAdminLoading === 'function') utils.setAdminLoading('workmgmt', true, '업무 로그를 집계하는 중입니다.');
     if (els.workMgmtDate && els.workMgmtDate.value !== dateKey) els.workMgmtDate.value = dateKey;
     try {
+      if (typeof utils.ensureAuxiliaryPropertiesForAdmin === 'function') {
+        await utils.ensureAuxiliaryPropertiesForAdmin({ forceRefresh: !!options.forceRefreshProperties });
+        localState.propertyIndex = null;
+      }
       const data = await api(`/properties?daily_report=1&admin_view=1&date=${encodeURIComponent(dateKey)}`, { auth: true });
       localState.data = {
         date: dateKey,

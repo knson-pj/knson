@@ -869,18 +869,30 @@ function bindEvents() {
   }
 
   async function fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid }) {
-    const from = Math.max(0, (Math.max(1, Number(page || 1)) - 1) * pageSize);
-    const to = from + pageSize - 1;
-    const queryBase = () => sb
-      .from("properties")
-      .select(PROPERTY_LIST_SELECT, { count: "exact" })
-      .order("date_uploaded", { ascending: false })
-      .range(from, to);
+    const safePage = Math.max(1, Number(page || 1));
+    const safePageSize = Math.max(1, Number(pageSize || 30));
+    const from = Math.max(0, (safePage - 1) * safePageSize);
+    const to = from + safePageSize;
+    const selectOptions = from === 0 ? { count: "estimated" } : undefined;
+    const queryBase = () => {
+      let q = sb.from("properties");
+      q = selectOptions ? q.select(PROPERTY_LIST_SELECT, selectOptions) : q.select(PROPERTY_LIST_SELECT);
+      return q.order("date_uploaded", { ascending: false }).range(from, to);
+    };
+    const finalize = (data, count) => {
+      const rows = Array.isArray(data) ? data : [];
+      const hasMore = rows.length > safePageSize;
+      const items = hasMore ? rows.slice(0, safePageSize) : rows;
+      const numericCount = Number(count || 0);
+      const cachedTotal = isAdmin && !hasActivePropertyFilters() ? Number(state.propertySummary?.total || 0) : 0;
+      const total = numericCount || cachedTotal || (hasMore ? (from + safePageSize + 1) : (from + items.length));
+      return { items, total, hasMore, totalIsEstimated: !numericCount };
+    };
 
     if (isAdmin) {
       const { data, error, count } = await queryBase();
       if (error) throw error;
-      return { items: Array.isArray(data) ? data : [], total: Number(count || 0) };
+      return finalize(data, count);
     }
 
     const filters = [
@@ -891,8 +903,10 @@ function bindEvents() {
     for (const filter of filters) {
       const { data, error, count } = await queryBase().or(filter);
       if (!error) {
-        const rows = Array.isArray(data) ? data : [];
-        return { items: rows.filter((row) => rowAssignedToUid(row, uid)), total: Number(count || rows.length || 0) };
+        const normalized = finalize(data, count);
+        normalized.items = normalized.items.filter((row) => rowAssignedToUid(row, uid));
+        normalized.total = Number(count || normalized.items.length || 0) || normalized.total;
+        return normalized;
       }
       lastError = error;
     }
@@ -903,8 +917,39 @@ function bindEvents() {
     const pageSize = 1000;
     const out = [];
     let page = 1;
+
+    const runPageQuery = async (filter) => {
+      const from = Math.max(0, (page - 1) * pageSize);
+      const to = from + pageSize - 1;
+      let q = sb.from("properties").select(PROPERTY_LIST_SELECT).order("date_uploaded", { ascending: false }).range(from, to);
+      if (filter) q = q.or(filter);
+      const { data, error } = await q;
+      if (error) throw error;
+      return Array.isArray(data) ? data : [];
+    };
+
     while (true) {
-      const { items } = await fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid });
+      let items = [];
+      if (isAdmin) {
+        items = await runPageQuery(null);
+      } else {
+        const filters = [
+          `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
+          `assignee_id.eq.${uid}`,
+        ];
+        let lastError = null;
+        for (const filter of filters) {
+          try {
+            items = await runPageQuery(filter);
+            items = items.filter((row) => rowAssignedToUid(row, uid));
+            lastError = null;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        if (lastError) throw lastError;
+      }
       out.push(...items);
       if (items.length < pageSize) break;
       page += 1;
@@ -920,8 +965,30 @@ function bindEvents() {
   }
 
   async function fetchPropertySummary(sb) {
+    if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
+      const cached = state.propertiesFullCache;
+      const summary = {
+        total: cached.length,
+        auction: 0,
+        onbid: 0,
+        realtor_naver: 0,
+        realtor_direct: 0,
+        general: 0,
+      };
+      for (const item of cached) {
+        const type = String(item?.sourceType || '').trim();
+        if (type === 'auction') summary.auction += 1;
+        else if (type === 'onbid') summary.onbid += 1;
+        else if (type === 'realtor') {
+          if (item?.isDirectSubmission) summary.realtor_direct += 1;
+          else summary.realtor_naver += 1;
+        } else if (type === 'general') summary.general += 1;
+      }
+      return summary;
+    }
+
     const countRows = async (builder) => {
-      let q = sb.from("properties").select("id", { count: "exact", head: true });
+      let q = sb.from("properties").select("id", { count: "estimated", head: true });
       if (typeof builder === "function") q = builder(q) || q;
       const { count, error } = await q;
       if (error) throw error;
