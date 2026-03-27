@@ -24,25 +24,6 @@
     return (state.staff || []).find((s) => String(s.id || '').trim() === key)?.name || '';
   }
 
-  function nl2brEscaped(utils, value) {
-    const safe = utils.escapeHtml(String(value || ''));
-    return safe.replace(/\r?\n/g, '<br/>');
-  }
-
-  function renderDetailIndicator(kind, text, utils) {
-    const raw = String(text || '').trim();
-    if (!raw) return '-';
-    const label = kind === 'rights' ? '권리분석' : '현장실사';
-    const content = nl2brEscaped(utils, raw);
-    return `
-      <div class="detail-indicator" data-detail-kind="${utils.escapeAttr(kind)}">
-        <button type="button" class="detail-ok-btn" aria-label="${utils.escapeAttr(label)} 내용 보기" title="${utils.escapeAttr(raw)}">
-          <span class="detail-ok-icon" aria-hidden="true"></span>
-        </button>
-        <div class="detail-popover" role="tooltip">${content}</div>
-      </div>`;
-  }
-
 
   function getCurrentPriceValue(row) {
     if (!row || row.lowprice == null || row.lowprice === '') return Number(row?.priceMain || 0) || 0;
@@ -153,13 +134,10 @@
   }
 
   mod.getFilteredProperties = function getFilteredProperties() {
-    const { state, utils } = ctx();
+    const { state } = ctx();
     const f = state.propertyFilters || {};
     const kw = String(f.keyword || '').toLowerCase().trim();
-    const sortKey = String(state?.propertySort?.key || '').trim();
-    const auctionOnlyForSort = sortKey === 'currentPrice' || sortKey === 'ratio';
     const filtered = (state.properties || []).filter((p) => {
-      if (auctionOnlyForSort && p.sourceType !== 'auction' && p.sourceType !== 'onbid') return false;
       if (f.activeCard && f.activeCard !== 'all') {
         if (f.activeCard === 'realtor_naver') {
           if (p.sourceType !== 'realtor' || p.isDirectSubmission) return false;
@@ -404,8 +382,8 @@
         <td>${utils.escapeHtml(rate)}</td>
         <td class="schedule-cell">${typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-'}</td>
         <td>${utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정')}</td>
-        <td class="indicator-cell">${renderDetailIndicator('rights', p.rightsAnalysis, utils)}</td>
-        <td class="indicator-cell">${renderDetailIndicator('inspection', p.siteInspection, utils)}</td>
+        <td class="text-cell">${utils.escapeHtml(p.rightsAnalysis || '-')}</td>
+        <td class="text-cell">${utils.escapeHtml(p.siteInspection || '-')}</td>
         <td>${utils.escapeHtml(utils.formatDate(p.createdAt) || '-')}</td>
       `;
       const checkbox = tr.querySelector('.prop-row-check');
@@ -424,19 +402,6 @@
           void mod.openPropertyEditModal(p);
         });
       }
-      tr.querySelectorAll('.detail-indicator').forEach((wrap) => {
-        const btn = wrap.querySelector('.detail-ok-btn');
-        if (!btn) return;
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const willOpen = !wrap.classList.contains('is-open');
-          document.querySelectorAll('.detail-indicator.is-open').forEach((node) => {
-            if (node !== wrap) node.classList.remove('is-open');
-          });
-          wrap.classList.toggle('is-open', willOpen);
-        });
-      });
       frag.appendChild(tr);
     }
     els.propertiesTableBody.appendChild(frag);
@@ -676,8 +641,11 @@
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    if (sb) {
-      const nextRaw = utils.mergePropertyRaw(item, patch);
+    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
+
+    // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
+    // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.
+    if (!isAdmin && sb) {
       const dbPatch = {
         item_no: patch.itemNo,
         source_type: patch.sourceType,
@@ -701,39 +669,19 @@
         memo: patch.opinion,
         latitude: patch.latitude,
         longitude: patch.longitude,
-        raw: nextRaw,
+        raw: payload.raw,
       };
       Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
-      try {
-        await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
-        return;
-      } catch (error) {
-        if (!isAdmin || error?.code !== 'NO_ROWS_UPDATED') throw error;
-      }
+      await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
+      return;
     }
-    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
-    const candidates = [];
-    if (isAdmin) {
-      candidates.push({ path: '/admin/properties', method: 'PATCH' });
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: 'PATCH' });
-      candidates.push({ path: `/admin/properties/${encodeURIComponent(targetId)}`, method: 'PUT' });
-    }
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: 'PATCH' });
-    candidates.push({ path: `/properties/${encodeURIComponent(targetId)}`, method: 'PUT' });
-    candidates.push({ path: '/properties/update', method: 'POST' });
-    candidates.push({ path: '/admin/properties/update', method: 'POST' });
-    let lastErr = null;
-    for (const c of candidates) {
-      try {
-        await api(c.path, { method: c.method, auth: true, body: payload });
-        return;
-      } catch (e) {
-        lastErr = e;
-        const msg = String(e?.message || '');
-        if (msg.includes('404') || msg.includes('405') || msg.includes('not found')) continue;
-      }
-    }
-    throw lastErr || new Error('저장 실패');
+
+    // 실제 서버 구현은 /api/properties 한 곳에서 PATCH { targetId, patch }를 받는다.
+    await api('/properties', {
+      method: 'PATCH',
+      auth: true,
+      body: { targetId, patch: payload },
+    });
   };
 
   mod.handleDeleteProperty = async function handleDeleteProperty() {
