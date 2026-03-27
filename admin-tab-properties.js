@@ -24,6 +24,25 @@
     return (state.staff || []).find((s) => String(s.id || '').trim() === key)?.name || '';
   }
 
+  function nl2brEscaped(utils, value) {
+    const safe = utils.escapeHtml(String(value || ''));
+    return safe.replace(/\r?\n/g, '<br/>');
+  }
+
+  function renderDetailIndicator(kind, text, utils) {
+    const raw = String(text || '').trim();
+    if (!raw) return '-';
+    const label = kind === 'rights' ? '권리분석' : '현장실사';
+    const content = nl2brEscaped(utils, raw);
+    return `
+      <div class="detail-indicator" data-detail-kind="${utils.escapeAttr(kind)}">
+        <button type="button" class="detail-ok-btn" aria-label="${utils.escapeAttr(label)} 내용 보기" title="${utils.escapeAttr(raw)}">
+          <span class="detail-ok-icon" aria-hidden="true"></span>
+        </button>
+        <div class="detail-popover" role="tooltip">${content}</div>
+      </div>`;
+  }
+
 
   function getCurrentPriceValue(row) {
     if (!row || row.lowprice == null || row.lowprice === '') return Number(row?.priceMain || 0) || 0;
@@ -134,7 +153,7 @@
   }
 
   mod.getFilteredProperties = function getFilteredProperties() {
-    const { state } = ctx();
+    const { state, utils } = ctx();
     const f = state.propertyFilters || {};
     const kw = String(f.keyword || '').toLowerCase().trim();
     const filtered = (state.properties || []).filter((p) => {
@@ -382,8 +401,8 @@
         <td>${utils.escapeHtml(rate)}</td>
         <td class="schedule-cell">${typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-'}</td>
         <td>${utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정')}</td>
-        <td class="text-cell">${utils.escapeHtml(p.rightsAnalysis || '-')}</td>
-        <td class="text-cell">${utils.escapeHtml(p.siteInspection || '-')}</td>
+        <td class="indicator-cell">${renderDetailIndicator('rights', p.rightsAnalysis, utils)}</td>
+        <td class="indicator-cell">${renderDetailIndicator('inspection', p.siteInspection, utils)}</td>
         <td>${utils.escapeHtml(utils.formatDate(p.createdAt) || '-')}</td>
       `;
       const checkbox = tr.querySelector('.prop-row-check');
@@ -402,6 +421,19 @@
           void mod.openPropertyEditModal(p);
         });
       }
+      tr.querySelectorAll('.detail-indicator').forEach((wrap) => {
+        const btn = wrap.querySelector('.detail-ok-btn');
+        if (!btn) return;
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const willOpen = !wrap.classList.contains('is-open');
+          document.querySelectorAll('.detail-indicator.is-open').forEach((node) => {
+            if (node !== wrap) node.classList.remove('is-open');
+          });
+          wrap.classList.toggle('is-open', willOpen);
+        });
+      });
       frag.appendChild(tr);
     }
     els.propertiesTableBody.appendChild(frag);
