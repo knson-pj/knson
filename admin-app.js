@@ -1289,6 +1289,27 @@ function bindEvents() {
     return m ? String(m[1] || "").trim() : "";
   }
 
+  function isDuplicatePropertyConstraintError(err) {
+    const code = String(err?.code || err?.details?.code || "").trim();
+    const message = String(err?.message || err?.details?.message || err || "").toLowerCase();
+    const details = String(err?.details || err?.hint || "").toLowerCase();
+    const joined = `${message} ${details}`;
+    if (code === "23505") return true;
+    return joined.includes("duplicate key value violates unique constraint")
+      && (
+        joined.includes("uq_properties_global_id")
+        || joined.includes("uq_properties_registration_identity_key")
+        || joined.includes("global_id")
+        || joined.includes("registration_identity_key")
+      );
+  }
+
+  function createDuplicatePropertyError() {
+    const error = new Error("동일 물건이 이미 등록되어 있습니다");
+    error.code = "DUPLICATE_PROPERTY";
+    return error;
+  }
+
   function omitKeys(obj, keys) {
     const drop = new Set((Array.isArray(keys) ? keys : []).map((v) => String(v || "").trim()).filter(Boolean));
     return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
@@ -1303,6 +1324,8 @@ function bindEvents() {
         if (Array.isArray(data) && data.length) return data[0];
         return null;
       }
+      if (isDuplicatePropertyConstraintError(error)) throw createDuplicatePropertyError();
+      if (isDuplicatePropertyConstraintError(error)) throw createDuplicatePropertyError();
       const missing = extractSchemaMissingColumn(error);
       if (!missing || removed.has(missing) || !(missing in current)) throw error;
       removed.add(missing);
