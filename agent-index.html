@@ -6,7 +6,7 @@
   <meta name="supabase-url" content="" /><meta name="supabase-anon-key" content="" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260326-home1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260327-agenthome1" />
 </head>
 <body class="page-agent">
 
@@ -61,20 +61,91 @@
 
   <div class="admin-shell"><main class="admin-main">
 
-    <!-- ── 홈 (slide8): 담당자 전용, 문장형, 패널 없음 ── -->
+    <!-- ── 홈 대시보드 ── -->
     <section id="ag-view-home" class="ag-view">
-      <div class="agent-home-wrap">
-        <p class="home-intro">담당자 전용 페이지 입니다.</p>
-        <p class="home-sentence" style="margin-top:18px;">
-          현재 관리중인 매물수는&nbsp;총&nbsp;<strong class="hs-total" id="agSumTotal">-</strong>건 이며,
-        </p>
-        <p class="home-sentence" style="margin-top:6px;">
-          <span class="hs-auction">경매</span>&nbsp;<span id="agSumAuction">-</span>&nbsp;건,&nbsp;
-          공매&nbsp;<span id="agSumGongmae">-</span>&nbsp;건,&nbsp;
-          <span class="hs-naver">네이버중개</span>&nbsp;<span id="agSumNaverRealtor">-</span>&nbsp;건,&nbsp;
-          <span class="hs-direct">일반중개</span>&nbsp;<span id="agSumDirectRealtor">-</span>&nbsp;건,&nbsp;&nbsp;
-          <span class="hs-general">일반</span>&nbsp;<span class="hs-general-num" id="agSumGeneral">-</span>&nbsp;건 입니다.
-        </p>
+      <div class="admin-home-page agent-home-page">
+        <h2 class="admin-page-heading">홈 대시보드</h2>
+
+        <article class="card-unit admin-home-overview agent-home-overview">
+          <div class="admin-home-overview-copy">
+            <h3>전체 관리 물건</h3>
+            <div class="highlight-number" id="agSumTotal">-</div>
+            <p class="admin-home-overview-sub">현재 배정된 물건</p>
+          </div>
+          <div class="admin-home-divider"></div>
+          <div class="admin-home-source-grid">
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-auction">경</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">경매</span>
+                  <strong id="agSumAuction">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="agHomeProgressAuction" class="admin-home-progress-fill is-auction"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-onbid">$</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">공매</span>
+                  <strong id="agSumGongmae">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="agHomeProgressOnbid" class="admin-home-progress-fill is-onbid"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-naver">N</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">네이버중개</span>
+                  <strong id="agSumNaverRealtor">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="agHomeProgressNaver" class="admin-home-progress-fill is-naver"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-direct">문</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">일반중개</span>
+                  <strong id="agSumDirectRealtor">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="agHomeProgressDirect" class="admin-home-progress-fill is-direct"></span></div>
+            </div>
+            <div class="admin-home-source-item">
+              <div class="admin-home-source-head">
+                <span class="admin-home-source-badge is-general">일</span>
+                <div class="admin-home-source-copy">
+                  <span class="admin-home-source-label">일반</span>
+                  <strong id="agSumGeneral">-</strong>
+                </div>
+              </div>
+              <div class="admin-home-progress"><span id="agHomeProgressGeneral" class="admin-home-progress-fill is-general"></span></div>
+            </div>
+          </div>
+        </article>
+
+        <section class="admin-home-updates-block">
+          <h3 class="admin-page-heading admin-page-heading-sm">오늘의 배정 물건</h3>
+          <div class="agent-home-updates-grid">
+            <article class="card-unit admin-home-updates-main agent-home-updates-main">
+              <div>
+                <p class="admin-mini-label">배정 물건</p>
+                <div class="admin-mini-number" id="agTodayAssignedTotal">-</div>
+              </div>
+              <div class="admin-home-updates-list">
+                <div class="admin-home-updates-row"><span>경매</span><strong id="agTodayAssignedAuction">-</strong></div>
+                <div class="admin-home-updates-row"><span>공매</span><strong id="agTodayAssignedOnbid">-</strong></div>
+                <div class="admin-home-updates-row"><span>네이버중개</span><strong id="agTodayAssignedNaver">-</strong></div>
+                <div class="admin-home-updates-row"><span>일반중개</span><strong id="agTodayAssignedDirect">-</strong></div>
+                <div class="admin-home-updates-row"><span>일반</span><strong id="agTodayAssignedGeneral">-</strong></div>
+              </div>
+              <p id="agTodayAssignedDetail" class="admin-home-updates-footnote">금일 등록일 기준으로 집계됩니다.</p>
+            </article>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -146,7 +217,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./knson-core.js?v=20260320-agent"></script>
-<script src="./agent-app.js?v=20260325-ui2"></script>
+<script src="./agent-app.js?v=20260327-home1"></script>
 
 <script>
 (function(){

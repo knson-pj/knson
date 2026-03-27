@@ -173,7 +173,6 @@
     els.globalMsg = $("#globalMsg");
 
     els.dailyReportModal = $("#dailyReportModal");
-    els.dailyReportView = $("#ag-view-dailyreport");
     els.dailyReportClose = $("#dailyReportClose");
     els.dailyReportDone = $("#dailyReportDone");
     els.dailyReportTotal = $("#dailyReportTotal");
@@ -188,6 +187,18 @@
     els.agSumNaverRealtor = $("#agSumNaverRealtor");
     els.agSumDirectRealtor = $("#agSumDirectRealtor");
     els.agSumGeneral = $("#agSumGeneral");
+    els.agHomeProgressAuction = $("#agHomeProgressAuction");
+    els.agHomeProgressOnbid = $("#agHomeProgressOnbid");
+    els.agHomeProgressNaver = $("#agHomeProgressNaver");
+    els.agHomeProgressDirect = $("#agHomeProgressDirect");
+    els.agHomeProgressGeneral = $("#agHomeProgressGeneral");
+    els.agTodayAssignedTotal = $("#agTodayAssignedTotal");
+    els.agTodayAssignedAuction = $("#agTodayAssignedAuction");
+    els.agTodayAssignedOnbid = $("#agTodayAssignedOnbid");
+    els.agTodayAssignedNaver = $("#agTodayAssignedNaver");
+    els.agTodayAssignedDirect = $("#agTodayAssignedDirect");
+    els.agTodayAssignedGeneral = $("#agTodayAssignedGeneral");
+    els.agTodayAssignedDetail = $("#agTodayAssignedDetail");
 
     // Table
     els.agTableBody = $("#agTableBody");
@@ -371,26 +382,6 @@
     }
   }
 
-  function isDailyReportVisible() {
-    const modalVisible = !!(els.dailyReportModal && !els.dailyReportModal.classList.contains("hidden"));
-    const viewVisible = !!(els.dailyReportView && !els.dailyReportView.classList.contains("hidden"));
-    return modalVisible || viewVisible;
-  }
-
-  async function enterDailyReportView(options = {}) {
-    if (typeof window.showDailyReportView === "function" && options.skipSwitch !== true) {
-      try { window.showDailyReportView(); } catch {}
-    }
-    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
-    renderDailyReport();
-    try {
-      await refreshDailyReportSummary({ force: true });
-      setGlobalMsg("");
-    } catch (err) {
-      setGlobalMsg(err?.message || "일일업무일지 조회 실패");
-    }
-  }
-
   async function refreshDailyReportSummary(options = {}) {
     const dateKey = String(options.dateKey || getTodayDateKey()).trim();
     if (!dateKey) return state.dailyReport.counts || emptyDailyReportCounts();
@@ -528,11 +519,18 @@
   }
 
   async function openDailyReportModal() {
-    await enterDailyReportView();
+    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
+    renderDailyReport();
     if (!els.dailyReportModal) return;
     document.body.classList.add("modal-open");
     els.dailyReportModal.classList.remove("hidden");
     els.dailyReportModal.setAttribute("aria-hidden", "false");
+    try {
+      await refreshDailyReportSummary({ force: true });
+      setGlobalMsg("");
+    } catch (err) {
+      setGlobalMsg(err?.message || "일일업무일지 조회 실패");
+    }
   }
 
   function closeDailyReportModal() {
@@ -646,7 +644,6 @@
         saveDailyReportNote(els.dailyReportNote.value || "");
       }, 120));
     }
-    window.__agentDailyReportEnter = () => enterDailyReportView({ skipSwitch: true });
 
     // 신규 물건 등록 모달
     if (els.btnNewProperty) els.btnNewProperty.addEventListener("click", openNewPropertyModal);
@@ -1149,18 +1146,72 @@
   function renderAll() {
     renderSummary();
     renderTable();
-    if (isDailyReportVisible()) renderDailyReport();
+    if (els.dailyReportModal && !els.dailyReportModal.classList.contains("hidden")) renderDailyReport();
+  }
+
+  function extractDateKeyFromValue(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (direct) return direct[1];
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return "";
+    return getTodayDateKey(parsed);
+  }
+
+  function countSourceSummary(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    return {
+      total: list.length,
+      auction: list.filter((r) => r.sourceType === "auction").length,
+      onbid: list.filter((r) => r.sourceType === "onbid").length,
+      realtor_naver: list.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission).length,
+      realtor_direct: list.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission).length,
+      general: list.filter((r) => r.sourceType === "general").length,
+    };
   }
 
   function renderSummary() {
-    const p = state.properties;
-    const fmt = (n) => Number(n).toLocaleString("ko-KR");
-    if (els.agSumTotal) els.agSumTotal.textContent = fmt(p.length);
-    if (els.agSumAuction) els.agSumAuction.textContent = fmt(p.filter((r) => r.sourceType === "auction").length);
-    if (els.agSumGongmae) els.agSumGongmae.textContent = fmt(p.filter((r) => r.sourceType === "onbid").length);
-    if (els.agSumNaverRealtor) els.agSumNaverRealtor.textContent = fmt(p.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission).length);
-    if (els.agSumDirectRealtor) els.agSumDirectRealtor.textContent = fmt(p.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission).length);
-    if (els.agSumGeneral) els.agSumGeneral.textContent = fmt(p.filter((r) => r.sourceType === "general").length);
+    const p = Array.isArray(state.properties) ? state.properties : [];
+    const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
+    const summary = countSourceSummary(p);
+    if (els.agSumTotal) els.agSumTotal.textContent = fmt(summary.total);
+    if (els.agSumAuction) els.agSumAuction.textContent = fmt(summary.auction);
+    if (els.agSumGongmae) els.agSumGongmae.textContent = fmt(summary.onbid);
+    if (els.agSumNaverRealtor) els.agSumNaverRealtor.textContent = fmt(summary.realtor_naver);
+    if (els.agSumDirectRealtor) els.agSumDirectRealtor.textContent = fmt(summary.realtor_direct);
+    if (els.agSumGeneral) els.agSumGeneral.textContent = fmt(summary.general);
+
+    const totalForRatio = Math.max(Number(summary.total) || 0, 1);
+    const setProgress = (el, value) => {
+      if (!el) return;
+      const ratio = Math.max(8, Math.min(100, Math.round(((Number(value) || 0) / totalForRatio) * 100)));
+      el.style.width = `${ratio}%`;
+    };
+    setProgress(els.agHomeProgressAuction, summary.auction);
+    setProgress(els.agHomeProgressOnbid, summary.onbid);
+    setProgress(els.agHomeProgressNaver, summary.realtor_naver);
+    setProgress(els.agHomeProgressDirect, summary.realtor_direct);
+    setProgress(els.agHomeProgressGeneral, summary.general);
+
+    const todayKey = getTodayDateKey();
+    const todayAssignedRows = p.filter((item) => {
+      const raw = item?._raw || {};
+      const candidate = item?.createdAt || raw?.date_uploaded || raw?.created_at || raw?.date || raw?.createdAt || "";
+      return extractDateKeyFromValue(candidate) === todayKey;
+    });
+    const todayAssigned = countSourceSummary(todayAssignedRows);
+    if (els.agTodayAssignedTotal) els.agTodayAssignedTotal.textContent = fmt(todayAssigned.total);
+    if (els.agTodayAssignedAuction) els.agTodayAssignedAuction.textContent = fmt(todayAssigned.auction);
+    if (els.agTodayAssignedOnbid) els.agTodayAssignedOnbid.textContent = fmt(todayAssigned.onbid);
+    if (els.agTodayAssignedNaver) els.agTodayAssignedNaver.textContent = fmt(todayAssigned.realtor_naver);
+    if (els.agTodayAssignedDirect) els.agTodayAssignedDirect.textContent = fmt(todayAssigned.realtor_direct);
+    if (els.agTodayAssignedGeneral) els.agTodayAssignedGeneral.textContent = fmt(todayAssigned.general);
+    if (els.agTodayAssignedDetail) {
+      els.agTodayAssignedDetail.textContent = todayAssigned.total
+        ? "금일 등록일 기준으로 집계됩니다."
+        : "오늘 새로 배정된 물건이 없습니다.";
+    }
   }
 
   function getFilteredProps() {
