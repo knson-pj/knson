@@ -382,6 +382,68 @@ function escapeLikeTerm(value) {
   return String(value || '').replace(/[%,]/g, '').trim();
 }
 
+const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
+  'uq_properties_global_id',
+  'uq_properties_registration_identity_key',
+  'uq_properties_registration_identity_key_v2_strict',
+]);
+
+function collectPropertyErrorFragments(error) {
+  const fragments = [];
+  const push = (value) => {
+    if (value == null) return;
+    const s = String(value).trim();
+    if (s) fragments.push(s);
+  };
+  const queue = [error];
+  const seen = new Set();
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object' || seen.has(current)) continue;
+    seen.add(current);
+    push(current.message);
+    push(current.details);
+    push(current.hint);
+    push(current.code);
+    push(current.constraint);
+    push(current.error);
+    push(current.error_description);
+    if (current.data && typeof current.data === 'object') queue.push(current.data);
+    if (current.cause && typeof current.cause === 'object') queue.push(current.cause);
+    if (current.originalError && typeof current.originalError === 'object') queue.push(current.originalError);
+  }
+  return fragments;
+}
+
+function detectPropertyDuplicateIndexName(error) {
+  const constraint = String(error?.constraint || error?.data?.constraint || '').trim();
+  if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return constraint;
+  const joined = collectPropertyErrorFragments(error).join('\n');
+  for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
+    if (joined.includes(indexName)) return indexName;
+  }
+  return '';
+}
+
+function isPropertyDuplicateError(error) {
+  const code = String(error?.code || error?.data?.code || '').trim();
+  const joined = collectPropertyErrorFragments(error).join('\n');
+  if (detectPropertyDuplicateIndexName(error)) return true;
+  if (code === '23505' && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+  if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+  return false;
+}
+
+function normalizePropertyDuplicateError(error) {
+  if (!isPropertyDuplicateError(error)) return null;
+  const normalized = new Error('동일 물건이 이미 등록되어 있습니다');
+  normalized.status = 409;
+  normalized.code = 'PROPERTY_DUPLICATE';
+  normalized.constraint = detectPropertyDuplicateIndexName(error) || undefined;
+  normalized.cause = error;
+  return normalized;
+}
+
 function buildSupabaseHeaders({ hasJson = false, extra = {} } = {}) {
   const { serviceRoleKey } = getEnv();
   const headers = {
@@ -598,6 +660,10 @@ module.exports = async function handler(req, res) {
     }
     return handleLegacyPublicListing(res, payload, body);
   } catch (err) {
+    const duplicateErr = normalizePropertyDuplicateError(err);
+    if (duplicateErr) {
+      return send(res, duplicateErr.status, { ok: false, message: duplicateErr.message, code: duplicateErr.code });
+    }
     return send(res, err?.status || 500, { ok: false, message: err?.message || '등록에 실패했습니다.' });
   }
 };

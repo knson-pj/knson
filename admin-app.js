@@ -1289,30 +1289,63 @@ function bindEvents() {
     return m ? String(m[1] || "").trim() : "";
   }
 
-  function isDuplicatePropertyConstraintError(err) {
-    const code = String(err?.code || err?.details?.code || "").trim();
-    const message = String(err?.message || err?.details?.message || err || "").toLowerCase();
-    const details = String(err?.details || err?.hint || "").toLowerCase();
-    const joined = `${message} ${details}`;
-    if (code === "23505") return true;
-    return joined.includes("duplicate key value violates unique constraint")
-      && (
-        joined.includes("uq_properties_global_id")
-        || joined.includes("uq_properties_registration_identity_key")
-        || joined.includes("global_id")
-        || joined.includes("registration_identity_key")
-      );
-  }
-
-  function createDuplicatePropertyError() {
-    const error = new Error("동일 물건이 이미 등록되어 있습니다");
-    error.code = "DUPLICATE_PROPERTY";
-    return error;
-  }
-
   function omitKeys(obj, keys) {
     const drop = new Set((Array.isArray(keys) ? keys : []).map((v) => String(v || "").trim()).filter(Boolean));
     return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
+  }
+
+  const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
+    "uq_properties_global_id",
+    "uq_properties_registration_identity_key",
+    "uq_properties_registration_identity_key_v2_strict",
+  ]);
+
+  function collectPropertyErrorTexts(err) {
+    const texts = [];
+    const push = (value) => {
+      if (value == null) return;
+      const s = String(value).trim();
+      if (s) texts.push(s);
+    };
+    const queue = [err];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+      push(current.message);
+      push(current.details);
+      push(current.hint);
+      push(current.code);
+      push(current.constraint);
+      push(current.error);
+      push(current.error_description);
+      if (current.cause && typeof current.cause === "object") queue.push(current.cause);
+      if (current.data && typeof current.data === "object") queue.push(current.data);
+      if (current.originalError && typeof current.originalError === "object") queue.push(current.originalError);
+    }
+    return texts;
+  }
+
+  function isPropertyDuplicateError(err) {
+    const code = String(err?.code || err?.data?.code || "").trim();
+    const constraint = String(err?.constraint || err?.data?.constraint || "").trim();
+    if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return true;
+    const joined = collectPropertyErrorTexts(err).join('\n');
+    for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
+      if (joined.includes(indexName)) return true;
+    }
+    if (code === "23505" && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    return false;
+  }
+
+  function normalizePropertyDuplicateError(err) {
+    if (!isPropertyDuplicateError(err)) return err;
+    const normalized = new Error("동일 물건이 이미 등록되어 있습니다");
+    normalized.code = "PROPERTY_DUPLICATE";
+    normalized.cause = err;
+    return normalized;
   }
 
   async function insertPropertyRowResilient(sb, row) {
@@ -1324,10 +1357,8 @@ function bindEvents() {
         if (Array.isArray(data) && data.length) return data[0];
         return null;
       }
-      if (isDuplicatePropertyConstraintError(error)) throw createDuplicatePropertyError();
-      if (isDuplicatePropertyConstraintError(error)) throw createDuplicatePropertyError();
       const missing = extractSchemaMissingColumn(error);
-      if (!missing || removed.has(missing) || !(missing in current)) throw error;
+      if (!missing || removed.has(missing) || !(missing in current)) throw normalizePropertyDuplicateError(error);
       removed.add(missing);
       current = omitKeys(current, [missing]);
     }
@@ -1345,7 +1376,7 @@ function bindEvents() {
         throw Object.assign(new Error("NO_ROWS_UPDATED"), { code: "NO_ROWS_UPDATED" });
       }
       const missing = extractSchemaMissingColumn(error);
-      if (!missing || removed.has(missing) || !(missing in current)) throw error;
+      if (!missing || removed.has(missing) || !(missing in current)) throw normalizePropertyDuplicateError(error);
       removed.add(missing);
       current = omitKeys(current, [missing]);
     }
@@ -1945,7 +1976,7 @@ function bindEvents() {
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
     const nextRaw = { ...currentRaw, opinionHistory: history, opinion: latestOpinion, memo: latestOpinion };
     const { error } = await sb.from("properties").update({ memo: latestOpinion, raw: nextRaw }).eq(col, targetId);
-    if (error) throw error;
+    if (error) throw normalizePropertyDuplicateError(error);
   }
 
   function esc(v) {

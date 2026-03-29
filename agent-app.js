@@ -1572,7 +1572,7 @@
         if (/not allowed/i.test(message)) {
           throw new Error("현재 물건 수정은 DB 정책에 의해 차단되었습니다. 잠긴 항목과 assignee_id 배정을 다시 확인해 주세요.");
         }
-        throw error;
+        throw normalizePropertyDuplicateError(error);
       }
       const updatedRow = Array.isArray(data) ? (data[0] || null) : data;
       if (!updatedRow) {
@@ -1789,6 +1789,60 @@
       })).filter((entry) => entry.date || entry.text || entry.author);
     }
     return merged;
+  }
+
+  const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
+    "uq_properties_global_id",
+    "uq_properties_registration_identity_key",
+    "uq_properties_registration_identity_key_v2_strict",
+  ]);
+
+  function collectPropertyErrorTexts(err) {
+    const texts = [];
+    const push = (value) => {
+      if (value == null) return;
+      const s = String(value).trim();
+      if (s) texts.push(s);
+    };
+    const queue = [err];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+      push(current.message);
+      push(current.details);
+      push(current.hint);
+      push(current.code);
+      push(current.constraint);
+      push(current.error);
+      push(current.error_description);
+      if (current.cause && typeof current.cause === "object") queue.push(current.cause);
+      if (current.data && typeof current.data === "object") queue.push(current.data);
+      if (current.originalError && typeof current.originalError === "object") queue.push(current.originalError);
+    }
+    return texts;
+  }
+
+  function isPropertyDuplicateError(err) {
+    const code = String(err?.code || err?.data?.code || "").trim();
+    const constraint = String(err?.constraint || err?.data?.constraint || "").trim();
+    if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return true;
+    const joined = collectPropertyErrorTexts(err).join('\n');
+    for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
+      if (joined.includes(indexName)) return true;
+    }
+    if (code === "23505" && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    return false;
+  }
+
+  function normalizePropertyDuplicateError(err) {
+    if (!isPropertyDuplicateError(err)) return err;
+    const normalized = new Error("동일 물건이 이미 등록되어 있습니다");
+    normalized.code = "PROPERTY_DUPLICATE";
+    normalized.cause = err;
+    return normalized;
   }
 
   async function insertPropertyRowResilient(_sb, row) {
