@@ -1040,6 +1040,15 @@
   }
 
   function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === "function") {
+      return PropertyDomain.buildRegistrationDbRowForExisting(existingItem, incomingRow, context, {
+        assignIfEmpty: !!options.assignIfEmpty,
+        copyFields: ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo","item_no","assignee_id","source_type","submitter_type"],
+        labels: REG_LOG_LABELS,
+        amountFields: ["priceMain"],
+        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
     const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
     const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
@@ -1050,47 +1059,15 @@
     });
     if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
     if (!hasMeaningfulValue(nextRow.item_no) && hasMeaningfulValue(incomingRow?.item_no)) nextRow.item_no = incomingRow.item_no;
-
-    const normalizeSource = (value) => (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
-      ? PropertyDomain.normalizeSourceType(value, { fallback: "" })
-      : String(value || "").trim().toLowerCase();
-    const normalizeSubmitter = (value) => {
-      const v = String(value || "").trim().toLowerCase();
-      if (v === "realtor") return "realtor";
-      if (v === "owner" || v === "general") return "owner";
-      return "";
-    };
-    const sourcePriority = { "": 0, general: 1, realtor: 2, onbid: 3, auction: 4 };
-
-    const currentSourceType = normalizeSource(nextRow.source_type || nextRow.sourceType || base?.raw?.source_type || base?.raw?.sourceType || "");
-    const incomingSourceType = normalizeSource(incomingRow?.source_type || incomingRow?.sourceType || incomingRow?.raw?.source_type || incomingRow?.raw?.sourceType || "");
-    if (hasMeaningfulValue(incomingRow?.source_type) && sourcePriority[incomingSourceType] > sourcePriority[currentSourceType]) {
-      nextRow.source_type = incomingSourceType;
-    } else if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) {
-      nextRow.source_type = incomingRow.source_type;
-    }
-
-    const currentSubmitterType = normalizeSubmitter(nextRow.submitter_type || nextRow.submitterType || base?.raw?.submitter_type || base?.raw?.submitterType || "");
-    const incomingSubmitterType = normalizeSubmitter(incomingRow?.submitter_type || incomingRow?.submitterType || incomingRow?.raw?.submitter_type || incomingRow?.raw?.submitterType || "");
-    if (incomingSubmitterType === "realtor" || (!hasMeaningfulValue(nextRow.submitter_type) && incomingSubmitterType)) {
-      nextRow.submitter_type = incomingSubmitterType;
-    }
-
     const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
-    if (incomingSourceType) {
-      mergedRaw.sourceType = incomingSourceType;
-      mergedRaw.source_type = incomingSourceType;
-    }
-    if (incomingSubmitterType) {
-      mergedRaw.submitterType = incomingSubmitterType;
-      mergedRaw.submitter_type = incomingSubmitterType;
-    }
-
     nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergedRaw, context, changes), nextSnapshot);
     return { row: nextRow, changes };
   }
 
   function buildRegistrationDbRowForCreate(row, context) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForCreate === "function") {
+      return PropertyDomain.buildRegistrationDbRowForCreate(row, context);
+    }
     return { ...(row || {}), raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row) };
   }
 
@@ -1412,16 +1389,9 @@
 
   // ── Edit Modal ──
   function getAgentEditableSnapshot(item) {
-    if (PropertyDomain && typeof PropertyDomain.buildPropertyEditViewModel === "function") {
-      const view = PropertyDomain.buildPropertyEditViewModel(item);
-      if (view) return view;
-    }
     const raw = item?._raw?.raw || {};
     const row = item?._raw || {};
     return {
-      sourceBucketLabel: (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function")
-        ? PropertyDomain.getSourceBucketLabel((PropertyDomain.getSourceBucket && PropertyDomain.getSourceBucket(item)) || item?.sourceType)
-        : "일반",
       floor: firstText(raw.floor, row.floor, item?.floor, ""),
       totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, row.total_floor, row.totalfloor, item?.totalfloor, ""),
       useapproval: firstText(raw.useapproval, raw.useApproval, row.use_approval, item?.useapproval, ""),
@@ -1429,7 +1399,7 @@
       exclusivearea: raw.exclusiveArea ?? raw.exclusivearea ?? row.exclusive_area ?? row.exclusivearea ?? item?.exclusivearea ?? null,
       sitearea: raw.siteArea ?? raw.sitearea ?? row.site_area ?? row.sitearea ?? item?.sitearea ?? null,
       priceMain: raw.priceMain ?? row.price_main ?? item?.priceMain ?? null,
-      currentPriceValue: raw.currentPrice ?? raw.lowprice ?? row.lowprice ?? row.low_price ?? item?.lowprice ?? null,
+      currentPrice: raw.currentPrice ?? raw.lowprice ?? row.lowprice ?? row.low_price ?? item?.lowprice ?? null,
       dateMain: firstText(raw.dateMain, row.date_main, item?.dateMain, ""),
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
@@ -1453,12 +1423,11 @@
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
     const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
-    const sourceDisplay = view.sourceBucketLabel || kindMap[item.sourceType] || "일반";
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", sourceDisplay);
+    setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
@@ -1469,7 +1438,7 @@
     setVal(f, "exclusivearea", view.exclusivearea != null ? fmtArea(view.exclusivearea) : "");
     setVal(f, "sitearea", view.sitearea != null ? fmtArea(view.sitearea) : "");
     setVal(f, "priceMain", view.priceMain != null ? formatMoneyInputValue(view.priceMain) : "");
-    setVal(f, "currentPrice", view.currentPriceValue != null ? formatMoneyInputValue(view.currentPriceValue) : "");
+    setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
     setVal(f, "dateMain", view.dateMain || "");
     setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);
@@ -1864,8 +1833,15 @@
     const readStr = (k) => String(fd.get(k) || "").trim();
     const readNum = (k) => parseFlexibleNumber(fd.get(k));
 
+    const submitterKind = readStr("submitterKind") || "realtor";
+    const sourceType = submitterKind === "realtor" ? "realtor" : "general";
+    const address = readStr("address");
+    const assetType = readStr("assetType");
+    const priceMain = readNum("priceMain");
+
+    if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
+
     const actorName = String(state.session?.user?.name || state.session?.user?.email || "").trim();
-    const submitterKind = PropertyDomain?.normalizeRegistrationSubmitterKind?.(readStr("submitterKind"), { fallback: "realtor" }) || "realtor";
     let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
     if (submitterKind === "realtor") {
       realtorName = readStr("realtorname");
@@ -1873,43 +1849,52 @@
       realtorCell = readStr("realtorcell");
       submitterName = actorName || readStr("submitterName") || null;
       submitterPhone = realtorCell;
+      if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
     } else {
       submitterName = readStr("submitterName") || actorName || "";
       submitterPhone = readStr("submitterPhone");
+      if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
     }
 
     const currentUserId = String(state.session?.user?.id || "").trim() || null;
-    const submissionCore = PropertyDomain?.buildRegistrationSubmissionCore?.({
-      submitterKind,
-      address: readStr("address"),
-      assetType: readStr("assetType"),
-      priceMain: readNum("priceMain"),
-      floor: readStr("floor") || null,
-      totalFloor: readStr("totalfloor") || null,
-      useApproval: readStr("useapproval") || null,
-      commonArea: readNum("commonarea"),
-      exclusiveArea: readNum("exclusivearea"),
-      siteArea: readNum("sitearea"),
-      realtorName,
-      realtorPhone,
-      realtorCell,
-      submitterName,
-      submitterPhone,
-      opinion: readStr("opinion") || null,
-    }, { actorName, assigneeId: currentUserId }) || null;
-    const validationMessage = PropertyDomain?.validateRegistrationSubmissionCore?.(submissionCore, {
-      requiredMessage: "주소, 세부유형, 매매가는 필수입니다.",
-      realtorMessage: "중개사무소명과 휴대폰번호를 입력해 주세요.",
-      ownerMessage: "이름과 연락처를 입력해 주세요.",
-    }) || "";
-    if (validationMessage) throw new Error(validationMessage);
-
-    const payload = PropertyDomain?.buildRegistrationSubmissionPayload?.(submissionCore, {
-      actorName,
-      assigneeId: currentUserId,
-      registrationKind: "agent",
-    }) || null;
-    if (!payload) throw new Error("등록 데이터를 준비하지 못했습니다.");
+    const submitterType = submitterKind === "realtor" ? "realtor" : "owner";
+    const payload = {
+      source_type: sourceType,
+      is_general: true,
+      submitter_type: submitterType,
+      address,
+      asset_type: assetType,
+      price_main: priceMain,
+      use_approval: readStr("useapproval") || null,
+      common_area: readNum("commonarea"),
+      exclusive_area: readNum("exclusivearea"),
+      site_area: readNum("sitearea"),
+      assignee_id: currentUserId,
+      broker_office_name: realtorName,
+      submitter_name: submitterName || null,
+      submitter_phone: submitterPhone,
+      memo: readStr("opinion") || null,
+      raw: {
+        sourceType,
+        source_type: sourceType,
+        submitterType,
+        submitter_type: submitterType,
+        address, assetType, priceMain,
+        floor: readStr("floor") || null,
+        totalfloor: readStr("totalfloor") || null,
+        useapproval: readStr("useapproval") || null,
+        commonArea: readNum("commonarea"),
+        exclusiveArea: readNum("exclusivearea"),
+        siteArea: readNum("sitearea"),
+        realtorName, realtorPhone, realtorCell,
+        submitterName, submitterPhone,
+        opinion: readStr("opinion") || null,
+        assigneeId: currentUserId,
+        assignedAgentId: currentUserId,
+        registeredByAgent: true,
+        registeredByName: actorName || null,
+      },
+    };
 
     if (els.npmSave) els.npmSave.disabled = true;
     setNpmMsg("");

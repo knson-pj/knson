@@ -259,96 +259,6 @@
     return match ? String(Number(match[1])) : "";
   }
 
-  function getSourceBucketClass(bucket) {
-    const key = String(bucket || "").trim();
-    if (key === "auction") return "kind-auction";
-    if (key === "onbid") return "kind-gongmae";
-    if (key === "realtor_naver" || key === "realtor_direct" || key === "realtor") return "kind-realtor";
-    return "kind-general";
-  }
-
-  function getCurrentPriceValue(item) {
-    const current = toNullableNumber(
-      item?.currentPriceValue ?? item?.currentPrice ?? item?.current_price ?? item?.lowprice ?? item?.low_price ??
-      item?.raw?.currentPrice ?? item?.raw?.current_price ?? item?.raw?.lowprice ?? item?.raw?.low_price
-    );
-    if (current != null && Number.isFinite(current)) return current;
-    const mainPrice = toNullableNumber(
-      item?.priceMain ?? item?.price_main ?? item?.raw?.priceMain ?? item?.raw?.price_main ??
-      item?.raw?.["감정가"] ?? item?.raw?.["감정가(원)"]
-    );
-    return mainPrice != null && Number.isFinite(mainPrice) ? mainPrice : null;
-  }
-
-  function buildPropertyListViewModel(item, options = {}) {
-    const base = buildNormalizedPropertyBase(item, options);
-    if (!base) return null;
-    const sourceBucket = getSourceBucket(base);
-    return {
-      id: base.id,
-      globalId: base.globalId,
-      sourceType: base.sourceType,
-      sourceBucket,
-      kindLabel: getSourceBucketLabel(sourceBucket),
-      kindClass: getSourceBucketClass(sourceBucket),
-      itemNo: base.itemNo || "-",
-      address: base.address || "-",
-      assetType: base.assetType || "-",
-      floor: base.floor || "-",
-      opinionPreview: String(base.opinion || "").trim().slice(0, 30),
-      currentPriceValue: getCurrentPriceValue(base),
-      priceMain: base.priceMain,
-      exclusivearea: base.exclusivearea,
-      rightsAnalysis: base.rightsAnalysis,
-      siteInspection: base.siteInspection,
-    };
-  }
-
-  function buildPropertyEditViewModel(item, options = {}) {
-    const base = buildNormalizedPropertyBase(item, options);
-    if (!base) return null;
-    const sourceBucket = getSourceBucket(base);
-    const submitterType = normalizeSubmitterType(base.submitterType, { fallback: "" });
-    return {
-      id: base.id,
-      globalId: base.globalId,
-      sourceType: base.sourceType,
-      sourceTypeLabel: getSourceTypeLabel(base.sourceType),
-      sourceBucket,
-      sourceBucketLabel: getSourceBucketLabel(sourceBucket),
-      submitterType,
-      submitterTypeLabel: submitterType === "realtor" ? "공인중개사" : (submitterType === "owner" ? "소유자 / 일반" : ""),
-      assignedAgentId: base.assignedAgentId || "",
-      assignedAgentName: base.assignedAgentName || "",
-      itemNo: base.itemNo || "",
-      address: base.address || "",
-      assetType: base.assetType || "",
-      status: base.status || "",
-      floor: base.floor || "",
-      totalfloor: base.totalfloor || "",
-      useapproval: base.useapproval || "",
-      commonarea: base.commonarea,
-      exclusivearea: base.exclusivearea,
-      sitearea: base.sitearea,
-      priceMain: base.priceMain,
-      currentPriceValue: getCurrentPriceValue(base),
-      lowprice: getCurrentPriceValue(base),
-      dateMain: base.dateMain || "",
-      sourceUrl: base.sourceUrl || "",
-      createdAt: base.createdAt || "",
-      realtorname: base.realtorname || "",
-      realtorphone: base.realtorphone || "",
-      realtorcell: base.realtorcell || "",
-      rightsAnalysis: base.rightsAnalysis || "",
-      siteInspection: base.siteInspection || "",
-      opinion: base.opinion || "",
-      latitude: base.latitude,
-      longitude: base.longitude,
-      isDirectSubmission: !!base.isDirectSubmission,
-      raw: base.raw,
-    };
-  }
-
   function buildRegistrationMatchKey(data) {
     const parts = parseAddressIdentityParts(pickFirstText(data?.address, data?.raw?.address, ""));
     const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, data?.totalFloor, data?.raw?.totalfloor, "")) || "0";
@@ -607,136 +517,6 @@
     return normalizeSourceType(rawValue, { fallback: "general" });
   }
 
-  function normalizeRegistrationSubmitterKind(rawValue, options = {}) {
-    const fallback = String(options.fallback || "realtor").trim().toLowerCase() === "owner" ? "owner" : "realtor";
-    const value = String(rawValue || "").trim().toLowerCase();
-    if (!value) return fallback;
-    if (["realtor", "broker", "agent", "중개", "중개사", "공인중개사"].includes(value)) return "realtor";
-    if (["owner", "general", "user", "person", "일반", "소유", "소유자", "본인"].includes(value)) return "owner";
-    return fallback;
-  }
-
-  function buildRegistrationSubmissionCore(input = {}, options = {}) {
-    const defaultKind = String(options.defaultSubmitterKind || "realtor").trim().toLowerCase() === "owner" ? "owner" : "realtor";
-    const submitterKind = normalizeRegistrationSubmitterKind(
-      pickFirstText(
-        input.submitterKind,
-        input.submitter_kind,
-        input.registrationKind,
-        input.registration_kind,
-        input.submitterType,
-        input.submitter_type,
-        defaultKind
-      ),
-      { fallback: defaultKind }
-    );
-    const submitterType = normalizeSubmitterType(
-      pickFirstText(input.submitterType, input.submitter_type, ""),
-      { fallback: submitterKind === "realtor" ? "realtor" : "owner" }
-    );
-    const sourceType = normalizePublicSourceType(
-      pickFirstText(input.sourceType, input.source_type, ""),
-      submitterType
-    );
-
-    return {
-      submitterKind,
-      sourceType,
-      submitterType,
-      address: pickFirstText(input.address, ""),
-      assetType: pickFirstText(input.assetType, input.asset_type, ""),
-      priceMain: toNullableNumber(input.priceMain ?? input.price_main),
-      floor: pickFirstText(input.floor, "") || null,
-      totalFloor: pickFirstText(input.totalFloor, input.totalfloor, input.total_floor, "") || null,
-      commonArea: toNullableNumber(input.commonArea ?? input.common_area),
-      exclusiveArea: toNullableNumber(input.exclusiveArea ?? input.exclusive_area),
-      siteArea: toNullableNumber(input.siteArea ?? input.site_area),
-      useApproval: pickFirstText(input.useApproval, input.use_approval, input.useapproval, "") || null,
-      submitterName: pickFirstText(input.submitterName, input.submitter_name, "") || null,
-      submitterPhone: pickFirstText(input.submitterPhone, input.submitter_phone, "") || null,
-      realtorName: pickFirstText(input.realtorName, input.realtor_name, input.realtorname, input.brokerOfficeName, input.broker_office_name, "") || null,
-      realtorPhone: pickFirstText(input.realtorPhone, input.realtor_phone, input.realtorphone, "") || null,
-      realtorCell: pickFirstText(input.realtorCell, input.realtor_cell, input.realtorcell, "") || null,
-      opinion: pickFirstText(input.opinion, input.memo, "") || null,
-      actorName: pickFirstText(options.actorName, input.actorName, input.actor_name, "") || null,
-      assigneeId: pickFirstText(options.assigneeId, input.assigneeId, input.assignee_id, "") || null,
-    };
-  }
-
-  function validateRegistrationSubmissionCore(core, options = {}) {
-    const data = core && typeof core === "object" ? core : buildRegistrationSubmissionCore(core, options);
-    if (!data.address || !data.assetType || !data.priceMain) {
-      return String(options.requiredMessage || "주소, 세부유형, 매매가는 필수입니다.");
-    }
-    if (data.submitterType === "realtor") {
-      if (!data.realtorName || !data.realtorCell) {
-        return String(options.realtorMessage || "중개사무소명과 휴대폰번호를 입력해 주세요.");
-      }
-    } else if (!data.submitterName || !data.submitterPhone) {
-      return String(options.ownerMessage || "이름과 연락처를 입력해 주세요.");
-    }
-    return "";
-  }
-
-  function buildRegistrationSubmissionPayload(input = {}, options = {}) {
-    const core = buildRegistrationSubmissionCore(input, options);
-    const extraRaw = input.raw && typeof input.raw === "object" ? { ...input.raw } : {};
-    const raw = {
-      sourceType: core.sourceType,
-      source_type: core.sourceType,
-      submitterType: core.submitterType,
-      submitter_type: core.submitterType,
-      address: core.address,
-      assetType: core.assetType,
-      priceMain: core.priceMain,
-      floor: core.floor,
-      totalfloor: core.totalFloor,
-      useapproval: core.useApproval,
-      commonArea: core.commonArea,
-      exclusiveArea: core.exclusiveArea,
-      siteArea: core.siteArea,
-      realtorName: core.realtorName,
-      realtorPhone: core.realtorPhone,
-      realtorCell: core.realtorCell,
-      submitterName: core.submitterName,
-      submitterPhone: core.submitterPhone,
-      opinion: core.opinion,
-      ...extraRaw,
-    };
-
-    if (hasMeaningfulValue(core.assigneeId)) {
-      raw.assigneeId = core.assigneeId;
-      raw.assignedAgentId = core.assigneeId;
-    }
-    if (options.registrationKind === "admin") raw.registeredByAdmin = true;
-    if (options.registrationKind === "agent") raw.registeredByAgent = true;
-    if (hasMeaningfulValue(core.actorName)) raw.registeredByName = core.actorName;
-
-    const payload = {
-      source_type: core.sourceType,
-      is_general: core.sourceType === "general",
-      submitter_type: core.submitterType,
-      address: core.address,
-      asset_type: core.assetType,
-      price_main: core.priceMain,
-      use_approval: core.useApproval,
-      common_area: core.commonArea,
-      exclusive_area: core.exclusiveArea,
-      site_area: core.siteArea,
-      broker_office_name: core.realtorName,
-      submitter_name: core.submitterName,
-      submitter_phone: core.submitterPhone,
-      memo: core.opinion,
-      raw,
-    };
-    if (hasMeaningfulValue(core.assigneeId)) payload.assignee_id = core.assigneeId;
-    return payload;
-  }
-
-  function buildPublicListingPayload(input = {}, options = {}) {
-    return buildRegistrationSubmissionCore(input, options);
-  }
-
   function isBrokerLikeSource(sourceType) {
     return normalizeSourceType(sourceType, { fallback: "" }) === "realtor";
   }
@@ -815,16 +595,132 @@
     return summary;
   }
 
+
+  function getRegistrationRawObject(input) {
+    if (input?._raw?.raw && typeof input._raw.raw === "object") return input._raw.raw;
+    if (input?.raw && typeof input.raw === "object") return input.raw;
+    return {};
+  }
+
+  function buildRegistrationSnapshot(input = {}) {
+    const container = input?._raw && typeof input._raw === "object" ? input._raw : (input || {});
+    const raw = getRegistrationRawObject(input);
+    return {
+      itemNo: pickFirstText(input?.itemNo, input?.item_no, container?.item_no, container?.itemNo, raw.itemNo, raw.item_no, ""),
+      address: pickFirstText(input?.address, container?.address, raw.address, ""),
+      assetType: pickFirstText(input?.assetType, input?.asset_type, container?.asset_type, container?.assetType, raw.assetType, raw.asset_type, raw["세부유형"], ""),
+      floor: pickFirstText(raw.floor, input?.floor, container?.floor, ""),
+      totalfloor: pickFirstText(raw.totalfloor, raw.total_floor, raw.totalFloor, input?.total_floor, input?.totalfloor, container?.total_floor, container?.totalfloor, ""),
+      commonArea: input?.commonArea ?? input?.common_area ?? container?.common_area ?? container?.commonArea ?? raw.commonArea ?? raw.commonarea ?? raw.common_area ?? null,
+      exclusiveArea: input?.exclusiveArea ?? input?.exclusive_area ?? container?.exclusive_area ?? container?.exclusiveArea ?? raw.exclusiveArea ?? raw.exclusivearea ?? raw.exclusive_area ?? null,
+      siteArea: input?.siteArea ?? input?.site_area ?? container?.site_area ?? container?.siteArea ?? raw.siteArea ?? raw.sitearea ?? raw.site_area ?? null,
+      useapproval: pickFirstText(input?.useApproval, input?.use_approval, container?.use_approval, container?.useapproval, raw.useapproval, raw.useApproval, raw.use_approval, ""),
+      status: pickFirstText(input?.status, container?.status, raw.status, ""),
+      priceMain: input?.priceMain ?? input?.price_main ?? container?.price_main ?? container?.priceMain ?? raw.priceMain ?? raw.price_main ?? null,
+      lowprice: input?.lowprice ?? input?.low_price ?? container?.lowprice ?? container?.low_price ?? raw.lowprice ?? raw.low_price ?? null,
+      dateMain: pickFirstText(input?.dateMain, input?.date_main, container?.date_main, container?.dateMain, raw.dateMain, raw.date_main, ""),
+      sourceUrl: pickFirstText(input?.sourceUrl, input?.source_url, container?.source_url, container?.sourceUrl, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
+      realtorName: pickFirstText(input?.realtorName, input?.realtorname, input?.broker_office_name, container?.broker_office_name, container?.brokerOfficeName, raw.realtorName, raw.realtorname, raw.brokerOfficeName, raw.broker_office_name, ""),
+      realtorPhone: pickFirstText(input?.realtorPhone, input?.realtorphone, raw.realtorPhone, raw.realtorphone, ""),
+      realtorCell: pickFirstText(input?.realtorCell, input?.realtorcell, input?.submitter_phone, container?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
+      submitterName: pickFirstText(input?.submitterName, input?.submitter_name, container?.submitter_name, raw.registeredByName, raw.submitterName, raw.submitter_name, ""),
+      submitterPhone: pickFirstText(input?.submitterPhone, input?.submitter_phone, container?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
+      memo: pickFirstText(input?.memo, input?.opinion, container?.memo, raw.memo, raw.opinion, ""),
+      latitude: input?.latitude ?? container?.latitude ?? raw.latitude ?? null,
+      longitude: input?.longitude ?? container?.longitude ?? raw.longitude ?? null,
+      raw,
+    };
+  }
+
+  function syncRegistrationRawMeta(raw = {}, row = {}) {
+    const nextRaw = { ...(raw || {}) };
+    const sourceType = normalizeSourceType(row?.source_type || row?.sourceType || nextRaw.source_type || nextRaw.sourceType || "", { fallback: "" });
+    const submitterType = normalizeSubmitterType(row?.submitter_type || row?.submitterType || nextRaw.submitter_type || nextRaw.submitterType || "", { fallback: "" });
+    if (sourceType) {
+      nextRaw.sourceType = sourceType;
+      nextRaw.source_type = sourceType;
+    }
+    if (submitterType) {
+      nextRaw.submitterType = submitterType;
+      nextRaw.submitter_type = submitterType;
+    }
+    return nextRaw;
+  }
+
+  function buildRegistrationDbRowForCreate(row, context = {}, options = {}) {
+    const nextRow = { ...(row || {}) };
+    const sourceType = normalizeSourceType(nextRow?.source_type || nextRow?.sourceType || nextRow?.raw?.source_type || nextRow?.raw?.sourceType || "", { fallback: "" });
+    if (sourceType) {
+      nextRow.source_type = sourceType;
+      nextRow.is_general = sourceType === "general";
+    }
+    const submitterType = normalizeSubmitterType(nextRow?.submitter_type || nextRow?.submitterType || nextRow?.raw?.submitter_type || nextRow?.raw?.submitterType || "", { fallback: "" });
+    if (submitterType) nextRow.submitter_type = submitterType;
+    const baseRaw = syncRegistrationRawMeta(nextRow?.raw || {}, nextRow);
+    nextRow.raw = attachRegistrationIdentity(ensureRegistrationCreatedLog(baseRaw, context), nextRow);
+    return nextRow;
+  }
+
+  function buildRegistrationDbRowForExisting(existingItem, incomingRow, context = {}, options = {}) {
+    const baseContainer = existingItem?._raw && typeof existingItem._raw === "object"
+      ? existingItem._raw
+      : (existingItem && typeof existingItem === "object" ? existingItem : {});
+    const base = { ...baseContainer, raw: { ...getRegistrationRawObject(existingItem) } };
+    const prevSnapshot = buildRegistrationSnapshot(existingItem || base);
+    const nextSnapshot = buildRegistrationSnapshot(incomingRow);
+    const labels = options.labels || REGISTRATION_LOG_LABELS_BASE;
+    const changeOptions = {
+      amountFields: options.amountFields || ["priceMain", "lowprice"],
+      numericFields: options.numericFields || ["priceMain", "lowprice", "commonArea", "exclusiveArea", "siteArea", "latitude", "longitude"],
+    };
+    const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot, labels, changeOptions);
+    const nextRow = { ...base };
+    const copyFields = Array.isArray(options.copyFields) && options.copyFields.length
+      ? options.copyFields
+      : [
+          "address", "asset_type", "exclusive_area", "common_area", "site_area", "use_approval", "status", "price_main", "lowprice",
+          "date_main", "source_url", "broker_office_name", "submitter_name", "submitter_phone", "memo", "latitude", "longitude",
+          "floor", "total_floor", "item_no", "source_type", "submitter_type", "assignee_id",
+        ];
+    for (const key of copyFields) {
+      if (key === "assignee_id" && options.assignIfEmpty) {
+        if (!hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
+        continue;
+      }
+      if (!hasMeaningfulValue(nextRow[key]) && key === "item_no" && hasMeaningfulValue(incomingRow?.[key])) {
+        nextRow[key] = incomingRow[key];
+        continue;
+      }
+      if (hasMeaningfulValue(incomingRow?.[key])) nextRow[key] = incomingRow[key];
+    }
+
+    const sourcePriority = options.sourcePriority || { "": 0, general: 1, realtor: 2, onbid: 3, auction: 4 };
+    const currentSourceType = normalizeSourceType(nextRow.source_type || nextRow.sourceType || base?.raw?.source_type || base?.raw?.sourceType || "", { fallback: "" });
+    const incomingSourceType = normalizeSourceType(incomingRow?.source_type || incomingRow?.sourceType || incomingRow?.raw?.source_type || incomingRow?.raw?.sourceType || "", { fallback: "" });
+    if (incomingSourceType) {
+      if (!currentSourceType || (sourcePriority[incomingSourceType] || 0) > (sourcePriority[currentSourceType] || 0)) nextRow.source_type = incomingSourceType;
+      else if (!hasMeaningfulValue(nextRow.source_type)) nextRow.source_type = incomingSourceType;
+    }
+
+    const currentSubmitterType = normalizeSubmitterType(nextRow.submitter_type || nextRow.submitterType || base?.raw?.submitter_type || base?.raw?.submitterType || "", { fallback: "" });
+    const incomingSubmitterType = normalizeSubmitterType(incomingRow?.submitter_type || incomingRow?.submitterType || incomingRow?.raw?.submitter_type || incomingRow?.raw?.submitterType || "", { fallback: "" });
+    if (incomingSubmitterType === "realtor" || (!currentSubmitterType && incomingSubmitterType)) nextRow.submitter_type = incomingSubmitterType;
+    if (hasMeaningfulValue(nextRow.source_type)) nextRow.is_general = normalizeSourceType(nextRow.source_type, { fallback: "" }) === "general";
+
+    const mergedRaw = syncRegistrationRawMeta(mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {}), {
+      source_type: nextRow.source_type,
+      submitter_type: nextRow.submitter_type,
+    });
+    nextRow.raw = attachRegistrationIdentity(appendRegistrationLog(mergedRaw, context, changes), nextSnapshot);
+    return { row: nextRow, changes };
+  }
+
   return {
     pickFirstText,
     compactAddressText,
     extractFloorText,
     sanitizeOnbidOpinion,
     buildNormalizedPropertyBase,
-    getSourceBucketClass,
-    getCurrentPriceValue,
-    buildPropertyListViewModel,
-    buildPropertyEditViewModel,
     parseFloorNumberForLog,
     parseAddressIdentityParts,
     extractHoNumberForLog,
@@ -854,11 +750,6 @@
     normalizeSourceType,
     normalizeSubmitterType,
     normalizePublicSourceType,
-    normalizeRegistrationSubmitterKind,
-    buildRegistrationSubmissionCore,
-    validateRegistrationSubmissionCore,
-    buildRegistrationSubmissionPayload,
-    buildPublicListingPayload,
     isBrokerLikeSource,
     isAuctionLikeSource,
     isGeneralSourceType,
@@ -868,5 +759,8 @@
     getSourceBucketLabel,
     matchesSourceBucket,
     summarizeSourceBuckets,
+    buildRegistrationSnapshot,
+    buildRegistrationDbRowForCreate,
+    buildRegistrationDbRowForExisting,
   };
 });

@@ -1160,9 +1160,6 @@ function bindEvents() {
     throw new Error("KNSN_DATA_ACCESS.updatePropertyRowResilient 를 찾을 수 없습니다.");
   }
 
-  function openNewPropertyModal(...args) {
-    return callAdminModule("newPropertyModal", "openNewPropertyModal", args);
-  }
   async function submitNewProperty(...args) {
     return callAdminModule("newPropertyModal", "submitNewProperty", args);
   }
@@ -1545,6 +1542,13 @@ function bindEvents() {
   }
 
   function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === "function") {
+      return PropertyDomain.buildRegistrationDbRowForExisting(existingItem, incomingRow, context, {
+        assignIfEmpty: !!options.assignIfEmpty,
+        copyFields: ["address","asset_type","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","source_url","broker_office_name","submitter_name","submitter_phone","memo","latitude","longitude","floor","total_floor","item_no","source_type","submitter_type","assignee_id"],
+        labels: REG_LOG_LABELS,
+      });
+    }
     const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
     const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
@@ -1562,6 +1566,9 @@ function bindEvents() {
   }
 
   function buildRegistrationDbRowForCreate(row, context) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForCreate === "function") {
+      return PropertyDomain.buildRegistrationDbRowForCreate(row, context);
+    }
     return {
       ...(row || {}),
       raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row),

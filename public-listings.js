@@ -320,9 +320,8 @@ function buildRawForCreate(payload, context) {
 }
 
 function buildSupabaseRowForCreate(payload, context) {
-  return {
+  const baseRow = {
     source_type: payload.sourceType,
-    is_general: true,
     status: 'review',
     address: payload.address,
     asset_type: payload.assetType,
@@ -339,9 +338,53 @@ function buildSupabaseRowForCreate(payload, context) {
     memo: payload.opinion,
     raw: buildRawForCreate(payload, context),
   };
+  if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForCreate === 'function') {
+    return PropertyDomain.buildRegistrationDbRowForCreate(baseRow, context);
+  }
+  return {
+    ...baseRow,
+    is_general: baseRow.source_type === 'general',
+  };
 }
 
 function buildSupabasePatchForExisting(existingRow, payload, context) {
+  const incomingRow = {
+    address: payload.address,
+    asset_type: payload.assetType,
+    exclusive_area: payload.exclusiveArea,
+    common_area: payload.commonArea,
+    site_area: payload.siteArea,
+    use_approval: payload.useApproval,
+    price_main: payload.priceMain,
+    memo: payload.opinion,
+    submitter_type: payload.submitterType,
+    submitter_name: payload.submitterName,
+    submitter_phone: payload.submitterPhone,
+    broker_office_name: payload.realtorName,
+    source_type: payload.sourceType,
+    raw: {
+      ...payload,
+      totalfloor: payload.totalFloor,
+      useapproval: payload.useApproval,
+      updatedByPublic: true,
+      updatedByName: context.actor,
+    },
+  };
+  if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === 'function') {
+    const merged = PropertyDomain.buildRegistrationDbRowForExisting(existingRow, incomingRow, context, {
+      copyFields: ['address','asset_type','exclusive_area','common_area','site_area','use_approval','price_main','memo','submitter_type','submitter_name','submitter_phone','broker_office_name','source_type'],
+      labels: REG_LOG_LABELS,
+      amountFields: ['priceMain'],
+      numericFields: ['priceMain', 'commonArea', 'exclusiveArea', 'siteArea'],
+    });
+    const row = merged?.row || {};
+    const patch = {};
+    ['address','asset_type','exclusive_area','common_area','site_area','use_approval','price_main','memo','submitter_type','submitter_name','submitter_phone','broker_office_name','source_type','is_general'].forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(row, key)) patch[key] = row[key];
+    });
+    patch.raw = sanitizePropertyRaw(row.raw);
+    return { patch, changes: merged.changes || [] };
+  }
   const baseRaw = existingRow.raw && typeof existingRow.raw === 'object' ? existingRow.raw : {};
   const prevSnapshot = buildRegistrationSnapshotFromRow(existingRow);
   const nextSnapshot = buildRegistrationSnapshot(payload);
