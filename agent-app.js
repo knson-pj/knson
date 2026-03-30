@@ -1362,9 +1362,16 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
-    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
-    const kindLabel = kindMap[p.sourceType] || "일반";
+    const kindLabel = getPropertyKindLabel(p.sourceType, p);
+    const kindBucketClass = getPropertyKindClass(p.sourceType, p);
+    const kindClassMap = {
+      auction: "kind-auction",
+      onbid: "kind-gongmae",
+      "realtor-naver": "kind-realtor",
+      "realtor-direct": "kind-realtor",
+      realtor: "kind-realtor",
+      general: "kind-general",
+    };
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
     const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
     const rate = calcRate(p.priceMain, p.lowprice);
@@ -1394,7 +1401,7 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      '<td><span class="kind-text ' + (kindClassMap[kindBucketClass] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
       "<td>" + esc(p.address || "-") + "</td>" +
       "<td>" + esc(p.assetType || "-") + "</td>" +
       "<td>" + esc(p.floor || "-") + "</td>" +
@@ -1488,12 +1495,11 @@
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
-    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
+        setVal(f, "sourceType", getPropertyKindLabel(item.sourceType, item));
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
