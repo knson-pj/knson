@@ -420,27 +420,47 @@
     return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
   }
 
-  function getPropertyKindLabel(sourceType, item) {
-    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") {
-      return PropertyDomain.getSourceBucketLabel(item || { sourceType });
+  function getPropertyBucket(itemOrRow, fallbackSourceType) {
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") {
+      return PropertyDomain.getSourceBucket(
+        itemOrRow || { sourceType: fallbackSourceType },
+        String(fallbackSourceType || itemOrRow?.sourceType || itemOrRow?.property_source_type || "").trim()
+      );
     }
-    const map = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
-    return map[String(sourceType || "").trim()] || "일반";
+    const source = String(fallbackSourceType || itemOrRow?.sourceType || itemOrRow?.property_source_type || "").trim();
+    return source || "general";
   }
 
-  function getPropertyKindClass(sourceType, item) {
-    if (PropertyDomain) {
-      const bucket = typeof PropertyDomain.getSourceBucket === "function"
-        ? PropertyDomain.getSourceBucket(item || { sourceType })
-        : String(sourceType || "").trim();
-      if (typeof PropertyDomain.getSourceBucketClass === "function") {
-        return PropertyDomain.getSourceBucketClass(bucket);
-      }
-      const classMap = { auction: "auction", onbid: "onbid", realtor_naver: "realtor-naver", realtor_direct: "realtor-direct", general: "general" };
-      return classMap[String(bucket || "").trim()] || "general";
+  function getPropertyKindLabel(sourceType, itemOrRow = null) {
+    const bucket = getPropertyBucket(itemOrRow, sourceType);
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") {
+      return PropertyDomain.getSourceBucketLabel(bucket);
     }
-    const map = { auction: "auction", onbid: "onbid", realtor: "realtor", general: "general" };
-    return map[String(sourceType || "").trim()] || "general";
+    const map = {
+      auction: "경매",
+      onbid: "공매",
+      realtor_naver: "네이버중개",
+      realtor_direct: "일반중개",
+      realtor: "중개",
+      general: "일반",
+    };
+    return map[String(bucket || "").trim()] || "일반";
+  }
+
+  function getPropertyKindClass(sourceType, itemOrRow = null) {
+    const bucket = getPropertyBucket(itemOrRow, sourceType);
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucketClass === "function") {
+      return PropertyDomain.getSourceBucketClass(bucket);
+    }
+    const map = {
+      auction: "auction",
+      onbid: "onbid",
+      realtor_naver: "realtor-naver",
+      realtor_direct: "realtor-direct",
+      realtor: "realtor",
+      general: "general",
+    };
+    return map[String(bucket || "").trim()] || "general";
   }
 
   function findPropertyForActivityRow(row) {
@@ -514,9 +534,10 @@
             </div>
             <div class="daily-report-tree-col">
               ${groups.map((group) => {
-                const item = group.item;
-                const kindLabel = getPropertyKindLabel(item?.sourceType, item);
-                const kindClass = getPropertyKindClass(item?.sourceType, item);
+                const item = group.item || {};
+                const kindTarget = item && Object.keys(item).length ? item : (group.row || {});
+                const kindLabel = getPropertyKindLabel(item?.sourceType || group.row?.property_source_type, kindTarget);
+                const kindClass = getPropertyKindClass(item?.sourceType || group.row?.property_source_type, kindTarget);
                 const title = buildDailyReportPropertyTitle(group);
                 const actions = [
                   ["rights_analysis", "권리분석"],
