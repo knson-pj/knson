@@ -1072,6 +1072,9 @@
   }
 
   function findExistingPropertyByRegistrationKey(data, items) {
+    if (PropertyDomain && typeof PropertyDomain.findExistingPropertyByRegistrationKey === "function") {
+      return PropertyDomain.findExistingPropertyByRegistrationKey(data, items);
+    }
     const targetKey = buildRegistrationMatchKey(data);
     if (!targetKey) return null;
     for (const item of Array.isArray(items) ? items : []) {

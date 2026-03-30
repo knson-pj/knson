@@ -267,6 +267,72 @@
     return `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey}|${hoKey}`;
   }
 
+  function resolveRegistrationCandidateRow(item) {
+    if (!item || typeof item !== "object") return null;
+    if (item._raw && typeof item._raw === "object") return item._raw;
+    return item;
+  }
+
+  function resolveRegistrationCandidateRaw(item) {
+    const row = resolveRegistrationCandidateRow(item);
+    if (!row || typeof row !== "object") return {};
+    if (row.raw && typeof row.raw === "object") return row.raw;
+    return {};
+  }
+
+  function resolveRegistrationMatchKey(item) {
+    const row = resolveRegistrationCandidateRow(item);
+    const raw = resolveRegistrationCandidateRaw(item);
+    const direct = pickFirstText(
+      item && item.registrationIdentityKey,
+      row && row.registrationIdentityKey,
+      raw && raw.registrationIdentityKey,
+      ""
+    );
+    if (direct) return direct;
+    return buildRegistrationMatchKey({
+      address: pickFirstText(item && item.address, row && row.address, raw && raw.address, ""),
+      floor: pickFirstText(item && item.floor, row && row.floor, raw && raw.floor, ""),
+      totalFloor: pickFirstText(item && item.totalfloor, item && item.totalFloor, row && row.total_floor, row && row.totalfloor, raw && raw.totalfloor, raw && raw.totalFloor, ""),
+      ho: pickFirstText(item && item.ho, item && item.unit, item && item.room, row && row.ho, raw && raw.ho, raw && raw.unit, raw && raw.room, ""),
+      raw,
+    });
+  }
+
+  function buildRegistrationSearchHint(data) {
+    const targetKey = buildRegistrationMatchKey(data);
+    const address = pickFirstText(data && data.address, data && data.raw && data.raw.address, "");
+    const identity = parseAddressIdentityParts(address);
+    let dongToken = identity.dong || "";
+    if (!dongToken) {
+      const match = String(address || "").trim().match(/([가-힣A-Za-z0-9]+동)/);
+      dongToken = String((match && match[1]) || "").trim();
+    }
+    return {
+      targetKey: String(targetKey || "").trim(),
+      address: String(address || "").trim(),
+      dongToken,
+      identity,
+    };
+  }
+
+  function findExistingPropertyByRegistrationKey(data, items, options = {}) {
+    const hint = buildRegistrationSearchHint(data);
+    if (!hint.targetKey) return null;
+    const ignore = String(options.ignoreId || options.ignore || "").trim();
+    const normalizeRow = typeof options.normalizeRow === "function" ? options.normalizeRow : null;
+    const list = Array.isArray(items) ? items : [];
+    for (const sourceItem of list) {
+      const candidate = normalizeRow ? (normalizeRow(sourceItem) || sourceItem) : sourceItem;
+      const row = resolveRegistrationCandidateRow(candidate) || sourceItem;
+      const currentId = pickFirstText(candidate && candidate.id, candidate && candidate.globalId, row && row.id, row && row.global_id, row && row.globalId, "");
+      if (ignore && String(currentId || "").trim() === ignore) continue;
+      const key = resolveRegistrationMatchKey(candidate || sourceItem);
+      if (key && key === hint.targetKey) return candidate || sourceItem;
+    }
+    return null;
+  }
+
   function buildRegistrationMatchKeyFromRow(row) {
     const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
     return String(raw.registrationIdentityKey || buildRegistrationMatchKey({

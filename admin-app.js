@@ -1580,6 +1580,9 @@ function bindEvents() {
   }
 
   function findExistingPropertyByRegistrationKey(data, items, ignoreId = "") {
+    if (PropertyDomain && typeof PropertyDomain.findExistingPropertyByRegistrationKey === "function") {
+      return PropertyDomain.findExistingPropertyByRegistrationKey(data, items, { ignoreId });
+    }
     const targetKey = buildRegistrationMatchKey(data);
     if (!targetKey) return null;
     const ignore = String(ignoreId || "").trim();

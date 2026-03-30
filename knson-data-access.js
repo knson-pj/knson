@@ -357,26 +357,38 @@
   }
 
   async function findExistingPropertyForRegistration(sb, payload, { limit = 500, normalizeRow = null } = {}) {
-    const address = String(payload?.address || payload?.raw?.address || "").trim();
-    const dongToken = ((address.match(/([가-힣A-Za-z0-9]+동)/) || [null, ""])[1] || "").trim();
-    let query = sb.from("properties").select("*").limit(limit);
-    if (dongToken) query = query.ilike("address", `%${dongToken}%`);
-    const { data, error } = await query;
-    if (error) return null;
-    const rows = Array.isArray(data) ? data : [];
-    const targetKey = PropertyDomain && typeof PropertyDomain.buildRegistrationMatchKey === "function"
-      ? PropertyDomain.buildRegistrationMatchKey(payload)
-      : "";
+    const hint = PropertyDomain && typeof PropertyDomain.buildRegistrationSearchHint === "function"
+      ? PropertyDomain.buildRegistrationSearchHint(payload)
+      : null;
+    const targetKey = String(hint?.targetKey || "").trim();
     if (!targetKey) return null;
-    for (const row of rows) {
-      const normalized = typeof normalizeRow === "function" ? normalizeRow(row) : row;
-      const matchTarget = normalized && typeof normalized === "object"
-        ? (normalized.raw && typeof normalized.raw === "object" ? normalized : { ...normalized, raw: row?.raw && typeof row.raw === "object" ? row.raw : {} })
-        : row;
-      const key = PropertyDomain && typeof PropertyDomain.buildRegistrationMatchKey === "function"
-        ? PropertyDomain.buildRegistrationMatchKey(matchTarget)
-        : "";
-      if (key && key === targetKey) return normalized || row;
+
+    const candidateSets = [];
+    const safeLimit = Math.max(20, Number(limit || 500));
+
+    if (hint?.dongToken) {
+      const { data, error } = await sb.from("properties")
+        .select("*")
+        .ilike("address", `%${hint.dongToken}%`)
+        .order("date_uploaded", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(safeLimit);
+      if (!error && Array.isArray(data) && data.length) candidateSets.push(data);
+    }
+
+    const fallbackLimit = Math.min(Math.max(safeLimit, 300), 1000);
+    const { data: fallbackRows, error: fallbackError } = await sb.from("properties")
+      .select("*")
+      .order("date_uploaded", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(fallbackLimit);
+    if (!fallbackError && Array.isArray(fallbackRows) && fallbackRows.length) candidateSets.push(fallbackRows);
+
+    for (const rows of candidateSets) {
+      const found = PropertyDomain && typeof PropertyDomain.findExistingPropertyByRegistrationKey === "function"
+        ? PropertyDomain.findExistingPropertyByRegistrationKey(payload, rows, { normalizeRow })
+        : null;
+      if (found) return found;
     }
     return null;
   }

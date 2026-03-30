@@ -517,6 +517,9 @@ async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
 }
 
 function buildRegistrationMatchKeyFromRow(row) {
+  if (PropertyDomain && typeof PropertyDomain.resolveRegistrationMatchKey === 'function') {
+    return String(PropertyDomain.resolveRegistrationMatchKey(row) || '').trim();
+  }
   const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
   return String(raw.registrationIdentityKey || buildRegistrationKey({
     address: row?.address || raw.address || '',
@@ -527,26 +530,31 @@ function buildRegistrationMatchKeyFromRow(row) {
 }
 
 async function findExistingSupabaseProperty(payload) {
-  const targetKey = buildRegistrationKey(payload);
+  const hint = PropertyDomain && typeof PropertyDomain.buildRegistrationSearchHint === 'function'
+    ? PropertyDomain.buildRegistrationSearchHint(payload)
+    : { targetKey: buildRegistrationKey(payload), dongToken: extractDongToken(payload.address) };
+  const targetKey = String(hint?.targetKey || '').trim();
   if (!targetKey) return null;
   const select = 'id,global_id,address,asset_type,price_main,submitter_name,submitter_phone,broker_office_name,use_approval,common_area,exclusive_area,site_area,memo,raw,created_at,updated_at';
 
-  try {
-    const rows = await supabaseRest(`/rest/v1/properties?select=${select}&raw->>registrationIdentityKey=eq.${encodeURIComponent(targetKey)}&limit=5&order=updated_at.desc.nullslast,created_at.desc.nullslast`);
-    if (Array.isArray(rows) && rows.length) return rows[0];
-  } catch (_) {}
+  const matchRows = (rows) => {
+    if (!Array.isArray(rows) || !rows.length) return null;
+    if (PropertyDomain && typeof PropertyDomain.findExistingPropertyByRegistrationKey === 'function') {
+      return PropertyDomain.findExistingPropertyByRegistrationKey(payload, rows) || null;
+    }
+    return rows.find((row) => buildRegistrationMatchKeyFromRow(row) === targetKey) || null;
+  };
 
-  const dongToken = extractDongToken(payload.address);
-  if (dongToken) {
+  if (hint?.dongToken) {
     try {
-      const rows = await supabaseRest(`/rest/v1/properties?select=${select}&address=ilike.*${encodeURIComponent(escapeLikeTerm(dongToken))}*&limit=300&order=updated_at.desc.nullslast,created_at.desc.nullslast`);
-      const found = (Array.isArray(rows) ? rows : []).find((row) => buildRegistrationMatchKeyFromRow(row) === targetKey);
+      const rows = await supabaseRest(`/rest/v1/properties?select=${select}&address=ilike.*${encodeURIComponent(escapeLikeTerm(hint.dongToken))}*&limit=300&order=updated_at.desc.nullslast,created_at.desc.nullslast`);
+      const found = matchRows(rows);
       if (found) return found;
     } catch (_) {}
   }
 
   const rows = await supabaseRest(`/rest/v1/properties?select=${select}&limit=300&order=updated_at.desc.nullslast,created_at.desc.nullslast`);
-  return (Array.isArray(rows) ? rows : []).find((row) => buildRegistrationMatchKeyFromRow(row) === targetKey) || null;
+  return matchRows(rows);
 }
 
 async function handleSupabasePublicListing(res, payload) {
