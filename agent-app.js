@@ -1864,15 +1864,8 @@
     const readStr = (k) => String(fd.get(k) || "").trim();
     const readNum = (k) => parseFlexibleNumber(fd.get(k));
 
-    const submitterKind = readStr("submitterKind") || "realtor";
-    const sourceType = submitterKind === "realtor" ? "realtor" : "general";
-    const address = readStr("address");
-    const assetType = readStr("assetType");
-    const priceMain = readNum("priceMain");
-
-    if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
-
     const actorName = String(state.session?.user?.name || state.session?.user?.email || "").trim();
+    const submitterKind = PropertyDomain?.normalizeRegistrationSubmitterKind?.(readStr("submitterKind"), { fallback: "realtor" }) || "realtor";
     let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
     if (submitterKind === "realtor") {
       realtorName = readStr("realtorname");
@@ -1880,52 +1873,43 @@
       realtorCell = readStr("realtorcell");
       submitterName = actorName || readStr("submitterName") || null;
       submitterPhone = realtorCell;
-      if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
     } else {
       submitterName = readStr("submitterName") || actorName || "";
       submitterPhone = readStr("submitterPhone");
-      if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
     }
 
     const currentUserId = String(state.session?.user?.id || "").trim() || null;
-    const submitterType = submitterKind === "realtor" ? "realtor" : "owner";
-    const payload = {
-      source_type: sourceType,
-      is_general: true,
-      submitter_type: submitterType,
-      address,
-      asset_type: assetType,
-      price_main: priceMain,
-      use_approval: readStr("useapproval") || null,
-      common_area: readNum("commonarea"),
-      exclusive_area: readNum("exclusivearea"),
-      site_area: readNum("sitearea"),
-      assignee_id: currentUserId,
-      broker_office_name: realtorName,
-      submitter_name: submitterName || null,
-      submitter_phone: submitterPhone,
-      memo: readStr("opinion") || null,
-      raw: {
-        sourceType,
-        source_type: sourceType,
-        submitterType,
-        submitter_type: submitterType,
-        address, assetType, priceMain,
-        floor: readStr("floor") || null,
-        totalfloor: readStr("totalfloor") || null,
-        useapproval: readStr("useapproval") || null,
-        commonArea: readNum("commonarea"),
-        exclusiveArea: readNum("exclusivearea"),
-        siteArea: readNum("sitearea"),
-        realtorName, realtorPhone, realtorCell,
-        submitterName, submitterPhone,
-        opinion: readStr("opinion") || null,
-        assigneeId: currentUserId,
-        assignedAgentId: currentUserId,
-        registeredByAgent: true,
-        registeredByName: actorName || null,
-      },
-    };
+    const submissionCore = PropertyDomain?.buildRegistrationSubmissionCore?.({
+      submitterKind,
+      address: readStr("address"),
+      assetType: readStr("assetType"),
+      priceMain: readNum("priceMain"),
+      floor: readStr("floor") || null,
+      totalFloor: readStr("totalfloor") || null,
+      useApproval: readStr("useapproval") || null,
+      commonArea: readNum("commonarea"),
+      exclusiveArea: readNum("exclusivearea"),
+      siteArea: readNum("sitearea"),
+      realtorName,
+      realtorPhone,
+      realtorCell,
+      submitterName,
+      submitterPhone,
+      opinion: readStr("opinion") || null,
+    }, { actorName, assigneeId: currentUserId }) || null;
+    const validationMessage = PropertyDomain?.validateRegistrationSubmissionCore?.(submissionCore, {
+      requiredMessage: "주소, 세부유형, 매매가는 필수입니다.",
+      realtorMessage: "중개사무소명과 휴대폰번호를 입력해 주세요.",
+      ownerMessage: "이름과 연락처를 입력해 주세요.",
+    }) || "";
+    if (validationMessage) throw new Error(validationMessage);
+
+    const payload = PropertyDomain?.buildRegistrationSubmissionPayload?.(submissionCore, {
+      actorName,
+      assigneeId: currentUserId,
+      registrationKind: "agent",
+    }) || null;
+    if (!payload) throw new Error("등록 데이터를 준비하지 못했습니다.");
 
     if (els.npmSave) els.npmSave.disabled = true;
     setNpmMsg("");

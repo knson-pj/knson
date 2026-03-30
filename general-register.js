@@ -57,20 +57,7 @@
     e.preventDefault();
 
     const fd = new FormData(form);
-    const submitterKind = getSubmitterKind();
-    const sourceType = submitterKind === 'realtor' ? 'realtor' : 'general';
-    const submitterType = submitterKind === 'realtor' ? 'realtor' : 'owner';
-
-    const address = readStr(fd, 'address');
-    const assetType = readStr(fd, 'assetType');
-    const priceMain = readNum(fd, 'priceMain');
-    const commonArea = readNum(fd, 'commonarea');
-    const exclusiveArea = readNum(fd, 'exclusivearea');
-    const siteArea = readNum(fd, 'sitearea');
-    const floor = readStr(fd, 'floor') || null;
-    const totalFloor = readStr(fd, 'totalfloor') || null;
-    const useApproval = readStr(fd, 'useapproval') || null;
-    const opinion = readStr(fd, 'opinion') || null;
+    const submitterKind = PropertyDomain?.normalizeRegistrationSubmitterKind?.(getSubmitterKind(), { fallback: 'realtor' }) || 'realtor';
 
     let submitterName = '';
     let submitterPhone = '';
@@ -84,43 +71,38 @@
       realtorCell = readStr(fd, 'realtorcell');
       submitterPhone = realtorCell;
       submitterName = realtorName;
-      if (!realtorName || !realtorCell) {
-        setMsg('중개 등록은 중개사무소명과 휴대폰번호를 입력해 주세요.');
-        return;
-      }
     } else {
       submitterName = readStr(fd, 'submitterName');
       submitterPhone = readStr(fd, 'submitterPhone');
-      if (!submitterName || !submitterPhone) {
-        setMsg('소유자/일반 등록은 이름과 연락처를 입력해 주세요.');
-        return;
-      }
     }
 
-    if (!address || !assetType || !priceMain) {
-      setMsg('주소/세부유형/매매가를 입력해 주세요.');
-      return;
-    }
-
-    const payload = {
-      sourceType,
-      submitterType,
-      address,
-      assetType,
-      priceMain,
-      floor,
-      totalFloor,
-      commonArea,
-      exclusiveArea,
-      siteArea,
-      useApproval,
+    const payload = PropertyDomain?.buildPublicListingPayload?.({
+      submitterKind,
+      address: readStr(fd, 'address'),
+      assetType: readStr(fd, 'assetType'),
+      priceMain: readNum(fd, 'priceMain'),
+      floor: readStr(fd, 'floor') || null,
+      totalFloor: readStr(fd, 'totalfloor') || null,
+      commonArea: readNum(fd, 'commonarea'),
+      exclusiveArea: readNum(fd, 'exclusivearea'),
+      siteArea: readNum(fd, 'sitearea'),
+      useApproval: readStr(fd, 'useapproval') || null,
       submitterName,
       submitterPhone,
       realtorName,
       realtorPhone,
       realtorCell,
-      opinion: opinion || null,
-    };
+      opinion: readStr(fd, 'opinion') || null,
+    }) || null;
+    const validationMessage = PropertyDomain?.validateRegistrationSubmissionCore?.(payload, {
+      requiredMessage: '주소/세부유형/매매가를 입력해 주세요.',
+      realtorMessage: '중개 등록은 중개사무소명과 휴대폰번호를 입력해 주세요.',
+      ownerMessage: '소유자/일반 등록은 이름과 연락처를 입력해 주세요.',
+    }) || '';
+    if (validationMessage) {
+      setMsg(validationMessage);
+      return;
+    }
 
     try {
       setBusy(true);
@@ -375,7 +357,6 @@
   function buildRowForCreate(payload, context) {
     return {
       source_type: payload.sourceType,
-      is_general: payload.sourceType === 'general',
       address: payload.address,
       asset_type: payload.assetType,
       exclusive_area: payload.exclusiveArea,
@@ -407,8 +388,6 @@
     if (hasMeaningfulValue(payload.useApproval)) nextRow.use_approval = payload.useApproval;
     if (hasMeaningfulValue(payload.priceMain)) nextRow.price_main = payload.priceMain;
     if (hasMeaningfulValue(payload.opinion)) nextRow.memo = payload.opinion;
-    if (hasMeaningfulValue(payload.sourceType)) nextRow.source_type = payload.sourceType;
-    nextRow.is_general = payload.sourceType === 'general';
     if (hasMeaningfulValue(payload.submitterType)) nextRow.submitter_type = payload.submitterType;
     if (hasMeaningfulValue(payload.submitterName)) nextRow.submitter_name = payload.submitterName;
     if (hasMeaningfulValue(payload.submitterPhone)) nextRow.submitter_phone = payload.submitterPhone;
