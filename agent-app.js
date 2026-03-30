@@ -411,14 +411,29 @@
     return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
   }
 
-  function getPropertyKindLabel(sourceType) {
-    const map = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
-    return map[String(sourceType || "").trim()] || "일반";
+  function getPropertyBucket(item) {
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") {
+      return PropertyDomain.getSourceBucket(item);
+    }
+    const sourceType = String(item?.sourceType || item?.source_type || item || "").trim();
+    const isDirect = !!(item && (item.isDirectSubmission || item.is_direct_submission));
+    if (sourceType === "realtor") return isDirect ? "realtor_direct" : "realtor_naver";
+    return ["auction", "onbid", "general"].includes(sourceType) ? sourceType : "general";
   }
 
-  function getPropertyKindClass(sourceType) {
-    const map = { auction: "auction", onbid: "onbid", realtor: "realtor", general: "general" };
-    return map[String(sourceType || "").trim()] || "general";
+  function getPropertyKindLabel(item) {
+    const bucket = getPropertyBucket(item);
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") {
+      return PropertyDomain.getSourceBucketLabel(bucket);
+    }
+    const map = { auction: "경매", onbid: "공매", realtor_naver: "네이버중개", realtor_direct: "일반중개", general: "일반" };
+    return map[String(bucket || "").trim()] || "일반";
+  }
+
+  function getPropertyKindClass(item) {
+    const bucket = getPropertyBucket(item);
+    const map = { auction: "auction", onbid: "onbid", realtor_naver: "realtor", realtor_direct: "realtor", general: "general" };
+    return map[String(bucket || "").trim()] || "general";
   }
 
   function findPropertyForActivityRow(row) {
@@ -1319,9 +1334,9 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
-    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
-    const kindLabel = kindMap[p.sourceType] || "일반";
+    const bucket = getPropertyBucket(p);
+    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor_naver: "kind-realtor", realtor_direct: "kind-realtor", general: "kind-general" };
+    const kindLabel = getPropertyKindLabel(p);
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
     const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
     const rate = calcRate(p.priceMain, p.lowprice);
@@ -1351,7 +1366,7 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      '<td><span class="kind-text ' + (kindClass[bucket] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
       "<td>" + esc(p.address || "-") + "</td>" +
       "<td>" + esc(p.assetType || "-") + "</td>" +
       "<td>" + esc(p.floor || "-") + "</td>" +
@@ -1445,12 +1460,11 @@
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
-    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
+    setVal(f, "sourceType", getPropertyKindLabel(item));
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
