@@ -1169,7 +1169,11 @@ function bindEvents() {
     throw new Error("KNSN_DATA_ACCESS.updatePropertyRowResilient 를 찾을 수 없습니다.");
   }
 
-  async function submitNewProperty(...args) {
+  function openNewPropertyModal(...args) {
+    return callAdminModule("newPropertyModal", "openNewPropertyModal", args);
+  }
+
+    async function submitNewProperty(...args) {
     return callAdminModule("newPropertyModal", "submitNewProperty", args);
   }
 
