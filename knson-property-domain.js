@@ -578,6 +578,37 @@
     return "일반";
   }
 
+  function getSourceBucketClass(bucket) {
+    const key = String(bucket || "").trim();
+    if (key === "auction") return "kind-auction";
+    if (key === "onbid") return "kind-gongmae";
+    if (key === "realtor_naver" || key === "realtor_direct" || key === "realtor") return "kind-realtor";
+    return "kind-general";
+  }
+
+  function getCurrentPriceValue(item) {
+    if (!item || item.lowprice == null || item.lowprice === "") return Number(item?.priceMain || 0) || 0;
+    return Number(item.lowprice || 0) || 0;
+  }
+
+  function buildPropertyListViewModel(item, options = {}) {
+    const sourceItem = item && (item.sourceType || item.address || item.itemNo || item.raw)
+      ? item
+      : buildNormalizedPropertyBase(item, options);
+    const bucket = getSourceBucket(sourceItem);
+    return {
+      bucket,
+      kindLabel: getSourceBucketLabel(bucket),
+      kindClass: getSourceBucketClass(bucket),
+      currentPriceValue: getCurrentPriceValue(sourceItem),
+      itemNo: String(sourceItem?.itemNo || "").trim(),
+      address: String(sourceItem?.address || "").trim(),
+      assetType: String(sourceItem?.assetType || "").trim(),
+      floor: String(sourceItem?.floor || "").trim(),
+      opinionPreview: String(sourceItem?.opinion || "").trim().slice(0, 30),
+    };
+  }
+
   function matchesSourceBucket(item, activeCard) {
     const target = String(activeCard || "").trim();
     if (!target || target === "all") return true;
@@ -637,6 +668,9 @@
     getSourceBucket,
     getSourceTypeLabel,
     getSourceBucketLabel,
+    getSourceBucketClass,
+    getCurrentPriceValue,
+    buildPropertyListViewModel,
     matchesSourceBucket,
     summarizeSourceBuckets,
   };

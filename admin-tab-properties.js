@@ -46,6 +46,9 @@
 
 
   function getCurrentPriceValue(row) {
+    if (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.getCurrentPriceValue === 'function') {
+      return window.KNSN_PROPERTY_DOMAIN.getCurrentPriceValue(row);
+    }
     if (!row || row.lowprice == null || row.lowprice === '') return Number(row?.priceMain || 0) || 0;
     return Number(row.lowprice || 0) || 0;
   }
@@ -383,19 +386,22 @@
       const rowId = String(p.id || p.globalId || '').trim();
       const tr = document.createElement('tr');
       if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
-      const kindLabel = (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function')
+      const listView = (utils.PropertyDomain && typeof utils.PropertyDomain.buildPropertyListViewModel === 'function')
+        ? utils.PropertyDomain.buildPropertyListViewModel(p)
+        : null;
+      const kindLabel = listView?.kindLabel || ((utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function')
         ? utils.PropertyDomain.getSourceBucketLabel((utils.PropertyDomain.getSourceBucket && utils.PropertyDomain.getSourceBucket(p)) || p.sourceType)
-        : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반');
-      const currentPriceValue = getCurrentPriceValue(p);
+        : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
+      const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
       const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
       const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
       tr.innerHTML = `
         <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
-        <td><span class="kind-text ${utils.escapeAttr(p.sourceType === 'auction' ? 'kind-auction' : p.sourceType === 'onbid' ? 'kind-gongmae' : p.sourceType === 'realtor' ? 'kind-realtor' : 'kind-general')}">${utils.escapeHtml(kindLabel)}</span></td>
-        <td>${utils.escapeHtml(p.itemNo || '-')}</td>
-        <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(p.address || '-')}</button></td>
-        <td>${utils.escapeHtml(p.assetType || '-')}</td>
-        <td>${utils.escapeHtml(String(p.floor || '-'))}</td>
+        <td><span class="kind-text ${utils.escapeAttr(listView?.kindClass || (p.sourceType === 'auction' ? 'kind-auction' : p.sourceType === 'onbid' ? 'kind-gongmae' : p.sourceType === 'realtor' ? 'kind-realtor' : 'kind-general'))}">${utils.escapeHtml(kindLabel)}</span></td>
+        <td>${utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
+        <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(listView?.address || p.address || '-')}</button></td>
+        <td>${utils.escapeHtml(listView?.assetType || p.assetType || '-')}</td>
+        <td>${utils.escapeHtml(String(listView?.floor || p.floor || '-'))}</td>
         <td>${p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-'}</td>
         <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
         <td>${utils.escapeHtml(currentPrice)}</td>

@@ -153,6 +153,8 @@
       loadedAt: 0,
       loading: false,
     },
+    propertySummary: null,
+    todayAssignedSummary: null,
   };
 
   const els = {};
@@ -434,6 +436,24 @@
     const bucket = getPropertyBucket(item);
     const map = { auction: "auction", onbid: "onbid", realtor_naver: "realtor", realtor_direct: "realtor", general: "general" };
     return map[String(bucket || "").trim()] || "general";
+  }
+
+  function getPropertyListView(item) {
+    if (PropertyDomain && typeof PropertyDomain.buildPropertyListViewModel === "function") {
+      return PropertyDomain.buildPropertyListViewModel(item);
+    }
+    const bucket = getPropertyBucket(item);
+    return {
+      bucket,
+      kindLabel: getPropertyKindLabel(item),
+      kindClass: `kind-${getPropertyKindClass(item)}`,
+      currentPriceValue: item?.lowprice != null && item?.lowprice !== "" ? (Number(item.lowprice || 0) || 0) : (Number(item?.priceMain || 0) || 0),
+      itemNo: String(item?.itemNo || "").trim(),
+      address: String(item?.address || "").trim(),
+      assetType: String(item?.assetType || "").trim(),
+      floor: String(item?.floor || "").trim(),
+      opinionPreview: String(item?.opinion || "").trim().slice(0, 30),
+    };
   }
 
   function findPropertyForActivityRow(row) {
@@ -761,18 +781,30 @@
   async function loadProperties() {
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
-      if (!sb) { state.properties = []; renderAll(); return; }
+      if (!sb) {
+        state.properties = [];
+        refreshPropertySummaries();
+        renderAll();
+        return;
+      }
 
       const uid = String(state.session?.user?.id || "").trim();
-      if (!uid) { state.properties = []; renderAll(); return; }
+      if (!uid) {
+        state.properties = [];
+        refreshPropertySummaries();
+        renderAll();
+        return;
+      }
 
       try { await K.sbSyncLocalSession(); state.session = loadSession() || state.session; } catch {}
       const rows = await fetchAllAssignedProperties(sb, uid);
       state.properties = Array.isArray(rows) ? rows.map(normalizeProperty) : [];
+      refreshPropertySummaries();
       renderAll();
     } catch (err) {
       console.error("loadProperties error:", err);
       state.properties = [];
+      refreshPropertySummaries();
       renderAll();
     }
   }
@@ -1174,25 +1206,44 @@
     return getTodayDateKey(parsed);
   }
 
-  function countSourceSummary(rows) {
+  function createEmptyPropertySummary() {
+    if (DataAccess && typeof DataAccess.createEmptyPropertySummary === "function") {
+      return DataAccess.createEmptyPropertySummary();
+    }
+    return { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+  }
+
+  function summarizeProperties(rows) {
+    if (DataAccess && typeof DataAccess.summarizeProperties === "function") {
+      return DataAccess.summarizeProperties(rows);
+    }
     if (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function") {
       return PropertyDomain.summarizeSourceBuckets(rows);
     }
+    return createEmptyPropertySummary();
+  }
+
+  function summarizePropertiesForDateKey(rows, dateKey) {
+    if (DataAccess && typeof DataAccess.summarizePropertiesForDateKey === "function") {
+      return DataAccess.summarizePropertiesForDateKey(rows, dateKey);
+    }
     const list = Array.isArray(rows) ? rows : [];
-    return {
-      total: list.length,
-      auction: list.filter((r) => r.sourceType === "auction").length,
-      onbid: list.filter((r) => r.sourceType === "onbid").length,
-      realtor_naver: list.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission).length,
-      realtor_direct: list.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission).length,
-      general: list.filter((r) => r.sourceType === "general").length,
-    };
+    return summarizeProperties(list.filter((item) => {
+      const raw = item?._raw || {};
+      const candidate = item?.createdAt || raw?.date_uploaded || raw?.created_at || raw?.date || raw?.createdAt || "";
+      return extractDateKeyFromValue(candidate) === dateKey;
+    }));
+  }
+
+  function refreshPropertySummaries() {
+    const rows = Array.isArray(state.properties) ? state.properties : [];
+    state.propertySummary = summarizeProperties(rows);
+    state.todayAssignedSummary = summarizePropertiesForDateKey(rows, getTodayDateKey());
   }
 
   function renderSummary() {
-    const p = Array.isArray(state.properties) ? state.properties : [];
     const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
-    const summary = countSourceSummary(p);
+    const summary = state.propertySummary || createEmptyPropertySummary();
     if (els.agSumTotal) els.agSumTotal.textContent = fmt(summary.total);
     if (els.agSumAuction) els.agSumAuction.textContent = fmt(summary.auction);
     if (els.agSumGongmae) els.agSumGongmae.textContent = fmt(summary.onbid);
@@ -1212,13 +1263,7 @@
     setProgress(els.agHomeProgressDirect, summary.realtor_direct);
     setProgress(els.agHomeProgressGeneral, summary.general);
 
-    const todayKey = getTodayDateKey();
-    const todayAssignedRows = p.filter((item) => {
-      const raw = item?._raw || {};
-      const candidate = item?.createdAt || raw?.date_uploaded || raw?.created_at || raw?.date || raw?.createdAt || "";
-      return extractDateKeyFromValue(candidate) === todayKey;
-    });
-    const todayAssigned = countSourceSummary(todayAssignedRows);
+    const todayAssigned = state.todayAssignedSummary || createEmptyPropertySummary();
     if (els.agTodayAssignedTotal) els.agTodayAssignedTotal.textContent = fmt(todayAssigned.total);
     if (els.agTodayAssignedAuction) els.agTodayAssignedAuction.textContent = fmt(todayAssigned.auction);
     if (els.agTodayAssignedOnbid) els.agTodayAssignedOnbid.textContent = fmt(todayAssigned.onbid);
@@ -1334,12 +1379,12 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    const bucket = getPropertyBucket(p);
-    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor_naver: "kind-realtor", realtor_direct: "kind-realtor", general: "kind-general" };
-    const kindLabel = getPropertyKindLabel(p);
+    const view = getPropertyListView(p);
+    const bucket = view.bucket;
+    const kindLabel = view.kindLabel;
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
-    const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
-    const rate = calcRate(p.priceMain, p.lowprice);
+    const current = view.currentPriceValue ? formatEok(view.currentPriceValue) : "-";
+    const rate = calcRate(p.priceMain, view.currentPriceValue);
     const statusLabel = normalizeStatus(p.status);
     const isFav = state.favorites.has(p.id);
 
@@ -1366,10 +1411,10 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + (kindClass[bucket] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
-      "<td>" + esc(p.address || "-") + "</td>" +
-      "<td>" + esc(p.assetType || "-") + "</td>" +
-      "<td>" + esc(p.floor || "-") + "</td>" +
+      '<td><span class="kind-text ' + esc(view.kindClass || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      "<td>" + esc(view.address || "-") + "</td>" +
+      "<td>" + esc(view.assetType || "-") + "</td>" +
+      "<td>" + esc(view.floor || "-") + "</td>" +
       "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
       "<td>" + esc(appraisal) + "</td>" +
       "<td>" + esc(current) + "</td>" +
@@ -1378,7 +1423,7 @@
       "<td>" + esc(statusLabel) + "</td>" +
       "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
       "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
-      "<td>" + esc((p.opinion || "-").slice(0, 30)) + "</td>"
+      "<td>" + esc(view.opinionPreview || "-") + "</td>"
     );
 
     tr.addEventListener("click", () => openEditModal(p));
