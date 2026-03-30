@@ -517,6 +517,136 @@
     return normalizeSourceType(rawValue, { fallback: "general" });
   }
 
+  function normalizeRegistrationSubmitterKind(rawValue, options = {}) {
+    const fallback = String(options.fallback || "realtor").trim().toLowerCase() === "owner" ? "owner" : "realtor";
+    const value = String(rawValue || "").trim().toLowerCase();
+    if (!value) return fallback;
+    if (["realtor", "broker", "agent", "중개", "중개사", "공인중개사"].includes(value)) return "realtor";
+    if (["owner", "general", "user", "person", "일반", "소유", "소유자", "본인"].includes(value)) return "owner";
+    return fallback;
+  }
+
+  function buildRegistrationSubmissionCore(input = {}, options = {}) {
+    const defaultKind = String(options.defaultSubmitterKind || "realtor").trim().toLowerCase() === "owner" ? "owner" : "realtor";
+    const submitterKind = normalizeRegistrationSubmitterKind(
+      pickFirstText(
+        input.submitterKind,
+        input.submitter_kind,
+        input.registrationKind,
+        input.registration_kind,
+        input.submitterType,
+        input.submitter_type,
+        defaultKind
+      ),
+      { fallback: defaultKind }
+    );
+    const submitterType = normalizeSubmitterType(
+      pickFirstText(input.submitterType, input.submitter_type, ""),
+      { fallback: submitterKind === "realtor" ? "realtor" : "owner" }
+    );
+    const sourceType = normalizePublicSourceType(
+      pickFirstText(input.sourceType, input.source_type, ""),
+      submitterType
+    );
+
+    return {
+      submitterKind,
+      sourceType,
+      submitterType,
+      address: pickFirstText(input.address, ""),
+      assetType: pickFirstText(input.assetType, input.asset_type, ""),
+      priceMain: toNullableNumber(input.priceMain ?? input.price_main),
+      floor: pickFirstText(input.floor, "") || null,
+      totalFloor: pickFirstText(input.totalFloor, input.totalfloor, input.total_floor, "") || null,
+      commonArea: toNullableNumber(input.commonArea ?? input.common_area),
+      exclusiveArea: toNullableNumber(input.exclusiveArea ?? input.exclusive_area),
+      siteArea: toNullableNumber(input.siteArea ?? input.site_area),
+      useApproval: pickFirstText(input.useApproval, input.use_approval, input.useapproval, "") || null,
+      submitterName: pickFirstText(input.submitterName, input.submitter_name, "") || null,
+      submitterPhone: pickFirstText(input.submitterPhone, input.submitter_phone, "") || null,
+      realtorName: pickFirstText(input.realtorName, input.realtor_name, input.realtorname, input.brokerOfficeName, input.broker_office_name, "") || null,
+      realtorPhone: pickFirstText(input.realtorPhone, input.realtor_phone, input.realtorphone, "") || null,
+      realtorCell: pickFirstText(input.realtorCell, input.realtor_cell, input.realtorcell, "") || null,
+      opinion: pickFirstText(input.opinion, input.memo, "") || null,
+      actorName: pickFirstText(options.actorName, input.actorName, input.actor_name, "") || null,
+      assigneeId: pickFirstText(options.assigneeId, input.assigneeId, input.assignee_id, "") || null,
+    };
+  }
+
+  function validateRegistrationSubmissionCore(core, options = {}) {
+    const data = core && typeof core === "object" ? core : buildRegistrationSubmissionCore(core, options);
+    if (!data.address || !data.assetType || !data.priceMain) {
+      return String(options.requiredMessage || "주소/세부유형/매매가를 입력해 주세요.");
+    }
+    if (data.submitterType === "realtor") {
+      if (!data.realtorName || !data.realtorCell) {
+        return String(options.realtorMessage || "중개사무소명과 휴대폰번호를 입력해 주세요.");
+      }
+    } else if (!data.submitterName || !data.submitterPhone) {
+      return String(options.ownerMessage || "이름과 연락처를 입력해 주세요.");
+    }
+    return "";
+  }
+
+  function buildRegistrationSubmissionPayload(input = {}, options = {}) {
+    const core = buildRegistrationSubmissionCore(input, options);
+    const extraRaw = input.raw && typeof input.raw === "object" ? { ...input.raw } : {};
+    const raw = {
+      sourceType: core.sourceType,
+      source_type: core.sourceType,
+      submitterType: core.submitterType,
+      submitter_type: core.submitterType,
+      address: core.address,
+      assetType: core.assetType,
+      priceMain: core.priceMain,
+      floor: core.floor,
+      totalfloor: core.totalFloor,
+      useapproval: core.useApproval,
+      commonArea: core.commonArea,
+      exclusiveArea: core.exclusiveArea,
+      siteArea: core.siteArea,
+      realtorName: core.realtorName,
+      realtorPhone: core.realtorPhone,
+      realtorCell: core.realtorCell,
+      submitterName: core.submitterName,
+      submitterPhone: core.submitterPhone,
+      opinion: core.opinion,
+      ...extraRaw,
+    };
+
+    if (hasMeaningfulValue(core.assigneeId)) {
+      raw.assigneeId = core.assigneeId;
+      raw.assignedAgentId = core.assigneeId;
+    }
+    if (options.registrationKind === "admin") raw.registeredByAdmin = true;
+    if (options.registrationKind === "agent") raw.registeredByAgent = true;
+    if (hasMeaningfulValue(core.actorName)) raw.registeredByName = core.actorName;
+
+    const payload = {
+      source_type: core.sourceType,
+      is_general: core.sourceType === "general",
+      submitter_type: core.submitterType,
+      address: core.address,
+      asset_type: core.assetType,
+      price_main: core.priceMain,
+      use_approval: core.useApproval,
+      common_area: core.commonArea,
+      exclusive_area: core.exclusiveArea,
+      site_area: core.siteArea,
+      broker_office_name: core.realtorName,
+      submitter_name: core.submitterName,
+      submitter_phone: core.submitterPhone,
+      memo: core.opinion,
+      raw,
+    };
+    if (hasMeaningfulValue(core.assigneeId)) payload.assignee_id = core.assigneeId;
+    return payload;
+  }
+
+  function buildPublicListingPayload(input = {}, options = {}) {
+    return buildRegistrationSubmissionCore(input, options);
+  }
+
   function isBrokerLikeSource(sourceType) {
     return normalizeSourceType(sourceType, { fallback: "" }) === "realtor";
   }
@@ -750,6 +880,11 @@
     normalizeSourceType,
     normalizeSubmitterType,
     normalizePublicSourceType,
+    normalizeRegistrationSubmitterKind,
+    buildRegistrationSubmissionCore,
+    validateRegistrationSubmissionCore,
+    buildRegistrationSubmissionPayload,
+    buildPublicListingPayload,
     isBrokerLikeSource,
     isAuctionLikeSource,
     isGeneralSourceType,
