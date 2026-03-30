@@ -7,6 +7,7 @@
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => [...document.querySelectorAll(sel)];
 
@@ -729,34 +730,17 @@
   }
 
   async function fetchPropertiesBatch(sb, from, pageSize, uid) {
-    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
-    const filters = [
-      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid},raw->>assigned_agent_id.eq.${uid}`,
-      `assignee_id.eq.${uid}`
-    ];
-    let lastError = null;
-    for (const filter of filters) {
-      const { data, error } = await queryBase().or(filter);
-      if (!error) {
-        const rows = Array.isArray(data) ? data : [];
-        return rows.filter((row) => rowAssignedToUid(row, uid));
-      }
-      lastError = error;
+    if (DataAccess && typeof DataAccess.fetchPropertiesBatch === "function") {
+      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin: false, uid, select: "*", orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
     }
-    throw lastError;
+    throw new Error("KNSN_DATA_ACCESS.fetchPropertiesBatch 를 찾을 수 없습니다.");
   }
 
   async function fetchAllAssignedProperties(sb, uid) {
-    const out = [];
-    let from = 0;
-    const pageSize = 1000;
-    while (true) {
-      const rows = await fetchPropertiesBatch(sb, from, pageSize, uid);
-      out.push(...rows);
-      if (rows.length < pageSize) break;
-      from += pageSize;
+    if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
+      return DataAccess.fetchAllProperties(sb, { isAdmin: false, uid, select: "*", pageSize: 1000 });
     }
-    return out;
+    throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
 
   async function loadProperties() {
@@ -779,7 +763,8 @@
   }
 
   // ── Normalize ──
-  const REG_LOG_LABELS = (PropertyDomain && PropertyDomain.REGISTRATION_LOG_LABELS_AGENT) || {
+  const REG_LOG_LABELS = {
+    itemNo: "물건번호",
     address: "주소",
     assetType: "세부유형",
     floor: "층수",
@@ -788,7 +773,9 @@
     exclusiveArea: "전용면적",
     siteArea: "토지면적",
     useapproval: "사용승인일",
+    status: "진행상태",
     priceMain: "매매가",
+    sourceUrl: "원문링크",
     realtorName: "중개사무소명",
     realtorPhone: "유선전화",
     realtorCell: "휴대폰번호",
@@ -1083,17 +1070,10 @@
   }
 
   async function findExistingPropertyForRegistration(sb, data) {
-    const address = firstText(data?.address, data?.raw?.address, "");
-    const dongToken = ((address.match(/([가-힣A-Za-z0-9]+동)/) || [null, ""])[1] || "").trim();
-    try {
-      let query = sb.from("properties").select("*").limit(500);
-      if (dongToken) query = query.ilike("address", `%${dongToken}%`);
-      const { data: rows, error } = await query;
-      if (error) return null;
-      return findExistingPropertyByRegistrationKey(data, Array.isArray(rows) ? rows.map(normalizeProperty) : []);
-    } catch {
-      return null;
+    if (DataAccess && typeof DataAccess.findExistingPropertyForRegistration === "function") {
+      return DataAccess.findExistingPropertyForRegistration(sb, data, { limit: 500, normalizeRow: normalizeProperty });
     }
+    return null;
   }
 
   function normalizeProperty(item) {
@@ -1562,16 +1542,7 @@
       patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
-      let query = sb.from("properties").update(patch).eq(targetCol, targetId).eq("assignee_id", currentUserId).select("*").limit(1);
-      const { data, error } = await query;
-      if (error) {
-        const message = String(error?.message || "").trim();
-        if (/not allowed/i.test(message)) {
-          throw new Error("현재 물건 수정은 DB 정책에 의해 차단되었습니다. 잠긴 항목과 assignee_id 배정을 다시 확인해 주세요.");
-        }
-        throw normalizePropertyDuplicateError(error);
-      }
-      const updatedRow = Array.isArray(data) ? (data[0] || null) : data;
+      const updatedRow = await updatePropertyRowResilient(sb, targetId, patch);
       if (!updatedRow) {
         throw new Error("수정 가능한 물건을 찾지 못했습니다. assignee_id 배정 상태를 다시 확인해 주세요.");
       }
@@ -1788,21 +1759,58 @@
     return merged;
   }
 
+  const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
+    "uq_properties_global_id",
+    "uq_properties_registration_identity_key",
+    "uq_properties_registration_identity_key_v2_strict",
+  ]);
+
   function collectPropertyErrorTexts(err) {
-    if (PropertyDomain && typeof PropertyDomain.collectPropertyErrorFragments === "function") return PropertyDomain.collectPropertyErrorFragments(err);
-    return [];
+    const texts = [];
+    const push = (value) => {
+      if (value == null) return;
+      const s = String(value).trim();
+      if (s) texts.push(s);
+    };
+    const queue = [err];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+      push(current.message);
+      push(current.details);
+      push(current.hint);
+      push(current.code);
+      push(current.constraint);
+      push(current.error);
+      push(current.error_description);
+      if (current.cause && typeof current.cause === "object") queue.push(current.cause);
+      if (current.data && typeof current.data === "object") queue.push(current.data);
+      if (current.originalError && typeof current.originalError === "object") queue.push(current.originalError);
+    }
+    return texts;
   }
 
   function isPropertyDuplicateError(err) {
-    if (PropertyDomain && typeof PropertyDomain.isPropertyDuplicateError === "function") return PropertyDomain.isPropertyDuplicateError(err);
+    const code = String(err?.code || err?.data?.code || "").trim();
+    const constraint = String(err?.constraint || err?.data?.constraint || "").trim();
+    if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return true;
+    const joined = collectPropertyErrorTexts(err).join('\n');
+    for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
+      if (joined.includes(indexName)) return true;
+    }
+    if (code === "23505" && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
     return false;
   }
 
   function normalizePropertyDuplicateError(err) {
-    if (PropertyDomain && typeof PropertyDomain.normalizePropertyDuplicateError === "function") {
-      return PropertyDomain.normalizePropertyDuplicateError(err) || err;
-    }
-    return err;
+    if (!isPropertyDuplicateError(err)) return err;
+    const normalized = new Error("동일 물건이 이미 등록되어 있습니다");
+    normalized.code = "PROPERTY_DUPLICATE";
+    normalized.cause = err;
+    return normalized;
   }
 
   async function insertPropertyRowResilient(_sb, row) {

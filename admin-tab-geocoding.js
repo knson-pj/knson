@@ -1,6 +1,7 @@
 (() => {
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
   let _geocodeKakaoReady = null;
   let _geocoder = null;
 
@@ -151,22 +152,10 @@
   };
 
   mod.saveGeocodeResult = async function saveGeocodeResult(sb, propertyId, coords, status) {
-    const basePatch = { geocode_status: status };
-    if (coords && status === "ok") {
-      basePatch.latitude = coords.lat;
-      basePatch.longitude = coords.lng;
+    if (DataAccess && typeof DataAccess.saveGeocodeResult === "function") {
+      return DataAccess.saveGeocodeResult(sb, propertyId, coords, status);
     }
-    const col = String(propertyId).includes(":") ? "global_id" : "id";
-    const fullPatch = { ...basePatch, geocoded_at: new Date().toISOString() };
-    const { error } = await sb.from("properties").update(fullPatch).eq(col, propertyId);
-    if (error) {
-      if (String(error.message || "").includes("geocoded_at")) {
-        const { error: retryErr } = await sb.from("properties").update(basePatch).eq(col, propertyId);
-        if (retryErr) console.warn("saveGeocodeResult error:", propertyId, retryErr.message);
-      } else {
-        console.warn("saveGeocodeResult error:", propertyId, error.message);
-      }
-    }
+    throw new Error("KNSN_DATA_ACCESS.saveGeocodeResult 를 찾을 수 없습니다.");
   };
 
   mod.runGeocoding = async function runGeocoding(retryFailed) {
@@ -191,24 +180,9 @@
 
     try {
       const statusFilter = retryFailed ? "failed" : "pending";
-      const allItems = [];
-      let from = 0;
-      const pageSize = 1000;
-      while (true) {
-        const { data, error: fetchErr } = await sb.from("properties")
-          .select("id,global_id,address,latitude,longitude,geocode_status")
-          .eq("geocode_status", statusFilter)
-          .not("address", "is", null)
-          .order("date_uploaded", { ascending: false })
-          .range(from, from + pageSize - 1);
-        if (fetchErr) throw fetchErr;
-        const rows = Array.isArray(data) ? data : [];
-        allItems.push(...rows);
-        if (rows.length < pageSize) break;
-        from += pageSize;
-      }
-
-      const items = allItems.filter((r) => String(r.address || "").trim());
+      const items = (DataAccess && typeof DataAccess.fetchGeocodeQueue === "function")
+        ? await DataAccess.fetchGeocodeQueue(sb, { statusFilter, pageSize: 1000 })
+        : [];
       if (!items.length) {
         alert(retryFailed ? "재시도할 실패 건이 없습니다." : "지오코딩 대상이 없습니다.");
         return;

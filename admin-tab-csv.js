@@ -1,6 +1,7 @@
 (() => {
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
 
   function runtime() {
     return window.KNSN_ADMIN_RUNTIME || {};
@@ -268,39 +269,10 @@
   };
 
   mod.upsertPropertiesResilient = async function upsertPropertiesResilient(sb, rows, { chunkSize = 200 } = {}) {
-    const { K, utils } = ctx();
-    const { chunkArray } = utils;
-    const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
-    const failed = [];
-    let okCount = 0;
-
-    async function upsertBatch(batch) {
-      if (!batch.length) return;
-      const { error } = await sb.from("properties").upsert(batch, { onConflict: "global_id" });
-      if (!error) {
-        okCount += batch.length;
-        return;
-      }
-      if (batch.length === 1) {
-        const row = batch[0] || {};
-        failed.push({
-          globalId: row.global_id || "",
-          itemNo: row.item_no || "",
-          message: String(error.message || error.details || error.hint || "업서트 실패"),
-        });
-        return;
-      }
-      const mid = Math.ceil(batch.length / 2);
-      await upsertBatch(batch.slice(0, mid));
-      await upsertBatch(batch.slice(mid));
+    if (DataAccess && typeof DataAccess.upsertPropertiesResilient === "function") {
+      return DataAccess.upsertPropertiesResilient(sb, rows, { chunkSize, onConflict: "global_id" });
     }
-
-    const chunks = (K && typeof K.chunk === "function") ? K.chunk(list, chunkSize) : chunkArray(list, chunkSize);
-    for (const chunk of chunks) {
-      await upsertBatch(chunk);
-    }
-
-    return { okCount, failed };
+    throw new Error("KNSN_DATA_ACCESS.upsertPropertiesResilient 를 찾을 수 없습니다.");
   };
 
   mod.readCsvFileText = function readCsvFileText(file, sourceType) {

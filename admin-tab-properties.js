@@ -1,6 +1,7 @@
 (() => {
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
 
   function runtime() {
     return window.KNSN_ADMIN_RUNTIME || {};
@@ -325,17 +326,10 @@
     if (!window.confirm(`선택한 ${ids.length}건의 물건을 삭제할까요?`)) return;
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (sb) {
-      for (const chunk of utils.chunkArray(ids, 100)) {
-        const pureIds = chunk.filter((v) => !String(v).includes(':'));
-        const globalIds = chunk.filter((v) => String(v).includes(':'));
-        if (pureIds.length) {
-          const { error } = await sb.from('properties').delete().in('id', pureIds);
-          if (error) throw error;
-        }
-        if (globalIds.length) {
-          const { error } = await sb.from('properties').delete().in('global_id', globalIds);
-          if (error) throw error;
-        }
+      if (DataAccess && typeof DataAccess.deletePropertiesByIds === 'function') {
+        await DataAccess.deletePropertiesByIds(sb, ids);
+      } else {
+        throw new Error('KNSN_DATA_ACCESS.deletePropertiesByIds 를 찾을 수 없습니다.');
       }
     } else {
       await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
@@ -735,13 +729,10 @@
       setAemMsg(els, '');
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
       if (sb) {
-        const isPureId = !String(targetId).includes(':');
-        if (isPureId) {
-          const { error } = await sb.from('properties').delete().eq('id', targetId);
-          if (error) throw error;
+        if (DataAccess && typeof DataAccess.deletePropertyById === 'function') {
+          await DataAccess.deletePropertyById(sb, targetId);
         } else {
-          const { error } = await sb.from('properties').delete().eq('global_id', targetId);
-          if (error) throw error;
+          throw new Error('KNSN_DATA_ACCESS.deletePropertyById 를 찾을 수 없습니다.');
         }
       } else {
         await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids: [targetId] } });

@@ -32,6 +32,7 @@
 
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
@@ -305,41 +306,17 @@
   }
 
   async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
-    const queryBase = () => sb.from("properties").select("*").order("date_uploaded", { ascending: false }).range(from, from + pageSize - 1);
-    if (isAdmin) {
-      const { data, error } = await queryBase();
-      if (error) throw error;
-      return Array.isArray(data) ? data : [];
+    if (DataAccess && typeof DataAccess.fetchPropertiesBatch === "function") {
+      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select: "*", orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
     }
-
-    const filters = [
-      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
-      `assignee_id.eq.${uid}`,
-    ];
-
-    let lastError = null
-    for (const filter of filters) {
-      const { data, error } = await queryBase().or(filter)
-      if (!error) {
-        const rows = Array.isArray(data) ? data : [];
-        return rows.filter((row) => rowAssignedToUid(row, uid));
-      }
-      lastError = error;
-    }
-    throw lastError;
+    throw new Error("KNSN_DATA_ACCESS.fetchPropertiesBatch 를 찾을 수 없습니다.");
   }
 
   async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
-    const pageSize = 1000;
-    const out = [];
-    let from = 0;
-    while (true) {
-      const rows = await fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid });
-      out.push(...rows);
-      if (rows.length < pageSize) break;
-      from += pageSize;
+    if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
+      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: "*", pageSize: 1000 });
     }
-    return out;
+    throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
 
   async function loadProperties() {

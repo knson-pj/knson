@@ -7,6 +7,7 @@
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
   const toNumber = (Shared && typeof Shared.toNumber === "function")
     ? Shared.toNumber
     : ((K && typeof K.toNumber === "function") ? K.toNumber : (v) => {
@@ -874,92 +875,22 @@ function bindEvents() {
   }
 
   async function fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid }) {
-    const safePage = Math.max(1, Number(page || 1));
-    const safePageSize = Math.max(1, Number(pageSize || 30));
-    const from = Math.max(0, (safePage - 1) * safePageSize);
-    const to = from + safePageSize;
-    const selectOptions = from === 0 ? { count: "estimated" } : undefined;
-    const queryBase = () => {
-      let q = sb.from("properties");
-      q = selectOptions ? q.select(PROPERTY_LIST_SELECT, selectOptions) : q.select(PROPERTY_LIST_SELECT);
-      return q.order("date_uploaded", { ascending: false }).range(from, to);
-    };
-    const finalize = (data, count) => {
-      const rows = Array.isArray(data) ? data : [];
-      const hasMore = rows.length > safePageSize;
-      const items = hasMore ? rows.slice(0, safePageSize) : rows;
-      const numericCount = Number(count || 0);
-      const cachedTotal = isAdmin && !hasActivePropertyFilters() ? Number(state.propertySummary?.total || 0) : 0;
-      const total = numericCount || cachedTotal || (hasMore ? (from + safePageSize + 1) : (from + items.length));
-      return { items, total, hasMore, totalIsEstimated: !numericCount };
-    };
-
-    if (isAdmin) {
-      const { data, error, count } = await queryBase();
-      if (error) throw error;
-      return finalize(data, count);
+    if (DataAccess && typeof DataAccess.fetchPropertiesPageLight === "function") {
+      return DataAccess.fetchPropertiesPageLight(sb, page, pageSize, {
+        isAdmin,
+        uid,
+        select: PROPERTY_LIST_SELECT,
+        totalFallback: isAdmin && !hasActivePropertyFilters() ? Number(state.propertySummary?.total || 0) : 0,
+      });
     }
-
-    const filters = [
-      `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
-      `assignee_id.eq.${uid}`,
-    ];
-    let lastError = null;
-    for (const filter of filters) {
-      const { data, error, count } = await queryBase().or(filter);
-      if (!error) {
-        const normalized = finalize(data, count);
-        normalized.items = normalized.items.filter((row) => rowAssignedToUid(row, uid));
-        normalized.total = Number(count || normalized.items.length || 0) || normalized.total;
-        return normalized;
-      }
-      lastError = error;
-    }
-    throw lastError;
+    throw new Error("KNSN_DATA_ACCESS.fetchPropertiesPageLight 를 찾을 수 없습니다.");
   }
 
   async function fetchAllPropertiesLight(sb, { isAdmin, uid }) {
-    const pageSize = 1000;
-    const out = [];
-    let page = 1;
-
-    const runPageQuery = async (filter) => {
-      const from = Math.max(0, (page - 1) * pageSize);
-      const to = from + pageSize - 1;
-      let q = sb.from("properties").select(PROPERTY_LIST_SELECT).order("date_uploaded", { ascending: false }).range(from, to);
-      if (filter) q = q.or(filter);
-      const { data, error } = await q;
-      if (error) throw error;
-      return Array.isArray(data) ? data : [];
-    };
-
-    while (true) {
-      let items = [];
-      if (isAdmin) {
-        items = await runPageQuery(null);
-      } else {
-        const filters = [
-          `assignee_id.eq.${uid},raw->>assigneeId.eq.${uid},raw->>assignedAgentId.eq.${uid},raw->>assignee_id.eq.${uid}`,
-          `assignee_id.eq.${uid}`,
-        ];
-        let lastError = null;
-        for (const filter of filters) {
-          try {
-            items = await runPageQuery(filter);
-            items = items.filter((row) => rowAssignedToUid(row, uid));
-            lastError = null;
-            break;
-          } catch (err) {
-            lastError = err;
-          }
-        }
-        if (lastError) throw lastError;
-      }
-      out.push(...items);
-      if (items.length < pageSize) break;
-      page += 1;
+    if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
+      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: PROPERTY_LIST_SELECT, pageSize: 1000 });
     }
-    return out;
+    throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
 
   async function ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh = false } = {}) {
@@ -1005,69 +936,27 @@ function bindEvents() {
   }
 
   async function fetchExactHomeSummary(sb) {
-    const summary = {
-      total: 0,
-      auction: 0,
-      onbid: 0,
-      realtor_naver: 0,
-      realtor_direct: 0,
-      general: 0,
-    };
-    const pageSize = 1000;
-    let page = 1;
-    while (true) {
-      const from = Math.max(0, (page - 1) * pageSize);
-      const to = from + pageSize - 1;
-      const { data, error } = await sb
-        .from('properties')
-        .select(PROPERTY_HOME_SUMMARY_SELECT)
-        .range(from, to);
-      if (error) throw error;
-      const rows = Array.isArray(data) ? data : [];
-      for (const row of rows) appendSummaryBucket(summary, normalizeProperty(row));
-      if (rows.length < pageSize) break;
-      page += 1;
+    if (DataAccess && typeof DataAccess.fetchExactHomeSummary === "function") {
+      return DataAccess.fetchExactHomeSummary(sb, { normalizeRow: normalizeProperty, pageSize: 1000 });
     }
-    return summary;
+    throw new Error("KNSN_DATA_ACCESS.fetchExactHomeSummary 를 찾을 수 없습니다.");
   }
 
   async function fetchPropertySummary(sb) {
-    if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
-      return buildPropertySummaryFromRows(state.propertiesFullCache);
+    if (DataAccess && typeof DataAccess.fetchPropertySummary === "function") {
+      return DataAccess.fetchPropertySummary(sb, {
+        cachedRows: Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length ? state.propertiesFullCache : null,
+        normalizeRow: normalizeProperty,
+      });
     }
-
-    const countRows = async (builder) => {
-      let q = sb.from("properties").select("id", { count: "estimated", head: true });
-      if (typeof builder === "function") q = builder(q) || q;
-      const { count, error } = await q;
-      if (error) throw error;
-      return Number(count || 0);
-    };
-
-    const [total, auction, onbid, realtorTotal, realtorNaver, general] = await Promise.all([
-      countRows(),
-      countRows((q) => q.eq("source_type", "auction")),
-      countRows((q) => q.eq("source_type", "onbid")),
-      countRows((q) => q.eq("source_type", "realtor")),
-      countRows((q) => q.eq("source_type", "realtor").not("source_url", "is", null)),
-      countRows((q) => q.eq("source_type", "general")),
-    ]);
-
-    return {
-      total,
-      auction,
-      onbid,
-      realtor_naver: realtorNaver,
-      realtor_direct: Math.max(0, realtorTotal - realtorNaver),
-      general,
-    };
+    throw new Error("KNSN_DATA_ACCESS.fetchPropertySummary 를 찾을 수 없습니다.");
   }
 
   async function fetchPropertyDetail(sb, targetId) {
-    const col = String(targetId || '').includes(':') ? 'global_id' : 'id';
-    const { data, error } = await sb.from('properties').select('*').eq(col, targetId).limit(1).maybeSingle();
-    if (error) throw error;
-    return data ? normalizeProperty(data) : null;
+    if (DataAccess && typeof DataAccess.fetchPropertyDetail === "function") {
+      return DataAccess.fetchPropertyDetail(sb, targetId, { select: "*", normalizeRow: normalizeProperty });
+    }
+    throw new Error("KNSN_DATA_ACCESS.fetchPropertyDetail 를 찾을 수 없습니다.");
   }
 
   async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
@@ -1294,56 +1183,72 @@ function bindEvents() {
     return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
   }
 
+  const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
+    "uq_properties_global_id",
+    "uq_properties_registration_identity_key",
+    "uq_properties_registration_identity_key_v2_strict",
+  ]);
+
   function collectPropertyErrorTexts(err) {
-    if (PropertyDomain && typeof PropertyDomain.collectPropertyErrorFragments === "function") return PropertyDomain.collectPropertyErrorFragments(err);
-    return [];
+    const texts = [];
+    const push = (value) => {
+      if (value == null) return;
+      const s = String(value).trim();
+      if (s) texts.push(s);
+    };
+    const queue = [err];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+      push(current.message);
+      push(current.details);
+      push(current.hint);
+      push(current.code);
+      push(current.constraint);
+      push(current.error);
+      push(current.error_description);
+      if (current.cause && typeof current.cause === "object") queue.push(current.cause);
+      if (current.data && typeof current.data === "object") queue.push(current.data);
+      if (current.originalError && typeof current.originalError === "object") queue.push(current.originalError);
+    }
+    return texts;
   }
 
   function isPropertyDuplicateError(err) {
-    if (PropertyDomain && typeof PropertyDomain.isPropertyDuplicateError === "function") return PropertyDomain.isPropertyDuplicateError(err);
+    const code = String(err?.code || err?.data?.code || "").trim();
+    const constraint = String(err?.constraint || err?.data?.constraint || "").trim();
+    if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return true;
+    const joined = collectPropertyErrorTexts(err).join('\n');
+    for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
+      if (joined.includes(indexName)) return true;
+    }
+    if (code === "23505" && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
     return false;
   }
 
   function normalizePropertyDuplicateError(err) {
-    if (PropertyDomain && typeof PropertyDomain.normalizePropertyDuplicateError === "function") {
-      return PropertyDomain.normalizePropertyDuplicateError(err) || err;
-    }
-    return err;
+    if (!isPropertyDuplicateError(err)) return err;
+    const normalized = new Error("동일 물건이 이미 등록되어 있습니다");
+    normalized.code = "PROPERTY_DUPLICATE";
+    normalized.cause = err;
+    return normalized;
   }
 
   async function insertPropertyRowResilient(sb, row) {
-    let current = { ...(row || {}) };
-    const removed = new Set();
-    for (let i = 0; i < 16; i += 1) {
-      const { data, error } = await sb.from("properties").insert(current).select("id").limit(1);
-      if (!error) {
-        if (Array.isArray(data) && data.length) return data[0];
-        return null;
-      }
-      const missing = extractSchemaMissingColumn(error);
-      if (!missing || removed.has(missing) || !(missing in current)) throw normalizePropertyDuplicateError(error);
-      removed.add(missing);
-      current = omitKeys(current, [missing]);
+    if (DataAccess && typeof DataAccess.insertPropertyRowResilient === "function") {
+      return DataAccess.insertPropertyRowResilient(sb, row, { select: "id", maxRetries: 16 });
     }
-    throw new Error("properties insert failed after schema fallback retries");
+    throw new Error("KNSN_DATA_ACCESS.insertPropertyRowResilient 를 찾을 수 없습니다.");
   }
 
   async function updatePropertyRowResilient(sb, targetId, patch) {
-    let current = { ...(patch || {}) };
-    const removed = new Set();
-    const col = String(targetId).includes(":") ? "global_id" : "id";
-    for (let i = 0; i < 16; i += 1) {
-      const { data, error } = await sb.from("properties").update(current).eq(col, targetId).select("id").limit(1);
-      if (!error) {
-        if (Array.isArray(data) && data.length) return data[0];
-        throw Object.assign(new Error("NO_ROWS_UPDATED"), { code: "NO_ROWS_UPDATED" });
-      }
-      const missing = extractSchemaMissingColumn(error);
-      if (!missing || removed.has(missing) || !(missing in current)) throw normalizePropertyDuplicateError(error);
-      removed.add(missing);
-      current = omitKeys(current, [missing]);
+    if (DataAccess && typeof DataAccess.updatePropertyRowResilient === "function") {
+      return DataAccess.updatePropertyRowResilient(sb, targetId, patch, { select: "id", maxRetries: 16 });
     }
-    throw new Error("properties update failed after schema fallback retries");
+    throw new Error("KNSN_DATA_ACCESS.updatePropertyRowResilient 를 찾을 수 없습니다.");
   }
 
   async function submitNewProperty(...args) {
@@ -1458,7 +1363,8 @@ function bindEvents() {
   // ---------------------------
   // Registration Log 유틸
   // ---------------------------
-  const REG_LOG_LABELS = (PropertyDomain && PropertyDomain.REGISTRATION_LOG_LABELS_ADMIN) || {
+  const REG_LOG_LABELS = {
+    itemNo: "물건번호",
     address: "주소",
     assetType: "세부유형",
     floor: "층수",
@@ -1467,13 +1373,18 @@ function bindEvents() {
     exclusiveArea: "전용면적",
     siteArea: "토지면적",
     useapproval: "사용승인일",
-    priceMain: "매매가",
+    status: "진행상태",
+    priceMain: "감정가(매매가)",
+    lowprice: "현재가격",
+    dateMain: "주요일정",
+    sourceUrl: "원문링크",
     realtorName: "중개사무소명",
     realtorPhone: "유선전화",
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
-    submitterPhone: "등록자 연락처",
     memo: "메모/의견",
+    latitude: "위도",
+    longitude: "경도",
   };
 
   function hasMeaningfulValue(value) {
@@ -1928,12 +1839,13 @@ function bindEvents() {
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (!sb) throw new Error("Supabase 연동 필요");
     const targetId = item.id || item.globalId;
-    const col = String(targetId).includes(":") ? "global_id" : "id";
     const latestOpinion = history.length ? history[history.length - 1].text : null;
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
     const nextRaw = { ...currentRaw, opinionHistory: history, opinion: latestOpinion, memo: latestOpinion };
-    const { error } = await sb.from("properties").update({ memo: latestOpinion, raw: nextRaw }).eq(col, targetId);
-    if (error) throw normalizePropertyDuplicateError(error);
+    if (!DataAccess || typeof DataAccess.updatePropertyMemoRaw !== "function") {
+      throw new Error("KNSN_DATA_ACCESS.updatePropertyMemoRaw 를 찾을 수 없습니다.");
+    }
+    await DataAccess.updatePropertyMemoRaw(sb, targetId, { memo: latestOpinion, raw: nextRaw });
   }
 
   function esc(v) {

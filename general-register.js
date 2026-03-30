@@ -15,6 +15,7 @@
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
@@ -26,22 +27,22 @@
         },
       })
     : null;
-  const REG_LOG_LABELS = (PropertyDomain && PropertyDomain.REGISTRATION_LOG_LABELS_PUBLIC) || {
-    address: '주소',
-    assetType: '세부유형',
-    floor: '층수',
-    totalfloor: '총층',
-    commonArea: '공용면적',
-    exclusiveArea: '전용면적',
-    siteArea: '토지면적',
-    useapproval: '사용승인일',
-    priceMain: '매매가',
-    realtorName: '중개사무소명',
-    realtorPhone: '유선전화',
-    realtorCell: '휴대폰번호',
-    submitterName: '등록자명',
-    submitterPhone: '등록자 연락처',
-    memo: '메모/의견',
+  const REG_LOG_LABELS = {
+    address: "주소",
+    assetType: "세부유형",
+    floor: "층수",
+    totalfloor: "총층",
+    commonArea: "공용면적",
+    exclusiveArea: "전용면적",
+    siteArea: "토지면적",
+    useapproval: "사용승인일",
+    priceMain: "매매가",
+    realtorName: "중개사무소명",
+    realtorPhone: "유선전화",
+    realtorCell: "휴대폰번호",
+    submitterName: "등록자명",
+    submitterPhone: "등록자 연락처",
+    memo: "메모/의견",
   };
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -414,14 +415,10 @@
   }
 
   async function findExistingRowByRegistrationKey(sb, payload) {
-    const address = String(payload.address || '').trim();
-    const dongToken = ((address.match(/([가-힣A-Za-z0-9]+동)/) || [null, ''])[1] || '').trim();
-    let query = sb.from('properties').select('*').limit(300);
-    if (dongToken) query = query.ilike('address', `%${dongToken}%`);
-    const { data, error } = await query;
-    if (error) return null;
-    const targetKey = buildRegistrationMatchKey(payload);
-    return (Array.isArray(data) ? data : []).find((row) => buildRegistrationMatchKey(buildRegistrationSnapshotFromRow(row)) === targetKey) || null;
+    if (DataAccess && typeof DataAccess.findExistingPropertyForRegistration === 'function') {
+      return DataAccess.findExistingPropertyForRegistration(sb, payload, { limit: 300, normalizeRow: null });
+    }
+    return null;
   }
 
   function bindTypeSwitch() {
