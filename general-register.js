@@ -26,22 +26,22 @@
         },
       })
     : null;
-  const REG_LOG_LABELS = {
-    address: "주소",
-    assetType: "세부유형",
-    floor: "층수",
-    totalfloor: "총층",
-    commonArea: "공용면적",
-    exclusiveArea: "전용면적",
-    siteArea: "토지면적",
-    useapproval: "사용승인일",
-    priceMain: "매매가",
-    realtorName: "중개사무소명",
-    realtorPhone: "유선전화",
-    realtorCell: "휴대폰번호",
-    submitterName: "등록자명",
-    submitterPhone: "등록자 연락처",
-    memo: "메모/의견",
+  const REG_LOG_LABELS = (PropertyDomain && PropertyDomain.REGISTRATION_LOG_LABELS_PUBLIC) || {
+    address: '주소',
+    assetType: '세부유형',
+    floor: '층수',
+    totalfloor: '총층',
+    commonArea: '공용면적',
+    exclusiveArea: '전용면적',
+    siteArea: '토지면적',
+    useapproval: '사용승인일',
+    priceMain: '매매가',
+    realtorName: '중개사무소명',
+    realtorPhone: '유선전화',
+    realtorCell: '휴대폰번호',
+    submitterName: '등록자명',
+    submitterPhone: '등록자 연락처',
+    memo: '메모/의견',
   };
 
   document.addEventListener("DOMContentLoaded", () => {

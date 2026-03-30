@@ -10,84 +10,29 @@ const {
   nowIso,
 } = require('./_lib/utils');
 const { hasSupabaseAdminEnv, getEnv } = require('./_lib/supabase-admin');
+const PropertyDomain = require('../knson-property-domain.js');
 
-const REG_LOG_LABELS = {
-  address: '주소',
-  assetType: '세부유형',
-  floor: '층수',
-  totalfloor: '총층',
-  commonArea: '공용면적',
-  exclusiveArea: '전용면적',
-  siteArea: '토지면적',
-  useapproval: '사용승인일',
-  priceMain: '매매가',
-  realtorName: '중개사무소명',
-  realtorPhone: '유선전화',
-  realtorCell: '휴대폰번호',
-  submitterName: '등록자명',
-  submitterPhone: '등록자 연락처',
-  memo: '메모/의견',
-};
+const REG_LOG_LABELS = PropertyDomain.REGISTRATION_LOG_LABELS_PUBLIC;
 
 function parseFloorNumberForLog(value) {
-  const s = String(value || '').trim();
-  if (!s) return '';
-  let m = s.match(/^(?:B|b|지하)\s*(\d+)$/);
-  if (m) return `b${m[1]}`;
-  m = s.match(/(-?\d+)/);
-  return m ? String(Number(m[1])) : '';
+  return PropertyDomain.parseFloorNumberForLog(value);
 }
 
 function compactAddressText(value) {
-  return String(value || '').trim().replace(/\s+/g, '');
+  return PropertyDomain.compactAddressText(value);
 }
 
 function parseAddressIdentityParts(address) {
-  const text = String(address || '').trim().replace(/\s+/g, ' ');
-  const compact = compactAddressText(text);
-  if (!compact) return { dong: '', mainNo: '', subNo: '' };
-
-  const suffixSet = new Set(['동', '읍', '면', '리']);
-  let end = -1;
-  for (let i = compact.length - 1; i >= 0; i -= 1) {
-    if (suffixSet.has(compact[i])) {
-      end = i;
-      break;
-    }
-  }
-  if (end < 0) return { dong: '', mainNo: '', subNo: '' };
-
-  let start = 0;
-  for (let i = end - 1; i >= 0; i -= 1) {
-    if (/[시군구읍면리동]/.test(compact[i])) {
-      start = i + 1;
-      break;
-    }
-  }
-
-  const dong = compact.slice(start, end + 1);
-  if (!/^[가-힣A-Za-z0-9]+(?:동|읍|면|리)$/.test(dong)) {
-    return { dong: '', mainNo: '', subNo: '' };
-  }
-
-  const tail = compact.slice(end + 1);
-  const lot = tail.match(/(산?\d+)(?:-(\d+))?/);
-  if (!lot) return { dong, mainNo: '', subNo: '' };
-  return { dong, mainNo: lot[1] || '', subNo: lot[2] || '' };
+  return PropertyDomain.parseAddressIdentityParts(address);
 }
 
 function extractHoNumberForLog(...values) {
-  for (const value of values) {
-    const s = String(value || '').trim();
-    if (!s) continue;
-    let m = s.match(/(\d{1,5})\s*호/);
-    if (m) return String(Number(m[1]));
-    if (!/층|동/.test(s)) {
-      m = s.match(/^\D*(\d{1,5})\D*$/);
-      if (m) return String(Number(m[1]));
-    }
-  }
-  return '';
+  return PropertyDomain.extractHoNumberForLog({
+    ho: values[0],
+    unit: values[1],
+    room: values[2],
+    address: values[3],
+  });
 }
 
 function buildRegistrationKey(body) {
@@ -98,13 +43,7 @@ function buildRegistrationKey(body) {
 }
 
 function attachRegistrationIdentity(raw, body) {
-  const nextRaw = { ...(raw || {}) };
-  const parts = parseAddressIdentityParts(body.address || nextRaw.address || '');
-  const floorKey = parseFloorNumberForLog(body.floor || body.totalFloor || body.totalfloor || nextRaw.floor || nextRaw.totalfloor || '') || '';
-  const hoKey = extractHoNumberForLog(body.ho || '', body.unit || '', body.room || '', body.address || nextRaw.address || '') || '';
-  nextRaw.registrationIdentityKey = parts.dong && parts.mainNo ? `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}|${floorKey || '0'}|${hoKey || '0'}` : '';
-  nextRaw.registrationIdentity = { dong: parts.dong || '', mainNo: parts.mainNo || '', subNo: parts.subNo || '', floor: floorKey || '', ho: hoKey || '' };
-  return nextRaw;
+  return PropertyDomain.attachRegistrationIdentity(raw, body);
 }
 
 function buildRegistrationLogCreated(route, actor, at = nowIso()) {
@@ -118,9 +57,7 @@ function appendRegistrationLog(raw, route, actor, changes, at = nowIso()) {
 }
 
 function hasMeaningfulValue(value) {
-  if (value === null || value === undefined) return false;
-  if (typeof value === 'string') return value.trim() !== '';
-  return true;
+  return PropertyDomain.hasMeaningfulValue(value);
 }
 
 function parseNumberOrNull(value) {
@@ -131,26 +68,11 @@ function parseNumberOrNull(value) {
 }
 
 function normalizeCompareValue(field, value) {
-  if (value === null || value === undefined) return '';
-  if (['priceMain', 'commonArea', 'exclusiveArea', 'siteArea'].includes(field)) {
-    const n = parseNumberOrNull(value);
-    return n === null ? '' : String(n);
-  }
-  return String(value).trim().replace(/\s+/g, ' ');
+  return PropertyDomain.normalizeCompareValue(field, value, { numericFields: ['priceMain', 'commonArea', 'exclusiveArea', 'siteArea'] });
 }
 
 function formatFieldValueForLog(field, value) {
-  if (value === null || value === undefined) return '';
-  if (field === 'priceMain') {
-    const n = parseNumberOrNull(value);
-    return n === null ? '' : n.toLocaleString('ko-KR');
-  }
-  if (['commonArea', 'exclusiveArea', 'siteArea'].includes(field)) {
-    const n = parseNumberOrNull(value);
-    if (n === null) return '';
-    return Number.isInteger(n) ? String(n) : String(n).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
-  }
-  return String(value).trim();
+  return PropertyDomain.formatFieldValueForLog(field, value, { amountFields: ['priceMain'], numericFields: ['commonArea', 'exclusiveArea', 'siteArea'] });
 }
 
 function buildRegistrationSnapshot(input = {}) {
@@ -195,30 +117,14 @@ function buildRegistrationSnapshotFromRow(row = {}) {
 }
 
 function buildRegistrationChanges(prevSnapshot, nextSnapshot) {
-  const changes = [];
-  Object.keys(REG_LOG_LABELS).forEach((field) => {
-    const nextValue = nextSnapshot?.[field];
-    if (!hasMeaningfulValue(nextValue)) return;
-    const prevNorm = normalizeCompareValue(field, prevSnapshot?.[field]);
-    const nextNorm = normalizeCompareValue(field, nextValue);
-    if (prevNorm === nextNorm) return;
-    changes.push({
-      field,
-      label: REG_LOG_LABELS[field],
-      before: formatFieldValueForLog(field, prevSnapshot?.[field]) || '-',
-      after: formatFieldValueForLog(field, nextValue) || '-',
-    });
+  return PropertyDomain.buildRegistrationChanges(prevSnapshot, nextSnapshot, REG_LOG_LABELS, {
+    amountFields: ['priceMain'],
+    numericFields: ['commonArea', 'exclusiveArea', 'siteArea'],
   });
-  return changes;
 }
 
 function mergeMeaningfulShallow(baseObj, incomingObj) {
-  const out = { ...(baseObj || {}) };
-  Object.entries(incomingObj || {}).forEach(([key, value]) => {
-    if (!hasMeaningfulValue(value)) return;
-    out[key] = value;
-  });
-  return out;
+  return PropertyDomain.mergeMeaningfulShallow(baseObj, incomingObj);
 }
 
 function sanitizeJsonValue(value, depth = 0, seen) {
@@ -382,66 +288,8 @@ function escapeLikeTerm(value) {
   return String(value || '').replace(/[%,]/g, '').trim();
 }
 
-const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
-  'uq_properties_global_id',
-  'uq_properties_registration_identity_key',
-  'uq_properties_registration_identity_key_v2_strict',
-]);
-
-function collectPropertyErrorFragments(error) {
-  const fragments = [];
-  const push = (value) => {
-    if (value == null) return;
-    const s = String(value).trim();
-    if (s) fragments.push(s);
-  };
-  const queue = [error];
-  const seen = new Set();
-  while (queue.length) {
-    const current = queue.shift();
-    if (!current || typeof current !== 'object' || seen.has(current)) continue;
-    seen.add(current);
-    push(current.message);
-    push(current.details);
-    push(current.hint);
-    push(current.code);
-    push(current.constraint);
-    push(current.error);
-    push(current.error_description);
-    if (current.data && typeof current.data === 'object') queue.push(current.data);
-    if (current.cause && typeof current.cause === 'object') queue.push(current.cause);
-    if (current.originalError && typeof current.originalError === 'object') queue.push(current.originalError);
-  }
-  return fragments;
-}
-
-function detectPropertyDuplicateIndexName(error) {
-  const constraint = String(error?.constraint || error?.data?.constraint || '').trim();
-  if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return constraint;
-  const joined = collectPropertyErrorFragments(error).join('\n');
-  for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
-    if (joined.includes(indexName)) return indexName;
-  }
-  return '';
-}
-
-function isPropertyDuplicateError(error) {
-  const code = String(error?.code || error?.data?.code || '').trim();
-  const joined = collectPropertyErrorFragments(error).join('\n');
-  if (detectPropertyDuplicateIndexName(error)) return true;
-  if (code === '23505' && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
-  if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
-  return false;
-}
-
 function normalizePropertyDuplicateError(error) {
-  if (!isPropertyDuplicateError(error)) return null;
-  const normalized = new Error('동일 물건이 이미 등록되어 있습니다');
-  normalized.status = 409;
-  normalized.code = 'PROPERTY_DUPLICATE';
-  normalized.constraint = detectPropertyDuplicateIndexName(error) || undefined;
-  normalized.cause = error;
-  return normalized;
+  return PropertyDomain.normalizePropertyDuplicateError(error);
 }
 
 function buildSupabaseHeaders({ hasJson = false, extra = {} } = {}) {
@@ -476,13 +324,7 @@ async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
 }
 
 function buildRegistrationMatchKeyFromRow(row) {
-  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
-  return String(raw.registrationIdentityKey || buildRegistrationKey({
-    address: row?.address || raw.address || '',
-    floor: raw.floor || '',
-    totalFloor: raw.totalfloor || row?.total_floor || '',
-    ho: raw.ho || raw.unit || raw.room || '',
-  }) || '').trim();
+  return PropertyDomain.buildRegistrationMatchKeyFromRow(row);
 }
 
 async function findExistingSupabaseProperty(payload) {
@@ -592,7 +434,7 @@ function handleLegacyPublicListing(res, payload, originalBody = {}) {
   const geo = extractGuDong(payload.address);
   const item = {
     id: id('prop'),
-    source: payload.sourceType === 'realtor' ? 'realtor' : 'general',
+    source: PropertyDomain.normalizePublicSourceType(payload.sourceType, payload.submitterType),
     address: payload.address,
     normalizedAddress: normalizeAddress(payload.address),
     price: payload.priceMain,

@@ -1294,58 +1294,21 @@ function bindEvents() {
     return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
   }
 
-  const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
-    "uq_properties_global_id",
-    "uq_properties_registration_identity_key",
-    "uq_properties_registration_identity_key_v2_strict",
-  ]);
-
   function collectPropertyErrorTexts(err) {
-    const texts = [];
-    const push = (value) => {
-      if (value == null) return;
-      const s = String(value).trim();
-      if (s) texts.push(s);
-    };
-    const queue = [err];
-    const seen = new Set();
-    while (queue.length) {
-      const current = queue.shift();
-      if (!current || typeof current !== "object" || seen.has(current)) continue;
-      seen.add(current);
-      push(current.message);
-      push(current.details);
-      push(current.hint);
-      push(current.code);
-      push(current.constraint);
-      push(current.error);
-      push(current.error_description);
-      if (current.cause && typeof current.cause === "object") queue.push(current.cause);
-      if (current.data && typeof current.data === "object") queue.push(current.data);
-      if (current.originalError && typeof current.originalError === "object") queue.push(current.originalError);
-    }
-    return texts;
+    if (PropertyDomain && typeof PropertyDomain.collectPropertyErrorFragments === "function") return PropertyDomain.collectPropertyErrorFragments(err);
+    return [];
   }
 
   function isPropertyDuplicateError(err) {
-    const code = String(err?.code || err?.data?.code || "").trim();
-    const constraint = String(err?.constraint || err?.data?.constraint || "").trim();
-    if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return true;
-    const joined = collectPropertyErrorTexts(err).join('\n');
-    for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
-      if (joined.includes(indexName)) return true;
-    }
-    if (code === "23505" && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
-    if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    if (PropertyDomain && typeof PropertyDomain.isPropertyDuplicateError === "function") return PropertyDomain.isPropertyDuplicateError(err);
     return false;
   }
 
   function normalizePropertyDuplicateError(err) {
-    if (!isPropertyDuplicateError(err)) return err;
-    const normalized = new Error("동일 물건이 이미 등록되어 있습니다");
-    normalized.code = "PROPERTY_DUPLICATE";
-    normalized.cause = err;
-    return normalized;
+    if (PropertyDomain && typeof PropertyDomain.normalizePropertyDuplicateError === "function") {
+      return PropertyDomain.normalizePropertyDuplicateError(err) || err;
+    }
+    return err;
   }
 
   async function insertPropertyRowResilient(sb, row) {
@@ -1495,8 +1458,7 @@ function bindEvents() {
   // ---------------------------
   // Registration Log 유틸
   // ---------------------------
-  const REG_LOG_LABELS = {
-    itemNo: "물건번호",
+  const REG_LOG_LABELS = (PropertyDomain && PropertyDomain.REGISTRATION_LOG_LABELS_ADMIN) || {
     address: "주소",
     assetType: "세부유형",
     floor: "층수",
@@ -1505,18 +1467,13 @@ function bindEvents() {
     exclusiveArea: "전용면적",
     siteArea: "토지면적",
     useapproval: "사용승인일",
-    status: "진행상태",
-    priceMain: "감정가(매매가)",
-    lowprice: "현재가격",
-    dateMain: "주요일정",
-    sourceUrl: "원문링크",
+    priceMain: "매매가",
     realtorName: "중개사무소명",
     realtorPhone: "유선전화",
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
+    submitterPhone: "등록자 연락처",
     memo: "메모/의견",
-    latitude: "위도",
-    longitude: "경도",
   };
 
   function hasMeaningfulValue(value) {

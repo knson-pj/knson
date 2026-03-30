@@ -1,14 +1,66 @@
-(() => {
+(function (root, factory) {
+  "use strict";
+  const domain = factory(root);
+  if (typeof module === "object" && module.exports) {
+    module.exports = domain;
+  }
+  if (root && typeof root === "object") {
+    root.KNSN_PROPERTY_DOMAIN = domain;
+  }
+})(typeof globalThis !== "undefined" ? globalThis : (typeof self !== "undefined" ? self : this), function (root) {
   "use strict";
 
-  const Shared = window.KNSN_SHARED || null;
+  const Shared = root && root.KNSN_SHARED ? root.KNSN_SHARED : null;
 
-  function pickFirstText(...values) {
+  const REGISTRATION_LOG_LABELS_BASE = Object.freeze({
+    address: "주소",
+    assetType: "세부유형",
+    floor: "층수",
+    totalfloor: "총층",
+    commonArea: "공용면적",
+    exclusiveArea: "전용면적",
+    siteArea: "토지면적",
+    useapproval: "사용승인일",
+    priceMain: "매매가",
+    realtorName: "중개사무소명",
+    realtorPhone: "유선전화",
+    realtorCell: "휴대폰번호",
+    submitterName: "등록자명",
+    submitterPhone: "등록자 연락처",
+    memo: "메모/의견",
+  });
+
+  const REGISTRATION_LOG_LABELS_ADMIN = Object.freeze({ ...REGISTRATION_LOG_LABELS_BASE });
+  const REGISTRATION_LOG_LABELS_AGENT = Object.freeze({ ...REGISTRATION_LOG_LABELS_BASE });
+  const REGISTRATION_LOG_LABELS_PUBLIC = Object.freeze({ ...REGISTRATION_LOG_LABELS_BASE });
+
+  const PROPERTY_DUPLICATE_INDEX_NAMES = Object.freeze([
+    "uq_properties_global_id",
+    "uq_properties_registration_identity_key",
+    "uq_properties_registration_identity_key_v2_strict",
+  ]);
+  const PROPERTY_DUPLICATE_INDEX_NAME_SET = new Set(PROPERTY_DUPLICATE_INDEX_NAMES);
+
+  function firstNonEmpty(...values) {
     for (const value of values) {
       const text = String(value ?? "").trim();
       if (text) return text;
     }
     return "";
+  }
+
+  function toNullableNumber(value) {
+    if (Shared && typeof Shared.toNullableNumber === "function") return Shared.toNullableNumber(value);
+    if (value == null || value === "") return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    const normalized = String(value).replace(/,/g, "").trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function pickFirstText(...values) {
+    return firstNonEmpty(...values);
   }
 
   function compactAddressText(value) {
@@ -83,16 +135,27 @@
 
   function buildRegistrationMatchKey(data) {
     const parts = parseAddressIdentityParts(pickFirstText(data?.address, data?.raw?.address, ""));
-    const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, "")) || "0";
+    const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, data?.totalFloor, data?.raw?.totalfloor, "")) || "0";
     const hoKey = extractHoNumberForLog(data) || "0";
     if (!parts.dong || !parts.mainNo) return "";
     return `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey}|${hoKey}`;
   }
 
+  function buildRegistrationMatchKeyFromRow(row) {
+    const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
+    return String(raw.registrationIdentityKey || buildRegistrationMatchKey({
+      address: row?.address || raw.address || "",
+      floor: raw.floor || row?.floor || "",
+      totalFloor: raw.totalfloor || row?.total_floor || "",
+      ho: raw.ho || raw.unit || raw.room || "",
+      raw,
+    }) || "").trim();
+  }
+
   function attachRegistrationIdentity(raw, data) {
     const nextRaw = { ...(raw || {}) };
     const parts = parseAddressIdentityParts(pickFirstText(data?.address, data?.raw?.address, nextRaw.address, ""));
-    const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, nextRaw.floor, ""));
+    const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, data?.totalFloor, data?.raw?.totalfloor, nextRaw.floor, nextRaw.totalfloor, ""));
     const hoKey = extractHoNumberForLog(data);
     const key = parts.dong && parts.mainNo
       ? `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey || "0"}|${hoKey || "0"}`
@@ -118,9 +181,7 @@
     if (value === null || value === undefined) return "";
     const numericFields = new Set(options.numericFields || []);
     if (numericFields.has(field)) {
-      const num = Shared && typeof Shared.toNullableNumber === "function"
-        ? Shared.toNullableNumber(value)
-        : Number(String(value).replace(/,/g, ""));
+      const num = toNullableNumber(value);
       return num == null || !Number.isFinite(num) ? "" : String(num);
     }
     return String(value).trim().replace(/\s+/g, " ");
@@ -130,9 +191,7 @@
     if (value === null || value === undefined) return "";
     const amountFields = new Set(options.amountFields || []);
     const numericFields = new Set(options.numericFields || []);
-    const num = Shared && typeof Shared.toNullableNumber === "function"
-      ? Shared.toNullableNumber(value)
-      : Number(String(value).replace(/,/g, ""));
+    const num = toNullableNumber(value);
     if (amountFields.has(field)) {
       return num == null || !Number.isFinite(num) ? "" : Number(num).toLocaleString("ko-KR");
     }
@@ -227,7 +286,7 @@
   }
 
   function loadOpinionHistory(item) {
-    const raw = item?._raw?.raw || {};
+    const raw = item?._raw?.raw || item?.raw || {};
     const hist = raw.opinionHistory;
     if (Array.isArray(hist)) return hist;
     const legacy = String(item?.opinion || raw.opinion || "").trim();
@@ -249,13 +308,96 @@
     return [...(Array.isArray(history) ? history : []), { date: today, text, author }];
   }
 
-  window.KNSN_PROPERTY_DOMAIN = {
+  function collectPropertyErrorFragments(error) {
+    const fragments = [];
+    const push = (value) => {
+      if (value == null) return;
+      const text = String(value).trim();
+      if (text) fragments.push(text);
+    };
+    const queue = [error];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+      push(current.message);
+      push(current.details);
+      push(current.hint);
+      push(current.code);
+      push(current.constraint);
+      push(current.error);
+      push(current.error_description);
+      if (current.data && typeof current.data === "object") queue.push(current.data);
+      if (current.cause && typeof current.cause === "object") queue.push(current.cause);
+      if (current.originalError && typeof current.originalError === "object") queue.push(current.originalError);
+    }
+    return fragments;
+  }
+
+  function detectPropertyDuplicateIndexName(error) {
+    const constraint = String(error?.constraint || error?.data?.constraint || "").trim();
+    if (PROPERTY_DUPLICATE_INDEX_NAME_SET.has(constraint)) return constraint;
+    const joined = collectPropertyErrorFragments(error).join("\n");
+    for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
+      if (joined.includes(indexName)) return indexName;
+    }
+    return "";
+  }
+
+  function isPropertyDuplicateError(error) {
+    const code = String(error?.code || error?.data?.code || "").trim();
+    const joined = collectPropertyErrorFragments(error).join("\n");
+    if (detectPropertyDuplicateIndexName(error)) return true;
+    if (code === "23505" && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
+    return false;
+  }
+
+  function normalizePropertyDuplicateError(error, options = {}) {
+    if (!isPropertyDuplicateError(error)) return null;
+    const normalized = new Error(String(options.message || "동일 물건이 이미 등록되어 있습니다"));
+    normalized.status = Number(options.status || 409);
+    normalized.code = String(options.code || "PROPERTY_DUPLICATE");
+    normalized.constraint = detectPropertyDuplicateIndexName(error) || undefined;
+    normalized.cause = error;
+    return normalized;
+  }
+
+  function normalizeSourceType(rawValue, options = {}) {
+    const fallback = String(options.fallback || "general").trim() || "general";
+    const value = String(rawValue || "").trim().toLowerCase();
+    if (!value) return fallback;
+    if (["auction", "courtauction", "court_auction"].includes(value)) return "auction";
+    if (["onbid", "public", "gongmae", "공매"].includes(value)) return "onbid";
+    if (["realtor", "broker", "naver", "realtor_naver", "realtor_direct", "중개", "중개사"].includes(value)) return "realtor";
+    if (["general", "owner", "public_user", "일반", "직접등록"].includes(value)) return "general";
+    return fallback;
+  }
+
+  function normalizePublicSourceType(rawValue, submitterType) {
+    const submitter = String(submitterType || "").trim().toLowerCase();
+    if (submitter === "realtor") return "realtor";
+    if (submitter === "owner" || submitter === "general") return "general";
+    return normalizeSourceType(rawValue, { fallback: "general" });
+  }
+
+  function isBrokerLikeSource(sourceType) {
+    return normalizeSourceType(sourceType, { fallback: "" }) === "realtor";
+  }
+
+  function isAuctionLikeSource(sourceType) {
+    return normalizeSourceType(sourceType, { fallback: "" }) === "auction";
+  }
+
+  return {
     pickFirstText,
     compactAddressText,
     parseFloorNumberForLog,
     parseAddressIdentityParts,
     extractHoNumberForLog,
     buildRegistrationMatchKey,
+    buildRegistrationMatchKeyFromRow,
     attachRegistrationIdentity,
     hasMeaningfulValue,
     normalizeCompareValue,
@@ -268,5 +410,18 @@
     mergeMeaningfulShallow,
     loadOpinionHistory,
     appendOpinionEntry,
+    PROPERTY_DUPLICATE_INDEX_NAMES,
+    collectPropertyErrorFragments,
+    detectPropertyDuplicateIndexName,
+    isPropertyDuplicateError,
+    normalizePropertyDuplicateError,
+    REGISTRATION_LOG_LABELS_BASE,
+    REGISTRATION_LOG_LABELS_ADMIN,
+    REGISTRATION_LOG_LABELS_AGENT,
+    REGISTRATION_LOG_LABELS_PUBLIC,
+    normalizeSourceType,
+    normalizePublicSourceType,
+    isBrokerLikeSource,
+    isAuctionLikeSource,
   };
-})();
+});
