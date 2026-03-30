@@ -415,6 +415,57 @@ function buildSupabasePatchForExisting(existingRow, payload, context) {
   return { patch, changes };
 }
 
+function buildSupabasePersistencePlan(payload, context, existingRow) {
+  if (!existingRow) {
+    const row = buildSupabaseRowForCreate(payload, context);
+    return { mode: 'create', row, patch: null, changes: [], message: '검토후 연락드리겠습니다.' };
+  }
+
+  if (PropertyDomain && typeof PropertyDomain.buildRegistrationPersistencePlan === 'function') {
+    const incomingRow = {
+      address: payload.address,
+      asset_type: payload.assetType,
+      exclusive_area: payload.exclusiveArea,
+      common_area: payload.commonArea,
+      site_area: payload.siteArea,
+      use_approval: payload.useApproval,
+      price_main: payload.priceMain,
+      memo: payload.opinion,
+      submitter_type: payload.submitterType,
+      submitter_name: payload.submitterName,
+      submitter_phone: payload.submitterPhone,
+      broker_office_name: payload.realtorName,
+      source_type: payload.sourceType,
+      raw: {
+        ...payload,
+        totalfloor: payload.totalFloor,
+        useapproval: payload.useApproval,
+        updatedByPublic: true,
+        updatedByName: context.actor,
+      },
+    };
+    const plan = PropertyDomain.buildRegistrationPersistencePlan(existingRow, incomingRow, context, {
+      copyFields: ['address','asset_type','exclusive_area','common_area','site_area','use_approval','price_main','memo','submitter_type','submitter_name','submitter_phone','broker_office_name','source_type'],
+      labels: REG_LOG_LABELS,
+      amountFields: ['priceMain'],
+      numericFields: ['priceMain', 'commonArea', 'exclusiveArea', 'siteArea'],
+      mergeChangedMessage: '기존 물건을 갱신했습니다.',
+      mergeUnchangedMessage: '동일 물건이 있어 기존 물건에 반영했습니다.',
+      createMessage: '검토후 연락드리겠습니다.',
+    }) || {};
+    const row = plan.row || {};
+    const patch = {};
+    ['address','asset_type','exclusive_area','common_area','site_area','use_approval','price_main','memo','submitter_type','submitter_name','submitter_phone','broker_office_name','source_type','is_general'].forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(row, key)) patch[key] = row[key];
+    });
+    patch.raw = sanitizePropertyRaw(row.raw);
+    return { mode: 'merge', row, patch, changes: Array.isArray(plan.changes) ? plan.changes : [], message: plan.message || '동일 물건이 있어 기존 물건에 반영했습니다.' };
+  }
+
+  const { patch, changes } = buildSupabasePatchForExisting(existingRow, payload, context);
+  return { mode: 'merge', row: null, patch, changes, message: changes.length ? '기존 물건을 갱신했습니다.' : '동일 물건이 있어 기존 물건에 반영했습니다.' };
+}
+
 function extractDongToken(address) {
   return ((String(address || '').match(/([가-힣A-Za-z0-9]+동)/) || [null, ''])[1] || '').trim();
 }
@@ -560,20 +611,21 @@ async function findExistingSupabaseProperty(payload) {
 async function handleSupabasePublicListing(res, payload) {
   const context = buildRegisterLogContext('공개 등록', payload.submitterName || payload.realtorName || '공개 등록');
   const existing = await findExistingSupabaseProperty(payload);
-  if (existing) {
-    const { patch, changes } = buildSupabasePatchForExisting(existing, payload, context);
-    const targetId = String(existing.id || existing.global_id || '').trim();
-    const targetCol = String(existing.id || '').trim() ? 'id' : 'global_id';
+  const savePlan = buildSupabasePersistencePlan(payload, context, existing || null);
+
+  if (savePlan.mode === 'merge') {
+    const targetId = String(existing?.id || existing?.global_id || '').trim();
+    const targetCol = String(existing?.id || '').trim() ? 'id' : 'global_id';
     if (!targetId) throw new Error('기존 물건 식별자 확인 실패');
     const rows = await supabaseRest(`/rest/v1/properties?${targetCol}=eq.${encodeURIComponent(targetId)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
-      json: patch,
+      json: savePlan.patch,
     });
     const item = Array.isArray(rows) ? (rows[0] || null) : rows;
     return send(res, 200, {
       ok: true,
-      message: changes.length ? '기존 물건을 갱신했습니다.' : '동일 물건이 있어 기존 물건에 반영했습니다.',
+      message: savePlan.message,
       item: item ? {
         id: item.id || item.global_id || null,
         address: item.address || payload.address,
@@ -585,12 +637,12 @@ async function handleSupabasePublicListing(res, payload) {
   const created = await supabaseRest('/rest/v1/properties', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
-    json: buildSupabaseRowForCreate(payload, context),
+    json: savePlan.row,
   });
   const item = Array.isArray(created) ? (created[0] || null) : created;
   return send(res, 201, {
     ok: true,
-    message: '검토후 연락드리겠습니다.',
+    message: savePlan.message || '검토후 연락드리겠습니다.',
     item: item ? {
       id: item.id || item.global_id || null,
       source: item.source_type || payload.sourceType,

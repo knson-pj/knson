@@ -186,7 +186,31 @@
       isDirectSubmission: item && (item.isDirectSubmission ?? item.is_direct_submission),
     });
 
+  
+  function buildRegistrationPersistencePlan(existingItem, incomingRow, context = {}, options = {}) {
+    const mergeChangedMessage = pickFirstText(options.mergeChangedMessage, '기존 물건을 갱신하고 등록 LOG를 추가했습니다.');
+    const mergeUnchangedMessage = pickFirstText(options.mergeUnchangedMessage, '동일 물건이 있어 기존 물건에 반영했습니다.');
+    const createMessage = pickFirstText(options.createMessage, '등록되었습니다.');
+    if (existingItem) {
+      const merged = buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options) || {};
+      const changes = Array.isArray(merged.changes) ? merged.changes : [];
+      return {
+        mode: 'merge',
+        row: merged.row || null,
+        changes,
+        message: changes.length ? mergeChangedMessage : mergeUnchangedMessage,
+      };
+    }
+    const row = buildRegistrationDbRowForCreate(incomingRow, context, options);
     return {
+      mode: 'create',
+      row,
+      changes: [],
+      message: createMessage,
+    };
+  }
+
+  return {
       id: String((item && (item.id || item._id || item.globalId || item.global_id)) || ""),
       globalId: String((item && (item.globalId || item.global_id)) || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")),
       raw,
@@ -963,5 +987,6 @@
     buildRegistrationSnapshot,
     buildRegistrationDbRowForCreate,
     buildRegistrationDbRowForExisting,
+    buildRegistrationPersistencePlan,
   };
 });
