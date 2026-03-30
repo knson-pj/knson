@@ -1015,12 +1015,12 @@ function bindEvents() {
 
       const needsExactHomeSummary = isAdmin && state.activeTab === 'home' && (refreshSummary || !state.propertySummary);
       const summaryPromise = needsExactHomeSummary
-        ? fetchExactHomeSummary(sb).catch((err) => {
+        ? fetchExactHomeSummary(sb, { normalizeRow: normalizeProperty }).catch((err) => {
             console.warn('property summary load failed', err);
             return state.propertySummary;
           })
         : ((refreshSummary || !state.propertySummary)
-            ? fetchPropertySummary(sb).catch((err) => {
+            ? fetchPropertySummary(sb, { normalizeRow: normalizeProperty }).catch((err) => {
                 console.warn('property summary load failed', err);
                 return state.propertySummary;
               })

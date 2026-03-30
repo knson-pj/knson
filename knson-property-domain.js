@@ -425,7 +425,11 @@
 
   function getSourceBucket(item) {
     const sourceType = normalizeSourceType(item?.sourceType || item?.source_type || item?.source || item?.category || item?.raw?.sourceType || item?.raw?.source_type || "", { fallback: "general" });
-    if (sourceType === "realtor") return isDirectRealtorSubmission(item) ? "realtor_direct" : "realtor_naver";
+    if (sourceType === "realtor") {
+      if (typeof item?.isDirectSubmission === "boolean") return item.isDirectSubmission ? "realtor_direct" : "realtor_naver";
+      if (typeof item?.is_direct_submission === "boolean") return item.is_direct_submission ? "realtor_direct" : "realtor_naver";
+      return isDirectRealtorSubmission(item) ? "realtor_direct" : "realtor_naver";
+    }
     if (["auction", "onbid", "general"].includes(sourceType)) return sourceType;
     return "general";
   }

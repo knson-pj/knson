@@ -107,7 +107,7 @@
     const safePageSize = Math.max(1, Number(pageSize || 1));
     const to = safeFrom + safePageSize - 1;
     const queryBase = (filter) => {
-      let q = sb.from("properties").select(select).order(orderColumn, { ascending }).range(safeFrom, to);
+      let q = sb.from("properties").select(select).order(orderColumn, { ascending }).order("id", { ascending }).range(safeFrom, to);
       if (filter) q = q.or(filter);
       return q;
     };
@@ -129,7 +129,7 @@
     const queryBase = (filter) => {
       let q = sb.from("properties");
       q = selectOptions ? q.select(select, selectOptions) : q.select(select);
-      q = q.order("date_uploaded", { ascending: false }).range(from, to);
+      q = q.order("date_uploaded", { ascending: false }).order("id", { ascending: false }).range(from, to);
       if (filter) q = q.or(filter);
       return q;
     };
@@ -164,11 +164,14 @@
   }
 
   function buildPropertySummaryFromRows(rows, normalizeRow) {
+    const list = (Array.isArray(rows) ? rows : [])
+      .map((row) => (typeof normalizeRow === "function" ? normalizeRow(row) : row))
+      .filter(Boolean);
+    if (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function") {
+      return PropertyDomain.summarizeSourceBuckets(list);
+    }
     const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-    const list = Array.isArray(rows) ? rows : [];
-    list.forEach((row) => {
-      const item = typeof normalizeRow === "function" ? normalizeRow(row) : row;
-      if (!item) return;
+    list.forEach((item) => {
       summary.total += 1;
       const type = String(item?.sourceType || item?.source_type || item?.source || "").trim();
       if (type === "auction") summary.auction += 1;
@@ -183,32 +186,7 @@
 
   async function fetchPropertySummary(sb, { cachedRows = null, normalizeRow = null } = {}) {
     if (Array.isArray(cachedRows) && cachedRows.length) return buildPropertySummaryFromRows(cachedRows, normalizeRow);
-
-    const countRows = async (builder) => {
-      let q = sb.from("properties").select("id", { count: "estimated", head: true });
-      if (typeof builder === "function") q = builder(q) || q;
-      const { count, error } = await q;
-      if (error) throw error;
-      return Number(count || 0);
-    };
-
-    const [total, auction, onbid, realtorTotal, realtorNaver, general] = await Promise.all([
-      countRows(),
-      countRows((q) => q.eq("source_type", "auction")),
-      countRows((q) => q.eq("source_type", "onbid")),
-      countRows((q) => q.eq("source_type", "realtor")),
-      countRows((q) => q.eq("source_type", "realtor").not("source_url", "is", null)),
-      countRows((q) => q.eq("source_type", "general")),
-    ]);
-
-    return {
-      total,
-      auction,
-      onbid,
-      realtor_naver: realtorNaver,
-      realtor_direct: Math.max(0, realtorTotal - realtorNaver),
-      general,
-    };
+    return fetchExactHomeSummary(sb, { normalizeRow, pageSize: 1000 });
   }
 
   async function fetchExactHomeSummary(sb, { normalizeRow = null, pageSize = 1000 } = {}) {
@@ -217,7 +195,11 @@
     const safePageSize = Math.max(1, Number(pageSize || 1000));
     while (true) {
       const to = from + safePageSize - 1;
-      const { data, error } = await sb.from("properties").select(PROPERTY_HOME_SUMMARY_SELECT).range(from, to);
+      const { data, error } = await sb.from("properties")
+        .select(PROPERTY_HOME_SUMMARY_SELECT)
+        .order("date_uploaded", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to);
       if (error) throw error;
       const rows = Array.isArray(data) ? data : [];
       out.push(...rows);
