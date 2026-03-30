@@ -762,12 +762,13 @@
         else if (addr.includes("\uC778\uCC9C")) regionCount["\uC778\uCC9C"]++;
         else regionCount["\uAE30\uD0C0"]++;
 
-        if (p.source === "auction") sourceCount["\uACBD\uB9E4"]++;
-        else if (p.source === "onbid") sourceCount["\uACF5\uB9E4"]++;
-        else if (p.source === "realtor") {
-          if (p.isDirectSubmission) sourceCount["\uC77C\uBC18\uC911\uAC1C"]++;
-          else sourceCount["\uB124\uC774\uBC84\uC911\uAC1C"]++;
-        }
+        const bucket = (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function")
+          ? PropertyDomain.getSourceBucket({ sourceType: p.source, isDirectSubmission: p.isDirectSubmission, raw: p.raw })
+          : (p.source === "realtor" ? (p.isDirectSubmission ? "realtor_direct" : "realtor_naver") : p.source);
+        if (bucket === "auction") sourceCount["\uACBD\uB9E4"]++;
+        else if (bucket === "onbid") sourceCount["\uACF5\uB9E4"]++;
+        else if (bucket === "realtor_naver") sourceCount["\uB124\uC774\uBC84\uC911\uAC1C"]++;
+        else if (bucket === "realtor_direct") sourceCount["\uC77C\uBC18\uC911\uAC1C"]++;
         else sourceCount["\uC77C\uBC18"]++;
       });
 

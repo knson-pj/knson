@@ -162,8 +162,8 @@
     const filtered = (state.properties || []).filter((p) => {
       if (auctionOnlyForSort && p.sourceType !== 'auction' && p.sourceType !== 'onbid') return false;
       if (f.activeCard && f.activeCard !== 'all') {
-        if (typeof utils.matchesSourceBucket === 'function') {
-          if (!utils.matchesSourceBucket(p, f.activeCard)) return false;
+        if (utils.PropertyDomain && typeof utils.PropertyDomain.matchesSourceBucket === 'function') {
+          if (!utils.PropertyDomain.matchesSourceBucket(p, f.activeCard)) return false;
         } else if (f.activeCard === 'realtor_naver') {
           if (p.sourceType !== 'realtor' || p.isDirectSubmission) return false;
         } else if (f.activeCard === 'realtor_direct') {
@@ -383,8 +383,9 @@
       const rowId = String(p.id || p.globalId || '').trim();
       const tr = document.createElement('tr');
       if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
-      const kindBucket = typeof utils.getSourceBucket === 'function' ? utils.getSourceBucket(p) : (p.sourceType === 'realtor' ? (p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : p.sourceType);
-      const kindLabel = typeof utils.getSourceBucketLabel === 'function' ? utils.getSourceBucketLabel(kindBucket) : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반');
+      const kindLabel = (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function')
+        ? utils.PropertyDomain.getSourceBucketLabel((utils.PropertyDomain.getSourceBucket && utils.PropertyDomain.getSourceBucket(p)) || p.sourceType)
+        : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반');
       const currentPriceValue = getCurrentPriceValue(p);
       const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
       const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});

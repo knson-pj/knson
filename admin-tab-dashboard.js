@@ -262,15 +262,15 @@
     const props = typeof utils.getAuxiliaryPropertiesSnapshot === 'function' ? (utils.getAuxiliaryPropertiesSnapshot() || []) : (state.properties || []);
     const staff = Array.isArray(state.staff) ? state.staff : [];
     const fmt = (n) => Number(n || 0).toLocaleString('ko-KR');
-    const summary = state.propertySummary || (typeof utils.summarizeSourceBuckets === 'function'
-      ? utils.summarizeSourceBuckets(props)
+    const summary = state.propertySummary || ((utils.PropertyDomain && typeof utils.PropertyDomain.summarizeSourceBuckets === 'function')
+      ? utils.PropertyDomain.summarizeSourceBuckets(props)
       : {
           total: props.length,
-          auction: 0,
-          onbid: 0,
-          realtor_naver: 0,
-          realtor_direct: 0,
-          general: 0,
+          auction: props.filter((p) => p.sourceType === 'auction').length,
+          onbid: props.filter((p) => p.sourceType === 'onbid').length,
+          realtor_naver: props.filter((p) => p.sourceType === 'realtor' && !p.isDirectSubmission).length,
+          realtor_direct: props.filter((p) => p.sourceType === 'realtor' && p.isDirectSubmission).length,
+          general: props.filter((p) => p.sourceType === 'general').length,
         });
     const staffCount = staff.filter((s) => String(utils.normalizeRole ? utils.normalizeRole(s.role) : s.role) === 'staff').length;
 
@@ -301,9 +301,8 @@
       const rawCreatedAt = item?.createdAt || item?._raw?.created_at || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
       if (sameDay(rawCreatedAt, dateKey)) {
         todayParts.total += 1;
-        const bucket = typeof utils.getSourceBucket === 'function' ? utils.getSourceBucket(item) : String(item?.sourceType || '').trim();
-        if (bucket === 'realtor_naver' || bucket === 'realtor_direct') todayParts.realtor += 1;
-        else if (todayParts[bucket] !== undefined) todayParts[bucket] += 1;
+        const key = String(item?.sourceType || '').trim();
+        if (todayParts[key] !== undefined) todayParts[key] += 1;
       }
       const status = String(item?.geocodeStatus || item?._raw?.geocode_status || '').trim().toLowerCase();
       const lat = item?.latitude ?? item?._raw?.latitude;

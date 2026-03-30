@@ -248,10 +248,6 @@
         extractGuDong,
         normalizeStatus,
         sourceLabel,
-        getSourceBucket: (item) => (PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function') ? PropertyDomain.getSourceBucket(item) : '',
-        getSourceBucketLabel: (bucket) => (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === 'function') ? PropertyDomain.getSourceBucketLabel(bucket) : sourceLabel(bucket),
-        matchesSourceBucket: (item, bucket) => (PropertyDomain && typeof PropertyDomain.matchesSourceBucket === 'function') ? PropertyDomain.matchesSourceBucket(item, bucket) : true,
-        summarizeSourceBuckets: (rows) => (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === 'function') ? PropertyDomain.summarizeSourceBuckets(rows) : buildPropertySummaryFromRows(rows),
         statusLabel,
         formatMoneyKRW,
         formatPercent,
@@ -905,20 +901,48 @@ function bindEvents() {
   }
 
   function buildPropertySummaryFromRows(rows) {
-    if (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === 'function') {
+    if (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function") {
       return PropertyDomain.summarizeSourceBuckets(rows);
     }
     const cached = Array.isArray(rows) ? rows : [];
-    return { total: cached.length, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+    const summary = {
+      total: cached.length,
+      auction: 0,
+      onbid: 0,
+      realtor_naver: 0,
+      realtor_direct: 0,
+      general: 0,
+    };
+    for (const item of cached) {
+      const type = String(item?.sourceType || '').trim();
+      if (type === 'auction') summary.auction += 1;
+      else if (type === 'onbid') summary.onbid += 1;
+      else if (type === 'realtor') {
+        if (item?.isDirectSubmission) summary.realtor_direct += 1;
+        else summary.realtor_naver += 1;
+      } else if (type === 'general') summary.general += 1;
+    }
+    return summary;
   }
 
   function appendSummaryBucket(summary, item) {
     if (!summary || !item) return summary;
-    const bucket = (PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function')
-      ? PropertyDomain.getSourceBucket(item)
-      : '';
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") {
+      const bucket = PropertyDomain.getSourceBucket(item);
+      summary.total = Number(summary.total || 0) + 1;
+      if (bucket && Object.prototype.hasOwnProperty.call(summary, bucket)) {
+        summary[bucket] = Number(summary[bucket] || 0) + 1;
+      }
+      return summary;
+    }
+    const type = String(item?.sourceType || '').trim();
     summary.total += 1;
-    if (bucket && bucket in summary) summary[bucket] += 1;
+    if (type === 'auction') summary.auction += 1;
+    else if (type === 'onbid') summary.onbid += 1;
+    else if (type === 'realtor') {
+      if (item?.isDirectSubmission) summary.realtor_direct += 1;
+      else summary.realtor_naver += 1;
+    } else if (type === 'general') summary.general += 1;
     return summary;
   }
 
@@ -1065,7 +1089,11 @@ function bindEvents() {
     const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || raw.source_type || "").toString().trim().toLowerCase();
     const sourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
       ? PropertyDomain.normalizeSourceType(rawSource, { fallback: "general" })
-      : "general";
+      : (["auction", "courtauction"].includes(rawSource) ? "auction" :
+        ["gongmae", "public", "onbid"].includes(rawSource) ? "onbid" :
+        ["realtor", "realtor_naver", "realtor_direct", "naver", "broker", "중개"].includes(rawSource) ? "realtor" :
+        rawSource === "general" ? "general" :
+        "general");
 
     const itemNo = firstText(item.itemNo, item.caseNo, item.externalId, item.listingId, item.item_no, raw.itemNo, "");
     const address = firstText(item.address, item.location, item.addr, raw.address, "");
@@ -1093,9 +1121,7 @@ function bindEvents() {
       globalId: String(item.globalId || item.global_id || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")),
       sourceType,
       itemNo,
-      isGeneral: (PropertyDomain && typeof PropertyDomain.isGeneralSourceType === "function")
-        ? PropertyDomain.isGeneralSourceType(sourceType)
-        : Boolean(item.isGeneral || item.is_general || item.origin === "general" || sourceType === "general"),
+      isGeneral: Boolean(item.isGeneral || item.is_general || item.origin === "general" || sourceType === "general"),
       address,
       assetType: firstText(item.assetType, item.asset_type, item.type, item.propertyType, item.kind, raw.assetType, raw['세부유형'], "-"),
       floor: firstText(item.floor, item.floor_text, item.floor_text, item.floor_korean, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
@@ -1137,7 +1163,17 @@ function bindEvents() {
             brokerOfficeName: firstText(item.brokerOfficeName, item.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, ""),
             raw,
           })
-        : false,
+        : (() => {
+            const submitterType = firstText(item.submitterType, item.submitter_type, raw.submitterType, raw.submitter_type, "").toLowerCase();
+            const sourceUrlValue = firstText(item.sourceUrl, item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
+            const submitterNameValue = firstText(item.submitterName, item.submitter_name, raw.submitter_name, raw.submitterName, "");
+            if (sourceType !== "realtor") return false;
+            if (sourceUrlValue) return false;
+            if (rawSource === 'realtor_naver' || rawSource === 'naver' || rawSource === 'broker') return false;
+            if (rawSource === 'realtor_direct') return true;
+            if (submitterType === "realtor") return true;
+            return !!submitterNameValue;
+          })(),
       _raw: item,
     };
   }
@@ -2132,9 +2168,6 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function sourceLabel(v) {
-    if (PropertyDomain && typeof PropertyDomain.getSourceTypeLabel === 'function') {
-      return PropertyDomain.getSourceTypeLabel(v);
-    }
     if (v === "auction") return "경매";
     if (v === "gongmae" || v === "onbid") return "공매";
     if (v === "realtor") return "중개";
