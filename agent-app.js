@@ -1111,55 +1111,33 @@
   }
 
   function normalizeProperty(item) {
-    const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
-    const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || raw.source_type || "").toString().trim().toLowerCase();
-    const sourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
-      ? PropertyDomain.normalizeSourceType(rawSource, { fallback: "general" })
-      : (["auction", "courtauction"].includes(rawSource) ? "auction" :
-        ["gongmae", "public", "onbid"].includes(rawSource) ? "onbid" :
-        ["realtor", "realtor_naver", "realtor_direct", "naver", "broker", "중개"].includes(rawSource) ? "realtor" :
-        "general");
+    const base = (PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === "function")
+      ? PropertyDomain.buildNormalizedPropertyBase(item)
+      : null;
+    if (!base) return item;
 
     return {
-      id: String(item.id || item.global_id || ""),
-      globalId: String(item.globalId || item.global_id || ""),
-      sourceType,
-      itemNo: firstText(item.item_no, item.itemNo, raw.itemNo, ""),
-      address: firstText(item.address, item.location, raw.address, ""),
-      assetType: firstText(item.asset_type, item.assetType, raw.assetType, raw["세부유형"], "-"),
-      floor: firstText(raw.floor, raw.floorText, raw["해당층"], item.floor, ""),
-      totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], item.total_floor, item.totalfloor, ""),
-      useapproval: firstText(raw.useapproval, raw.useApproval, item.use_approval, ""),
-      commonarea: toNum(raw.commonArea ?? raw.commonarea ?? item.common_area ?? item.commonarea),
-      exclusivearea: toNum(raw.exclusiveArea ?? raw.exclusivearea ?? item.exclusive_area ?? item.exclusivearea ?? raw["전용면적(평)"]),
-      sitearea: toNum(raw.siteArea ?? raw.sitearea ?? item.site_area ?? item.sitearea),
-      priceMain: toNum(raw.priceMain ?? item.price_main ?? item.priceMain ?? raw["감정가(원)"]),
-      lowprice: toNum(raw.currentPrice ?? raw.lowprice ?? item.lowprice ?? item.low_price ?? raw["최저입찰가(원)"] ?? raw["매각가"]),
-      status: firstText(item.status, raw.status, ""),
-      dateMain: firstText(raw.dateMain, item.date_main, item.dateMain, raw["입찰일자"], ""),
-      rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, ""),
-      siteInspection: firstText(raw.siteInspection, raw.site_inspection, ""),
-      opinion: firstText(item.opinion, item.memo, raw.opinion, raw.memo, ""),
-      createdAt: firstText(item.date, item.date_uploaded, item.createdAt, raw.date, ""),
-      isDirectSubmission: (PropertyDomain && typeof PropertyDomain.isDirectRealtorSubmission === "function")
-        ? PropertyDomain.isDirectRealtorSubmission({
-            sourceType,
-            rawSource,
-            submitterType: firstText(item.submitter_type, item.submitterType, raw.submitter_type, raw.submitterType, ""),
-            sourceUrl: firstText(item.source_url, item.sourceUrl, raw.source_url, raw.sourceUrl, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
-            submitterName: firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, ""),
-            brokerOfficeName: firstText(item.broker_office_name, item.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, ""),
-            raw,
-          })
-        : (() => {
-            const submitterType = firstText(item.submitter_type, item.submitterType, raw.submitter_type, raw.submitterType, "").toLowerCase();
-            const sourceUrlValue = firstText(item.source_url, item.sourceUrl, raw.source_url, raw.sourceUrl, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
-            const submitterNameValue = firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, "");
-            if (sourceType !== "realtor") return false;
-            if (submitterType === "realtor") return true;
-            if (sourceUrlValue) return false;
-            return !!submitterNameValue;
-          })(),
+      id: base.id,
+      globalId: base.globalId,
+      sourceType: base.sourceType,
+      itemNo: base.itemNo,
+      address: base.address,
+      assetType: base.assetType,
+      floor: base.floor,
+      totalfloor: base.totalfloor,
+      useapproval: base.useapproval,
+      commonarea: base.commonarea,
+      exclusivearea: base.exclusivearea,
+      sitearea: base.sitearea,
+      priceMain: base.priceMain,
+      lowprice: base.lowprice,
+      status: base.status,
+      dateMain: base.dateMain,
+      rightsAnalysis: base.rightsAnalysis,
+      siteInspection: base.siteInspection,
+      opinion: base.opinion,
+      createdAt: base.createdAt,
+      isDirectSubmission: base.isDirectSubmission,
       _raw: item,
     };
   }

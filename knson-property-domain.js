@@ -107,6 +107,132 @@
     return { dong, mainNo: lot[1] || "", subNo: lot[2] || "" };
   }
 
+  function extractFloorText(...texts) {
+    const joined = texts
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" ");
+    if (!joined) return "";
+    const korean = joined.match(/(지하\s*\d+층|지상\s*\d+층|\d+층|반지하|옥탑|지하|지상)/);
+    if (korean) return korean[1].replace(/\s+/g, "");
+    const floor = joined.match(/(?:^|\s)(B\d+|\d+F|\d+층|\d+층\/?\d+층)/i);
+    return floor ? floor[1] : "";
+  }
+
+  function sanitizeOnbidOpinion(opinion, memo, address) {
+    const addressText = String(address || "").trim();
+
+    const cleanCandidate = (value) => {
+      let text = String(value || "").trim();
+      if (!text) return "";
+      if (!addressText) return text;
+
+      const compactText = text.replace(/\s+/g, "");
+      const compactAddress = addressText.replace(/\s+/g, "");
+      if (!compactAddress) return text;
+      if (compactText === compactAddress) return "";
+      if (compactText.includes(compactAddress) || compactAddress.includes(compactText)) {
+        const escaped = addressText
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("\s*");
+        if (escaped) {
+          text = text
+            .replace(new RegExp(escaped, "gi"), "")
+            .replace(/^[\s,;:/|·-]+|[\s,;:/|·-]+$/g, "")
+            .trim();
+        }
+        if (!text) return "";
+      }
+      return text;
+    };
+
+    const explicit = cleanCandidate(opinion);
+    if (explicit) return explicit;
+    return cleanCandidate(memo);
+  }
+
+  function buildNormalizedPropertyBase(item, options) {
+    const opts = options && typeof options === "object" ? options : {};
+    const raw = item && item.raw && typeof item.raw === "object" ? item.raw : {};
+    const rawSource = pickFirstText(
+      item && item.sourceType,
+      item && item.source_type,
+      item && item.source,
+      item && item.category,
+      raw.sourceType,
+      raw.source_type
+    ).toLowerCase();
+    const sourceType = normalizeSourceType(rawSource, { fallback: opts.fallbackSource || "general" });
+    const address = pickFirstText(item && item.address, item && item.location, item && item.addr, raw.address, raw.location, "");
+    const itemNo = pickFirstText(item && item.itemNo, item && item.caseNo, item && item.externalId, item && item.listingId, item && item.item_no, raw.itemNo, raw.item_no, "");
+    const sourceUrl = pickFirstText(item && item.sourceUrl, item && item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
+    const submitterType = normalizeSubmitterType(pickFirstText(item && item.submitterType, item && item.submitter_type, raw.submitterType, raw.submitter_type, ""));
+    const submitterName = pickFirstText(item && item.submitterName, item && item.submitter_name, raw.submitterName, raw.submitter_name, "");
+    const brokerOfficeName = pickFirstText(item && item.brokerOfficeName, item && item.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, "");
+    const memoText = pickFirstText(item && item.memo, raw.memo, "");
+    const opinionText = sourceType === "onbid"
+      ? sanitizeOnbidOpinion(pickFirstText(item && item.opinion, raw.opinion, ""), memoText, address)
+      : pickFirstText(item && item.opinion, raw.opinion, memoText, item && item.comment, "");
+    const isDirectSubmission = isDirectRealtorSubmission({
+      sourceType,
+      rawSource,
+      submitterType,
+      sourceUrl,
+      submitterName,
+      brokerOfficeName,
+      raw,
+      isDirectSubmission: item && (item.isDirectSubmission ?? item.is_direct_submission),
+    });
+
+    return {
+      id: String((item && (item.id || item._id || item.globalId || item.global_id)) || ""),
+      globalId: String((item && (item.globalId || item.global_id)) || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")),
+      raw,
+      rawSource,
+      sourceType,
+      sourceUrl,
+      submitterType,
+      submitterName,
+      brokerOfficeName,
+      isDirectSubmission,
+      isGeneral: Boolean((item && (item.isGeneral || item.is_general || item.origin === "general")) || sourceType === "general"),
+      itemNo,
+      address,
+      latitude: toNullableNumber(item && (item.latitude ?? item.lat ?? item.y ?? raw.latitude ?? raw.lat ?? "")),
+      longitude: toNullableNumber(item && (item.longitude ?? item.lng ?? item.x ?? raw.longitude ?? raw.lng ?? "")),
+      priceMain: toNullableNumber(item && (item.priceMain ?? item.price_main ?? raw.priceMain ?? raw.price_main ?? raw["감정가"] ?? raw["감정가(원)"] ?? item.salePrice ?? item.sale_price ?? item.price ?? item.appraisalPrice ?? item.appraisal_price)),
+      lowprice: sourceType === "realtor" || sourceType === "general"
+        ? null
+        : toNullableNumber(item && (item.lowprice ?? item.low_price ?? raw.lowprice ?? raw.low_price ?? raw["최저가"] ?? raw["최저입찰가(원)"] ?? raw["매각가"] ?? item.currentPrice ?? item.current_price ?? raw.currentPrice ?? raw.current_price)),
+      status: pickFirstText(item && item.status, raw.status, ""),
+      assetType: pickFirstText(item && item.assetType, item && item.asset_type, item && item.type, item && item.propertyType, item && item.kind, raw.assetType, raw.asset_type, raw["세부유형"], "-"),
+      floor: pickFirstText(item && item.floor, item && item.floor_text, item && item.floor_korean, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
+      totalfloor: pickFirstText(item && item.totalfloor, item && item.total_floor, item && item.totalfloor_text, item && item.totalfloor_snake, item && item.totalfloor_camel, item && item.totalfloor_korean, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
+      useapproval: pickFirstText(item && item.useapproval, item && item.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, raw["사용승인일"], ""),
+      exclusivearea: toNullableNumber(item && (item.exclusivearea ?? item.exclusive_area ?? item.exclusiveArea ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"] ?? raw["전용면적"] ?? item.areaPyeong ?? item.areaPy ?? item.area ?? item.area_m2)),
+      commonarea: toNullableNumber(item && (item.commonarea ?? item.common_area ?? item.commonArea ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"] ?? raw["공급/계약면적(평)"] ?? raw["공급면적(평)"])),
+      sitearea: toNullableNumber(item && (item.sitearea ?? item.site_area ?? item.siteArea ?? raw.sitearea ?? raw.siteArea ?? raw["토지면적(평)"])),
+      dateMain: pickFirstText(item && item.dateMain, item && item.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], item && item.bidDate, item && item.bid_date, ""),
+      createdAt: pickFirstText(item && item.date, item && item.date_uploaded, item && item.createdAt, item && item.created_at, raw.date, raw.createdAt, raw.date_uploaded, ""),
+      assignedAgentId: pickFirstText(item && item.assignedAgentId, item && item.assigneeId, item && item.assignee_id, item && item.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, ""),
+      assignedAgentName: pickFirstText(item && item.assignedAgentName, item && item.assigneeName, item && item.assignee_name, item && item.agentName, item && item.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, ""),
+      regionGu: pickFirstText(item && item.regionGu, item && item.region_gu, raw.regionGu, raw.region_gu, ""),
+      regionDong: pickFirstText(item && item.regionDong, item && item.region_dong, raw.regionDong, raw.region_dong, ""),
+      memo: memoText,
+      opinion: opinionText,
+      realtorname: pickFirstText(item && item.realtorname, item && item.realtor_name, raw.realtorname, raw.realtorName, brokerOfficeName, ""),
+      realtorphone: pickFirstText(item && item.realtorphone, item && item.realtor_phone, raw.realtorphone, raw.realtorPhone, ""),
+      realtorcell: pickFirstText(item && item.realtorcell, item && item.realtor_cell, raw.realtorcell, raw.realtorCell, item && item.submitterPhone, item && item.submitter_phone, ""),
+      rightsAnalysis: pickFirstText(item && item.rightsAnalysis, item && item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "") || ((item && (item.analysisDone ?? item.analysis_done)) ? "완료" : ""),
+      siteInspection: pickFirstText(item && item.siteInspection, item && item.site_inspection, raw.siteInspection, raw.site_inspection, "") || ((item && (item.siteVisit ?? item.site_visit ?? item.fieldDone ?? item.field_done)) ? "완료" : ""),
+      geocodeStatus: pickFirstText(item && item.geocode_status, item && item.geocodeStatus, raw.geocode_status, ""),
+      geocodedAt: pickFirstText(item && item.geocoded_at, item && item.geocodedAt, ""),
+      duplicateFlag: !!(item && item.duplicateFlag),
+    };
+  }
+
   function extractHoNumberForLog(data) {
     const explicitValues = [data?.ho, data?.unit, data?.room, data?.raw?.ho, data?.raw?.unit, data?.raw?.room];
     for (const value of explicitValues) {
@@ -472,6 +598,9 @@
   return {
     pickFirstText,
     compactAddressText,
+    extractFloorText,
+    sanitizeOnbidOpinion,
+    buildNormalizedPropertyBase,
     parseFloorNumberForLog,
     parseAddressIdentityParts,
     extractHoNumberForLog,

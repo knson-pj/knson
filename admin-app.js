@@ -1085,170 +1085,57 @@ function bindEvents() {
   }
 
   function normalizeProperty(item) {
-    const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
-    const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || raw.source_type || "").toString().trim().toLowerCase();
-    const sourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
-      ? PropertyDomain.normalizeSourceType(rawSource, { fallback: "general" })
-      : (["auction", "courtauction"].includes(rawSource) ? "auction" :
-        ["gongmae", "public", "onbid"].includes(rawSource) ? "onbid" :
-        ["realtor", "realtor_naver", "realtor_direct", "naver", "broker", "중개"].includes(rawSource) ? "realtor" :
-        rawSource === "general" ? "general" :
-        "general");
+    const base = (PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === "function")
+      ? PropertyDomain.buildNormalizedPropertyBase(item)
+      : null;
+    if (!base) return item;
 
-    const itemNo = firstText(item.itemNo, item.caseNo, item.externalId, item.listingId, item.item_no, raw.itemNo, "");
-    const address = firstText(item.address, item.location, item.addr, raw.address, "");
-
-    const latitude = toNullableNumber(item.latitude ?? item.lat ?? item.y ?? raw.latitude ?? raw.lat ?? "");
-    const longitude = toNullableNumber(item.longitude ?? item.lng ?? item.x ?? raw.longitude ?? raw.lng ?? "");
-    const priceMain = toNullableNumber(item.priceMain ?? item.price_main ?? raw.priceMain ?? raw.price_main ?? raw["감정가"] ?? raw["감정가(원)"] ?? item.salePrice ?? item.price ?? item.appraisalPrice);
-    const lowprice =
-      sourceType === "realtor" || sourceType === "general"
-        ? null
-        : toNullableNumber(item.lowprice ?? item.low_price ?? raw.lowprice ?? raw.low_price ?? raw["최저가"] ?? raw["최저입찰가(원)"] ?? raw["매각가"] ?? item.currentPrice ?? item.current_price);
-
-    const memoText = firstText(item.memo, raw.memo, "");
-    const opinionText = sourceType === "onbid"
-      ? sanitizeOnbidOpinion(firstText(item.opinion, raw.opinion, ""), memoText, address)
-      : firstText(item.opinion, raw.opinion, memoText, "");
-
-    const assignedAgentId = item.assignedAgentId || item.assigneeId || item.assignee_id || null;
-    const assignedAgentName = assignedAgentId
-      ? firstText(item.assignedAgentName, item.assigneeName, item.assignee_name, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "")
-      : "";
+    const opinionText = base.sourceType === "onbid"
+      ? ((PropertyDomain && typeof PropertyDomain.sanitizeOnbidOpinion === "function")
+          ? PropertyDomain.sanitizeOnbidOpinion(base.opinion, base.memo, base.address)
+          : base.opinion)
+      : base.opinion;
 
     return {
-      id: String(item.id || item._id || item.globalId || item.global_id || ""),
-      globalId: String(item.globalId || item.global_id || (sourceType && itemNo ? `${sourceType}:${itemNo}` : "")),
-      sourceType,
-      itemNo,
-      isGeneral: Boolean(item.isGeneral || item.is_general || item.origin === "general" || sourceType === "general"),
-      address,
-      assetType: firstText(item.assetType, item.asset_type, item.type, item.propertyType, item.kind, raw.assetType, raw['세부유형'], "-"),
-      floor: firstText(item.floor, item.floor_text, item.floor_text, item.floor_korean, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
-      totalfloor: firstText(item.totalfloor, item.total_floor, item.totalfloor_text, item.totalfloor_snake, item.totalfloor_camel, item.totalfloor_korean, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
-      priceMain,
-      lowprice,
-      status: firstText(item.status, raw.status, ""),
-      latitude,
-      longitude,
-      assignedAgentId,
-      assignedAgentName,
-      createdAt: firstText(item.date, item.date_uploaded, item.createdAt, item.created_at, raw.date, raw.createdAt, raw.date_uploaded, ""),
-      duplicateFlag: !!item.duplicateFlag,
-      regionGu: firstText(item.regionGu, item.region_gu, raw.regionGu, raw.region_gu, ""),
-      regionDong: firstText(item.regionDong, item.region_dong, raw.regionDong, raw.region_dong, ""),
-      memo: memoText,
-      exclusivearea: toNullableNumber(item.exclusivearea ?? item.exclusive_area ?? item.exclusiveArea ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"]),
-      commonarea: toNullableNumber(item.commonarea ?? item.common_area ?? item.commonArea ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"]),
-      sitearea: toNullableNumber(item.sitearea ?? item.site_area ?? item.siteArea ?? raw.sitearea ?? raw.siteArea ?? raw["토지면적(평)"]),
-      useapproval: firstText(item.useapproval, item.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, raw["사용승인일"], ""),
-      dateMain: firstText(item.dateMain, item.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], ""),
-      sourceUrl: firstText(item.sourceUrl, item.source_url, raw.sourceUrl, raw.source_url, ""),
-      submitterType: firstText(item.submitterType, item.submitter_type, raw.submitterType, ""),
-      realtorname: firstText(item.realtorname, item.realtor_name, raw.realtorname, raw.realtorName, item.brokerOfficeName, item.broker_office_name, ""),
-      realtorphone: firstText(item.realtorphone, item.realtor_phone, raw.realtorphone, raw.realtorPhone, ""),
-      realtorcell: firstText(item.realtorcell, item.realtor_cell, raw.realtorcell, raw.realtorCell, item.submitterPhone, item.submitter_phone, ""),
-      rightsAnalysis: firstText(item.rightsAnalysis, item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, ""),
-      siteInspection: firstText(item.siteInspection, item.site_inspection, raw.siteInspection, raw.site_inspection, ""),
+      id: base.id,
+      globalId: base.globalId,
+      sourceType: base.sourceType,
+      itemNo: base.itemNo,
+      isGeneral: base.isGeneral,
+      address: base.address,
+      assetType: base.assetType,
+      floor: base.floor,
+      totalfloor: base.totalfloor,
+      priceMain: base.priceMain,
+      lowprice: base.lowprice,
+      status: base.status,
+      latitude: base.latitude,
+      longitude: base.longitude,
+      assignedAgentId: base.assignedAgentId || null,
+      assignedAgentName: base.assignedAgentId ? base.assignedAgentName : "",
+      createdAt: base.createdAt,
+      duplicateFlag: base.duplicateFlag,
+      regionGu: base.regionGu,
+      regionDong: base.regionDong,
+      memo: base.memo,
+      exclusivearea: base.exclusivearea,
+      commonarea: base.commonarea,
+      sitearea: base.sitearea,
+      useapproval: base.useapproval,
+      dateMain: base.dateMain,
+      sourceUrl: base.sourceUrl,
+      submitterType: base.submitterType,
+      realtorname: base.realtorname,
+      realtorphone: base.realtorphone,
+      realtorcell: base.realtorcell,
+      rightsAnalysis: base.rightsAnalysis,
+      siteInspection: base.siteInspection,
       opinion: opinionText,
-      geocodeStatus: firstText(item.geocode_status, item.geocodeStatus, raw.geocode_status, ""),
-      geocodedAt: firstText(item.geocoded_at, item.geocodedAt, ""),
-      isDirectSubmission: (PropertyDomain && typeof PropertyDomain.isDirectRealtorSubmission === "function")
-        ? PropertyDomain.isDirectRealtorSubmission({
-            sourceType,
-            rawSource,
-            submitterType: firstText(item.submitterType, item.submitter_type, raw.submitterType, raw.submitter_type, ""),
-            sourceUrl: firstText(item.sourceUrl, item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
-            submitterName: firstText(item.submitterName, item.submitter_name, raw.submitter_name, raw.submitterName, ""),
-            brokerOfficeName: firstText(item.brokerOfficeName, item.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, ""),
-            raw,
-          })
-        : (() => {
-            const submitterType = firstText(item.submitterType, item.submitter_type, raw.submitterType, raw.submitter_type, "").toLowerCase();
-            const sourceUrlValue = firstText(item.sourceUrl, item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
-            const submitterNameValue = firstText(item.submitterName, item.submitter_name, raw.submitter_name, raw.submitterName, "");
-            if (sourceType !== "realtor") return false;
-            if (sourceUrlValue) return false;
-            if (rawSource === 'realtor_naver' || rawSource === 'naver' || rawSource === 'broker') return false;
-            if (rawSource === 'realtor_direct') return true;
-            if (submitterType === "realtor") return true;
-            return !!submitterNameValue;
-          })(),
+      geocodeStatus: base.geocodeStatus,
+      geocodedAt: base.geocodedAt,
+      isDirectSubmission: base.isDirectSubmission,
       _raw: item,
     };
-  }
-
-
-  // ---------------------------
-  // 신규 물건 등록 모달
-  // ---------------------------
-  function openNewPropertyModal(...args) {
-    return callAdminModule("newPropertyModal", "openNewPropertyModal", args);
-  }
-
-  function closeNewPropertyModal(...args) {
-    return callAdminModule("newPropertyModal", "closeNewPropertyModal", args);
-  }
-
-  function setNpmMsg(...args) {
-    return callAdminModule("newPropertyModal", "setNpmMsg", args);
-  }
-
-  function extractSchemaMissingColumn(err) {
-    const msg = String(err?.message || err || "");
-    const m = msg.match(/Could not find the '([^']+)' column of 'properties' in the schema cache/i);
-    return m ? String(m[1] || "").trim() : "";
-  }
-
-  function omitKeys(obj, keys) {
-    const drop = new Set((Array.isArray(keys) ? keys : []).map((v) => String(v || "").trim()).filter(Boolean));
-    return Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => !drop.has(k) && v !== undefined));
-  }
-
-  const PROPERTY_DUPLICATE_INDEX_NAMES = new Set([
-    "uq_properties_global_id",
-    "uq_properties_registration_identity_key",
-    "uq_properties_registration_identity_key_v2_strict",
-  ]);
-
-  function collectPropertyErrorTexts(err) {
-    const texts = [];
-    const push = (value) => {
-      if (value == null) return;
-      const s = String(value).trim();
-      if (s) texts.push(s);
-    };
-    const queue = [err];
-    const seen = new Set();
-    while (queue.length) {
-      const current = queue.shift();
-      if (!current || typeof current !== "object" || seen.has(current)) continue;
-      seen.add(current);
-      push(current.message);
-      push(current.details);
-      push(current.hint);
-      push(current.code);
-      push(current.constraint);
-      push(current.error);
-      push(current.error_description);
-      if (current.cause && typeof current.cause === "object") queue.push(current.cause);
-      if (current.data && typeof current.data === "object") queue.push(current.data);
-      if (current.originalError && typeof current.originalError === "object") queue.push(current.originalError);
-    }
-    return texts;
-  }
-
-  function isPropertyDuplicateError(err) {
-    const code = String(err?.code || err?.data?.code || "").trim();
-    const constraint = String(err?.constraint || err?.data?.constraint || "").trim();
-    if (PROPERTY_DUPLICATE_INDEX_NAMES.has(constraint)) return true;
-    const joined = collectPropertyErrorTexts(err).join('\n');
-    for (const indexName of PROPERTY_DUPLICATE_INDEX_NAMES) {
-      if (joined.includes(indexName)) return true;
-    }
-    if (code === "23505" && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
-    if (/duplicate key value violates unique constraint/i.test(joined) && /registration_identity_key(_v2)?|global_id/i.test(joined)) return true;
-    return false;
   }
 
   function normalizePropertyDuplicateError(err) {
@@ -1275,40 +1162,6 @@ function bindEvents() {
 
   async function submitNewProperty(...args) {
     return callAdminModule("newPropertyModal", "submitNewProperty", args);
-  }
-
-  function sanitizeOnbidOpinion(opinion, memo, address) {
-    const addressText = String(address || "").trim();
-
-    const cleanCandidate = (value) => {
-      let text = String(value || "").trim();
-      if (!text) return "";
-      if (!addressText) return text;
-
-      const compactText = text.replace(/\s+/g, "");
-      const compactAddress = addressText.replace(/\s+/g, "");
-      if (!compactAddress) return text;
-      if (compactText === compactAddress) return "";
-      if (compactText.includes(compactAddress) || compactAddress.includes(compactText)) {
-        const escaped = addressText
-          .split(/\s+/)
-          .filter(Boolean)
-          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-          .join("\\s*");
-        if (escaped) {
-          text = text
-            .replace(new RegExp(escaped, "gi"), "")
-            .replace(/^[\s,;:/|·-]+|[\s,;:/|·-]+$/g, "")
-            .trim();
-        }
-        if (!text) return "";
-      }
-      return text;
-    };
-
-    const explicit = cleanCandidate(opinion);
-    if (explicit) return explicit;
-    return cleanCandidate(memo);
   }
 
   function normalizeStaff(item) {
@@ -2225,18 +2078,6 @@ function sortGuUnitsByAdjacency(...args) {
     if (p.latitude == null || p.longitude == null) return "";
     const label = encodeURIComponent(p.address || p.assetType || "매물 위치");
     return `https://map.kakao.com/link/map/${label},${p.latitude},${p.longitude}`;
-  }
-
-  function extractFloorText(...texts) {
-    const joined = texts.filter(Boolean).join(" ");
-    if (!joined) return "";
-    const basement = joined.match(/(?:지하|제?비)(\d+)층?/);
-    if (basement) return `B${basement[1]}`;
-    const direct = joined.match(/(?:제)?(\d+)층/);
-    if (direct) return direct[1];
-    const room = joined.match(/(?:제)?(\d{1,3})호/);
-    if (room) return room[1];
-    return "";
   }
 
   function mergePropertyRaw(item, patch) {

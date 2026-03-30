@@ -364,109 +364,42 @@
   }
 
   function normalizeItem(p) {
-    const raw = p?.raw && typeof p.raw === "object" ? p.raw : {};
-    const rawSource = (p.sourceType || p.source_type || p.source || p.category || raw.sourceType || "").toString().trim().toLowerCase();
-    const source = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
-      ? PropertyDomain.normalizeSourceType(rawSource, { fallback: "general" })
-      : "general";
-
-    const lat = toNullableNumber(p.latitude ?? p.lat ?? raw.latitude ?? raw.lat ?? "");
-    const lng = toNullableNumber(p.longitude ?? p.lng ?? raw.longitude ?? raw.lng ?? "");
-    const address = firstText(p.address, p.location, raw.address, raw.location, "");
-    const priceMain = toNullableNumber(
-      p.priceMain ?? p.price_main ?? raw.priceMain ?? raw.price_main ?? raw["감정가"] ?? raw["감정가(원)"] ?? p.appraisalPrice ?? p.appraisal_price ?? p.salePrice ?? p.sale_price
-    );
-    const lowprice =
-      source === "realtor" || source === "general"
-        ? null
-        : toNullableNumber(
-            p.lowprice ?? p.low_price ?? raw.lowprice ?? raw.low_price ?? raw["최저가"] ?? raw["최저입찰가(원)"] ?? raw["매각가"] ?? p.currentPrice ?? p.current_price ?? raw.currentPrice ?? raw.current_price
-          );
-
-    const rightsAnalysisRaw = firstText(p.rightsAnalysis, p.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "");
-    const siteInspectionRaw = firstText(p.siteInspection, p.site_inspection, raw.siteInspection, raw.site_inspection, "");
-    const memoText = firstText(p.memo, raw.memo, "");
-    const opinionText = source === "onbid"
-      ? sanitizeOnbidOpinion(firstText(p.opinion, raw.opinion, ""), memoText, address)
-      : firstText(p.opinion, raw.opinion, memoText, p.comment, "");
+    const base = (PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === "function")
+      ? PropertyDomain.buildNormalizedPropertyBase(p)
+      : null;
+    if (!base) return p;
 
     return {
-      id: p.id || p.global_id || "",
-      itemNo: firstText(p.itemNo, p.item_no, raw.itemNo, raw.item_no, ""),
-      source,
-      status: firstText(p.status, raw.status, ""),
-      address,
-      type: firstText(p.assetType, p.asset_type, p.type, p.propertyType, p.kind, raw.assetType, raw.asset_type, raw["세부유형"], "-"),
-      floor: firstText(p.floor, p.floor_text, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
-      totalFloor: firstText(p.totalfloor, p.total_floor, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
-      useapproval: firstText(p.useapproval, p.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, raw["사용승인일"], ""),
-      exclusivearea: toNullableNumber(p.exclusivearea ?? p.exclusive_area ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw["전용면적(평)"] ?? raw["전용면적"] ?? p.areaPyeong ?? p.areaPy ?? p.area ?? p.area_m2),
-      commonarea: toNullableNumber(p.commonarea ?? p.common_area ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"] ?? raw["공급/계약면적(평)"] ?? raw["공급면적(평)"]),
-      appraisalPrice: priceMain,
-      currentPrice: lowprice,
-      bidDate: firstText(p.dateMain, p.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], p.bidDate, p.bid_date, ""),
-      createdAt: firstText(p.date, p.date_uploaded, p.createdAt, p.created_at, raw.date, raw.createdAt, ""),
-      assignedAgentId: firstText(p.assignedAgentId, p.assigneeId, p.assignee_id, p.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, ""),
-      assignedAgentName: firstText(p.assignedAgentName, p.assigneeName, p.assignee_name, p.agentName, p.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "-"),
-      rightsAnalysis: rightsAnalysisRaw || ((p.analysisDone ?? p.analysis_done) ? "완료" : ""),
-      siteInspection: siteInspectionRaw || ((p.siteVisit ?? p.site_visit ?? p.fieldDone ?? p.field_done) ? "완료" : ""),
-      opinion: opinionText,
-      statusLabel: statusLabel(firstText(p.status, raw.status, "")),
-      regionGu: firstText(p.regionGu, p.region_gu, raw.regionGu, raw.region_gu, ""),
-      regionDong: firstText(p.regionDong, p.region_dong, raw.regionDong, raw.region_dong, ""),
-      latitude: lat,
-      longitude: lng,
-      // 부직센 직접 등록 여부: submitter_name 또는 broker_office_name이 있으면 부직센(일반중개)
-      isDirectSubmission: (PropertyDomain && typeof PropertyDomain.isDirectRealtorSubmission === "function")
-        ? PropertyDomain.isDirectRealtorSubmission({
-            sourceType: source,
-            rawSource,
-            submitterType: firstText(p.submitter_type, p.submitterType, raw.submitter_type, raw.submitterType, ""),
-            sourceUrl: firstText(p.source_url, p.sourceUrl, raw.source_url, raw.sourceUrl, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
-            submitterName: firstText(p.submitter_name, p.submitterName, raw.submitter_name, raw.submitterName, ""),
-            brokerOfficeName: firstText(p.broker_office_name, p.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, ""),
-            raw,
-          })
-        : false,
-      raw,
+      id: base.id || "",
+      itemNo: base.itemNo,
+      source: base.sourceType,
+      status: base.status,
+      address: base.address,
+      type: base.assetType,
+      floor: base.floor,
+      totalFloor: base.totalfloor,
+      useapproval: base.useapproval,
+      exclusivearea: base.exclusivearea,
+      commonarea: base.commonarea,
+      appraisalPrice: base.priceMain,
+      currentPrice: base.lowprice,
+      bidDate: base.dateMain,
+      createdAt: base.createdAt,
+      assignedAgentId: base.assignedAgentId,
+      assignedAgentName: base.assignedAgentName || "-",
+      rightsAnalysis: base.rightsAnalysis,
+      siteInspection: base.siteInspection,
+      opinion: base.opinion,
+      statusLabel: statusLabel(base.status),
+      regionGu: base.regionGu,
+      regionDong: base.regionDong,
+      latitude: base.latitude,
+      longitude: base.longitude,
+      isDirectSubmission: base.isDirectSubmission,
+      raw: base.raw,
     };
   }
 
-  function sanitizeOnbidOpinion(opinion, memo, address) {
-    const addressText = String(address || "").trim();
-
-    const cleanCandidate = (value) => {
-      let text = String(value || "").trim();
-      if (!text) return "";
-      if (!addressText) return text;
-
-      const compactText = text.replace(/\s+/g, "");
-      const compactAddress = addressText.replace(/\s+/g, "");
-      if (!compactAddress) return text;
-      if (compactText === compactAddress) return "";
-      if (compactText.includes(compactAddress) || compactAddress.includes(compactText)) {
-        const escaped = addressText
-          .split(/\s+/)
-          .filter(Boolean)
-          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-          .join("\\s*");
-        if (escaped) {
-          text = text
-            .replace(new RegExp(escaped, "gi"), "")
-            .replace(/^[\s,;:/|·-]+|[\s,;:/|·-]+$/g, "")
-            .trim();
-        }
-        if (!text) return "";
-      }
-      return text;
-    };
-
-    const explicit = cleanCandidate(opinion);
-    if (explicit) return explicit;
-    return cleanCandidate(memo);
-  }
-
-  // ---- Render ----
   function getFilteredRows() {
     let list = state.items.slice();
 
@@ -1110,26 +1043,6 @@
     const label = encodeURIComponent(p.address || p.type || "매물 위치");
     return `https://map.kakao.com/link/map/${label},${p.latitude},${p.longitude}`;
   }
-
-  function extractFloorText(...texts) {
-    const joined = texts.filter(Boolean).join(" ");
-    if (!joined) return "";
-    const basement = joined.match(/(?:지하|제?비)(\d+)층?/);
-    if (basement) return `B${basement[1]}`;
-    const direct = joined.match(/(?:제)?(\d+)층/);
-    if (direct) return direct[1];
-    const room = joined.match(/(?:제)?(\d{1,3})호/);
-    if (room) return room[1];
-    return "";
-  }
-
-  // ---- Kakao Map (Enhanced) ----
-  const SOURCE_COLORS = {
-    auction: { bg: "rgba(215,120,247,0.88)", border: "rgba(215,120,247,0.4)", solid: "#D778F7", label: "경매", short: "경" },
-    onbid:   { bg: "rgba(89,167,255,0.88)", border: "rgba(89,167,255,0.4)", solid: "#59A7FF", label: "공매", short: "공" },
-    realtor: { bg: "rgba(74,216,186,0.88)", border: "rgba(74,216,186,0.4)", solid: "#4AD8BA", label: "중개", short: "중" },
-    general: { bg: "rgba(246,176,74,0.88)", border: "rgba(246,176,74,0.4)", solid: "#F6B04A", label: "일반", short: "일" },
-  };
 
   function getSourceStyle(source) { return SOURCE_COLORS[source] || SOURCE_COLORS.general; }
 
