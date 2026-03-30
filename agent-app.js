@@ -153,8 +153,6 @@
       loadedAt: 0,
       loading: false,
     },
-    propertySummary: null,
-    todayAssignedSummary: null,
   };
 
   const els = {};
@@ -413,47 +411,14 @@
     return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
   }
 
-  function getPropertyBucket(item) {
-    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") {
-      return PropertyDomain.getSourceBucket(item);
-    }
-    const sourceType = String(item?.sourceType || item?.source_type || item || "").trim();
-    const isDirect = !!(item && (item.isDirectSubmission || item.is_direct_submission));
-    if (sourceType === "realtor") return isDirect ? "realtor_direct" : "realtor_naver";
-    return ["auction", "onbid", "general"].includes(sourceType) ? sourceType : "general";
+  function getPropertyKindLabel(sourceType) {
+    const map = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    return map[String(sourceType || "").trim()] || "일반";
   }
 
-  function getPropertyKindLabel(item) {
-    const bucket = getPropertyBucket(item);
-    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") {
-      return PropertyDomain.getSourceBucketLabel(bucket);
-    }
-    const map = { auction: "경매", onbid: "공매", realtor_naver: "네이버중개", realtor_direct: "일반중개", general: "일반" };
-    return map[String(bucket || "").trim()] || "일반";
-  }
-
-  function getPropertyKindClass(item) {
-    const bucket = getPropertyBucket(item);
-    const map = { auction: "auction", onbid: "onbid", realtor_naver: "realtor", realtor_direct: "realtor", general: "general" };
-    return map[String(bucket || "").trim()] || "general";
-  }
-
-  function getPropertyListView(item) {
-    if (PropertyDomain && typeof PropertyDomain.buildPropertyListViewModel === "function") {
-      return PropertyDomain.buildPropertyListViewModel(item);
-    }
-    const bucket = getPropertyBucket(item);
-    return {
-      bucket,
-      kindLabel: getPropertyKindLabel(item),
-      kindClass: `kind-${getPropertyKindClass(item)}`,
-      currentPriceValue: item?.lowprice != null && item?.lowprice !== "" ? (Number(item.lowprice || 0) || 0) : (Number(item?.priceMain || 0) || 0),
-      itemNo: String(item?.itemNo || "").trim(),
-      address: String(item?.address || "").trim(),
-      assetType: String(item?.assetType || "").trim(),
-      floor: String(item?.floor || "").trim(),
-      opinionPreview: String(item?.opinion || "").trim().slice(0, 30),
-    };
+  function getPropertyKindClass(sourceType) {
+    const map = { auction: "auction", onbid: "onbid", realtor: "realtor", general: "general" };
+    return map[String(sourceType || "").trim()] || "general";
   }
 
   function findPropertyForActivityRow(row) {
@@ -781,30 +746,18 @@
   async function loadProperties() {
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
-      if (!sb) {
-        state.properties = [];
-        refreshPropertySummaries();
-        renderAll();
-        return;
-      }
+      if (!sb) { state.properties = []; renderAll(); return; }
 
       const uid = String(state.session?.user?.id || "").trim();
-      if (!uid) {
-        state.properties = [];
-        refreshPropertySummaries();
-        renderAll();
-        return;
-      }
+      if (!uid) { state.properties = []; renderAll(); return; }
 
       try { await K.sbSyncLocalSession(); state.session = loadSession() || state.session; } catch {}
       const rows = await fetchAllAssignedProperties(sb, uid);
       state.properties = Array.isArray(rows) ? rows.map(normalizeProperty) : [];
-      refreshPropertySummaries();
       renderAll();
     } catch (err) {
       console.error("loadProperties error:", err);
       state.properties = [];
-      refreshPropertySummaries();
       renderAll();
     }
   }
@@ -1206,44 +1159,25 @@
     return getTodayDateKey(parsed);
   }
 
-  function createEmptyPropertySummary() {
-    if (DataAccess && typeof DataAccess.createEmptyPropertySummary === "function") {
-      return DataAccess.createEmptyPropertySummary();
-    }
-    return { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-  }
-
-  function summarizeProperties(rows) {
-    if (DataAccess && typeof DataAccess.summarizeProperties === "function") {
-      return DataAccess.summarizeProperties(rows);
-    }
+  function countSourceSummary(rows) {
     if (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function") {
       return PropertyDomain.summarizeSourceBuckets(rows);
     }
-    return createEmptyPropertySummary();
-  }
-
-  function summarizePropertiesForDateKey(rows, dateKey) {
-    if (DataAccess && typeof DataAccess.summarizePropertiesForDateKey === "function") {
-      return DataAccess.summarizePropertiesForDateKey(rows, dateKey);
-    }
     const list = Array.isArray(rows) ? rows : [];
-    return summarizeProperties(list.filter((item) => {
-      const raw = item?._raw || {};
-      const candidate = item?.createdAt || raw?.date_uploaded || raw?.created_at || raw?.date || raw?.createdAt || "";
-      return extractDateKeyFromValue(candidate) === dateKey;
-    }));
-  }
-
-  function refreshPropertySummaries() {
-    const rows = Array.isArray(state.properties) ? state.properties : [];
-    state.propertySummary = summarizeProperties(rows);
-    state.todayAssignedSummary = summarizePropertiesForDateKey(rows, getTodayDateKey());
+    return {
+      total: list.length,
+      auction: list.filter((r) => r.sourceType === "auction").length,
+      onbid: list.filter((r) => r.sourceType === "onbid").length,
+      realtor_naver: list.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission).length,
+      realtor_direct: list.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission).length,
+      general: list.filter((r) => r.sourceType === "general").length,
+    };
   }
 
   function renderSummary() {
+    const p = Array.isArray(state.properties) ? state.properties : [];
     const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
-    const summary = state.propertySummary || createEmptyPropertySummary();
+    const summary = countSourceSummary(p);
     if (els.agSumTotal) els.agSumTotal.textContent = fmt(summary.total);
     if (els.agSumAuction) els.agSumAuction.textContent = fmt(summary.auction);
     if (els.agSumGongmae) els.agSumGongmae.textContent = fmt(summary.onbid);
@@ -1263,7 +1197,13 @@
     setProgress(els.agHomeProgressDirect, summary.realtor_direct);
     setProgress(els.agHomeProgressGeneral, summary.general);
 
-    const todayAssigned = state.todayAssignedSummary || createEmptyPropertySummary();
+    const todayKey = getTodayDateKey();
+    const todayAssignedRows = p.filter((item) => {
+      const raw = item?._raw || {};
+      const candidate = item?.createdAt || raw?.date_uploaded || raw?.created_at || raw?.date || raw?.createdAt || "";
+      return extractDateKeyFromValue(candidate) === todayKey;
+    });
+    const todayAssigned = countSourceSummary(todayAssignedRows);
     if (els.agTodayAssignedTotal) els.agTodayAssignedTotal.textContent = fmt(todayAssigned.total);
     if (els.agTodayAssignedAuction) els.agTodayAssignedAuction.textContent = fmt(todayAssigned.auction);
     if (els.agTodayAssignedOnbid) els.agTodayAssignedOnbid.textContent = fmt(todayAssigned.onbid);
@@ -1379,12 +1319,12 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    const view = getPropertyListView(p);
-    const bucket = view.bucket;
-    const kindLabel = view.kindLabel;
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
+    const kindLabel = kindMap[p.sourceType] || "일반";
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
-    const current = view.currentPriceValue ? formatEok(view.currentPriceValue) : "-";
-    const rate = calcRate(p.priceMain, view.currentPriceValue);
+    const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
+    const rate = calcRate(p.priceMain, p.lowprice);
     const statusLabel = normalizeStatus(p.status);
     const isFav = state.favorites.has(p.id);
 
@@ -1411,10 +1351,10 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + esc(view.kindClass || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
-      "<td>" + esc(view.address || "-") + "</td>" +
-      "<td>" + esc(view.assetType || "-") + "</td>" +
-      "<td>" + esc(view.floor || "-") + "</td>" +
+      '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      "<td>" + esc(p.address || "-") + "</td>" +
+      "<td>" + esc(p.assetType || "-") + "</td>" +
+      "<td>" + esc(p.floor || "-") + "</td>" +
       "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
       "<td>" + esc(appraisal) + "</td>" +
       "<td>" + esc(current) + "</td>" +
@@ -1423,7 +1363,7 @@
       "<td>" + esc(statusLabel) + "</td>" +
       "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
       "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
-      "<td>" + esc(view.opinionPreview || "-") + "</td>"
+      "<td>" + esc((p.opinion || "-").slice(0, 30)) + "</td>"
     );
 
     tr.addEventListener("click", () => openEditModal(p));
@@ -1472,9 +1412,16 @@
 
   // ── Edit Modal ──
   function getAgentEditableSnapshot(item) {
+    if (PropertyDomain && typeof PropertyDomain.buildPropertyEditViewModel === "function") {
+      const view = PropertyDomain.buildPropertyEditViewModel(item);
+      if (view) return view;
+    }
     const raw = item?._raw?.raw || {};
     const row = item?._raw || {};
     return {
+      sourceBucketLabel: (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function")
+        ? PropertyDomain.getSourceBucketLabel((PropertyDomain.getSourceBucket && PropertyDomain.getSourceBucket(item)) || item?.sourceType)
+        : "일반",
       floor: firstText(raw.floor, row.floor, item?.floor, ""),
       totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, row.total_floor, row.totalfloor, item?.totalfloor, ""),
       useapproval: firstText(raw.useapproval, raw.useApproval, row.use_approval, item?.useapproval, ""),
@@ -1482,7 +1429,7 @@
       exclusivearea: raw.exclusiveArea ?? raw.exclusivearea ?? row.exclusive_area ?? row.exclusivearea ?? item?.exclusivearea ?? null,
       sitearea: raw.siteArea ?? raw.sitearea ?? row.site_area ?? row.sitearea ?? item?.sitearea ?? null,
       priceMain: raw.priceMain ?? row.price_main ?? item?.priceMain ?? null,
-      currentPrice: raw.currentPrice ?? raw.lowprice ?? row.lowprice ?? row.low_price ?? item?.lowprice ?? null,
+      currentPriceValue: raw.currentPrice ?? raw.lowprice ?? row.lowprice ?? row.low_price ?? item?.lowprice ?? null,
       dateMain: firstText(raw.dateMain, row.date_main, item?.dateMain, ""),
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
@@ -1505,11 +1452,13 @@
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    const sourceDisplay = view.sourceBucketLabel || kindMap[item.sourceType] || "일반";
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", getPropertyKindLabel(item));
+    setVal(f, "sourceType", sourceDisplay);
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
@@ -1520,7 +1469,7 @@
     setVal(f, "exclusivearea", view.exclusivearea != null ? fmtArea(view.exclusivearea) : "");
     setVal(f, "sitearea", view.sitearea != null ? fmtArea(view.sitearea) : "");
     setVal(f, "priceMain", view.priceMain != null ? formatMoneyInputValue(view.priceMain) : "");
-    setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
+    setVal(f, "currentPrice", view.currentPriceValue != null ? formatMoneyInputValue(view.currentPriceValue) : "");
     setVal(f, "dateMain", view.dateMain || "");
     setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);

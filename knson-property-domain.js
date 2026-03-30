@@ -259,6 +259,96 @@
     return match ? String(Number(match[1])) : "";
   }
 
+  function getSourceBucketClass(bucket) {
+    const key = String(bucket || "").trim();
+    if (key === "auction") return "kind-auction";
+    if (key === "onbid") return "kind-gongmae";
+    if (key === "realtor_naver" || key === "realtor_direct" || key === "realtor") return "kind-realtor";
+    return "kind-general";
+  }
+
+  function getCurrentPriceValue(item) {
+    const current = toNullableNumber(
+      item?.currentPriceValue ?? item?.currentPrice ?? item?.current_price ?? item?.lowprice ?? item?.low_price ??
+      item?.raw?.currentPrice ?? item?.raw?.current_price ?? item?.raw?.lowprice ?? item?.raw?.low_price
+    );
+    if (current != null && Number.isFinite(current)) return current;
+    const mainPrice = toNullableNumber(
+      item?.priceMain ?? item?.price_main ?? item?.raw?.priceMain ?? item?.raw?.price_main ??
+      item?.raw?.["감정가"] ?? item?.raw?.["감정가(원)"]
+    );
+    return mainPrice != null && Number.isFinite(mainPrice) ? mainPrice : null;
+  }
+
+  function buildPropertyListViewModel(item, options = {}) {
+    const base = buildNormalizedPropertyBase(item, options);
+    if (!base) return null;
+    const sourceBucket = getSourceBucket(base);
+    return {
+      id: base.id,
+      globalId: base.globalId,
+      sourceType: base.sourceType,
+      sourceBucket,
+      kindLabel: getSourceBucketLabel(sourceBucket),
+      kindClass: getSourceBucketClass(sourceBucket),
+      itemNo: base.itemNo || "-",
+      address: base.address || "-",
+      assetType: base.assetType || "-",
+      floor: base.floor || "-",
+      opinionPreview: String(base.opinion || "").trim().slice(0, 30),
+      currentPriceValue: getCurrentPriceValue(base),
+      priceMain: base.priceMain,
+      exclusivearea: base.exclusivearea,
+      rightsAnalysis: base.rightsAnalysis,
+      siteInspection: base.siteInspection,
+    };
+  }
+
+  function buildPropertyEditViewModel(item, options = {}) {
+    const base = buildNormalizedPropertyBase(item, options);
+    if (!base) return null;
+    const sourceBucket = getSourceBucket(base);
+    const submitterType = normalizeSubmitterType(base.submitterType, { fallback: "" });
+    return {
+      id: base.id,
+      globalId: base.globalId,
+      sourceType: base.sourceType,
+      sourceTypeLabel: getSourceTypeLabel(base.sourceType),
+      sourceBucket,
+      sourceBucketLabel: getSourceBucketLabel(sourceBucket),
+      submitterType,
+      submitterTypeLabel: submitterType === "realtor" ? "공인중개사" : (submitterType === "owner" ? "소유자 / 일반" : ""),
+      assignedAgentId: base.assignedAgentId || "",
+      assignedAgentName: base.assignedAgentName || "",
+      itemNo: base.itemNo || "",
+      address: base.address || "",
+      assetType: base.assetType || "",
+      status: base.status || "",
+      floor: base.floor || "",
+      totalfloor: base.totalfloor || "",
+      useapproval: base.useapproval || "",
+      commonarea: base.commonarea,
+      exclusivearea: base.exclusivearea,
+      sitearea: base.sitearea,
+      priceMain: base.priceMain,
+      currentPriceValue: getCurrentPriceValue(base),
+      lowprice: getCurrentPriceValue(base),
+      dateMain: base.dateMain || "",
+      sourceUrl: base.sourceUrl || "",
+      createdAt: base.createdAt || "",
+      realtorname: base.realtorname || "",
+      realtorphone: base.realtorphone || "",
+      realtorcell: base.realtorcell || "",
+      rightsAnalysis: base.rightsAnalysis || "",
+      siteInspection: base.siteInspection || "",
+      opinion: base.opinion || "",
+      latitude: base.latitude,
+      longitude: base.longitude,
+      isDirectSubmission: !!base.isDirectSubmission,
+      raw: base.raw,
+    };
+  }
+
   function buildRegistrationMatchKey(data) {
     const parts = parseAddressIdentityParts(pickFirstText(data?.address, data?.raw?.address, ""));
     const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, data?.totalFloor, data?.raw?.totalfloor, "")) || "0";
@@ -578,37 +668,6 @@
     return "일반";
   }
 
-  function getSourceBucketClass(bucket) {
-    const key = String(bucket || "").trim();
-    if (key === "auction") return "kind-auction";
-    if (key === "onbid") return "kind-gongmae";
-    if (key === "realtor_naver" || key === "realtor_direct" || key === "realtor") return "kind-realtor";
-    return "kind-general";
-  }
-
-  function getCurrentPriceValue(item) {
-    if (!item || item.lowprice == null || item.lowprice === "") return Number(item?.priceMain || 0) || 0;
-    return Number(item.lowprice || 0) || 0;
-  }
-
-  function buildPropertyListViewModel(item, options = {}) {
-    const sourceItem = item && (item.sourceType || item.address || item.itemNo || item.raw)
-      ? item
-      : buildNormalizedPropertyBase(item, options);
-    const bucket = getSourceBucket(sourceItem);
-    return {
-      bucket,
-      kindLabel: getSourceBucketLabel(bucket),
-      kindClass: getSourceBucketClass(bucket),
-      currentPriceValue: getCurrentPriceValue(sourceItem),
-      itemNo: String(sourceItem?.itemNo || "").trim(),
-      address: String(sourceItem?.address || "").trim(),
-      assetType: String(sourceItem?.assetType || "").trim(),
-      floor: String(sourceItem?.floor || "").trim(),
-      opinionPreview: String(sourceItem?.opinion || "").trim().slice(0, 30),
-    };
-  }
-
   function matchesSourceBucket(item, activeCard) {
     const target = String(activeCard || "").trim();
     if (!target || target === "all") return true;
@@ -632,6 +691,10 @@
     extractFloorText,
     sanitizeOnbidOpinion,
     buildNormalizedPropertyBase,
+    getSourceBucketClass,
+    getCurrentPriceValue,
+    buildPropertyListViewModel,
+    buildPropertyEditViewModel,
     parseFloorNumberForLog,
     parseAddressIdentityParts,
     extractHoNumberForLog,
@@ -668,9 +731,6 @@
     getSourceBucket,
     getSourceTypeLabel,
     getSourceBucketLabel,
-    getSourceBucketClass,
-    getCurrentPriceValue,
-    buildPropertyListViewModel,
     matchesSourceBucket,
     summarizeSourceBuckets,
   };
