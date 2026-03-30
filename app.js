@@ -19,6 +19,21 @@
     general: { label: "일반", short: "일", solid: "#F6B04A", bg: "#FFF1DD", border: "#F7D39E" },
   };
 
+  function toUserErrorMessage(err, fallback = "요청 처리 중 오류가 발생했습니다.") {
+    const raw = String(err?.message || err || "").trim();
+    if (!raw) return fallback;
+    if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) {
+      return "네트워크 연결 또는 서버 응답에 실패했습니다.";
+    }
+    if (/not allowed|forbidden|permission/i.test(raw)) {
+      return "권한이 없어 요청을 처리할 수 없습니다.";
+    }
+    if (/schema cache|column .* does not exist|does not exist/i.test(raw)) {
+      return "서버 스키마 반영이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.";
+    }
+    return raw;
+  }
+
   // ---- State ----
   const state = {
     session: loadSession(),
@@ -115,6 +130,11 @@
     els.textView = document.getElementById("textView");
     els.mapView = document.getElementById("mapView");
 
+    // Filters (map sidebar only)
+    els.agentChart = document.getElementById("agentChart");
+    els.agentChartEmpty = document.getElementById("agentChartEmpty");
+    els.agentChartMeta = document.getElementById("agentChartMeta");
+
     // Stats charts
     els.inflowChart = document.getElementById("inflowChart");
     els.inflowTabs = document.getElementById("inflowTabs");
@@ -122,6 +142,10 @@
     els.regionDistChart = document.getElementById("regionDistChart");
     els.typeDistChart = document.getElementById("typeDistChart");
     els.priceDistChart = document.getElementById("priceDistChart");
+    els.statMenu = document.getElementById("statMenu");
+    els.statTabProperties = document.getElementById("statTabProperties");
+    els.statTabAgents = document.getElementById("statTabAgents");
+
     // Map view
     els.mvPropertyList = document.getElementById("mvPropertyList");
     els.mvSummary = document.getElementById("mvSummary");
@@ -173,6 +197,22 @@
       });
     }
 
+    // KPI 카드 클릭 → 소스 필터 (지도 뷰에서만 작동)
+    const bindCard = (el, source) => {
+      if (!el) return;
+      el.addEventListener("click", () => {
+        state.source = source;
+        renderKPIs();
+        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
+      });
+    };
+
+    bindCard(els.statTotalCard, "all");
+    bindCard(els.statAuctionCard, "auction");
+    bindCard(els.statGongmaeCard, "onbid");
+    bindCard(els.statRealtorCard, "realtor");
+    bindCard(els.statGeneralCard, "general");
+
     // 탭
     if (els.tabText) {
       els.tabText.addEventListener("click", () => setView("text"));
@@ -196,6 +236,18 @@
       });
     }
 
+    // Stat menu tabs (매물현황 / 담당자현황)
+    if (els.statMenu) {
+      els.statMenu.addEventListener("click", (e) => {
+        const btn = e.target.closest(".stat-menu-item");
+        if (!btn) return;
+        els.statMenu.querySelectorAll(".stat-menu-item").forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        const tab = btn.dataset.statTab;
+        if (els.statTabProperties) els.statTabProperties.classList.toggle("hidden", tab !== "properties");
+        if (els.statTabAgents) els.statTabAgents.classList.toggle("hidden", tab !== "agents");
+      });
+    }
 
     // Map sidebar filters
     if (els.mvKeyword) {
@@ -295,22 +347,29 @@
     try {
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
       let isAdmin = isAdminUser(state.session?.user);
+      let staffPromise = Promise.resolve([]);
 
       if (sb) {
         try { await K.sbSyncLocalSession(); } catch {}
         try { state.session = loadSession(); } catch {}
         const uid = state.session?.user?.id;
         isAdmin = isAdminUser(state.session?.user);
+        if (isAdmin) staffPromise = loadStaffAssignments();
+
         const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
         state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
       } else {
         isAdmin = isAdminUser(state.session?.user);
+        if (isAdmin) staffPromise = loadStaffAssignments();
         const scope = isAdmin ? "all" : "mine";
         const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
         state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
       }
 
+      try { state.staffAssignments = await staffPromise; } catch { state.staffAssignments = []; }
+
       renderKPIs();
+      renderAgentChart();
       renderStatCharts();
 
       if (state.view === "map") {
@@ -321,8 +380,9 @@
       console.error(err);
       state.items = [];
       renderKPIs();
+      renderAgentChart();
       renderStatCharts();
-      alert(err?.message || "목록을 불러오지 못했습니다.");
+      alert(toUserErrorMessage(err, "목록을 불러오지 못했습니다."));
     }
   }
 
@@ -359,6 +419,7 @@
       latitude: base.latitude,
       longitude: base.longitude,
       isDirectSubmission: base.isDirectSubmission,
+      sourceBucket: (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") ? PropertyDomain.getSourceBucket(base) : base.sourceType,
       raw: base.raw,
     };
   }
@@ -388,9 +449,211 @@
   }
 
   function renderKPIs() {
-    if (els.mvSourceFilter) els.mvSourceFilter.value = state.source || "all";
+    const all = state.items;
+
+    if (els.statTotal) els.statTotal.textContent = String(all.length);
+    if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => p.source === "auction").length);
+    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => p.source === "onbid").length);
+    if (els.statRealtor) els.statRealtor.textContent = String(all.filter((p) => p.source === "realtor").length);
+    if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => p.source === "general").length);
+
+    const setActive = (card, on) => {
+      if (!card) return;
+      card.classList.toggle("is-selected", on);
+    };
+
+    setActive(els.statTotalCard, state.source === "all");
+    setActive(els.statAuctionCard, state.source === "auction");
+    setActive(els.statGongmaeCard, state.source === "onbid");
+    setActive(els.statRealtorCard, state.source === "realtor");
+    setActive(els.statGeneralCard, state.source === "general");
   }
 
+
+  async function loadStaffAssignments() {
+    if (!isAdminUser(state.session?.user)) return [];
+    try {
+      const [staffSettled, assignSettled] = await Promise.allSettled([
+        api('/admin/staff', { auth: true }),
+        api('/admin/region-assignments', { auth: true }),
+      ]);
+
+      const map = new Map();
+      const staffItems = staffSettled.status === 'fulfilled' && Array.isArray(staffSettled.value?.items)
+        ? staffSettled.value.items
+        : [];
+      const assignItems = assignSettled.status === 'fulfilled' && Array.isArray(assignSettled.value?.items)
+        ? assignSettled.value.items
+        : [];
+      const assignById = new Map(assignItems.map((row) => [String(row?.id || '').trim(), row]));
+
+      staffItems.forEach((row) => {
+        const role = normalizeRole(row?.role);
+        if (role !== 'staff') return;
+        const id = String(row?.id || '').trim();
+        if (!id) return;
+        const assignRow = assignById.get(id);
+        const name = String(row?.name || row?.email || '').trim() || `담당자 ${map.size + 1}`;
+        map.set(id, {
+          id,
+          role: 'staff',
+          email: String(row?.email || '').trim(),
+          name,
+          regions: normalizeAssignedRegions(assignRow?.assignedRegions || assignRow?.regions || row?.assignedRegions || row?.regions || row?.assigned_regions),
+        });
+      });
+
+      return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    } catch (err) {
+      console.warn('loadStaffAssignments failed', err);
+      return [];
+    }
+  }
+
+  function normalizeRole(value) {
+    if (Shared && typeof Shared.normalizeRole === 'function') return Shared.normalizeRole(value);
+    const v = String(value || '').trim().toLowerCase();
+    if (v === '관리자' || v === 'admin') return 'admin';
+    if (v === '기타' || v === 'other') return 'other';
+    return 'staff';
+  }
+
+  function normalizeAssignedRegions(values) {
+    if (!Array.isArray(values)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const value of values) {
+      const token = normalizeRegionToken(value);
+      if (!token || seen.has(token)) continue;
+      seen.add(token);
+      out.push(token);
+    }
+    return out;
+  }
+
+  function normalizeRegionToken(value) {
+    const s = String(value || '').trim().replace(/\s+/g, ' ');
+    return s || '';
+  }
+
+  function extractAddressRegionParts(address) {
+    const text = String(address || '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return { gu: '', dong: '' };
+    const gu = (text.match(/[가-힣]+(?:구|군|시)/) || [])[0] || '';
+    const dong = (text.match(/[가-힣0-9]+(?:동|읍|면|가)/) || [])[0] || '';
+    return { gu, dong };
+  }
+
+  function getPropertyRegionTokens(row) {
+    const tokens = [];
+    const seen = new Set();
+    const add = (v) => {
+      const token = normalizeRegionToken(v);
+      if (!token || seen.has(token)) return;
+      seen.add(token);
+      tokens.push(token);
+    };
+    add(row.regionGu);
+    add(row.regionDong);
+    const addrParts = extractAddressRegionParts(row.address);
+    add(addrParts.gu);
+    add(addrParts.dong);
+    return tokens;
+  }
+
+  function buildAgentChartEntries(rows) {
+    const staff = (Array.isArray(state.staffAssignments) ? state.staffAssignments : []).filter((row) => normalizeRole(row?.role) === 'staff');
+    const byId = new Map();
+
+    const ensureEntry = (id, name, regions = []) => {
+      const key = String(id || '').trim() || String(name || '').trim();
+      if (!key) return null;
+      if (!byId.has(key)) {
+        byId.set(key, {
+          id: key,
+          name: String(name || key).trim() || '담당자',
+          regions: normalizeAssignedRegions(regions),
+          auction: 0,
+          onbid: 0,
+          realtor: 0,
+          general: 0,
+          total: 0,
+        });
+      }
+      const entry = byId.get(key);
+      if ((!entry.name || entry.name === entry.id) && name) entry.name = String(name).trim() || entry.name;
+      if ((!entry.regions || !entry.regions.length) && Array.isArray(regions) && regions.length) {
+        entry.regions = normalizeAssignedRegions(regions);
+      }
+      return entry;
+    };
+
+    staff.forEach((staffRow) => ensureEntry(staffRow.id, staffRow.name, staffRow.regions || []));
+
+    rows.forEach((row) => {
+      let entry = null;
+      const assignedId = String(row.assignedAgentId || '').trim();
+      const assignedName = String(row.assignedAgentName || '').trim();
+      if (assignedId && byId.has(assignedId)) {
+        entry = byId.get(assignedId);
+      } else if (assignedName) {
+        const found = [...byId.values()].find((item) => item.name === assignedName);
+        if (found) entry = found;
+      }
+      if (!entry) {
+        const tokens = getPropertyRegionTokens(row);
+        const matched = staff.find((item) => item.regions?.length && item.regions.some((region) => tokens.includes(region)));
+        if (matched) entry = ensureEntry(matched.id, matched.name, matched.regions || []);
+      }
+      if (!entry) return;
+      const src = ['auction', 'onbid', 'realtor', 'general'].includes(row.source) ? row.source : 'general';
+      entry[src] = (entry[src] || 0) + 1;
+      entry.total += 1;
+    });
+
+    return [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
+  }
+
+  function renderAgentChart() {
+    if (!els.agentChart || !els.agentChartEmpty) return;
+    const rows = Array.isArray(state.items) ? state.items.slice() : [];
+    const entries = buildAgentChartEntries(rows);
+    els.agentChart.innerHTML = '';
+    if (els.agentChartMeta) els.agentChartMeta.textContent = `${entries.length}명`;
+    if (!entries.length) {
+      els.agentChart.classList.add('hidden');
+      els.agentChartEmpty.classList.remove('hidden');
+      return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'agent-bench-grid';
+    const max = Math.max(...entries.map((entry) => entry.total), 1);
+    const segPct = (count, total) => total ? ((count / total) * 100).toFixed(2) : '0';
+
+    entries.forEach((entry) => {
+      const card = document.createElement('article');
+      card.className = 'agent-bench-card';
+      const fillPct = entry.total ? Math.max(12, Math.round((entry.total / max) * 100)) : 8;
+      card.innerHTML = `
+        <div class="agent-bench-score">${entry.total}건</div>
+        <div class="agent-bench-plot">
+          <div class="agent-bench-column" style="height:${fillPct}%">
+            ${entry.auction ? `<span class="agent-bench-seg seg-auction" style="height:${segPct(entry.auction, entry.total)}%" title="경매 ${entry.auction}건"></span>` : ''}
+            ${entry.onbid ? `<span class="agent-bench-seg seg-onbid" style="height:${segPct(entry.onbid, entry.total)}%" title="공매 ${entry.onbid}건"></span>` : ''}
+            ${entry.realtor ? `<span class="agent-bench-seg seg-realtor" style="height:${segPct(entry.realtor, entry.total)}%" title="중개 ${entry.realtor}건"></span>` : ''}
+            ${entry.general ? `<span class="agent-bench-seg seg-general" style="height:${segPct(entry.general, entry.total)}%" title="일반 ${entry.general}건"></span>` : ''}
+          </div>
+        </div>
+        <div class="agent-bench-name" title="${escapeAttr(entry.name)}">${escapeHtml(entry.name)}</div>
+      `;
+      grid.appendChild(card);
+    });
+
+    els.agentChart.appendChild(grid);
+    els.agentChart.classList.remove('hidden');
+    els.agentChartEmpty.classList.add('hidden');
+  }
 
 
   // ---- Statistics Charts ----
@@ -806,12 +1069,10 @@
   }
 
   function getSourceStyle(itemOrSource) {
-    const bucket = (typeof itemOrSource === "object" && itemOrSource)
-      ? ((PropertyDomain && typeof PropertyDomain.getSourceBucket === "function")
-          ? PropertyDomain.getSourceBucket({ sourceType: itemOrSource.source, isDirectSubmission: itemOrSource.isDirectSubmission, raw: itemOrSource.raw })
-          : String(itemOrSource.source || "general"))
-      : String(itemOrSource || "general");
-    return SOURCE_COLORS[bucket] || SOURCE_COLORS.realtor || SOURCE_COLORS.general;
+    const key = typeof itemOrSource === "string"
+      ? itemOrSource
+      : ((itemOrSource && (itemOrSource.sourceBucket || itemOrSource.source || itemOrSource.sourceType)) || "general");
+    return SOURCE_COLORS[key] || SOURCE_COLORS.general;
   }
 
   function shortType(type) {
@@ -988,7 +1249,7 @@
 
     card.innerHTML =
       '<div class="mv-card-top">' +
-        '<span class="mv-badge mv-badge-' + p.source + '">' + escapeHtml(kindLabel) + '</span>' +
+        '<span class="mv-badge mv-badge-' + (p.sourceBucket || p.source) + '">' + escapeHtml(kindLabel) + '</span>' +
       '</div>' +
       '<div class="mv-card-addr">' + escapeHtml(p.address || "-") + '</div>' +
       '<div class="mv-card-info">' + escapeHtml((p.type || "") + (p.floor ? " · " + p.floor + "층" : "") + (p.exclusivearea != null ? " · 전용 " + formatAreaPyeong(p.exclusivearea) + "평" : "")) + '</div>' +

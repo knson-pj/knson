@@ -22,6 +22,15 @@
         return Number.isFinite(n) ? n : NaN;
       });
 
+  function toUserErrorMessage(err, fallback = "요청 처리 중 오류가 발생했습니다.") {
+    const raw = String(err?.message || err || "").trim();
+    if (!raw) return fallback;
+    if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) return "네트워크 연결 또는 서버 응답에 실패했습니다.";
+    if (/not allowed|forbidden|permission/i.test(raw)) return "권한이 없어 요청을 처리할 수 없습니다.";
+    if (/schema cache|column .* does not exist|does not exist/i.test(raw)) return "서버 스키마 반영이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.";
+    return raw;
+  }
+
   function parseFlexibleNumber(value) {
     if (Shared && typeof Shared.parseFlexibleNumber === "function") return Shared.parseFlexibleNumber(value);
     if (value === null || value === undefined) return null;
@@ -595,7 +604,7 @@
       goLoginPage(true);
       return;
     }
-    alert(err?.message || fallbackMsg);
+    alert(toUserErrorMessage(err, fallbackMsg));
   }
 
 function bindEvents() {
@@ -1160,10 +1169,6 @@ function bindEvents() {
     throw new Error("KNSN_DATA_ACCESS.updatePropertyRowResilient 를 찾을 수 없습니다.");
   }
 
-  function openNewPropertyModal(...args) {
-    return callAdminModule("newPropertyModal", "openNewPropertyModal", args);
-  }
-
   async function submitNewProperty(...args) {
     return callAdminModule("newPropertyModal", "submitNewProperty", args);
   }
@@ -1546,13 +1551,6 @@ function bindEvents() {
   }
 
   function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
-    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === "function") {
-      return PropertyDomain.buildRegistrationDbRowForExisting(existingItem, incomingRow, context, {
-        assignIfEmpty: !!options.assignIfEmpty,
-        copyFields: ["address","asset_type","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","source_url","broker_office_name","submitter_name","submitter_phone","memo","latitude","longitude","floor","total_floor","item_no","source_type","submitter_type","assignee_id"],
-        labels: REG_LOG_LABELS,
-      });
-    }
     const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
     const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
@@ -1570,9 +1568,6 @@ function bindEvents() {
   }
 
   function buildRegistrationDbRowForCreate(row, context) {
-    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForCreate === "function") {
-      return PropertyDomain.buildRegistrationDbRowForCreate(row, context);
-    }
     return {
       ...(row || {}),
       raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row),
@@ -1580,9 +1575,6 @@ function bindEvents() {
   }
 
   function findExistingPropertyByRegistrationKey(data, items, ignoreId = "") {
-    if (PropertyDomain && typeof PropertyDomain.findExistingPropertyByRegistrationKey === "function") {
-      return PropertyDomain.findExistingPropertyByRegistrationKey(data, items, { ignoreId });
-    }
     const targetKey = buildRegistrationMatchKey(data);
     if (!targetKey) return null;
     const ignore = String(ignoreId || "").trim();

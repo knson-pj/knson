@@ -16,6 +16,15 @@
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
   const DataAccess = window.KNSN_DATA_ACCESS || null;
+
+  function toUserErrorMessage(err, fallback = "등록에 실패했습니다.") {
+    const raw = String(err?.message || err || "").trim();
+    if (!raw) return fallback;
+    if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) return "네트워크 연결 또는 서버 응답에 실패했습니다.";
+    if (/not allowed|forbidden|permission/i.test(raw)) return "권한이 없어 요청을 처리할 수 없습니다.";
+    return raw;
+  }
+
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
@@ -115,7 +124,7 @@
       if (!res?.ok) throw new Error(res?.message || '등록에 실패했습니다.');
       done();
     } catch (err) {
-      setMsg(err?.message || '등록에 실패했습니다.');
+      setMsg(toUserErrorMessage(err, '등록에 실패했습니다.'));
     } finally {
       setBusy(false);
     }

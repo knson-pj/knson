@@ -11,6 +11,15 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => [...document.querySelectorAll(sel)];
 
+  function toUserErrorMessage(err, fallback = "요청 처리 중 오류가 발생했습니다.") {
+    const raw = String(err?.message || err || "").trim();
+    if (!raw) return fallback;
+    if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) return "네트워크 연결 또는 서버 응답에 실패했습니다.";
+    if (/not allowed|forbidden|permission/i.test(raw)) return "권한이 없어 요청을 처리할 수 없습니다.";
+    if (/schema cache|column .* does not exist|does not exist/i.test(raw)) return "서버 스키마 반영이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.";
+    return raw;
+  }
+
   function loadSession() { return (Shared && typeof Shared.loadSession === "function") ? Shared.loadSession() : (K ? K.loadSession() : null); }
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
   const API_BASE = K && typeof K.getApiBase === "function" ? K.getApiBase() : "https://knson.vercel.app/api";
@@ -327,7 +336,7 @@
     }
 
     if (!parts.length) push(`요청 실패 (${status})`);
-    return parts.join("\n");
+    return toUserErrorMessage(parts.join("\n"), `요청 실패 (${status})`);
   }
 
   async function apiJson(path, options = {}) {
@@ -411,10 +420,7 @@
     return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
   }
 
-  function getPropertyKindLabel(sourceType, item) {
-    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") {
-      return PropertyDomain.getSourceBucketLabel(item || { sourceType });
-    }
+  function getPropertyKindLabel(sourceType) {
     const map = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
     return map[String(sourceType || "").trim()] || "일반";
   }
@@ -496,7 +502,7 @@
             <div class="daily-report-tree-col">
               ${groups.map((group) => {
                 const item = group.item;
-                const kindLabel = getPropertyKindLabel(item?.sourceType, item);
+                const kindLabel = getPropertyKindLabel(item?.sourceType);
                 const kindClass = getPropertyKindClass(item?.sourceType);
                 const title = buildDailyReportPropertyTitle(group);
                 const actions = [
@@ -533,7 +539,7 @@
       await refreshDailyReportSummary({ force: true });
       setGlobalMsg("");
     } catch (err) {
-      setGlobalMsg(err?.message || "일일업무일지 조회 실패");
+      setGlobalMsg(toUserErrorMessage(err, "일일업무일지 조회 실패"));
     }
   }
 
@@ -671,7 +677,7 @@
       });
       els.newPropertyForm.addEventListener("submit", (e) => {
         e.preventDefault();
-        submitNewProperty().catch((err) => setNpmMsg(err?.message || "등록 실패"));
+        submitNewProperty().catch((err) => setNpmMsg(toUserErrorMessage(err, "등록 실패")));
       });
     }
 
@@ -1043,15 +1049,6 @@
   }
 
   function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
-    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === "function") {
-      return PropertyDomain.buildRegistrationDbRowForExisting(existingItem, incomingRow, context, {
-        assignIfEmpty: !!options.assignIfEmpty,
-        copyFields: ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo","item_no","assignee_id","source_type","submitter_type"],
-        labels: REG_LOG_LABELS,
-        amountFields: ["priceMain"],
-        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
-      });
-    }
     const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
     const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
@@ -1062,22 +1059,51 @@
     });
     if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
     if (!hasMeaningfulValue(nextRow.item_no) && hasMeaningfulValue(incomingRow?.item_no)) nextRow.item_no = incomingRow.item_no;
+
+    const normalizeSource = (value) => (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
+      ? PropertyDomain.normalizeSourceType(value, { fallback: "" })
+      : String(value || "").trim().toLowerCase();
+    const normalizeSubmitter = (value) => {
+      const v = String(value || "").trim().toLowerCase();
+      if (v === "realtor") return "realtor";
+      if (v === "owner" || v === "general") return "owner";
+      return "";
+    };
+    const sourcePriority = { "": 0, general: 1, realtor: 2, onbid: 3, auction: 4 };
+
+    const currentSourceType = normalizeSource(nextRow.source_type || nextRow.sourceType || base?.raw?.source_type || base?.raw?.sourceType || "");
+    const incomingSourceType = normalizeSource(incomingRow?.source_type || incomingRow?.sourceType || incomingRow?.raw?.source_type || incomingRow?.raw?.sourceType || "");
+    if (hasMeaningfulValue(incomingRow?.source_type) && sourcePriority[incomingSourceType] > sourcePriority[currentSourceType]) {
+      nextRow.source_type = incomingSourceType;
+    } else if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) {
+      nextRow.source_type = incomingRow.source_type;
+    }
+
+    const currentSubmitterType = normalizeSubmitter(nextRow.submitter_type || nextRow.submitterType || base?.raw?.submitter_type || base?.raw?.submitterType || "");
+    const incomingSubmitterType = normalizeSubmitter(incomingRow?.submitter_type || incomingRow?.submitterType || incomingRow?.raw?.submitter_type || incomingRow?.raw?.submitterType || "");
+    if (incomingSubmitterType === "realtor" || (!hasMeaningfulValue(nextRow.submitter_type) && incomingSubmitterType)) {
+      nextRow.submitter_type = incomingSubmitterType;
+    }
+
     const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
+    if (incomingSourceType) {
+      mergedRaw.sourceType = incomingSourceType;
+      mergedRaw.source_type = incomingSourceType;
+    }
+    if (incomingSubmitterType) {
+      mergedRaw.submitterType = incomingSubmitterType;
+      mergedRaw.submitter_type = incomingSubmitterType;
+    }
+
     nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergedRaw, context, changes), nextSnapshot);
     return { row: nextRow, changes };
   }
 
   function buildRegistrationDbRowForCreate(row, context) {
-    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForCreate === "function") {
-      return PropertyDomain.buildRegistrationDbRowForCreate(row, context);
-    }
     return { ...(row || {}), raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row) };
   }
 
   function findExistingPropertyByRegistrationKey(data, items) {
-    if (PropertyDomain && typeof PropertyDomain.findExistingPropertyByRegistrationKey === "function") {
-      return PropertyDomain.findExistingPropertyByRegistrationKey(data, items);
-    }
     const targetKey = buildRegistrationMatchKey(data);
     if (!targetKey) return null;
     for (const item of Array.isArray(items) ? items : []) {
@@ -1302,13 +1328,9 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
     const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
-    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === "function"
-      ? PropertyDomain.getSourceBucket(p)
-      : p.sourceType;
-    const kindLabel = PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function"
-      ? PropertyDomain.getSourceBucketLabel(p)
-      : ({ auction: "경매", onbid: "공매", realtor: "중개", general: "일반" }[p.sourceType] || "일반");
+    const kindLabel = kindMap[p.sourceType] || "일반";
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
     const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
     const rate = calcRate(p.priceMain, p.lowprice);
@@ -1338,7 +1360,7 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + (kindClass[bucket === "realtor_naver" || bucket === "realtor_direct" ? "realtor" : bucket] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
       "<td>" + esc(p.address || "-") + "</td>" +
       "<td>" + esc(p.assetType || "-") + "</td>" +
       "<td>" + esc(p.floor || "-") + "</td>" +
@@ -1432,15 +1454,12 @@
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
-    const kindLabel = PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function"
-      ? PropertyDomain.getSourceBucketLabel(item)
-      : ({ auction: "경매", onbid: "공매", realtor: "중개", general: "일반" }[item.sourceType] || "일반");
-
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", kindLabel);
+    setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
@@ -1591,7 +1610,7 @@
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
     } catch (err) {
-      if (els.agEditMsg) els.agEditMsg.textContent = err?.message || "저장 실패";
+      if (els.agEditMsg) els.agEditMsg.textContent = toUserErrorMessage(err, "저장 실패");
     } finally {
       if (els.agEditSave) els.agEditSave.disabled = false;
     }
@@ -1619,7 +1638,7 @@
       alert("비밀번호가 변경되었습니다.");
       closePwdModal();
     } catch (err) {
-      if (els.pwdMsg) els.pwdMsg.textContent = err?.message || "변경 실패";
+      if (els.pwdMsg) els.pwdMsg.textContent = toUserErrorMessage(err, "변경 실패");
     }
   }
 
