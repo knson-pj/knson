@@ -15,6 +15,7 @@
       K: rt.K,
       api: rt.adminApi,
       utils: rt.utils || {},
+      PropertyDomain: rt.PropertyDomain || window.KNSN_PROPERTY_DOMAIN || null,
     };
   }
 
@@ -95,7 +96,7 @@
   };
 
   mod.submitNewProperty = async function submitNewProperty() {
-    const { state, els, K, api, utils } = ctx();
+    const { state, els, K, api, utils, PropertyDomain } = ctx();
     const f = els.newPropertyForm;
     if (!f) throw new Error('등록 폼을 찾을 수 없습니다.');
     const fd = new FormData(f);
@@ -103,7 +104,7 @@
     const readNum = (k) => utils.parseFlexibleNumber ? utils.parseFlexibleNumber(fd.get(k)) : null;
 
     const actorName = String(state.session?.user?.name || state.session?.user?.email || '').trim();
-    const submitterKind = utils.PropertyDomain?.normalizeRegistrationSubmitterKind?.(readStr('submitterKind'), { fallback: 'realtor' }) || 'realtor';
+    const submitterKind = PropertyDomain?.normalizeRegistrationSubmitterKind?.(readStr('submitterKind'), { fallback: 'realtor' }) || 'realtor';
     let submitterName = '';
     let submitterPhone = '';
     let realtorName = null;
@@ -121,7 +122,7 @@
       submitterPhone = readStr('submitterPhone');
     }
 
-    const submissionCore = utils.PropertyDomain?.buildRegistrationSubmissionCore?.({
+    const submissionCore = PropertyDomain?.buildRegistrationSubmissionCore?.({
       submitterKind,
       address: readStr('address'),
       assetType: readStr('assetType'),
@@ -139,14 +140,14 @@
       submitterPhone,
       opinion: readStr('opinion') || null,
     }, { actorName }) || null;
-    const validationMessage = utils.PropertyDomain?.validateRegistrationSubmissionCore?.(submissionCore, {
+    const validationMessage = PropertyDomain?.validateRegistrationSubmissionCore?.(submissionCore, {
       requiredMessage: '주소, 세부유형, 매매가는 필수입니다.',
       realtorMessage: '중개사무소명과 휴대폰번호를 입력해 주세요.',
       ownerMessage: '이름과 연락처를 입력해 주세요.',
     }) || '';
     if (validationMessage) throw new Error(validationMessage);
 
-    const payload = utils.PropertyDomain?.buildRegistrationSubmissionPayload?.(submissionCore, {
+    const payload = PropertyDomain?.buildRegistrationSubmissionPayload?.(submissionCore, {
       actorName,
       registrationKind: 'admin',
     }) || null;
