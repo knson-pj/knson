@@ -1362,8 +1362,9 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    const kindLabel = getPropertyKindLabel(p.sourceType, p);
-    const kindCss = getPropertyKindClass(p.sourceType, p);
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
+    const kindLabel = kindMap[p.sourceType] || "일반";
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
     const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
     const rate = calcRate(p.priceMain, p.lowprice);
@@ -1393,7 +1394,7 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + (kindCss || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
       "<td>" + esc(p.address || "-") + "</td>" +
       "<td>" + esc(p.assetType || "-") + "</td>" +
       "<td>" + esc(p.floor || "-") + "</td>" +
@@ -1487,12 +1488,12 @@
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
-    const kindLabel = getPropertyKindLabel(item.sourceType, item);
+    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", kindLabel);
+    setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
@@ -1705,10 +1706,6 @@
     if (v >= 100000000) return (v / 100000000).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1") + " 억원";
     if (v >= 10000) return (v / 10000).toFixed(0) + " 만원";
     return v.toLocaleString() + " 원";
-  }
-
-  function escAttr(v) {
-    return esc(v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function fmtArea(v) {
@@ -2106,6 +2103,176 @@
     let t;
     return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
   }
+
+
+  function formatDailyLogTime(row) {
+    const raw = String(row?.created_at || row?.createdAt || row?.action_at || row?.actionAt || row?.updated_at || row?.updatedAt || row?.action_date || "").trim();
+    if (!raw) return "";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(d);
+  }
+
+  function getDailyActionMeta(actionType) {
+    const key = String(actionType || "").trim();
+    if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
+    if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장조사", title: "현장조사" };
+    if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일 이슈사항" };
+    if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
+    return { badgeClass: "is-edit", badgeLabel: "업무", title: "업무 수정" };
+  }
+
+  function buildDailyReportPropertyMeta(group) {
+    const item = group?.item || {};
+    const row = group?.row || {};
+    const assetType = String(item?.assetType || row?.property_asset_type || row?.asset_type || "").trim();
+    const floor = String(item?.floor || row?.property_floor || row?.floor || "").trim();
+    const areaValue = item?.exclusivearea ?? row?.property_exclusive_area ?? row?.exclusive_area ?? null;
+    const areaText = areaValue != null && areaValue !== "" ? `${fmtArea(areaValue)}평` : "";
+    const itemNo = String(item?.itemNo || row?.property_item_no || row?.item_no || "").trim();
+    return [assetType, floor, areaText, itemNo].filter(Boolean).join(' · ') || '세부 정보 없음';
+  }
+
+  function renderDailyReport() {
+    const counts = state.dailyReport?.counts || emptyDailyReportCounts();
+    const total = Number(counts.total || 0);
+    if (els.dailyReportTotal) els.dailyReportTotal.textContent = String(total);
+    if (els.dailyReportLead) {
+      els.dailyReportLead.textContent = `금일은 총 ${total}건 정보를 수정등록 하셨네요.`;
+    }
+
+    const actorEl = document.getElementById('agWorkActors');
+    const propertiesEl = document.getElementById('agWorkProperties');
+    const logsEl = document.getElementById('agWorkLogs');
+    const emptyEl = document.getElementById('agWorkEmpty');
+    const statsEl = document.getElementById('agWorkStats');
+    const dateInput = document.getElementById('agWorkDate');
+    if (dateInput && !dateInput.value) dateInput.value = state.dailyReport?.dateKey || getTodayDateKey();
+
+    const groups = groupDailyReportItems(state.dailyReport?.items || []);
+    const actorName = esc(getDailyReportActorName());
+    const propertyCount = groups.length;
+    const updateCount = total;
+
+    if (actorEl) {
+      actorEl.innerHTML = `
+        <button type="button" class="workmgmt-actor-card is-active">
+          <div class="workmgmt-actor-head">
+            <div class="workmgmt-actor-avatar">${actorName.slice(0,1) || '담'}</div>
+            <div>
+              <div class="workmgmt-actor-name">${actorName}</div>
+              <div class="workmgmt-actor-sub">담당자 업무 현황</div>
+            </div>
+          </div>
+          <div class="workmgmt-actor-chips">
+            <span class="workmgmt-chip is-soft">${propertyCount} 관리 물건</span>
+            <span class="workmgmt-chip is-brand">${updateCount} 업데이트</span>
+          </div>
+        </button>`;
+    }
+
+    if (propertiesEl) {
+      if (!groups.length) {
+        propertiesEl.innerHTML = '<div class="workmgmt-empty">표시할 관리 물건이 없습니다.</div>';
+      } else {
+        propertiesEl.innerHTML = groups.map((group) => {
+          const item = group.item || {};
+          const row = group.row || {};
+          const kindTarget = item && Object.keys(item).length ? item : row;
+          const bucketLabel = getPropertyKindLabel(item?.sourceType || row?.property_source_type, kindTarget);
+          const bucketClassRaw = getPropertyKindClass(item?.sourceType || row?.property_source_type, kindTarget);
+          const bucketClass = /auction/.test(bucketClassRaw) ? 'is-auction' : /onbid/.test(bucketClassRaw) ? 'is-onbid' : /general/.test(bucketClassRaw) ? 'is-general' : 'is-realtor';
+          const title = esc(String(item?.address || row?.property_address || '-').trim());
+          const meta = esc(buildDailyReportPropertyMeta(group));
+          const actionSummary = [];
+          if (group.counts.rights_analysis) actionSummary.push(`권리 ${group.counts.rights_analysis}건`);
+          if (group.counts.site_inspection) actionSummary.push(`현장 ${group.counts.site_inspection}건`);
+          if (group.counts.daily_issue) actionSummary.push(`이슈 ${group.counts.daily_issue}건`);
+          if (group.counts.new_property) actionSummary.push(`신규 ${group.counts.new_property}건`);
+          const totalActions = Object.values(group.counts).reduce((sum, v) => sum + Number(v || 0), 0);
+          const canOpen = !!group.item;
+          return `
+            <button type="button" class="workmgmt-property-card${canOpen ? '' : '" disabled="disabled'}" data-daily-prop-key="${escAttr(group.key)}">
+              <div class="workmgmt-property-body is-compact">
+                <div class="workmgmt-property-top">
+                  <span class="workmgmt-property-type ${bucketClass}">${esc(bucketLabel)}</span>
+                  <span class="workmgmt-property-mark">${canOpen ? '●' : '○'}</span>
+                </div>
+                <div class="workmgmt-property-title">${title}</div>
+                <div class="workmgmt-property-address">${meta}</div>
+                <div class="workmgmt-property-meta-row">
+                  <span class="workmgmt-property-meta-text">업무 ${totalActions}건</span>
+                  <span class="workmgmt-property-amount">${esc(actionSummary.join(' · ') || '업데이트 없음')}</span>
+                </div>
+              </div>
+            </button>`;
+        }).join('');
+        propertiesEl.querySelectorAll('[data-daily-prop-key]').forEach((btn) => {
+          const key = String(btn.getAttribute('data-daily-prop-key') || '');
+          const group = groups.find((entry) => entry.key === key);
+          if (group?.item) {
+            btn.addEventListener('click', () => openEditModal(group.item));
+          }
+        });
+      }
+    }
+
+    const rows = Array.isArray(state.dailyReport?.items) ? [...state.dailyReport.items] : [];
+    rows.sort((a, b) => String(b?.created_at || b?.updated_at || b?.action_date || '').localeCompare(String(a?.created_at || a?.updated_at || a?.action_date || '')));
+    if (logsEl) {
+      if (!rows.length) {
+        logsEl.innerHTML = '';
+      } else {
+        logsEl.innerHTML = rows.map((row) => {
+          const meta = getDailyActionMeta(row?.action_type);
+          const matched = findPropertyForActivityRow(row) || null;
+          const descBase = matched ? buildDailyReportPropertyTitle({ item: matched, row }) : String(row?.property_address || row?.property_item_no || '-').trim();
+          const desc = row?.action_type === 'daily_issue' && row?.note ? `${row.note}
+${descBase}` : descBase;
+          return `
+            <article class="workmgmt-log-card">
+              <div class="workmgmt-log-top">
+                <span class="workmgmt-log-badge ${meta.badgeClass}">${meta.badgeLabel}</span>
+                <span class="workmgmt-log-time">${esc(formatDailyLogTime(row) || '')}</span>
+              </div>
+              <div class="workmgmt-log-title">${esc(meta.title)}</div>
+              <div class="workmgmt-log-desc">${esc(desc || '')}</div>
+            </article>`;
+        }).join('');
+      }
+    }
+
+    if (emptyEl) emptyEl.classList.toggle('hidden', rows.length > 0);
+
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <article class="workmgmt-stat-card is-brand"><div class="workmgmt-stat-label">총 업무</div><div class="workmgmt-stat-value">${Number(total || 0)}</div></article>
+        <article class="workmgmt-stat-card is-soft"><div class="workmgmt-stat-label">권리분석</div><div class="workmgmt-stat-value">${Number(counts.rightsAnalysis || 0)}</div></article>
+        <article class="workmgmt-stat-card is-warm"><div class="workmgmt-stat-label">현장조사</div><div class="workmgmt-stat-value">${Number(counts.siteInspection || 0)}</div></article>
+        <article class="workmgmt-stat-card is-danger"><div class="workmgmt-stat-label">신규등록</div><div class="workmgmt-stat-value">${Number(counts.newProperty || 0)}</div></article>`;
+    }
+  }
+
+  async function refreshAgentDailyReportView(options = {}) {
+    const dateInput = document.getElementById('agWorkDate');
+    const dateKey = String(options.dateKey || dateInput?.value || getTodayDateKey()).trim() || getTodayDateKey();
+    if (dateInput) dateInput.value = dateKey;
+    try {
+      await refreshDailyReportSummary({ force: options.force !== false, dateKey });
+      setGlobalMsg('');
+    } catch (err) {
+      setGlobalMsg(toUserErrorMessage(err, '일일업무일지 조회 실패'));
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    const dateInput = document.getElementById('agWorkDate');
+    const refreshBtn = document.getElementById('btnAgWorkRefresh');
+    if (dateInput && !dateInput.value) dateInput.value = getTodayDateKey();
+    if (refreshBtn) refreshBtn.addEventListener('click', function(){ refreshAgentDailyReportView({ force:true }); });
+    if (dateInput) dateInput.addEventListener('change', function(){ refreshAgentDailyReportView({ force:true, dateKey: this.value }); });
+    window.refreshAgentDailyReportView = function(){ refreshAgentDailyReportView({ force:true }); };
+  });
 
   // ── Start ──
   if (document.readyState === "loading") {
