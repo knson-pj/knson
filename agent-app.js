@@ -411,31 +411,17 @@
     return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
   }
 
-  function resolvePropertyKindBucket(input, directFlag) {
-    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") {
-      if (input && typeof input === "object") return PropertyDomain.getSourceBucket(input);
-      const normalized = PropertyDomain.normalizeSourceType?.(input, { fallback: "general" }) || String(input || "").trim() || "general";
-      if (normalized === "realtor" && typeof directFlag === "boolean") return directFlag ? "realtor_direct" : "realtor_naver";
-      return normalized;
+  function getPropertyKindLabel(sourceType, item) {
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") {
+      return PropertyDomain.getSourceBucketLabel(item || { sourceType });
     }
-    const sourceType = String(input || "").trim();
-    if (sourceType === "realtor" && typeof directFlag === "boolean") return directFlag ? "realtor_direct" : "realtor_naver";
-    return sourceType || "general";
+    const map = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    return map[String(sourceType || "").trim()] || "일반";
   }
 
-  function getPropertyKindLabel(input, directFlag) {
-    const bucket = resolvePropertyKindBucket(input, directFlag);
-    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") return PropertyDomain.getSourceBucketLabel(bucket);
-    const map = { auction: "경매", onbid: "공매", realtor_naver: "네이버중개", realtor_direct: "일반중개", realtor: "중개", general: "일반" };
-    return map[String(bucket || "").trim()] || "일반";
-  }
-
-  function getPropertyKindClass(input, directFlag) {
-    const bucket = resolvePropertyKindBucket(input, directFlag);
-    if (bucket === "auction") return "kind-auction";
-    if (bucket === "onbid") return "kind-gongmae";
-    if (bucket === "realtor_naver" || bucket === "realtor_direct" || bucket === "realtor") return "kind-realtor";
-    return "kind-general";
+  function getPropertyKindClass(sourceType) {
+    const map = { auction: "auction", onbid: "onbid", realtor: "realtor", general: "general" };
+    return map[String(sourceType || "").trim()] || "general";
   }
 
   function findPropertyForActivityRow(row) {
@@ -510,8 +496,8 @@
             <div class="daily-report-tree-col">
               ${groups.map((group) => {
                 const item = group.item;
-                const kindLabel = getPropertyKindLabel(item);
-                const kindClass = getPropertyKindClass(item);
+                const kindLabel = getPropertyKindLabel(item?.sourceType, item);
+                const kindClass = getPropertyKindClass(item?.sourceType);
                 const title = buildDailyReportPropertyTitle(group);
                 const actions = [
                   ["rights_analysis", "권리분석"],
@@ -1316,8 +1302,13 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    const kindLabel = getPropertyKindLabel(p);
-    const kindClass = getPropertyKindClass(p);
+    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
+    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === "function"
+      ? PropertyDomain.getSourceBucket(p)
+      : p.sourceType;
+    const kindLabel = PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function"
+      ? PropertyDomain.getSourceBucketLabel(p)
+      : ({ auction: "경매", onbid: "공매", realtor: "중개", general: "일반" }[p.sourceType] || "일반");
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
     const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
     const rate = calcRate(p.priceMain, p.lowprice);
@@ -1347,7 +1338,7 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
+      '<td><span class="kind-text ' + (kindClass[bucket === "realtor_naver" || bucket === "realtor_direct" ? "realtor" : bucket] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
       "<td>" + esc(p.address || "-") + "</td>" +
       "<td>" + esc(p.assetType || "-") + "</td>" +
       "<td>" + esc(p.floor || "-") + "</td>" +
@@ -1441,11 +1432,15 @@
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
+    const kindLabel = PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function"
+      ? PropertyDomain.getSourceBucketLabel(item)
+      : ({ auction: "경매", onbid: "공매", realtor: "중개", general: "일반" }[item.sourceType] || "일반");
+
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", getPropertyKindLabel(item));
+    setVal(f, "sourceType", kindLabel);
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
@@ -1925,31 +1920,18 @@
       let savedPropertyId = null;
       let savedIdentityKey = "";
       let activityError = "";
-      const savePlan = PropertyDomain && typeof PropertyDomain.buildRegistrationPersistencePlan === "function"
-        ? PropertyDomain.buildRegistrationPersistencePlan(existing || null, payload, regContext, {
-            assignIfEmpty: true,
-            labels: PropertyDomain.REGISTRATION_LOG_LABELS_AGENT,
-            createMessage: "등록되었습니다.",
-            mergeChangedMessage: "기존 물건을 갱신하고 등록 LOG를 추가했습니다.",
-            mergeUnchangedMessage: "동일 물건이 있어 기존 물건에 반영했습니다.",
-          })
-        : null;
       if (existing) {
-        const merged = savePlan || buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
-        const patchRow = merged?.row || null;
-        if (!patchRow) throw new Error("등록 병합 데이터를 준비하지 못했습니다.");
+        const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
         const saveRes = await apiJson(`/properties`, {
           method: "PATCH",
-          json: { targetId: existing.id || existing.globalId, patch: patchRow },
+          json: { targetId: existing.id || existing.globalId, patch: merged.row },
         });
         const updated = saveRes?.item || null;
         savedPropertyId = updated?.id || existing.id || existing.globalId || null;
-        savedIdentityKey = patchRow?.raw?.registrationIdentityKey || existing?._raw?.raw?.registrationIdentityKey || buildRegistrationMatchKey(patchRow) || "";
-        setNpmMsg(merged?.message || ((merged?.changes || []).length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다."), false);
+        savedIdentityKey = merged.row?.raw?.registrationIdentityKey || existing?._raw?.raw?.registrationIdentityKey || buildRegistrationMatchKey(merged.row) || "";
+        setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
       } else {
-        const createPlan = savePlan || { row: buildRegistrationDbRowForCreate(payload, regContext), message: "등록되었습니다." };
-        const createRow = createPlan?.row || null;
-        if (!createRow) throw new Error("등록 데이터를 준비하지 못했습니다.");
+        const createRow = buildRegistrationDbRowForCreate(payload, regContext);
         const saveRes = await apiJson(`/properties`, {
           method: "POST",
           json: { row: createRow },
@@ -1957,7 +1939,7 @@
         const inserted = saveRes?.item || null;
         savedPropertyId = inserted?.id || null;
         savedIdentityKey = createRow?.raw?.registrationIdentityKey || buildRegistrationMatchKey(createRow) || "";
-        setNpmMsg(createPlan?.message || "등록되었습니다.", false);
+        setNpmMsg("등록되었습니다.", false);
       }
       try {
         await recordDailyReportEntries(buildActivityLogEntries(["newProperty"], payload, {

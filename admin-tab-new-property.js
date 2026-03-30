@@ -167,22 +167,15 @@
       if (sb) {
         await utils.ensureAuxiliaryPropertiesForAdmin?.();
         const existing = utils.findExistingPropertyByRegistrationKey?.(payload.raw, utils.getAuxiliaryPropertiesSnapshot?.());
-        const savePlan = PropertyDomain?.buildRegistrationPersistencePlan?.(existing || null, payload, regContext, {
-          labels: PropertyDomain?.REGISTRATION_LOG_LABELS_ADMIN,
-          createMessage: '등록되었습니다.',
-          mergeChangedMessage: '기존 물건을 갱신하고 등록 LOG를 추가했습니다.',
-          mergeUnchangedMessage: '동일 물건이 있어 기존 물건에 반영했습니다.',
-        }) || null;
         if (existing) {
-          const merged = savePlan || utils.buildRegistrationDbRowForExisting?.(existing, payload, regContext);
+          const merged = utils.buildRegistrationDbRowForExisting?.(existing, payload, regContext);
           if (!merged?.row) throw new Error('등록 병합 데이터를 준비하지 못했습니다.');
           await utils.updatePropertyRowResilient?.(sb, existing.id || existing.globalId, merged.row);
-          setNpmMsgLocal(els, merged?.message || (merged.changes?.length ? '기존 물건을 갱신하고 등록 LOG를 추가했습니다.' : '동일 물건이 있어 기존 물건에 반영했습니다.'), false);
+          setNpmMsgLocal(els, merged.changes?.length ? '기존 물건을 갱신하고 등록 LOG를 추가했습니다.' : '동일 물건이 있어 기존 물건에 반영했습니다.', false);
         } else {
-          const createPlan = savePlan || { row: utils.buildRegistrationDbRowForCreate?.(payload, regContext), message: '등록되었습니다.' };
-          if (!createPlan?.row) throw new Error('등록 데이터를 준비하지 못했습니다.');
-          await utils.insertPropertyRowResilient?.(sb, createPlan.row);
-          setNpmMsgLocal(els, createPlan.message || '등록되었습니다.', false);
+          const row = utils.buildRegistrationDbRowForCreate?.(payload, regContext);
+          await utils.insertPropertyRowResilient?.(sb, row);
+          setNpmMsgLocal(els, '등록되었습니다.', false);
         }
       } else {
         await api('/public-listings', { method: 'POST', body: payload });
