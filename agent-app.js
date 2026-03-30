@@ -1050,8 +1050,42 @@
     });
     if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
     if (!hasMeaningfulValue(nextRow.item_no) && hasMeaningfulValue(incomingRow?.item_no)) nextRow.item_no = incomingRow.item_no;
-    if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) nextRow.source_type = incomingRow.source_type;
+
+    const normalizeSource = (value) => (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
+      ? PropertyDomain.normalizeSourceType(value, { fallback: "" })
+      : String(value || "").trim().toLowerCase();
+    const normalizeSubmitter = (value) => {
+      const v = String(value || "").trim().toLowerCase();
+      if (v === "realtor") return "realtor";
+      if (v === "owner" || v === "general") return "owner";
+      return "";
+    };
+    const sourcePriority = { "": 0, general: 1, realtor: 2, onbid: 3, auction: 4 };
+
+    const currentSourceType = normalizeSource(nextRow.source_type || nextRow.sourceType || base?.raw?.source_type || base?.raw?.sourceType || "");
+    const incomingSourceType = normalizeSource(incomingRow?.source_type || incomingRow?.sourceType || incomingRow?.raw?.source_type || incomingRow?.raw?.sourceType || "");
+    if (hasMeaningfulValue(incomingRow?.source_type) && sourcePriority[incomingSourceType] > sourcePriority[currentSourceType]) {
+      nextRow.source_type = incomingSourceType;
+    } else if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) {
+      nextRow.source_type = incomingRow.source_type;
+    }
+
+    const currentSubmitterType = normalizeSubmitter(nextRow.submitter_type || nextRow.submitterType || base?.raw?.submitter_type || base?.raw?.submitterType || "");
+    const incomingSubmitterType = normalizeSubmitter(incomingRow?.submitter_type || incomingRow?.submitterType || incomingRow?.raw?.submitter_type || incomingRow?.raw?.submitterType || "");
+    if (incomingSubmitterType === "realtor" || (!hasMeaningfulValue(nextRow.submitter_type) && incomingSubmitterType)) {
+      nextRow.submitter_type = incomingSubmitterType;
+    }
+
     const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
+    if (incomingSourceType) {
+      mergedRaw.sourceType = incomingSourceType;
+      mergedRaw.source_type = incomingSourceType;
+    }
+    if (incomingSubmitterType) {
+      mergedRaw.submitterType = incomingSubmitterType;
+      mergedRaw.submitter_type = incomingSubmitterType;
+    }
+
     nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergedRaw, context, changes), nextSnapshot);
     return { row: nextRow, changes };
   }
@@ -1853,9 +1887,11 @@
     }
 
     const currentUserId = String(state.session?.user?.id || "").trim() || null;
+    const submitterType = submitterKind === "realtor" ? "realtor" : "owner";
     const payload = {
       source_type: sourceType,
       is_general: true,
+      submitter_type: submitterType,
       address,
       asset_type: assetType,
       price_main: priceMain,
@@ -1870,7 +1906,9 @@
       memo: readStr("opinion") || null,
       raw: {
         sourceType,
-        submitterType: submitterKind === "realtor" ? "realtor" : "owner",
+        source_type: sourceType,
+        submitterType,
+        submitter_type: submitterType,
         address, assetType, priceMain,
         floor: readStr("floor") || null,
         totalfloor: readStr("totalfloor") || null,
