@@ -375,10 +375,19 @@
     return fallback;
   }
 
+  function normalizeSubmitterType(rawValue, options = {}) {
+    const fallback = String(options.fallback || "").trim().toLowerCase();
+    const value = String(rawValue || "").trim().toLowerCase();
+    if (!value) return fallback;
+    if (["realtor", "broker", "agent", "중개", "중개사", "공인중개사"].includes(value)) return "realtor";
+    if (["owner", "general", "user", "person", "일반", "소유", "소유자", "본인"].includes(value)) return "owner";
+    return fallback;
+  }
+
   function normalizePublicSourceType(rawValue, submitterType) {
-    const submitter = String(submitterType || "").trim().toLowerCase();
+    const submitter = normalizeSubmitterType(submitterType, { fallback: "" });
     if (submitter === "realtor") return "realtor";
-    if (submitter === "owner" || submitter === "general") return "general";
+    if (submitter === "owner") return "general";
     return normalizeSourceType(rawValue, { fallback: "general" });
   }
 
@@ -388,6 +397,72 @@
 
   function isAuctionLikeSource(sourceType) {
     return normalizeSourceType(sourceType, { fallback: "" }) === "auction";
+  }
+
+  function isGeneralSourceType(sourceType) {
+    return normalizeSourceType(sourceType, { fallback: "" }) === "general";
+  }
+
+  function isDirectRealtorSubmission(item) {
+    const sourceType = normalizeSourceType(
+      item?.sourceType || item?.source_type || item?.source || item?.category || item?.raw?.sourceType || item?.raw?.source_type || "",
+      { fallback: "general" }
+    );
+    if (sourceType !== "realtor") return false;
+    const submitterType = normalizeSubmitterType(
+      item?.submitterType || item?.submitter_type || item?.raw?.submitterType || item?.raw?.submitter_type || "",
+      { fallback: "" }
+    );
+    const rawSource = String(item?.rawSource || item?.raw_source || item?.raw?.sourceType || item?.raw?.source_type || item?.source || item?.category || "").trim().toLowerCase();
+    if (["realtor_direct"].includes(rawSource)) return true;
+    if (["realtor_naver", "naver", "broker"].includes(rawSource)) return false;
+    if (submitterType === "realtor") return true;
+    const sourceUrl = pickFirstText(item?.sourceUrl, item?.source_url, item?.raw?.sourceUrl, item?.raw?.source_url, item?.raw?.url, item?.raw?.["바로가기(엑셀)"], item?.raw?.["매물URL"], "");
+    if (sourceUrl) return false;
+    const submitterName = pickFirstText(item?.submitterName, item?.submitter_name, item?.raw?.submitterName, item?.raw?.submitter_name, item?.brokerOfficeName, item?.broker_office_name, item?.raw?.brokerOfficeName, item?.raw?.broker_office_name, "");
+    return !!submitterName;
+  }
+
+  function getSourceBucket(item) {
+    const sourceType = normalizeSourceType(item?.sourceType || item?.source_type || item?.source || item?.category || item?.raw?.sourceType || item?.raw?.source_type || "", { fallback: "general" });
+    if (sourceType === "realtor") return isDirectRealtorSubmission(item) ? "realtor_direct" : "realtor_naver";
+    if (["auction", "onbid", "general"].includes(sourceType)) return sourceType;
+    return "general";
+  }
+
+  function getSourceTypeLabel(sourceType) {
+    const normalized = normalizeSourceType(sourceType, { fallback: "general" });
+    if (normalized === "auction") return "경매";
+    if (normalized === "onbid") return "공매";
+    if (normalized === "realtor") return "중개";
+    return "일반";
+  }
+
+  function getSourceBucketLabel(bucket) {
+    const key = String(bucket || "").trim();
+    if (key === "auction") return "경매";
+    if (key === "onbid") return "공매";
+    if (key === "realtor_naver") return "네이버중개";
+    if (key === "realtor_direct") return "일반중개";
+    if (key === "realtor") return "중개";
+    return "일반";
+  }
+
+  function matchesSourceBucket(item, activeCard) {
+    const target = String(activeCard || "").trim();
+    if (!target || target === "all") return true;
+    return getSourceBucket(item) === target;
+  }
+
+  function summarizeSourceBuckets(rows) {
+    const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+    const list = Array.isArray(rows) ? rows : [];
+    for (const item of list) {
+      const bucket = getSourceBucket(item);
+      summary.total += 1;
+      if (bucket in summary) summary[bucket] += 1;
+    }
+    return summary;
   }
 
   return {
@@ -420,8 +495,16 @@
     REGISTRATION_LOG_LABELS_AGENT,
     REGISTRATION_LOG_LABELS_PUBLIC,
     normalizeSourceType,
+    normalizeSubmitterType,
     normalizePublicSourceType,
     isBrokerLikeSource,
     isAuctionLikeSource,
+    isGeneralSourceType,
+    isDirectRealtorSubmission,
+    getSourceBucket,
+    getSourceTypeLabel,
+    getSourceBucketLabel,
+    matchesSourceBucket,
+    summarizeSourceBuckets,
   };
 });

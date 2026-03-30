@@ -132,7 +132,8 @@
 
     const payload = {
       source_type: sourceType,
-      is_general: true,
+      is_general: sourceType === 'general',
+      submitter_type: submitterKind === 'realtor' ? 'realtor' : 'owner',
       address,
       asset_type: assetType,
       price_main: priceMain,

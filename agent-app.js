@@ -1113,11 +1113,9 @@
   function normalizeProperty(item) {
     const raw = item?.raw && typeof item.raw === "object" ? item.raw : {};
     const rawSource = (item.sourceType || item.source || item.category || item.source_type || raw.sourceType || raw.source_type || "").toString().trim().toLowerCase();
-    const sourceType =
-      ["auction", "courtauction"].includes(rawSource) ? "auction" :
-      ["gongmae", "public", "onbid"].includes(rawSource) ? "onbid" :
-      ["realtor", "realtor_naver", "realtor_direct", "naver", "broker", "중개"].includes(rawSource) ? "realtor" :
-      "general";
+    const sourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
+      ? PropertyDomain.normalizeSourceType(rawSource, { fallback: "general" })
+      : "general";
 
     return {
       id: String(item.id || item.global_id || ""),
@@ -1140,15 +1138,17 @@
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, ""),
       opinion: firstText(item.opinion, item.memo, raw.opinion, raw.memo, ""),
       createdAt: firstText(item.date, item.date_uploaded, item.createdAt, raw.date, ""),
-      isDirectSubmission: (() => {
-        const submitterType = firstText(item.submitter_type, item.submitterType, raw.submitter_type, raw.submitterType, "").toLowerCase();
-        const sourceUrlValue = firstText(item.source_url, item.sourceUrl, raw.source_url, raw.sourceUrl, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
-        const submitterNameValue = firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, "");
-        if (sourceType !== "realtor") return false;
-        if (submitterType === "realtor") return true;
-        if (sourceUrlValue) return false;
-        return !!submitterNameValue;
-      })(),
+      isDirectSubmission: (PropertyDomain && typeof PropertyDomain.isDirectRealtorSubmission === "function")
+        ? PropertyDomain.isDirectRealtorSubmission({
+            sourceType,
+            rawSource,
+            submitterType: firstText(item.submitter_type, item.submitterType, raw.submitter_type, raw.submitterType, ""),
+            sourceUrl: firstText(item.source_url, item.sourceUrl, raw.source_url, raw.sourceUrl, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
+            submitterName: firstText(item.submitter_name, item.submitterName, raw.submitter_name, raw.submitterName, ""),
+            brokerOfficeName: firstText(item.broker_office_name, item.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, ""),
+            raw,
+          })
+        : false,
       _raw: item,
     };
   }
@@ -1171,15 +1171,11 @@
   }
 
   function countSourceSummary(rows) {
+    if (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function") {
+      return PropertyDomain.summarizeSourceBuckets(rows);
+    }
     const list = Array.isArray(rows) ? rows : [];
-    return {
-      total: list.length,
-      auction: list.filter((r) => r.sourceType === "auction").length,
-      onbid: list.filter((r) => r.sourceType === "onbid").length,
-      realtor_naver: list.filter((r) => r.sourceType === "realtor" && !r.isDirectSubmission).length,
-      realtor_direct: list.filter((r) => r.sourceType === "realtor" && r.isDirectSubmission).length,
-      general: list.filter((r) => r.sourceType === "general").length,
-    };
+    return { total: list.length, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
   }
 
   function renderSummary() {
@@ -1890,7 +1886,7 @@
     const submitterType = submitterKind === "realtor" ? "realtor" : "owner";
     const payload = {
       source_type: sourceType,
-      is_general: true,
+      is_general: sourceType === "general",
       submitter_type: submitterType,
       address,
       asset_type: assetType,

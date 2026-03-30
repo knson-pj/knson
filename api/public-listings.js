@@ -175,8 +175,8 @@ function buildRegisterLogContext(route, actor = '공개 등록') {
 }
 
 function buildPayloadFromBody(body = {}) {
-  const sourceType = String(body.sourceType || 'general').trim().toLowerCase() === 'realtor' ? 'realtor' : 'general';
-  const submitterType = String(body.submitterType || (sourceType === 'realtor' ? 'realtor' : 'owner')).trim().toLowerCase() === 'realtor' ? 'realtor' : 'owner';
+  const sourceType = PropertyDomain.normalizePublicSourceType(body.sourceType || 'general', body.submitterType || '');
+  const submitterType = PropertyDomain.normalizeSubmitterType(body.submitterType || (sourceType === 'realtor' ? 'realtor' : 'owner'), { fallback: sourceType === 'realtor' ? 'realtor' : 'owner' }) || (sourceType === 'realtor' ? 'realtor' : 'owner');
   const realtorCell = normalizePhone(body.realtorCell || body.realtorcell || body.submitterPhone || body.phone || '');
   const ownerPhone = normalizePhone(body.submitterPhone || body.phone || '');
   const submitterPhone = submitterType === 'realtor' ? realtorCell : ownerPhone;
@@ -230,7 +230,7 @@ function buildRawForCreate(payload, context) {
 function buildSupabaseRowForCreate(payload, context) {
   return {
     source_type: payload.sourceType,
-    is_general: true,
+    is_general: payload.sourceType === 'general',
     status: 'review',
     address: payload.address,
     asset_type: payload.assetType,
@@ -263,6 +263,8 @@ function buildSupabasePatchForExisting(existingRow, payload, context) {
   if (hasMeaningfulValue(payload.useApproval)) patch.use_approval = payload.useApproval;
   if (hasMeaningfulValue(payload.priceMain)) patch.price_main = payload.priceMain;
   if (hasMeaningfulValue(payload.opinion)) patch.memo = payload.opinion;
+  if (hasMeaningfulValue(payload.sourceType)) patch.source_type = payload.sourceType;
+  patch.is_general = payload.sourceType === 'general';
   if (hasMeaningfulValue(payload.submitterType)) patch.submitter_type = payload.submitterType;
   if (hasMeaningfulValue(payload.submitterName)) patch.submitter_name = payload.submitterName;
   if (hasMeaningfulValue(payload.submitterPhone)) patch.submitter_phone = payload.submitterPhone;

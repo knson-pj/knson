@@ -464,12 +464,15 @@ async function handleActivityLog(req, res) {
 
 function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName = '', isPatch = false } = {}) {
   const lowpriceValue = parseNumberOrNull(input.lowprice ?? input.low_price);
+  const normalizedSourceType = PropertyDomain.normalizeSourceType(input.source_type ?? input.sourceType, { fallback: '' }) || undefined;
+  const normalizedSubmitterType = PropertyDomain.normalizeSubmitterType(input.submitter_type ?? input.submitterType, { fallback: '' }) || undefined;
+  const derivedIsGeneral = normalizedSourceType ? PropertyDomain.isGeneralSourceType(normalizedSourceType) : undefined;
   const baseRaw = input.raw !== undefined ? sanitizePropertyRaw(input.raw) : undefined;
   const row = omitUndefined({
     item_no: input.item_no ?? input.itemNo,
-    source_type: input.source_type ?? input.sourceType,
+    source_type: normalizedSourceType,
     assignee_id: input.assignee_id ?? input.assigneeId,
-    submitter_type: input.submitter_type ?? input.submitterType,
+    submitter_type: normalizedSubmitterType,
     address: input.address != null ? String(input.address || '').trim() : undefined,
     asset_type: input.asset_type ?? input.assetType,
     common_area: parseNumberOrNull(input.common_area ?? input.commonarea),
@@ -486,13 +489,22 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
     memo: input.memo ?? input.opinion,
     latitude: parseNumberOrNull(input.latitude),
     longitude: parseNumberOrNull(input.longitude),
-    is_general: input.is_general,
+    is_general: input.is_general !== undefined ? !!input.is_general : derivedIsGeneral,
     raw: baseRaw,
   });
 
   if (lowpriceValue !== null) {
     row.raw = sanitizePropertyRaw(row.raw || {});
     if (row.raw.lowprice === undefined) row.raw.lowprice = lowpriceValue;
+  }
+
+  if (normalizedSourceType || normalizedSubmitterType || derivedIsGeneral !== undefined) {
+    row.raw = sanitizePropertyRaw(row.raw || {});
+    if (normalizedSourceType) row.raw.source_type = normalizedSourceType;
+    if (normalizedSourceType && row.raw.sourceType === undefined) row.raw.sourceType = normalizedSourceType;
+    if (normalizedSubmitterType) row.raw.submitter_type = normalizedSubmitterType;
+    if (normalizedSubmitterType && row.raw.submitterType === undefined) row.raw.submitterType = normalizedSubmitterType;
+    if (derivedIsGeneral !== undefined && row.raw.is_general === undefined) row.raw.is_general = derivedIsGeneral;
   }
 
   if (role === 'staff') {

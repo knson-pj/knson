@@ -375,6 +375,7 @@
   function buildRowForCreate(payload, context) {
     return {
       source_type: payload.sourceType,
+      is_general: payload.sourceType === 'general',
       address: payload.address,
       asset_type: payload.assetType,
       exclusive_area: payload.exclusiveArea,
@@ -406,6 +407,8 @@
     if (hasMeaningfulValue(payload.useApproval)) nextRow.use_approval = payload.useApproval;
     if (hasMeaningfulValue(payload.priceMain)) nextRow.price_main = payload.priceMain;
     if (hasMeaningfulValue(payload.opinion)) nextRow.memo = payload.opinion;
+    if (hasMeaningfulValue(payload.sourceType)) nextRow.source_type = payload.sourceType;
+    nextRow.is_general = payload.sourceType === 'general';
     if (hasMeaningfulValue(payload.submitterType)) nextRow.submitter_type = payload.submitterType;
     if (hasMeaningfulValue(payload.submitterName)) nextRow.submitter_name = payload.submitterName;
     if (hasMeaningfulValue(payload.submitterPhone)) nextRow.submitter_phone = payload.submitterPhone;

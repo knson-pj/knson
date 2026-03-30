@@ -33,6 +33,7 @@
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
   const DataAccess = window.KNSN_DATA_ACCESS || null;
+  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
@@ -364,13 +365,10 @@
 
   function normalizeItem(p) {
     const raw = p?.raw && typeof p.raw === "object" ? p.raw : {};
-    const rawSource = (p.sourceType || p.source_type || p.source || p.category || raw.sourceType || "").toString().toLowerCase();
-    const source =
-      rawSource === "auction" ? "auction" :
-      rawSource === "gongmae" || rawSource === "public" || rawSource === "onbid" ? "onbid" :
-      rawSource === "realtor" ? "realtor" :
-      rawSource === "general" ? "general" :
-      "general";
+    const rawSource = (p.sourceType || p.source_type || p.source || p.category || raw.sourceType || "").toString().trim().toLowerCase();
+    const source = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
+      ? PropertyDomain.normalizeSourceType(rawSource, { fallback: "general" })
+      : "general";
 
     const lat = toNullableNumber(p.latitude ?? p.lat ?? raw.latitude ?? raw.lat ?? "");
     const lng = toNullableNumber(p.longitude ?? p.lng ?? raw.longitude ?? raw.lng ?? "");
@@ -419,10 +417,17 @@
       latitude: lat,
       longitude: lng,
       // 부직센 직접 등록 여부: submitter_name 또는 broker_office_name이 있으면 부직센(일반중개)
-      isDirectSubmission: !!(
-        firstText(p.submitter_name, p.submitterName, raw.submitter_name, raw.submitterName, "") ||
-        firstText(p.broker_office_name, p.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, "")
-      ),
+      isDirectSubmission: (PropertyDomain && typeof PropertyDomain.isDirectRealtorSubmission === "function")
+        ? PropertyDomain.isDirectRealtorSubmission({
+            sourceType: source,
+            rawSource,
+            submitterType: firstText(p.submitter_type, p.submitterType, raw.submitter_type, raw.submitterType, ""),
+            sourceUrl: firstText(p.source_url, p.sourceUrl, raw.source_url, raw.sourceUrl, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
+            submitterName: firstText(p.submitter_name, p.submitterName, raw.submitter_name, raw.submitterName, ""),
+            brokerOfficeName: firstText(p.broker_office_name, p.brokerOfficeName, raw.broker_office_name, raw.brokerOfficeName, ""),
+            raw,
+          })
+        : false,
       raw,
     };
   }

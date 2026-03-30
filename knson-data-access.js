@@ -164,21 +164,12 @@
   }
 
   function buildPropertySummaryFromRows(rows, normalizeRow) {
-    const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     const list = Array.isArray(rows) ? rows : [];
-    list.forEach((row) => {
-      const item = typeof normalizeRow === "function" ? normalizeRow(row) : row;
-      if (!item) return;
-      summary.total += 1;
-      const type = String(item?.sourceType || item?.source_type || item?.source || "").trim();
-      if (type === "auction") summary.auction += 1;
-      else if (type === "onbid") summary.onbid += 1;
-      else if (type === "realtor") {
-        if (item?.isDirectSubmission) summary.realtor_direct += 1;
-        else summary.realtor_naver += 1;
-      } else if (type === "general") summary.general += 1;
-    });
-    return summary;
+    const normalized = typeof normalizeRow === "function" ? list.map((row) => normalizeRow(row)).filter(Boolean) : list;
+    if (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function") {
+      return PropertyDomain.summarizeSourceBuckets(normalized);
+    }
+    return { total: normalized.length, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
   }
 
   async function fetchPropertySummary(sb, { cachedRows = null, normalizeRow = null } = {}) {
@@ -192,12 +183,12 @@
       return Number(count || 0);
     };
 
-    const [total, auction, onbid, realtorTotal, realtorNaver, general] = await Promise.all([
+    const [total, auction, onbid, realtorTotal, realtorDirect, general] = await Promise.all([
       countRows(),
       countRows((q) => q.eq("source_type", "auction")),
       countRows((q) => q.eq("source_type", "onbid")),
       countRows((q) => q.eq("source_type", "realtor")),
-      countRows((q) => q.eq("source_type", "realtor").not("source_url", "is", null)),
+      countRows((q) => q.eq("source_type", "realtor").eq("submitter_type", "realtor")),
       countRows((q) => q.eq("source_type", "general")),
     ]);
 
@@ -205,8 +196,8 @@
       total,
       auction,
       onbid,
-      realtor_naver: realtorNaver,
-      realtor_direct: Math.max(0, realtorTotal - realtorNaver),
+      realtor_naver: Math.max(0, realtorTotal - realtorDirect),
+      realtor_direct: realtorDirect,
       general,
     };
   }
