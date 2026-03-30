@@ -6,7 +6,7 @@
   <meta name="supabase-url" content="" /><meta name="supabase-anon-key" content="" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260327-agenthome1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260330-agentwork2" />
 </head>
 <body class="page-agent">
 
@@ -15,46 +15,52 @@
     <img src="./image/logo-main.png" alt="로고" class="sidebar-logo-img" />
     <button class="sidebar-page-title sidebar-nav-label sidebar-home-btn" id="btnSidebarHome" title="홈으로">담당자페이지</button>
   </div>
-  <div class="sidebar-user-top">
-    <div class="sidebar-user-badge">
-      <div class="sidebar-user-dot"></div>
-      <span class="sidebar-user-name sidebar-nav-label" id="sidebarAgentName">담당자</span>
-    </div>
-  </div>
   <nav class="sidebar-nav" id="agentSidebarNav">
-
-    <!-- 물건관리 그룹 -->
+    <button class="sidebar-nav-item is-active" data-view="home"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label">홈</span></button>
     <div class="sidebar-group">
       <button class="sidebar-group-btn" data-group="ag-props">
-        <span class="sidebar-nav-icon">🏢</span><span class="sidebar-nav-label">물건관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+        <span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">물건 관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
       </button>
       <div class="sidebar-group-items">
-        <button class="sidebar-nav-item sidebar-nav-sub" data-view="list"><span class="sidebar-nav-icon">📋</span><span class="sidebar-nav-label">전체 현황</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-view="list"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">전체 현황</span></button>
       </div>
     </div>
-
-    <!-- 업무관리 그룹 -->
     <div class="sidebar-group">
       <button class="sidebar-group-btn" data-group="ag-work">
-        <span class="sidebar-nav-icon">📊</span><span class="sidebar-nav-label">업무관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+        <span class="sidebar-nav-icon">◌</span><span class="sidebar-nav-label">업무 관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
       </button>
       <div class="sidebar-group-items">
-        <button class="sidebar-nav-item sidebar-nav-sub" data-view="dailyreport"><span class="sidebar-nav-icon">📝</span><span class="sidebar-nav-label">일일 업무 일지</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-view="dailyreport"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">일일 업무 일지</span></button>
       </div>
     </div>
-
   </nav>
-  <div class="sidebar-bottom">
-  </div>
+  <div class="sidebar-bottom"></div>
 </aside>
 
 <div class="admin-content">
   <header class="admin-topbar">
     <div class="topbar-left"><h1 id="agTopbarTitle">홈</h1></div>
     <div class="top-actions">
-      <span id="agentUserBadge" class="badge badge-agent hidden">담당자</span>
-      <button id="btnChangeMyPassword" class="btn btn-ghost hidden">내 비밀번호 변경</button>
-      <button id="btnAgentLogout" class="btn btn-ghost hidden">로그아웃</button>
+      <div class="topbar-user-menu" id="agentTopbarUserMenu">
+        <button class="topbar-user-trigger" id="btnAgentTopbarUserMenu" type="button" aria-haspopup="menu" aria-expanded="false">
+          <div class="topbar-user-card">
+            <div class="topbar-user-avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"></circle><path d="M5 19a7 7 0 0 1 14 0"></path></svg>
+            </div>
+            <div class="topbar-user-meta">
+              <div class="topbar-user-name-row">
+                <strong id="topbarUserName">담당자</strong>
+                <span class="topbar-user-caret">⌄</span>
+              </div>
+            </div>
+          </div>
+        </button>
+        <div class="topbar-user-dropdown hidden" id="agentTopbarUserDropdown" role="menu" aria-labelledby="btnAgentTopbarUserMenu">
+          <button id="btnChangeMyPassword" class="topbar-menu-item hidden" type="button" role="menuitem">내 비밀번호 변경</button>
+          <button id="btnAgentLogout" class="topbar-menu-item hidden" type="button" role="menuitem">로그아웃</button>
+        </div>
+        <span id="agentUserBadge" class="badge badge-agent hidden" aria-hidden="true"></span>
+      </div>
     </div>
   </header>
   <div id="globalMsg" class="global-msg hidden"></div>
@@ -180,27 +186,40 @@
       </section>
     </section>
 
-    <!-- ── 일일 업무 일지 (풀페이지, image10) ── -->
+    <!-- ── 일일 업무 일지 ── -->
     <section id="ag-view-dailyreport" class="ag-view hidden">
-      <div class="daily-full-panel">
-        <div class="daily-full-section">
-          <div class="home-section-tag">Daily report</div>
-          <div class="daily-full-copy">
-            <p>오늘도 수고하셨습니다^^</p>
-            <p id="dailyReportLead">금일은 총 <strong class="hs-total">0건</strong>의 정보를 수정·등록 하셨네요.</p>
-            <p>오류가 없는지 다시한번 확인해주세요.</p>
-          </div>
-          <div id="dailyReportFlow" class="daily-full-flow">
-            <div class="daily-report-flow-empty">오늘 업무 로그가 없습니다.</div>
+      <section class="panel agent-workmgmt-panel">
+        <div class="panel-title-row workmgmt-header-row is-compact">
+          <div class="panel-actions-inline work-mgmt-actions">
+            <input id="agWorkDate" class="input work-mgmt-date-input" type="date" />
+            <button id="btnAgWorkRefresh" class="btn btn-secondary" type="button">새로고침</button>
           </div>
         </div>
-        <div class="daily-full-section" style="margin-top:32px;">
-          <div class="home-section-tag">기타 사항</div>
-          <div class="daily-full-note-wrap">
-            <textarea id="dailyReportNote" class="daily-full-note" placeholder="업무 관련 요청 사항이나 제안 등을 자유롭게 작성해주세요.&#10;없으면 빈칸으로 두셔도 좋습니다."></textarea>
+        <div class="workmgmt-shell-v2 agent-workmgmt-shell">
+          <div class="workmgmt-board agent-workmgmt-board">
+            <section class="workmgmt-col workmgmt-col-actors">
+              <div class="workmgmt-col-head"><span class="workmgmt-col-bar"></span><h3>담당자 현황</h3></div>
+              <div id="agWorkActors" class="workmgmt-actor-list"></div>
+            </section>
+            <section class="workmgmt-col workmgmt-col-properties">
+              <div class="workmgmt-col-head"><span class="workmgmt-col-bar is-warm"></span><h3>관리 물건</h3></div>
+              <div id="agWorkProperties" class="workmgmt-property-list"></div>
+            </section>
+            <section class="workmgmt-col workmgmt-col-logs">
+              <div class="workmgmt-col-head"><span class="workmgmt-col-bar is-brand"></span><h3>업무 로그</h3></div>
+              <div id="agWorkLogs" class="workmgmt-log-list"></div>
+              <div id="agWorkEmpty" class="workmgmt-empty hidden">표시할 업무 로그가 없습니다.</div>
+            </section>
+          </div>
+          <div id="agWorkStats" class="workmgmt-stats"></div>
+          <div class="daily-full-section agent-daily-note-section">
+            <div class="home-section-tag">기타 사항</div>
+            <div class="daily-full-note-wrap agent-daily-note-card">
+              <textarea id="dailyReportNote" class="daily-full-note" placeholder="업무 관련 요청 사항이나 제안 등을 자유롭게 작성해주세요.&#10;없으면 빈칸으로 두셔도 좋습니다."></textarea>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     </section>
 
   </main></div>
@@ -218,44 +237,65 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./knson-core.js?v=20260320-agent"></script>
 <script src="./knson-shared.js?v=20260325-shared1"></script>
-<script src="./knson-property-domain.js?v=20260330-agentfix1"></script>
-<script src="./knson-data-access.js?v=20260330-agentfix1"></script>
-<script src="./agent-app.js?v=20260330-agentfix1"></script>
+<script src="./knson-property-domain.js?v=20260330-agentwork2"></script>
+<script src="./knson-data-access.js?v=20260330-agentwork2"></script>
+<script src="./agent-app.js?v=20260330-agentwork2"></script>
 
 <script>
 (function(){
   var TITLES={home:'홈',list:'전체 현황',dailyreport:'일일 업무 일지'};
-  /* 그룹 접이식 */
   document.querySelectorAll('.sidebar-group-btn').forEach(function(btn){
     var items=btn.closest('.sidebar-group').querySelector('.sidebar-group-items');
     items.style.maxHeight='0';
-    btn.addEventListener('click',function(){var o=this.classList.toggle('is-open');items.style.maxHeight=o?items.scrollHeight+'px':'0';this.querySelector('.sidebar-group-arrow').textContent=o?'∧':'∨';});
+    btn.addEventListener('click',function(){
+      var o=this.classList.toggle('is-open');
+      items.style.maxHeight=o?items.scrollHeight+'px':'0';
+      this.querySelector('.sidebar-group-arrow').textContent=o?'∧':'∨';
+    });
   });
 
-  /* 뷰 전환 */
   var titleEl=document.getElementById('agTopbarTitle');
   function switchView(viewName){
     document.querySelectorAll('.ag-view').forEach(function(v){v.classList.toggle('hidden',v.id!=='ag-view-'+viewName);});
     document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(si){si.classList.toggle('is-active',si.dataset.view===viewName);});
-    /* 해당 그룹 자동 열기 */
     var active=document.querySelector('#agentSidebarNav .sidebar-nav-item.is-active');
-    if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(!gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
+    if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(gb && gi && !gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
     if(titleEl&&TITLES[viewName])titleEl.textContent=TITLES[viewName];
+    if(viewName==='dailyreport' && typeof window.refreshAgentDailyReportView==='function'){window.refreshAgentDailyReportView();}
   }
 
   document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(item){
     item.addEventListener('click',function(){switchView(this.dataset.view);});
   });
 
-  /* 로고 옆 '담당자페이지' 클릭 → 홈으로 */
   var homeBtn=document.getElementById('btnSidebarHome');
   if(homeBtn){homeBtn.addEventListener('click',function(){switchView('home');});}
 
-  /* 담당자명 동기화 */
-  var badge=document.getElementById('agentUserBadge'),sn=document.getElementById('sidebarAgentName');
-  if(badge&&sn){new MutationObserver(function(){var txt=badge.textContent.trim();if(txt&&txt!=='담당자')sn.textContent=txt;}).observe(badge,{childList:true,subtree:true,characterData:true});}
+  var topbarMenu=document.getElementById('agentTopbarUserMenu');
+  var topbarTrigger=document.getElementById('btnAgentTopbarUserMenu');
+  var topbarDropdown=document.getElementById('agentTopbarUserDropdown');
+  function closeTopbarMenu(){
+    if(!topbarMenu||!topbarTrigger||!topbarDropdown) return;
+    topbarMenu.classList.remove('is-open');
+    topbarDropdown.classList.add('hidden');
+    topbarTrigger.setAttribute('aria-expanded','false');
+  }
+  if(topbarTrigger&&topbarDropdown&&topbarMenu){
+    topbarTrigger.addEventListener('click',function(e){
+      e.stopPropagation();
+      var open=topbarMenu.classList.toggle('is-open');
+      topbarDropdown.classList.toggle('hidden',!open);
+      topbarTrigger.setAttribute('aria-expanded',open?'true':'false');
+    });
+    document.addEventListener('click',function(e){ if(!topbarMenu.contains(e.target)) closeTopbarMenu(); });
+  }
 
-  /* agent-app.js에서 dailyReport 모달 대신 뷰 전환을 쓸 수 있도록 전역 노출 */
+  var badge=document.getElementById('agentUserBadge');
+  var topbarName=document.getElementById('topbarUserName');
+  if(badge&&topbarName){
+    new MutationObserver(function(){var txt=badge.textContent.trim();if(txt&&txt!=='담당자')topbarName.textContent=txt;}).observe(badge,{childList:true,subtree:true,characterData:true});
+  }
+
   window.showDailyReportView=function(){switchView('dailyreport');};
 })();
 </script>
