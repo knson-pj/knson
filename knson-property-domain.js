@@ -416,9 +416,9 @@
     const rawSource = String(item?.rawSource || item?.raw_source || item?.raw?.sourceType || item?.raw?.source_type || item?.source || item?.category || "").trim().toLowerCase();
     if (["realtor_direct"].includes(rawSource)) return true;
     if (["realtor_naver", "naver", "broker"].includes(rawSource)) return false;
-    if (submitterType === "realtor") return true;
     const sourceUrl = pickFirstText(item?.sourceUrl, item?.source_url, item?.raw?.sourceUrl, item?.raw?.source_url, item?.raw?.url, item?.raw?.["바로가기(엑셀)"], item?.raw?.["매물URL"], "");
     if (sourceUrl) return false;
+    if (submitterType === "realtor") return true;
     const submitterName = pickFirstText(item?.submitterName, item?.submitter_name, item?.raw?.submitterName, item?.raw?.submitter_name, item?.brokerOfficeName, item?.broker_office_name, item?.raw?.brokerOfficeName, item?.raw?.broker_office_name, "");
     return !!submitterName;
   }

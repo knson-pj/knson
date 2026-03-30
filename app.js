@@ -6,6 +6,11 @@
   const SESSION_KEY = "knson_bms_session_v1";
   const GEO_CACHE_KEY = "knson_geo_cache_v1";
 
+  const K = window.KNSN || null;
+  const Shared = window.KNSN_SHARED || null;
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
+  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+
   // ---- State ----
   const state = {
     session: loadSession(),
@@ -29,11 +34,6 @@
   const els = {};
 
   document.addEventListener("DOMContentLoaded", init);
-
-  const K = window.KNSN || null;
-  const Shared = window.KNSN_SHARED || null;
-  const DataAccess = window.KNSN_DATA_ACCESS || null;
-  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
