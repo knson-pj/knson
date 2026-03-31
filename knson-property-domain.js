@@ -222,12 +222,12 @@
       raw["서비스"],
       raw["수집구분"]
     ).toLowerCase();
+    const submitterType = normalizeSubmitterType(pickFirstText(item && item.submitterType, item && item.submitter_type, raw.submitterType, raw.submitter_type, ""));
     const inferredSourceType = inferSourceTypeFromContext(item, raw, submitterType);
     const sourceType = normalizeSourceType(rawSource || inferredSourceType, { fallback: opts.fallbackSource || "general" });
     const address = pickFirstText(item && item.address, item && item.location, item && item.addr, raw.address, raw.location, "");
     const itemNo = pickFirstText(item && item.itemNo, item && item.caseNo, item && item.externalId, item && item.listingId, item && item.item_no, raw.itemNo, raw.item_no, "");
     const sourceUrl = pickFirstText(item && item.sourceUrl, item && item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
-    const submitterType = normalizeSubmitterType(pickFirstText(item && item.submitterType, item && item.submitter_type, raw.submitterType, raw.submitter_type, ""));
     const submitterName = pickFirstText(item && item.submitterName, item && item.submitter_name, raw.submitterName, raw.submitter_name, "");
     const brokerOfficeName = pickFirstText(item && item.brokerOfficeName, item && item.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, "");
     const memoText = pickFirstText(item && item.memo, raw.memo, "");

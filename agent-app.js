@@ -539,21 +539,21 @@
   }
 
   function getDailyLogContent(row, matched) {
-    const note = String(row?.note || '').trim();
+    const note = String(row?.note || row?.content || '').trim();
     if (note) return note;
     const raw = matched?._raw?.raw || {};
     const action = String(row?.action_type || '').trim();
     if (action === 'rights_analysis') {
-      return firstText(matched?.rightsAnalysis, raw.rightsAnalysis, raw.rights_analysis, '입력 내용 없음');
+      return firstText(row?.rights_analysis, matched?.rightsAnalysis, raw.rightsAnalysis, raw.rights_analysis, '입력 내용 없음');
     }
     if (action === 'site_inspection') {
-      return firstText(matched?.siteInspection, raw.siteInspection, raw.site_inspection, '입력 내용 없음');
+      return firstText(row?.site_inspection, matched?.siteInspection, raw.siteInspection, raw.site_inspection, '입력 내용 없음');
     }
     if (action === 'daily_issue') {
-      return firstText(matched?.opinion, raw.opinion, raw.memo, '입력 내용 없음');
+      return firstText(row?.opinion, matched?.opinion, raw.opinion, raw.memo, '입력 내용 없음');
     }
     if (action === 'new_property') {
-      return firstText(raw.opinion, raw.memo, matched?.opinion, '신규 등록');
+      return firstText(row?.opinion, raw.opinion, raw.memo, matched?.opinion, '신규 등록');
     }
     const changed = Array.isArray(row?.changed_fields) ? row.changed_fields.map((v) => String(v || '').trim()).filter(Boolean) : [];
     return changed.length ? changed.join(', ') : '입력 내용 없음';
@@ -641,6 +641,10 @@
     const propertyId = String(options.propertyId || propertyLike?.id || propertyLike?.globalId || propertyLike?.global_id || "").trim();
     const propertyItemNo = String(propertyLike?.itemNo || propertyLike?.item_no || propertyLike?._raw?.item_no || "").trim();
     const propertyAddress = String(propertyLike?.address || propertyLike?.location || propertyLike?._raw?.address || propertyLike?.raw?.address || "").trim();
+    const rightsText = String(options.rightsAnalysisText || propertyLike?.rightsAnalysis || propertyLike?._raw?.raw?.rightsAnalysis || propertyLike?._raw?.raw?.rights_analysis || '').trim();
+    const siteText = String(options.siteInspectionText || propertyLike?.siteInspection || propertyLike?._raw?.raw?.siteInspection || propertyLike?._raw?.raw?.site_inspection || '').trim();
+    const issueText = String(options.dailyIssueText || propertyLike?.opinion || propertyLike?._raw?.raw?.opinion || propertyLike?._raw?.raw?.memo || '').trim();
+    const newPropertyText = String(options.newPropertyText || propertyLike?.opinion || propertyLike?._raw?.raw?.opinion || propertyLike?._raw?.raw?.memo || '').trim();
     return (Array.isArray(actionKeys) ? actionKeys : []).filter(Boolean).map((key) => ({
       actionType: DAILY_REPORT_ACTION_KEYS[key] || String(key || "").trim(),
       propertyId: propertyId || null,
@@ -648,7 +652,12 @@
       propertyItemNo: propertyItemNo || null,
       propertyAddress: propertyAddress || null,
       changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
-      note: key === "dailyIssue" ? (String(options.dailyIssueText || "").trim() || null) : null,
+      note:
+        key === "dailyIssue" ? (issueText || null) :
+        key === "rightsAnalysis" ? (rightsText || null) :
+        key === "siteInspection" ? (siteText || null) :
+        key === "newProperty" ? (newPropertyText || '신규 등록') :
+        null,
       actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
     }));
   }
