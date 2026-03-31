@@ -180,6 +180,7 @@
     propertyMode: "page",
     propertyTotalCount: 0,
     propertySummary: null,
+    propertyOverview: null,
     propertiesFullCache: null,
     propertySort: { key: '', direction: 'desc' },
     geocodeRunning: false,
@@ -351,7 +352,6 @@
 
     if (active === 'properties') {
       syncPropertySourceFilterUi();
-      warmPropertyFullCacheForFilters().catch((err) => console.warn('warmPropertyFullCacheForFilters failed', err));
     }
 
     try {
@@ -641,6 +641,7 @@ function bindEvents() {
         await syncSupabaseSessionIfNeeded();
 
         const key = btn.dataset.tab;
+        const prevTab = state.activeTab;
         const user = state.session?.user;
         if (user?.role !== "admin" && key !== "properties") {
           setGlobalMsg("관리자 권한이 확인되지 않았습니다. 다시 로그인해 주세요.");
@@ -650,7 +651,16 @@ function bindEvents() {
         setActiveTab(key);
 
         if (state.session?.user?.role === "admin") {
-          if (key === "home") renderSummary();
+          if (key === "home") {
+            if (!state.propertyOverview) {
+              loadProperties({ refreshSummary: true }).catch((e)=>handleAsyncError(e,"대시보드 로드 실패"));
+            } else {
+              renderSummary();
+            }
+          }
+          if (key === "properties" && (prevTab !== "properties" || !Array.isArray(state.properties) || !state.properties.length || state.propertyMode !== "page")) {
+            loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+          }
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
           if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { renderAssignmentTable(); }).catch((e)=>handleAsyncError(e,"지역 데이터 로드 실패"));
           if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
@@ -883,8 +893,10 @@ function bindEvents() {
   const PROPERTY_LIST_SELECT = [
     "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address", "assignee_id",
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
+    "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+    "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
     "memo", "latitude", "longitude", "date_uploaded", "created_at",
-    "geocode_status", "geocoded_at", "raw"
+    "geocode_status", "geocoded_at"
   ].join(",");
 
   const PROPERTY_HOME_SUMMARY_SELECT = [
@@ -896,6 +908,7 @@ function bindEvents() {
     state.propertiesFullCache = null;
     state.homeSummarySnapshot = null;
     state.propertySummary = null;
+    state.propertyOverview = null;
   }
 
   function getAuxiliaryPropertiesSnapshot() {
@@ -1008,6 +1021,16 @@ function bindEvents() {
     throw new Error("KNSN_DATA_ACCESS.fetchPropertySummary 를 찾을 수 없습니다.");
   }
 
+  async function fetchAdminPropertyOverview({ forceRefresh = false } = {}) {
+    if (!forceRefresh && state.propertyOverview) return state.propertyOverview;
+    const res = await api('/admin/property-overview', { auth: true });
+    const overview = res?.overview && typeof res.overview === 'object' ? res.overview : (res && typeof res === 'object' ? res : null);
+    if (!overview) throw new Error('대시보드 집계 데이터를 불러오지 못했습니다.');
+    state.propertyOverview = overview;
+    if (overview.summary) state.propertySummary = overview.summary;
+    return overview;
+  }
+
   async function fetchPropertyDetail(sb, targetId) {
     if (DataAccess && typeof DataAccess.fetchPropertyDetail === "function") {
       return DataAccess.fetchPropertyDetail(sb, targetId, { select: "*", normalizeRow: normalizeProperty });
@@ -1056,20 +1079,28 @@ function bindEvents() {
         return;
       }
 
-      const needsFull = forceFull || shouldUseFullPropertyDataset() || state.activeTab === 'regions' || state.activeTab === 'geocoding';
-
-      const needsExactHomeSummary = isAdmin && state.activeTab === 'home' && (refreshSummary || !state.propertySummary);
-      const summaryPromise = needsExactHomeSummary
-        ? fetchExactHomeSummary(sb, { normalizeRow: normalizeProperty }).catch((err) => {
-            console.warn('property summary load failed', err);
-            return state.propertySummary;
+      const needsFull = forceFull || shouldUseFullPropertyDataset() || state.activeTab === 'regions' || state.activeTab === 'geocoding' || state.activeTab === 'workmgmt';
+      const shouldLoadOverview = isAdmin && (refreshSummary || !state.propertySummary || !state.propertyOverview);
+      const overviewPromise = shouldLoadOverview
+        ? fetchAdminPropertyOverview({ forceRefresh: refreshSummary || !state.propertyOverview }).catch((err) => {
+            console.warn('property overview load failed', err);
+            return state.propertyOverview;
           })
-        : ((refreshSummary || !state.propertySummary)
-            ? fetchPropertySummary(sb, { normalizeRow: normalizeProperty }).catch((err) => {
-                console.warn('property summary load failed', err);
-                return state.propertySummary;
-              })
-            : Promise.resolve(state.propertySummary));
+        : Promise.resolve(state.propertyOverview);
+
+      if (state.activeTab === 'home' && !needsFull && isAdmin) {
+        const overview = await overviewPromise;
+        if (overview?.summary) {
+          state.propertyOverview = overview;
+          state.propertySummary = overview.summary;
+          state.propertyTotalCount = Number(overview.summary.total || 0);
+        }
+        state.properties = [];
+        state.propertyMode = 'page';
+        pruneSelectedPropertyIds();
+        renderSummary();
+        return;
+      }
 
       if (needsFull) {
         const data = await ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: forceRefreshFull });
@@ -1088,7 +1119,14 @@ function bindEvents() {
         state.propertyTotalCount = Number(pageData?.total || 0);
       }
 
-      state.propertySummary = await summaryPromise;
+      const overview = await overviewPromise;
+      if (overview?.summary) {
+        state.propertyOverview = overview;
+        state.propertySummary = overview.summary;
+        if (state.propertyMode === 'page' && !hasActivePropertyFilters() && !String(state?.propertySort?.key || '').trim()) {
+          state.propertyTotalCount = Number(overview.summary.total || state.propertyTotalCount || 0);
+        }
+      }
       pruneSelectedPropertyIds();
       hydrateAssignedAgentNames();
       renderPropertiesTable();

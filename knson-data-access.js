@@ -8,13 +8,16 @@
   const PROPERTY_LIST_SELECT = [
     "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address", "assignee_id",
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
+    "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+    "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
     "memo", "latitude", "longitude", "date_uploaded", "created_at",
-    "geocode_status", "geocoded_at", "raw"
+    "geocode_status", "geocoded_at"
   ].join(",");
 
   const PROPERTY_HOME_SUMMARY_SELECT = [
     "id", "source_type", "source_url", "is_general", "submitter_type", "submitter_name",
-    "broker_office_name", "date_uploaded", "created_at", "raw"
+    "broker_office_name", "address", "latitude", "longitude", "geocode_status",
+    "exclusive_area", "date_uploaded", "created_at"
   ].join(",");
 
   function chunkArray(arr, size) {
@@ -46,6 +49,45 @@
   function omitKeys(obj, keys) {
     const blocked = new Set(Array.isArray(keys) ? keys.filter(Boolean) : []);
     return Object.fromEntries(Object.entries(obj || {}).filter(([key]) => !blocked.has(key)));
+  }
+  function splitSelectColumns(select) {
+    return String(select || "")
+      .split(',')
+      .map((part) => String(part || '').trim())
+      .filter(Boolean);
+  }
+
+  function joinSelectColumns(columns) {
+    return (Array.isArray(columns) ? columns : []).map((part) => String(part || '').trim()).filter(Boolean).join(',');
+  }
+
+  function removeMissingColumnFromSelect(select, missingColumn) {
+    const target = String(missingColumn || '').trim();
+    if (!target) return String(select || '');
+    const filtered = splitSelectColumns(select).filter((part) => {
+      const base = String(part || '').split(':').pop().split('->')[0].split('(')[0].trim();
+      return base !== target;
+    });
+    return joinSelectColumns(filtered);
+  }
+
+  async function runSelectQueryResilient(buildQuery, select, { maxRetries = 8 } = {}) {
+    let currentSelect = String(select || '').trim();
+    const removed = new Set();
+    for (let i = 0; i < maxRetries; i += 1) {
+      const result = await buildQuery(currentSelect);
+      if (!result?.error) {
+        if (currentSelect && currentSelect !== select) result.__effectiveSelect = currentSelect;
+        return result;
+      }
+      const missing = extractSchemaMissingColumn(result.error);
+      if (!missing || removed.has(missing) || !currentSelect) return result;
+      const nextSelect = removeMissingColumnFromSelect(currentSelect, missing);
+      if (!nextSelect || nextSelect === currentSelect) return result;
+      removed.add(missing);
+      currentSelect = nextSelect;
+    }
+    return buildQuery(String(select || '').trim());
   }
 
   function normalizeDuplicateError(err) {
@@ -106,17 +148,17 @@
     const safeFrom = Math.max(0, Number(from || 0));
     const safePageSize = Math.max(1, Number(pageSize || 1));
     const to = safeFrom + safePageSize - 1;
-    const queryBase = (filter) => {
-      let q = sb.from("properties").select(select).order(orderColumn, { ascending }).order("id", { ascending }).range(safeFrom, to);
+    const queryBase = (filter, activeSelect = select) => {
+      let q = sb.from("properties").select(activeSelect).order(orderColumn, { ascending }).order("id", { ascending }).range(safeFrom, to);
       if (filter) q = q.or(filter);
       return q;
     };
     if (isAdmin) {
-      const { data, error } = await queryBase(null);
+      const { data, error } = await runSelectQueryResilient((activeSelect) => queryBase(null, activeSelect), select);
       if (error) throw error;
       return Array.isArray(data) ? data : [];
     }
-    const result = await runAssignedQuery(queryBase, uid, { clientSideFilter });
+    const result = await runAssignedQuery((filter) => runSelectQueryResilient((activeSelect) => queryBase(filter, activeSelect), select), uid, { clientSideFilter });
     return result.data;
   }
 
@@ -126,9 +168,9 @@
     const from = Math.max(0, (safePage - 1) * safePageSize);
     const to = from + safePageSize;
     const selectOptions = from === 0 ? { count: "estimated" } : undefined;
-    const queryBase = (filter) => {
+    const queryBase = (filter, activeSelect = select) => {
       let q = sb.from("properties");
-      q = selectOptions ? q.select(select, selectOptions) : q.select(select);
+      q = selectOptions ? q.select(activeSelect, selectOptions) : q.select(activeSelect);
       q = q.order("date_uploaded", { ascending: false }).order("id", { ascending: false }).range(from, to);
       if (filter) q = q.or(filter);
       return q;
@@ -142,11 +184,11 @@
       return { items, total, hasMore, totalIsEstimated: !numericCount };
     };
     if (isAdmin) {
-      const { data, error, count } = await queryBase(null);
+      const { data, error, count } = await runSelectQueryResilient((activeSelect) => queryBase(null, activeSelect), select);
       if (error) throw error;
       return finalize(data, count);
     }
-    const result = await runAssignedQuery(queryBase, uid, { clientSideFilter: true });
+    const result = await runAssignedQuery((filter) => runSelectQueryResilient((activeSelect) => queryBase(filter, activeSelect), select), uid, { clientSideFilter: true });
     return finalize(result.data, result.count);
   }
 
@@ -193,14 +235,16 @@
     const out = [];
     let from = 0;
     const safePageSize = Math.max(1, Number(pageSize || 1000));
+    let activeSelect = PROPERTY_HOME_SUMMARY_SELECT;
     while (true) {
       const to = from + safePageSize - 1;
-      const { data, error } = await sb.from("properties")
-        .select(PROPERTY_HOME_SUMMARY_SELECT)
+      const { data, error, __effectiveSelect } = await runSelectQueryResilient((selectText) => sb.from("properties")
+        .select(selectText)
         .order("date_uploaded", { ascending: false })
         .order("id", { ascending: false })
-        .range(from, to);
+        .range(from, to), activeSelect);
       if (error) throw error;
+      if (__effectiveSelect) activeSelect = __effectiveSelect;
       const rows = Array.isArray(data) ? data : [];
       out.push(...rows);
       if (rows.length < safePageSize) break;
@@ -211,7 +255,7 @@
 
   async function fetchPropertyDetail(sb, targetId, { select = "*", normalizeRow = null } = {}) {
     const col = resolvePropertyIdColumn(targetId);
-    const { data, error } = await sb.from("properties").select(select).eq(col, targetId).limit(1).maybeSingle();
+    const { data, error } = await runSelectQueryResilient((activeSelect) => sb.from("properties").select(activeSelect).eq(col, targetId).limit(1).maybeSingle(), select);
     if (error) throw error;
     return data ? (typeof normalizeRow === "function" ? normalizeRow(data) : data) : null;
   }

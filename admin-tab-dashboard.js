@@ -294,22 +294,38 @@
     setProgress(els.homeProgressDirect, summary.realtor_direct);
     setProgress(els.homeProgressGeneral, summary.general);
 
+    const overview = state.propertyOverview || null;
     const dateKey = getTodayDateKey();
-    const todayParts = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
-    let geoPending = 0;
-    for (const item of Array.isArray(props) ? props : []) {
-      const rawCreatedAt = item?.createdAt || item?._raw?.created_at || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
-      if (sameDay(rawCreatedAt, dateKey)) {
-        todayParts.total += 1;
-        const key = String(item?.sourceType || '').trim();
-        if (todayParts[key] !== undefined) todayParts[key] += 1;
+    let todayParts = null;
+    let geoPending = null;
+    if (overview && typeof overview === 'object') {
+      const sourceToday = overview.today && typeof overview.today === 'object' ? overview.today : {};
+      todayParts = {
+        total: Number(sourceToday.total || 0),
+        auction: Number(sourceToday.auction || 0),
+        onbid: Number(sourceToday.onbid || 0),
+        realtor: Number(sourceToday.realtor || 0),
+        general: Number(sourceToday.general || 0),
+      };
+      geoPending = Number(overview.geoPending || 0);
+    }
+    if (!todayParts) {
+      todayParts = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+      geoPending = 0;
+      for (const item of Array.isArray(props) ? props : []) {
+        const rawCreatedAt = item?.createdAt || item?._raw?.created_at || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
+        if (sameDay(rawCreatedAt, dateKey)) {
+          todayParts.total += 1;
+          const key = String(item?.sourceType || '').trim();
+          if (todayParts[key] !== undefined) todayParts[key] += 1;
+        }
+        const status = String(item?.geocodeStatus || item?._raw?.geocode_status || '').trim().toLowerCase();
+        const lat = item?.latitude ?? item?._raw?.latitude;
+        const lng = item?.longitude ?? item?._raw?.longitude;
+        const hasCoords = lat !== null && lat !== undefined && lat !== '' && lng !== null && lng !== undefined && lng !== '';
+        const address = String(item?.address || item?._raw?.address || '').trim();
+        if (!hasCoords && address && status !== 'failed' && status !== 'ok') geoPending += 1;
       }
-      const status = String(item?.geocodeStatus || item?._raw?.geocode_status || '').trim().toLowerCase();
-      const lat = item?.latitude ?? item?._raw?.latitude;
-      const lng = item?.longitude ?? item?._raw?.longitude;
-      const hasCoords = lat !== null && lat !== undefined && lat !== '' && lng !== null && lng !== undefined && lng !== '';
-      const address = String(item?.address || item?._raw?.address || '').trim();
-      if (!hasCoords && address && status !== 'failed' && status !== 'ok') geoPending += 1;
     }
     if (els.sumTodayTotal) els.sumTodayTotal.textContent = fmt(todayParts.total);
     if (els.sumTodayAuction) els.sumTodayAuction.textContent = fmt(todayParts.auction);
@@ -317,7 +333,7 @@
     if (els.sumTodayRealtor) els.sumTodayRealtor.textContent = fmt(todayParts.realtor);
     if (els.homeGeoPending) els.homeGeoPending.textContent = fmt(geoPending);
     if (els.sumTodayDetail) {
-      const usingFullData = Array.isArray(state.propertiesFullCache);
+      const usingFullData = !!overview || Array.isArray(state.propertiesFullCache);
       els.sumTodayDetail.innerHTML = formatTodayDetail(todayParts, usingFullData);
     }
   };

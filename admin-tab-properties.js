@@ -262,6 +262,25 @@
 
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
     const { state, els, utils } = ctx();
+    const filters = state?.propertyFilters || {};
+    const hasLocalOverrides = !!(
+      String(filters.activeCard || '').trim() ||
+      String(filters.status || '').trim() ||
+      String(filters.keyword || '').trim() ||
+      String(filters.area || '').trim() ||
+      String(filters.priceRange || '').trim() ||
+      String(filters.ratio50 || '').trim() ||
+      String(state?.propertySort?.key || '').trim()
+    );
+    const overviewCounts = state?.propertyOverview?.filterCounts || null;
+    if (!Array.isArray(state?.propertiesFullCache) && !hasLocalOverrides && overviewCounts?.source && overviewCounts?.area) {
+      applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (els.propSourceFilter) els.propSourceFilter.value = String(state?.propertyFilters?.activeCard || '');
+      if (els.propAreaFilter) els.propAreaFilter.value = String(state?.propertyFilters?.area || '');
+      return;
+    }
+
     const sourceRows = mod.getFilteredProperties({ ignoreKeys: ['activeCard'] });
     const areaRows = mod.getFilteredProperties({ ignoreKeys: ['area'] });
 
