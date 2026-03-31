@@ -1021,14 +1021,62 @@ function bindEvents() {
     throw new Error("KNSN_DATA_ACCESS.fetchPropertySummary 를 찾을 수 없습니다.");
   }
 
+  function buildOverviewFromSummary(summary) {
+    const safe = summary && typeof summary === 'object' ? summary : {};
+    return {
+      summary: {
+        total: Number(safe.total || 0),
+        auction: Number(safe.auction || 0),
+        onbid: Number(safe.onbid || 0),
+        realtor_naver: Number(safe.realtor_naver || 0),
+        realtor_direct: Number(safe.realtor_direct || 0),
+        general: Number(safe.general || 0),
+      },
+      today: { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 },
+      geoPending: 0,
+      filterCounts: null,
+      generatedAt: new Date().toISOString(),
+      fallback: true,
+    };
+  }
+
   async function fetchAdminPropertyOverview({ forceRefresh = false } = {}) {
     if (!forceRefresh && state.propertyOverview) return state.propertyOverview;
-    const res = await api('/admin/property-overview', { auth: true });
-    const overview = res?.overview && typeof res.overview === 'object' ? res.overview : (res && typeof res === 'object' ? res : null);
-    if (!overview) throw new Error('대시보드 집계 데이터를 불러오지 못했습니다.');
-    state.propertyOverview = overview;
-    if (overview.summary) state.propertySummary = overview.summary;
-    return overview;
+
+    const candidates = [
+      '/admin/properties?mode=overview',
+      '/admin/property-overview',
+    ];
+
+    let lastError = null;
+    for (const path of candidates) {
+      try {
+        const res = await api(path, { auth: true });
+        const overview = res?.overview && typeof res.overview === 'object' ? res.overview : (res && typeof res === 'object' ? res : null);
+        if (overview) {
+          state.propertyOverview = overview;
+          if (overview.summary) state.propertySummary = overview.summary;
+          return overview;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    try {
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+      if (sb) {
+        const summary = await fetchPropertySummary(sb);
+        const overview = buildOverviewFromSummary(summary);
+        state.propertyOverview = overview;
+        state.propertySummary = overview.summary;
+        return overview;
+      }
+    } catch (fallbackErr) {
+      lastError = fallbackErr;
+    }
+
+    throw lastError || new Error('대시보드 집계 데이터를 불러오지 못했습니다.');
   }
 
   async function fetchPropertyDetail(sb, targetId) {
