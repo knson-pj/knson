@@ -250,8 +250,9 @@
     }
     const bits = [];
     if (parts.auction) bits.push(`<span class="hs-auction">경매</span> ${Number(parts.auction).toLocaleString('ko-KR')}건`);
-    if (parts.onbid) bits.push(`공매 ${Number(parts.onbid).toLocaleString('ko-KR')}건`);
-    if (parts.realtor) bits.push(`<span class="hs-naver">중개</span> ${Number(parts.realtor).toLocaleString('ko-KR')}건`);
+    if (parts.onbid) bits.push(`<span class="hs-onbid">공매</span> ${Number(parts.onbid).toLocaleString('ko-KR')}건`);
+    if (parts.realtor_naver) bits.push(`<span class="hs-naver">네이버중개</span> ${Number(parts.realtor_naver).toLocaleString('ko-KR')}건`);
+    if (parts.realtor_direct) bits.push(`<span class="hs-general">일반중개</span> ${Number(parts.realtor_direct).toLocaleString('ko-KR')}건`);
     if (parts.general) bits.push(`<span class="hs-general">일반</span> ${Number(parts.general).toLocaleString('ko-KR')}건`);
     const suffix = usingFullData ? '입니다.' : '입니다. (현재 로딩 데이터 기준)';
     return bits.join(', ') + ' ' + suffix;
@@ -302,16 +303,18 @@
           total: Number(overview?.today?.total || 0),
           auction: Number(overview?.today?.auction || 0),
           onbid: Number(overview?.today?.onbid || 0),
-          realtor: Number(overview?.today?.realtor || 0),
+          realtor_naver: Number(overview?.today?.realtor_naver || 0),
+          realtor_direct: Number(overview?.today?.realtor_direct || 0),
           general: Number(overview?.today?.general || 0),
         }
-      : { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+      : { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     let geoPending = overview && !hasSnapshotRows ? Number(overview?.geoPending || 0) : 0;
     if (hasSnapshotRows) {
       todayParts.total = 0;
       todayParts.auction = 0;
       todayParts.onbid = 0;
-      todayParts.realtor = 0;
+      todayParts.realtor_naver = 0;
+      todayParts.realtor_direct = 0;
       todayParts.general = 0;
       geoPending = 0;
       for (const item of Array.isArray(props) ? props : []) {
@@ -322,7 +325,10 @@
           if (sourceKey === 'auction') todayParts.auction += 1;
           else if (sourceKey === 'onbid') todayParts.onbid += 1;
           else if (sourceKey === 'general') todayParts.general += 1;
-          else if (sourceKey === 'realtor') todayParts.realtor += 1;
+          else if (sourceKey === 'realtor') {
+            if (item?.isDirectSubmission || item?.is_direct_submission) todayParts.realtor_direct += 1;
+            else todayParts.realtor_naver += 1;
+          }
         }
         const status = String(item?.geocodeStatus || item?._raw?.geocode_status || '').trim().toLowerCase();
         const lat = item?.latitude ?? item?._raw?.latitude;
@@ -335,7 +341,9 @@
     if (els.sumTodayTotal) els.sumTodayTotal.textContent = fmt(todayParts.total);
     if (els.sumTodayAuction) els.sumTodayAuction.textContent = fmt(todayParts.auction);
     if (els.sumTodayOnbid) els.sumTodayOnbid.textContent = fmt(todayParts.onbid);
-    if (els.sumTodayRealtor) els.sumTodayRealtor.textContent = fmt(todayParts.realtor);
+    if (els.sumTodayRealtor) els.sumTodayRealtor.textContent = fmt(todayParts.realtor_naver);
+    if (els.sumTodayDirect) els.sumTodayDirect.textContent = fmt(todayParts.realtor_direct);
+    if (els.sumTodayGeneral) els.sumTodayGeneral.textContent = fmt(todayParts.general);
     if (els.homeGeoPending) els.homeGeoPending.textContent = fmt(geoPending);
     if (els.sumTodayDetail) {
       const usingFullData = Array.isArray(state.propertiesFullCache) || hasSnapshotRows;

@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260331-overview-fast3";
+  const ADMIN_FAST_BUILD = "20260331-overview-fast4";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -410,6 +410,8 @@
       sumTodayAuction: $("#sumTodayAuction"),
       sumTodayOnbid: $("#sumTodayOnbid"),
       sumTodayRealtor: $("#sumTodayRealtor"),
+      sumTodayDirect: $("#sumTodayDirect"),
+      sumTodayGeneral: $("#sumTodayGeneral"),
       sumTodayDetail: $("#sumTodayDetail"),
       homeGeoPending: $("#homeGeoPending"),
       homeProgressAuction: $("#homeProgressAuction"),
@@ -1037,6 +1039,8 @@ function bindEvents() {
         auction: Number(safe?.today?.auction || 0),
         onbid: Number(safe?.today?.onbid || 0),
         realtor: Number(safe?.today?.realtor || 0),
+        realtor_naver: Number(safe?.today?.realtor_naver || 0),
+        realtor_direct: Number(safe?.today?.realtor_direct || 0),
         general: Number(safe?.today?.general || 0),
       },
       geoPending: Number(safe?.geoPending || safe?.geo_pending || 0),
@@ -1093,7 +1097,7 @@ function bindEvents() {
   function createEmptyOverview() {
     return {
       summary: { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
-      today: { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 },
+      today: { total: 0, auction: 0, onbid: 0, realtor: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
       geoPending: 0,
       filterCounts: {
         source: { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
@@ -1167,6 +1171,71 @@ function bindEvents() {
     const { count, error } = await queryBuilder;
     if (error) throw error;
     return Number(count || 0);
+  }
+
+  function isOverviewSummaryComplete(summary) {
+    if (!summary || typeof summary !== 'object') return false;
+    const total = Number(summary.total || 0);
+    const subtotal = Number(summary.auction || 0) + Number(summary.onbid || 0) + Number(summary.realtor_naver || 0) + Number(summary.realtor_direct || 0) + Number(summary.general || 0);
+    return total > 0 && subtotal === total;
+  }
+
+  async function fetchBrowserOverviewCounts(sb) {
+    if (!sb) return null;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const startIso = todayStart.toISOString();
+    const endIso = tomorrowStart.toISOString();
+
+    const totalQ = sb.from('properties').select('id', { count: 'exact', head: true });
+    const srcQ = (sourceType) => sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', sourceType);
+    const srcTodayQ = (sourceType) => sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', sourceType).gte('created_at', startIso).lt('created_at', endIso);
+    const realtorNaverQ = sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'realtor').not('source_url', 'is', null).neq('source_url', '');
+    const realtorNaverTodayQ = sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'realtor').gte('created_at', startIso).lt('created_at', endIso).not('source_url', 'is', null).neq('source_url', '');
+
+    const [total, auction, onbid, general, realtorTotal, realtorNaver, todayTotal, todayAuction, todayOnbid, todayGeneral, todayRealtorTotal, todayRealtorNaver] = await Promise.all([
+      fetchSupabaseExactCount(totalQ),
+      fetchSupabaseExactCount(srcQ('auction')),
+      fetchSupabaseExactCount(srcQ('onbid')),
+      fetchSupabaseExactCount(srcQ('general')),
+      fetchSupabaseExactCount(srcQ('realtor')),
+      fetchSupabaseExactCount(realtorNaverQ),
+      fetchSupabaseExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).gte('created_at', startIso).lt('created_at', endIso)),
+      fetchSupabaseExactCount(srcTodayQ('auction')),
+      fetchSupabaseExactCount(srcTodayQ('onbid')),
+      fetchSupabaseExactCount(srcTodayQ('general')),
+      fetchSupabaseExactCount(srcTodayQ('realtor')),
+      fetchSupabaseExactCount(realtorNaverTodayQ),
+    ]);
+
+    const realtorDirect = Math.max(0, realtorTotal - realtorNaver);
+    const todayRealtorDirect = Math.max(0, todayRealtorTotal - todayRealtorNaver);
+
+    const overview = createEmptyOverview();
+    overview.summary.total = total;
+    overview.summary.auction = auction;
+    overview.summary.onbid = onbid;
+    overview.summary.realtor_naver = realtorNaver;
+    overview.summary.realtor_direct = realtorDirect;
+    overview.summary.general = general;
+    overview.today.total = todayTotal;
+    overview.today.auction = todayAuction;
+    overview.today.onbid = todayOnbid;
+    overview.today.realtor = todayRealtorNaver + todayRealtorDirect;
+    overview.today.realtor_naver = todayRealtorNaver;
+    overview.today.realtor_direct = todayRealtorDirect;
+    overview.today.general = todayGeneral;
+    overview.filterCounts.source[''] = total;
+    overview.filterCounts.source.auction = auction;
+    overview.filterCounts.source.onbid = onbid;
+    overview.filterCounts.source.realtor_naver = realtorNaver;
+    overview.filterCounts.source.realtor_direct = realtorDirect;
+    overview.filterCounts.source.general = general;
+    overview.generatedAt = new Date().toISOString();
+    overview.source = 'browser_exact_count';
+    return overview;
   }
 
   async function fetchBrowserOverviewFallback(sb) {
@@ -1251,6 +1320,8 @@ function bindEvents() {
           auction: Number(candidate?.today?.auction || 0),
           onbid: Number(candidate?.today?.onbid || 0),
           realtor: Number(candidate?.today?.realtor || 0),
+          realtor_naver: Number(candidate?.today?.realtor_naver || 0),
+          realtor_direct: Number(candidate?.today?.realtor_direct || 0),
           general: Number(candidate?.today?.general || 0),
         },
         geoPending: Number(candidate?.geoPending || candidate?.geo_pending || 0),
@@ -1276,10 +1347,31 @@ function bindEvents() {
 
     const cacheBust = `_ts=${Date.now()}`;
     const path = `/admin/properties?mode=overview&${cacheBust}`;
-    const res = await api(path, { auth: true });
-    let overview = normalizeOverviewPayload(res);
+    let overview = null;
+    try {
+      const res = await api(path, { auth: true });
+      overview = normalizeOverviewPayload(res);
+    } catch (err) {
+      console.warn('server overview request failed', err);
+    }
 
-    if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0) && sb) {
+    if (sb && !isOverviewSummaryComplete(overview?.summary)) {
+      try {
+        const exactOverview = await fetchBrowserOverviewCounts(sb);
+        if (exactOverview?.summary && Number(exactOverview.summary.total || 0) > 0) {
+          overview = {
+            ...(overview && typeof overview === 'object' ? overview : {}),
+            ...exactOverview,
+            filterCounts: {
+              ...(overview?.filterCounts && typeof overview.filterCounts === 'object' ? overview.filterCounts : {}),
+              ...(exactOverview?.filterCounts && typeof exactOverview.filterCounts === 'object' ? exactOverview.filterCounts : {}),
+            },
+          };
+        }
+      } catch (err) {
+        console.warn('browser overview exact-count fallback failed', err);
+      }
+    } else if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0) && sb) {
       try {
         const browserOverview = await fetchBrowserOverviewFallback(sb);
         if (browserOverview?.summary && Number(browserOverview.summary.total || 0) > 0) {

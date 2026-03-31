@@ -10,6 +10,7 @@ const {
   getStaff,
   updateStaff,
   deleteAuthUser,
+  getEnv,
 } = require('../../_lib/supabase-admin');
 
 function normalizeRoleValue(value) {
@@ -21,6 +22,44 @@ function readTargetId(req, body) {
   const idFromQuery = url.searchParams.get('id');
   const idFromBody = body && typeof body === 'object' ? body.id : '';
   return String(idFromQuery || idFromBody || '').trim();
+}
+
+function buildSupabaseHeaders(hasJson = false, extra = {}) {
+  const { serviceRoleKey } = getEnv();
+  const headers = {
+    Accept: 'application/json',
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    ...extra,
+  };
+  if (hasJson) headers['Content-Type'] = 'application/json';
+  return headers;
+}
+
+async function clearAssigneeFromProperties(targetId) {
+  const { url } = getEnv();
+  const res = await fetch(`${url}/rest/v1/properties?assignee_id=eq.${encodeURIComponent(targetId)}`, {
+    method: 'PATCH',
+    headers: buildSupabaseHeaders(true, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({ assignee_id: null }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || '담당 물건 연결 해제에 실패했습니다.');
+  }
+}
+
+function clearAssigneeFromStoreProperties(store, targetId) {
+  const items = Array.isArray(store?.properties) ? store.properties : [];
+  for (const row of items) {
+    if (String(row?.assignee_id || row?.assigneeId || '').trim() !== String(targetId || '').trim()) continue;
+    row.assignee_id = null;
+    row.assigneeId = null;
+    if (row.raw && typeof row.raw === 'object') {
+      row.raw.assignee_id = null;
+      row.raw.assigneeId = null;
+    }
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -109,6 +148,7 @@ module.exports = async function handler(req, res) {
       }
 
       try {
+        await clearAssigneeFromProperties(targetId);
         await deleteAuthUser(targetId);
         return send(res, 200, { ok: true, removedId: targetId });
       } catch (err) {
@@ -222,6 +262,7 @@ module.exports = async function handler(req, res) {
     if (store.staff[idx].role === 'admin' && store.staff.filter((u) => u.role === 'admin').length <= 1) {
       return send(res, 400, { ok: false, message: '마지막 관리자 계정은 삭제할 수 없습니다.' });
     }
+    clearAssigneeFromStoreProperties(store, targetId);
     const [removed] = store.staff.splice(idx, 1);
     return send(res, 200, { ok: true, removedId: removed.id });
   }

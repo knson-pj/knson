@@ -1426,6 +1426,11 @@ body{
 .admin-home-updates-list{display:grid;gap:14px;margin-top:18px;}
 .admin-home-updates-row{display:flex;justify-content:space-between;align-items:center;font-size:18px;font-weight:700;color:var(--text);}
 .admin-home-updates-row span{color:#374151;font-weight:600;}
+.admin-home-updates-row.is-auction span,.admin-home-updates-row.is-auction strong{color:var(--c-auction);}
+.admin-home-updates-row.is-onbid span,.admin-home-updates-row.is-onbid strong{color:var(--c-onbid);}
+.admin-home-updates-row.is-naver span,.admin-home-updates-row.is-naver strong{color:var(--c-realtor);}
+.admin-home-updates-row.is-direct span,.admin-home-updates-row.is-direct strong,.admin-home-updates-row.is-general span,.admin-home-updates-row.is-general strong{color:var(--c-general);}
+
 .admin-home-updates-footnote{margin-top:12px;font-size:13px;color:#9ca3af;}
 .admin-home-side-stack{display:grid;gap:20px;}
 .admin-home-mini-card{display:flex;align-items:center;gap:16px;min-height:125px;padding:24px;}

@@ -57,6 +57,121 @@ const OVERVIEW_SELECT = [
 
 const AREA_KEYS = ['', '0-5', '5-10', '10-20', '20-30', '30-50', '50-100', '100-'];
 
+async function supabaseHeadCount(path) {
+  const { url } = getEnv();
+  const res = await fetch(`${url}${path}`, {
+    method: 'HEAD',
+    headers: buildSupabaseHeaders(false, { Prefer: 'count=exact' }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(text || `Supabase count 오류 (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  const contentRange = String(res.headers.get('content-range') || '').trim();
+  const m = contentRange.match(/\/(\d+)$/);
+  return m ? Number(m[1] || 0) : 0;
+}
+
+async function fetchSupabaseOverviewRealtorRows(pageSize = 5000) {
+  const rows = [];
+  let from = 0;
+  const select = ['source_type','source_url','is_general','submitter_type','submitter_name','broker_office_name'].join(',');
+  while (true) {
+    const data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(select)}&source_type=eq.realtor&offset=${from}&limit=${pageSize}`);
+    const batch = Array.isArray(data) ? data : [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+  return rows;
+}
+
+async function fetchSupabaseTodayRows(limit = 3000) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+  const select = ['source_type','source_url','is_general','submitter_type','submitter_name','broker_office_name','created_at','date_uploaded'].join(',');
+  const orExpr = `(and(created_at.gte.${startIso},created_at.lt.${endIso}),and(date_uploaded.gte.${startIso},date_uploaded.lt.${endIso}))`;
+  return supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(select)}&or=${encodeURIComponent(orExpr)}&limit=${limit}`);
+}
+
+async function fetchSupabaseGeoPendingCount() {
+  try {
+    return await supabaseHeadCount('/rest/v1/properties?select=id&latitude=is.null&longitude=is.null&address=not.is.null&geocode_status=not.in.(ok,failed)');
+  } catch {
+    return 0;
+  }
+}
+
+async function buildOverviewFastFromSupabase() {
+  const [total, auction, onbid, general, realtorRows, todayRows, geoPending] = await Promise.all([
+    supabaseHeadCount('/rest/v1/properties?select=id'),
+    supabaseHeadCount('/rest/v1/properties?select=id&source_type=eq.auction'),
+    supabaseHeadCount('/rest/v1/properties?select=id&source_type=eq.onbid'),
+    supabaseHeadCount('/rest/v1/properties?select=id&source_type=eq.general'),
+    fetchSupabaseOverviewRealtorRows(),
+    fetchSupabaseTodayRows().catch(() => []),
+    fetchSupabaseGeoPendingCount(),
+  ]);
+
+  const overview = createEmptyOverview();
+  overview.summary.total = total;
+  overview.summary.auction = auction;
+  overview.summary.onbid = onbid;
+  overview.summary.general = general;
+  overview.geoPending = geoPending;
+  overview.filterCounts.source[''] = total;
+  overview.filterCounts.source.auction = auction;
+  overview.filterCounts.source.onbid = onbid;
+  overview.filterCounts.source.general = general;
+
+  for (const row of Array.isArray(realtorRows) ? realtorRows : []) {
+    const normalized = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
+      ? PropertyDomain.buildNormalizedPropertyBase(row)
+      : row;
+    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
+      ? PropertyDomain.getSourceBucket(normalized)
+      : (String(row?.source_url || '').trim() ? 'realtor_naver' : 'realtor_direct');
+    if (bucket === 'realtor_direct') overview.summary.realtor_direct += 1;
+    else overview.summary.realtor_naver += 1;
+  }
+  overview.filterCounts.source.realtor_naver = overview.summary.realtor_naver;
+  overview.filterCounts.source.realtor_direct = overview.summary.realtor_direct;
+
+  const todayKey = getTodayKey();
+  for (const row of Array.isArray(todayRows) ? todayRows : []) {
+    const normalized = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
+      ? PropertyDomain.buildNormalizedPropertyBase(row)
+      : row;
+    const createdAt = normalized?.createdAt || row?.created_at || row?.date_uploaded || '';
+    if (!sameDay(createdAt, todayKey)) continue;
+    overview.today.total += 1;
+    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
+      ? PropertyDomain.getSourceBucket(normalized)
+      : String(normalized?.source_type || normalized?.sourceType || 'general');
+    if (bucket === 'auction') overview.today.auction += 1;
+    else if (bucket === 'onbid') overview.today.onbid += 1;
+    else if (bucket === 'general') overview.today.general += 1;
+    else if (bucket === 'realtor_naver') {
+      overview.today.realtor += 1;
+      overview.today.realtor_naver = Number(overview.today.realtor_naver || 0) + 1;
+    } else if (bucket === 'realtor_direct') {
+      overview.today.realtor += 1;
+      overview.today.realtor_direct = Number(overview.today.realtor_direct || 0) + 1;
+    }
+  }
+
+  overview.generatedAt = new Date().toISOString();
+  overview.fast = true;
+  return overview;
+}
+
+
 function splitSelectColumns(select) {
   return String(select || '').split(',').map((part) => String(part || '').trim()).filter(Boolean);
 }
@@ -240,8 +355,8 @@ module.exports = async function handler(req, res) {
       res.setHeader('Expires', '0');
       try {
         if (hasSupabaseAdminEnv()) {
-          const rows = await fetchSupabaseOverviewRows();
-          return send(res, 200, { ok: true, overview: buildOverviewFromRows(rows) });
+          const overview = await buildOverviewFastFromSupabase();
+          return send(res, 200, { ok: true, overview });
         }
         const fallbackRows = Array.isArray(store.properties) ? store.properties : [];
         if (!fallbackRows.length) {

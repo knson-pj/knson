@@ -101,6 +101,44 @@
     mod.setStaffFormMode("create");
   };
 
+  mod.bindStaffTableActions = function bindStaffTableActions() {
+    const { els, state, api, utils } = ctx();
+    const { renderSummary, hydrateAssignedAgentNames, renderPropertiesTable, setActiveTab } = utils;
+    if (!els.staffTableBody || els.staffTableBody.dataset.boundStaffActions === 'true') return;
+    els.staffTableBody.dataset.boundStaffActions = 'true';
+    els.staffTableBody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const id = String(btn.dataset.id || '');
+      const act = String(btn.dataset.act || '');
+      const row = (Array.isArray(state.staff) ? state.staff : []).find((staff) => String(staff.id) === id);
+      if (!row) return;
+
+      if (act === 'edit') {
+        mod.fillStaffForm(row);
+        setActiveTab('staff');
+        return;
+      }
+
+      if (act === 'delete') {
+        if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
+        try {
+          await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: 'DELETE', auth: true, body: { id } });
+          state.staff = state.staff.filter((staff) => String(staff.id) !== id);
+          mod.resetStaffForm();
+          mod.renderStaffTable();
+          mod.renderAssignmentTable();
+          renderSummary();
+          hydrateAssignedAgentNames();
+          renderPropertiesTable();
+        } catch (err) {
+          console.error(err);
+          alert(err.message || '삭제 실패');
+        }
+      }
+    });
+  };
+
   mod.handleSaveStaff = async function handleSaveStaff(e) {
     const { state, api, utils } = ctx();
     const { normalizeStaff, setFormBusy, renderSummary } = utils;
@@ -141,7 +179,9 @@
       mod.resetStaffForm();
       await mod.loadStaff();
       renderSummary();
+      setFormBusy(e.currentTarget, false);
       alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
+      return;
     } catch (err) {
       console.error(err);
       alert(err.message || "저장 실패");
@@ -151,8 +191,8 @@
   };
 
   mod.renderStaffTable = function renderStaffTable() {
-    const { state, els, api, utils } = ctx();
-    const { escapeHtml, escapeAttr, formatDate, renderSummary, hydrateAssignedAgentNames, renderPropertiesTable, setActiveTab } = utils;
+    const { state, els, utils } = ctx();
+    const { escapeHtml, escapeAttr, formatDate } = utils;
     if (!els.staffTableBody || !els.staffEmpty) return;
     els.staffTableBody.innerHTML = "";
 
@@ -192,37 +232,7 @@
     });
 
     els.staffTableBody.appendChild(frag);
-
-    els.staffTableBody.querySelectorAll("button[data-act]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        const id = String(e.currentTarget.dataset.id || "");
-        const act = String(e.currentTarget.dataset.act || "");
-        const row = state.staff.find((staff) => String(staff.id) === id);
-        if (!row) return;
-
-        if (act === "edit") {
-          mod.fillStaffForm(row);
-          setActiveTab("staff");
-          return;
-        }
-
-        if (act === "delete") {
-          if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
-          try {
-            await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: "DELETE", auth: true, body: { id } });
-            state.staff = state.staff.filter((staff) => String(staff.id) !== id);
-            mod.renderStaffTable();
-            mod.renderAssignmentTable();
-            renderSummary();
-            hydrateAssignedAgentNames();
-            renderPropertiesTable();
-          } catch (err) {
-            console.error(err);
-            alert(err.message || "삭제 실패");
-          }
-        }
-      });
-    });
+    mod.bindStaffTableActions();
   };
 
   mod.renderAssignmentTable = function renderAssignmentTable() {
