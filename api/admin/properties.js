@@ -51,7 +51,7 @@ async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
 
 
 const OVERVIEW_SELECT = [
-  'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general', 'submitter_type', 'submitter_name', 'broker_office_name',
+  'source_type', 'source_url', 'is_general', 'submitter_type', 'submitter_name', 'broker_office_name',
   'address', 'latitude', 'longitude', 'geocode_status', 'exclusive_area', 'date_uploaded', 'created_at'
 ].join(',');
 
@@ -152,7 +152,7 @@ function appendRowToOverview(overview, row, todayKey) {
   }
 }
 
-async function fetchSupabaseOverviewRows(pageSize = 2000) {
+async function fetchSupabaseOverviewRows(pageSize = 5000) {
   const rows = [];
   let from = 0;
   let activeSelect = OVERVIEW_SELECT;
@@ -161,7 +161,7 @@ async function fetchSupabaseOverviewRows(pageSize = 2000) {
     const to = from + pageSize - 1;
     let data;
     try {
-      data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(activeSelect)}&order=date_uploaded.desc.nullslast,id.desc&offset=${from}&limit=${pageSize}`);
+      data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(activeSelect)}&offset=${from}&limit=${pageSize}`);
     } catch (err) {
       const missing = extractMissingColumn(err);
       if (missing && !removed.has(missing)) {

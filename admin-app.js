@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260326-home2";
+  const ADMIN_FAST_BUILD = "20260331-overview-fast1";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -1044,61 +1044,19 @@ function bindEvents() {
     if (!forceRefresh && state.propertyOverview) return state.propertyOverview;
 
     const cacheBust = `_ts=${Date.now()}`;
-    const candidates = [
-      `/admin/properties?mode=overview&${cacheBust}`,
-      `/admin/property-overview?${cacheBust}`,
-    ];
+    const path = `/admin/properties?mode=overview&${cacheBust}`;
+    const res = await api(path, { auth: true });
+    const overview = res?.overview && typeof res.overview === 'object'
+      ? res.overview
+      : (res && typeof res === 'object' ? res : null);
 
-    const shouldUseFallbackSummary = (overview) => {
-      const total = Number(overview?.summary?.total || 0);
-      return !overview || !overview.summary || total <= 0;
-    };
-
-    const tryBrowserSummaryFallback = async () => {
-      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-      if (!sb) return null;
-      const summary = await fetchPropertySummary(sb);
-      const total = Number(summary?.total || 0);
-      if (total <= 0) return null;
-      const overview = buildOverviewFromSummary(summary);
-      state.propertyOverview = overview;
-      state.propertySummary = overview.summary;
-      return overview;
-    };
-
-    let lastError = null;
-    for (const path of candidates) {
-      try {
-        const res = await api(path, { auth: true });
-        const overview = res?.overview && typeof res.overview === 'object' ? res.overview : (res && typeof res === 'object' ? res : null);
-        if (overview && !shouldUseFallbackSummary(overview)) {
-          state.propertyOverview = overview;
-          if (overview.summary) state.propertySummary = overview.summary;
-          return overview;
-        }
-        const fallbackOverview = await tryBrowserSummaryFallback().catch((err) => {
-          lastError = err;
-          return null;
-        });
-        if (fallbackOverview) return fallbackOverview;
-        if (overview) {
-          state.propertyOverview = overview;
-          if (overview.summary) state.propertySummary = overview.summary;
-          return overview;
-        }
-      } catch (err) {
-        lastError = err;
-      }
+    if (!overview || !overview.summary) {
+      throw new Error('대시보드 집계 응답 형식이 올바르지 않습니다.');
     }
 
-    try {
-      const fallbackOverview = await tryBrowserSummaryFallback();
-      if (fallbackOverview) return fallbackOverview;
-    } catch (fallbackErr) {
-      lastError = fallbackErr;
-    }
-
-    throw lastError || new Error('대시보드 집계 데이터를 불러오지 못했습니다.');
+    state.propertyOverview = overview;
+    state.propertySummary = overview.summary;
+    return overview;
   }
 
   async function fetchPropertyDetail(sb, targetId) {
