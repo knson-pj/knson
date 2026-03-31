@@ -590,6 +590,31 @@ async function handleSupabaseWrite(req, res) {
 
     const patchInput = body.patch && typeof body.patch === 'object' ? body.patch : body;
     const patch = buildSupabasePropertyRow(patchInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: true });
+    const currentRaw = sanitizePropertyRaw(current?.raw || {});
+    const currentSourceType = PropertyDomain.normalizeSourceType(
+      current?.source_type ?? currentRaw.source_type ?? currentRaw.sourceType,
+      { fallback: '' }
+    ) || undefined;
+    const currentSubmitterType = PropertyDomain.normalizeSubmitterType(
+      current?.submitter_type ?? currentRaw.submitter_type ?? currentRaw.submitterType,
+      { fallback: '' }
+    ) || undefined;
+    if (!patch.source_type && currentSourceType) patch.source_type = currentSourceType;
+    if (patch.is_general === undefined && currentSourceType) patch.is_general = PropertyDomain.isGeneralSourceType(currentSourceType);
+    if (!patch.submitter_type && currentSubmitterType) patch.submitter_type = currentSubmitterType;
+    patch.raw = sanitizePropertyRaw({
+      ...currentRaw,
+      ...(patch.raw && typeof patch.raw === 'object' ? patch.raw : {}),
+    });
+    if (currentSourceType) {
+      if (patch.raw.source_type === undefined) patch.raw.source_type = currentSourceType;
+      if (patch.raw.sourceType === undefined) patch.raw.sourceType = currentSourceType;
+      if (patch.raw.is_general === undefined) patch.raw.is_general = PropertyDomain.isGeneralSourceType(currentSourceType);
+    }
+    if (currentSubmitterType) {
+      if (patch.raw.submitter_type === undefined) patch.raw.submitter_type = currentSubmitterType;
+      if (patch.raw.submitterType === undefined) patch.raw.submitterType = currentSubmitterType;
+    }
     if (ctx.role === 'staff') delete patch.assignee_id;
 
     const col = targetId.includes(':') ? 'global_id' : 'id';

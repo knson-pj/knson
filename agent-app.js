@@ -1571,7 +1571,34 @@
       if (!targetId) throw new Error("수정 대상 물건 식별자를 찾을 수 없습니다.");
 
       const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
+      const normalizedSourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
+        ? PropertyDomain.normalizeSourceType(
+            item?.sourceType || item?._raw?.source_type || existingRaw.source_type || existingRaw.sourceType || "",
+            { fallback: "" }
+          )
+        : String(item?.sourceType || item?._raw?.source_type || existingRaw.source_type || existingRaw.sourceType || "").trim().toLowerCase();
+      const normalizedSubmitterType = (PropertyDomain && typeof PropertyDomain.normalizeSubmitterType === "function")
+        ? PropertyDomain.normalizeSubmitterType(
+            item?._raw?.submitter_type || existingRaw.submitter_type || existingRaw.submitterType || "",
+            { fallback: "" }
+          )
+        : String(item?._raw?.submitter_type || existingRaw.submitter_type || existingRaw.submitterType || "").trim().toLowerCase();
+      if (normalizedSourceType) {
+        patch.source_type = normalizedSourceType;
+        patch.is_general = normalizedSourceType === "general";
+      }
+      if (normalizedSubmitterType) patch.submitter_type = normalizedSubmitterType;
+
       const newRaw = sanitizePropertyRawForSave(existingRaw, {
+        ...(normalizedSourceType ? {
+          sourceType: normalizedSourceType,
+          source_type: normalizedSourceType,
+          is_general: normalizedSourceType === "general",
+        } : {}),
+        ...(normalizedSubmitterType ? {
+          submitterType: normalizedSubmitterType,
+          submitter_type: normalizedSubmitterType,
+        } : {}),
         floor: floorVal,
         totalfloor: totalFloorVal,
         useapproval: useApprovalVal,
