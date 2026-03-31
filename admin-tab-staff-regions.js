@@ -124,10 +124,10 @@
       setFormBusy(e.currentTarget, true);
       let saved = null;
       if (id) {
-        const res = await api(`/admin/staff/${encodeURIComponent(id)}`, {
+        const res = await api(`/admin/staff?id=${encodeURIComponent(id)}`, {
           method: "PATCH",
           auth: true,
-          body: { name: payload.name, position: payload.position, phone: payload.phone, role: payload.role },
+          body: { id, name: payload.name, position: payload.position, phone: payload.phone, role: payload.role },
         });
         saved = res?.item || null;
       } else {
@@ -209,7 +209,7 @@
         if (act === "delete") {
           if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
           try {
-            await api(`/admin/staff/${encodeURIComponent(id)}`, { method: "DELETE", auth: true });
+            await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: "DELETE", auth: true, body: { id } });
             state.staff = state.staff.filter((staff) => String(staff.id) !== id);
             mod.renderStaffTable();
             mod.renderAssignmentTable();

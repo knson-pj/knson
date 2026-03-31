@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260331-overview-fast2";
+  const ADMIN_FAST_BUILD = "20260331-overview-fast3";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -1163,6 +1163,73 @@ function bindEvents() {
     return overview;
   }
 
+  async function fetchSupabaseExactCount(queryBuilder) {
+    const { count, error } = await queryBuilder;
+    if (error) throw error;
+    return Number(count || 0);
+  }
+
+  async function fetchBrowserOverviewFallback(sb) {
+    if (!sb) return null;
+
+    const total = await fetchSupabaseExactCount(
+      sb.from('properties').select('id', { count: 'exact', head: true })
+    );
+    if (total <= 0) return null;
+
+    const [auction, onbid, general] = await Promise.all([
+      fetchSupabaseExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'auction')),
+      fetchSupabaseExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'onbid')),
+      fetchSupabaseExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'general')),
+    ]);
+
+    let realtorNaver = 0;
+    let realtorDirect = 0;
+    try {
+      let from = 0;
+      const pageSize = 1000;
+      const realtorRows = [];
+      while (true) {
+        const { data, error } = await sb
+          .from('properties')
+          .select('source_type,source_url,submitter_type,submitter_name,broker_office_name,is_general')
+          .eq('source_type', 'realtor')
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const batch = Array.isArray(data) ? data : [];
+        realtorRows.push(...batch);
+        if (batch.length < pageSize) break;
+        from += pageSize;
+      }
+      for (const row of realtorRows) {
+        const bucket = (PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function')
+          ? PropertyDomain.getSourceBucket(row)
+          : (String(row?.source_url || '').trim() ? 'realtor_naver' : 'realtor_direct');
+        if (bucket === 'realtor_direct') realtorDirect += 1;
+        else realtorNaver += 1;
+      }
+    } catch (err) {
+      console.warn('browser overview realtor bucket fallback failed', err);
+    }
+
+    const overview = createEmptyOverview();
+    overview.summary.total = total;
+    overview.summary.auction = auction;
+    overview.summary.onbid = onbid;
+    overview.summary.realtor_naver = realtorNaver;
+    overview.summary.realtor_direct = realtorDirect;
+    overview.summary.general = general;
+    overview.filterCounts.source[''] = total;
+    overview.filterCounts.source.auction = auction;
+    overview.filterCounts.source.onbid = onbid;
+    overview.filterCounts.source.realtor_naver = realtorNaver;
+    overview.filterCounts.source.realtor_direct = realtorDirect;
+    overview.filterCounts.source.general = general;
+    overview.generatedAt = new Date().toISOString();
+    overview.source = 'browser_count_fallback';
+    return overview;
+  }
+
   function normalizeOverviewPayload(res) {
     const candidate = (res?.overview && typeof res.overview === 'object')
       ? res.overview
@@ -1204,13 +1271,24 @@ function bindEvents() {
     return null;
   }
 
-  async function fetchAdminPropertyOverview({ forceRefresh = false } = {}) {
+  async function fetchAdminPropertyOverview({ forceRefresh = false, sb = null } = {}) {
     if (!forceRefresh && state.propertyOverview) return state.propertyOverview;
 
     const cacheBust = `_ts=${Date.now()}`;
     const path = `/admin/properties?mode=overview&${cacheBust}`;
     const res = await api(path, { auth: true });
-    const overview = normalizeOverviewPayload(res);
+    let overview = normalizeOverviewPayload(res);
+
+    if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0) && sb) {
+      try {
+        const browserOverview = await fetchBrowserOverviewFallback(sb);
+        if (browserOverview?.summary && Number(browserOverview.summary.total || 0) > 0) {
+          overview = browserOverview;
+        }
+      } catch (err) {
+        console.warn('browser overview fallback failed', err);
+      }
+    }
 
     if (!overview || !overview.summary) {
       throw new Error('대시보드 집계 응답 형식이 올바르지 않습니다.');
@@ -1272,7 +1350,7 @@ function bindEvents() {
       const needsFull = forceFull || shouldUseFullPropertyDataset() || state.activeTab === 'regions' || state.activeTab === 'geocoding' || state.activeTab === 'workmgmt';
       const shouldLoadOverview = isAdmin && (refreshSummary || !state.propertySummary || !state.propertyOverview);
       const overviewPromise = shouldLoadOverview
-        ? fetchAdminPropertyOverview({ forceRefresh: refreshSummary || !state.propertyOverview }).catch((err) => {
+        ? fetchAdminPropertyOverview({ forceRefresh: refreshSummary || !state.propertyOverview, sb }).catch((err) => {
             console.warn('property overview load failed', err);
             return state.propertyOverview;
           })
