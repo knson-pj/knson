@@ -349,6 +349,11 @@
       el.classList.toggle('hidden', key !== active);
     });
 
+    if (active === 'properties') {
+      syncPropertySourceFilterUi();
+      warmPropertyFullCacheForFilters().catch((err) => console.warn('warmPropertyFullCacheForFilters failed', err));
+    }
+
     try {
       const shell = AdminModules.shell;
       if (shell && typeof shell.syncChromeForTab === 'function') shell.syncChromeForTab(active);
@@ -428,6 +433,7 @@
       btnDeleteAllProperties: $("#btnDeleteAllProperties"),
       propSelectAll: $("#propSelectAll"),
       propStatusFilter: $("#propStatusFilter"),
+      propSourceFilter: $("#propSourceFilter"),
       propAreaFilter: $("#propAreaFilter"),
       propPriceFilter: $("#propPriceFilter"),
       propRatioFilter: $("#propRatioFilter"),
@@ -671,13 +677,17 @@ function bindEvents() {
         const key = card.dataset.card || "";
         const next = state.propertyFilters.activeCard === key ? "" : key; // 같은 카드 재클릭 시 해제
         state.propertyFilters.activeCard = next;
-        // active 스타일 토글
-        document.querySelectorAll(".summary-card[data-card]").forEach((c) => {
-          c.classList.toggle("is-active", c.dataset.card === next && next !== "");
-        });
+        syncPropertySourceFilterUi();
         state.propertyPage = 1;
         loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
       });
+    });
+
+    if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
+      state.propertyFilters.activeCard = String(e.target.value || "");
+      syncPropertySourceFilterUi();
+      state.propertyPage = 1;
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
 
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
@@ -777,6 +787,32 @@ function bindEvents() {
   async function ensureLoginThenLoad() {
     const out = callAdminModule("shell", "ensureLoginThenLoad", []);
     return out instanceof Promise ? await out : out;
+  }
+
+  function syncPropertySourceFilterUi() {
+    const active = String(state.propertyFilters?.activeCard || "").trim();
+    if (els.propSourceFilter) els.propSourceFilter.value = active;
+    document.querySelectorAll(".summary-card[data-card]").forEach((card) => {
+      card.classList.toggle("is-active", !!active && card.dataset.card === active);
+    });
+  }
+
+  async function warmPropertyFullCacheForFilters() {
+    if (normalizeRole(state.session?.user?.role) !== "admin") return;
+    if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
+      if (state.activeTab === "properties") renderPropertiesTable();
+      return;
+    }
+    if (!isSupabaseMode()) return;
+    const sb = K.initSupabase();
+    if (!sb) return;
+    const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
+    const currentSession = synced || state.session || loadSession() || null;
+    if (currentSession) state.session = currentSession;
+    const user = currentSession?.user || null;
+    const uid = String(user?.id || "").trim();
+    await ensureFullPropertiesCache(sb, { isAdmin: true, uid, forceRefresh: false });
+    if (state.activeTab === "properties") renderPropertiesTable();
   }
 
   function renderSessionUI() {
