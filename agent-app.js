@@ -241,6 +241,9 @@
     els.agEditMsg = $("#agEditMsg");
     els.agHistoryList = $("#agHistoryList");
     els.agRegistrationLogList = $("#agRegistrationLogList");
+    els.agCombinedLogList = $("#agCombinedLogList");
+    els.agEditTabs = $$("#agEditForm [data-edit-tab]");
+    els.agEditSections = $$("#agEditForm [data-edit-section]");
 
     // Password modal
     els.pwdModal = $("#passwordChangeModal");
@@ -721,6 +724,11 @@
     if (els.agEditModal) {
       els.agEditModal.addEventListener("click", (e) => {
         if (e.target?.dataset?.close === "true") closeEditModal();
+      });
+    }
+    if (els.agEditTabs?.length) {
+      els.agEditTabs.forEach((btn) => {
+        btn.addEventListener("click", () => setAgentEditSection(btn.dataset.editTab || "basic"));
       });
     }
     if (els.agEditForm) els.agEditForm.addEventListener("submit", (e) => { e.preventDefault(); saveProperty(); });
@@ -1483,6 +1491,22 @@
     if (!hasCurrent) patch[key] = nextValue;
   }
 
+  function setAgentEditSection(sectionKey) {
+    const activeKey = String(sectionKey || "basic").trim() || "basic";
+    if (Array.isArray(els.agEditTabs)) {
+      els.agEditTabs.forEach((btn) => {
+        const isActive = btn.dataset.editTab === activeKey;
+        btn.classList.toggle("is-active", isActive);
+        btn.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+    }
+    if (Array.isArray(els.agEditSections)) {
+      els.agEditSections.forEach((section) => {
+        section.classList.toggle("is-active", section.dataset.editSection === activeKey);
+      });
+    }
+  }
+
   function openEditModal(item) {
     state.editingProperty = item;
     if (!els.agEditForm) return;
@@ -1519,8 +1543,8 @@
     });
 
     if (els.agEditMsg) els.agEditMsg.textContent = "";
-    renderOpinionHistory(els.agHistoryList, loadOpinionHistory(item), false);
-    renderRegistrationLog(els.agRegistrationLogList, loadRegistrationLog(item));
+    renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
+    setAgentEditSection("basic");
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
   }
@@ -1724,6 +1748,11 @@
   function esc(v) {
     if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
     return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function escAttr(v) {
+    if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
+    return esc(v).replace(/'/g, "&#39;");
   }
 
   function formatEok(n) {
@@ -2057,6 +2086,90 @@
     const hh = String(d.getHours()).padStart(2, "0");
     const mi = String(d.getMinutes()).padStart(2, "0");
     return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
+  }
+
+  function toTimelineTimestamp(value) {
+    const s = String(value || "").trim();
+    if (!s) return Number.POSITIVE_INFINITY;
+    const time = Date.parse(s);
+    if (Number.isFinite(time)) return time;
+    const normalized = s.replace(/\./g, "-").replace(/\s+/g, "T");
+    const nextTime = Date.parse(normalized);
+    if (Number.isFinite(nextTime)) return nextTime;
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function buildCombinedPropertyLog(opinionHistory, registrationLog) {
+    const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
+    const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
+    const rows = [];
+
+    opinions.forEach((entry, idx) => {
+      const text = String(entry?.text || "").trim();
+      if (!text) return;
+      const at = String(entry?.date || entry?.at || "").trim();
+      rows.push({
+        kind: "opinion",
+        sortAt: toTimelineTimestamp(at),
+        at,
+        badgeClass: "is-opinion",
+        badgeLabel: "담당의견",
+        author: String(entry?.author || "").trim(),
+        text,
+        order: idx,
+      });
+    });
+
+    regLogs.forEach((entry, idx) => {
+      const at = String(entry?.at || entry?.date || "").trim();
+      const route = String(entry?.route || "").trim();
+      const actor = String(entry?.actor || "").trim();
+      const type = String(entry?.type || "").trim();
+      const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
+      rows.push({
+        kind: "registration",
+        sortAt: toTimelineTimestamp(at),
+        at,
+        badgeClass: "is-registration",
+        badgeLabel: "등록LOG",
+        author: actor,
+        title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
+        route,
+        changes,
+        order: idx,
+      });
+    });
+
+    return rows.sort((a, b) => {
+      if (a.sortAt !== b.sortAt) return a.sortAt - b.sortAt;
+      return a.order - b.order;
+    });
+  }
+
+  function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
+    if (!container) return;
+    const list = buildCombinedPropertyLog(opinionHistory, registrationLog);
+    if (!list.length) {
+      container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
+      return;
+    }
+    container.innerHTML = list.map((entry) => {
+      const headBits = [
+        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>`,
+        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : "",
+        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : "",
+      ].filter(Boolean).join("");
+
+      if (entry.kind === "opinion") {
+        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
+      }
+
+      const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : "";
+      const changesHtml = entry.changes?.length
+        ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
+        : "";
+      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml || '<div class="agent-combined-log-text">변경 없음</div>'}</div></div>`;
+    }).join("");
   }
 
   function renderRegistrationLog(container, history) {

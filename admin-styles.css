@@ -878,6 +878,34 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .agent-edit-textarea{min-height:72px;resize:vertical;}
 .agent-history-wrap{margin-top:0;}
 
+.agent-edit-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:stretch;}
+.agent-edit-tab{
+  min-width:0;height:42px;padding:0 10px;border:1px solid var(--border);border-radius:12px;
+  background:var(--surface-2);color:var(--text-2);font-size:13px;font-weight:700;line-height:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;
+  transition:border-color .12s ease, background .12s ease, color .12s ease, box-shadow .12s ease;
+}
+.agent-edit-tab:hover{border-color:var(--brand);color:var(--brand);}
+.agent-edit-tab.is-active{border-color:var(--brand);background:var(--brand-light);color:var(--brand);box-shadow:0 0 0 1px rgba(49,92,246,.06) inset;}
+.agent-edit-section{display:none;gap:var(--sp-3);}
+.agent-edit-section.is-active{display:grid;}
+.agent-combined-log-list{max-height:340px;}
+.agent-combined-log-item{display:grid;gap:10px;padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);}
+.agent-combined-log-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.agent-combined-log-badge{display:inline-flex;align-items:center;justify-content:center;min-height:24px;padding:0 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);font-size:11px;font-weight:700;}
+.agent-combined-log-badge.is-opinion{background:rgba(49,92,246,.12);color:var(--brand);}
+.agent-combined-log-badge.is-registration{background:rgba(21,128,61,.12);color:#166534;}
+.agent-combined-log-date{font-size:12px;font-weight:600;color:var(--text-2);}
+.agent-combined-log-author{font-size:12px;color:var(--text-3);}
+.agent-combined-log-body{display:grid;gap:8px;}
+.agent-combined-log-text{font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word;}
+.agent-combined-log-changes{display:grid;gap:6px;}
+.agent-combined-log-change{display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr) auto minmax(0,1fr);gap:6px;align-items:start;font-size:12px;color:var(--text-2);}
+.agent-combined-log-label{font-weight:700;color:var(--text-2);}
+.agent-combined-log-value{min-width:0;word-break:break-word;}
+.agent-combined-log-arrow{color:var(--text-3);font-weight:700;}
+
+
 /* ══════════════════════════════════════════════════
    DAILY REPORT FULL PAGE (image10)
 ══════════════════════════════════════════════════ */
@@ -954,6 +982,11 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
   .work-row{grid-template-columns:1fr;gap:var(--sp-2);}
   .work-row::before,.work-action-list::before{display:none;}
   .work-mgmt-actors{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .agent-edit-tabs{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;}
+  .agent-edit-tab{height:40px;padding:0 6px;font-size:11px;letter-spacing:-.02em;border-radius:10px;}
+  .agent-combined-log-item{padding:10px;}
+  .agent-combined-log-change{grid-template-columns:1fr;gap:4px;}
+  .agent-combined-log-arrow{display:none;}
 }
 @media(max-width:640px){
   .csv-upload-toolbar{grid-template-columns:1fr;}
