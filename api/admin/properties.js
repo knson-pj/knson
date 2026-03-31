@@ -235,12 +235,19 @@ module.exports = async function handler(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const mode = String(url.searchParams.get('mode') || '').trim().toLowerCase();
     if (mode === 'overview') {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       try {
         if (hasSupabaseAdminEnv()) {
           const rows = await fetchSupabaseOverviewRows();
           return send(res, 200, { ok: true, overview: buildOverviewFromRows(rows) });
         }
-        return send(res, 200, { ok: true, overview: buildOverviewFromRows(Array.isArray(store.properties) ? store.properties : []) });
+        const fallbackRows = Array.isArray(store.properties) ? store.properties : [];
+        if (!fallbackRows.length) {
+          return send(res, 503, { ok: false, message: '집계용 서버 환경이 준비되지 않았습니다.' });
+        }
+        return send(res, 200, { ok: true, overview: buildOverviewFromRows(fallbackRows) });
       } catch (err) {
         return send(res, err?.status || 500, {
           ok: false,
