@@ -56,6 +56,14 @@
 
   const els = {};
 
+  const APP_PROPERTY_SELECT = [
+    "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address",
+    "assignee_id", "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
+    "latitude", "longitude", "date_uploaded", "created_at", "geocode_status", "geocoded_at",
+    "price_main", "lowprice", "status", "asset_type", "floor", "totalfloor", "useapproval",
+    "exclusivearea", "commonarea", "sitearea", "date_main", "rights_analysis", "site_inspection", "memo"
+  ].join(",");
+
   function getInitialViewFromUrl() {
     try {
       const params = new URLSearchParams(window.location.search || '');
@@ -343,14 +351,14 @@
 
   async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchPropertiesBatch === "function") {
-      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select: "*", orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
+      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select: APP_PROPERTY_SELECT, orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
     }
     throw new Error("KNSN_DATA_ACCESS.fetchPropertiesBatch 를 찾을 수 없습니다.");
   }
 
   async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
-      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: "*", pageSize: 1000 });
+      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: APP_PROPERTY_SELECT, pageSize: 2500 });
     }
     throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
@@ -436,11 +444,28 @@
     };
   }
 
+  function getBucketKey(item) {
+    const bucket = String(item?.sourceBucket || item?.source || item?.sourceType || "").trim();
+    return bucket || "general";
+  }
+
+  function matchesSourceFilter(item, filterValue) {
+    const target = String(filterValue || "all").trim();
+    if (!target || target === "all") return true;
+    const bucket = getBucketKey(item);
+    if (target === "realtor") return bucket === "realtor" || bucket === "realtor_naver" || bucket === "realtor_direct";
+    return bucket === target || String(item?.source || "").trim() === target;
+  }
+
+  function countByFilter(items, filterValue) {
+    return (Array.isArray(items) ? items : []).filter((item) => matchesSourceFilter(item, filterValue)).length;
+  }
+
   function getFilteredRows() {
     let list = state.items.slice();
 
     if (state.source !== "all") {
-      list = list.filter((p) => p.source === state.source);
+      list = list.filter((p) => matchesSourceFilter(p, state.source));
     }
 
     if (state.status) {
@@ -464,10 +489,10 @@
     const all = state.items;
 
     if (els.statTotal) els.statTotal.textContent = String(all.length);
-    if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => p.source === "auction").length);
-    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => p.source === "onbid").length);
-    if (els.statRealtor) els.statRealtor.textContent = String(all.filter((p) => p.source === "realtor").length);
-    if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => p.source === "general").length);
+    if (els.statAuction) els.statAuction.textContent = String(countByFilter(all, "auction"));
+    if (els.statGongmae) els.statGongmae.textContent = String(countByFilter(all, "onbid"));
+    if (els.statRealtor) els.statRealtor.textContent = String(countByFilter(all, "realtor"));
+    if (els.statGeneral) els.statGeneral.textContent = String(countByFilter(all, "general"));
 
     const setActive = (card, on) => {
       if (!card) return;
@@ -1294,11 +1319,12 @@
 
   function renderMapSummary(total) {
     if (!els.mvSummary) return;
-    const rows = state.items;
-    const auction = rows.filter((r) => r.source === "auction").length;
-    const onbid = rows.filter((r) => r.source === "onbid").length;
-    const realtor = rows.filter((r) => r.source === "realtor").length;
-    const general = rows.filter((r) => r.source === "general").length;
+    const rows = getFilteredRows();
+    const withCoords = rows.filter((r) => r.latitude != null && r.longitude != null);
+    const auction = countByFilter(withCoords, "auction");
+    const onbid = countByFilter(withCoords, "onbid");
+    const realtor = countByFilter(withCoords, "realtor");
+    const general = countByFilter(withCoords, "general");
     els.mvSummary.innerHTML =
       '<span>전체 <strong>' + total + '</strong>건</span>' +
       '<span>경매 <strong>' + auction + '</strong></span>' +

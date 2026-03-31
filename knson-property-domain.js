@@ -63,6 +63,46 @@
     return firstNonEmpty(...values);
   }
 
+  function inferSourceTypeFromContext(item, raw, submitterType) {
+    const row = item && typeof item === "object" ? item : {};
+    const baseRaw = raw && typeof raw === "object" ? raw : {};
+    const boolGeneral = row.is_general === true || row.isGeneral === true || baseRaw.is_general === true || baseRaw.isGeneral === true;
+    if (boolGeneral) return "general";
+
+    const explicitTexts = [
+      row.globalId, row.global_id, row.itemNo, row.item_no, row.sourceUrl, row.source_url, row.url, row.link,
+      row.service, row.platform, row.origin, row.category, row.source,
+      baseRaw.globalId, baseRaw.global_id, baseRaw.sourceUrl, baseRaw.source_url, baseRaw.url, baseRaw.link,
+      baseRaw.service, baseRaw.platform, baseRaw.origin, baseRaw.category, baseRaw.source, baseRaw.source_type, baseRaw.sourceType,
+      baseRaw["구분"], baseRaw["출처"], baseRaw["매체"], baseRaw["플랫폼"], baseRaw["서비스"], baseRaw["수집구분"]
+    ].map((v) => String(v || "").trim().toLowerCase()).filter(Boolean);
+
+    const joined = explicitTexts.join(' ');
+    if (/(^|)(auction|courtauction|court_auction|경매)(|$)/.test(joined)) return "auction";
+    if (/(^|)(onbid|public|gongmae|공매)(|$)/.test(joined)) return "onbid";
+    if (/(^|)(realtor|broker|naver|중개|중개사|공인중개사|네이버중개|일반중개|realtor_naver|realtor_direct)(|$)/.test(joined)) return "realtor";
+    if (/(^|)(general|owner|public_user|일반|직접등록|소유자)(|$)/.test(joined)) return "general";
+
+    const normalizedSubmitter = normalizeSubmitterType(submitterType, { fallback: "" });
+    if (normalizedSubmitter === "realtor") return "realtor";
+    if (normalizedSubmitter === "owner") return "general";
+
+    const sourceUrl = String(row.sourceUrl || row.source_url || baseRaw.sourceUrl || baseRaw.source_url || baseRaw.url || "").trim().toLowerCase();
+    if (sourceUrl) {
+      if (sourceUrl.includes('onbid.co.kr') || sourceUrl.includes('onbid')) return 'onbid';
+      if (sourceUrl.includes('courtauction.go.kr') || sourceUrl.includes('/pgj/') || sourceUrl.includes('auction')) return 'auction';
+      if (sourceUrl.includes('land.naver.com') || sourceUrl.includes('m.land.naver.com') || sourceUrl.includes('naver.com')) return 'realtor';
+    }
+
+    const globalId = String(row.globalId || row.global_id || "").trim().toLowerCase();
+    if (globalId.startsWith('auction:')) return 'auction';
+    if (globalId.startsWith('onbid:')) return 'onbid';
+    if (globalId.startsWith('realtor:')) return 'realtor';
+    if (globalId.startsWith('general:')) return 'general';
+
+    return "";
+  }
+
   function compactAddressText(value) {
     return String(value || "").trim().replace(/\s+/g, "");
   }
@@ -161,10 +201,29 @@
       item && item.source_type,
       item && item.source,
       item && item.category,
+      item && item.origin,
+      item && item.platform,
+      item && item.service,
+      item && item.sourceUrl,
+      item && item.source_url,
+      item && item.globalId,
+      item && item.global_id,
       raw.sourceType,
-      raw.source_type
+      raw.source_type,
+      raw.source,
+      raw.category,
+      raw.origin,
+      raw.platform,
+      raw.service,
+      raw["구분"],
+      raw["출처"],
+      raw["매체"],
+      raw["플랫폼"],
+      raw["서비스"],
+      raw["수집구분"]
     ).toLowerCase();
-    const sourceType = normalizeSourceType(rawSource, { fallback: opts.fallbackSource || "general" });
+    const inferredSourceType = inferSourceTypeFromContext(item, raw, submitterType);
+    const sourceType = normalizeSourceType(rawSource || inferredSourceType, { fallback: opts.fallbackSource || "general" });
     const address = pickFirstText(item && item.address, item && item.location, item && item.addr, raw.address, raw.location, "");
     const itemNo = pickFirstText(item && item.itemNo, item && item.caseNo, item && item.externalId, item && item.listingId, item && item.item_no, raw.itemNo, raw.item_no, "");
     const sourceUrl = pickFirstText(item && item.sourceUrl, item && item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
@@ -560,10 +619,10 @@
     const fallback = String(options.fallback || "general").trim() || "general";
     const value = String(rawValue || "").trim().toLowerCase();
     if (!value) return fallback;
-    if (["auction", "courtauction", "court_auction"].includes(value)) return "auction";
+    if (["auction", "courtauction", "court_auction", "경매"].includes(value)) return "auction";
     if (["onbid", "public", "gongmae", "공매"].includes(value)) return "onbid";
-    if (["realtor", "broker", "naver", "realtor_naver", "realtor_direct", "중개", "중개사"].includes(value)) return "realtor";
-    if (["general", "owner", "public_user", "일반", "직접등록"].includes(value)) return "general";
+    if (["realtor", "broker", "naver", "realtor_naver", "realtor_direct", "중개", "중개사", "공인중개사", "네이버중개", "일반중개"].includes(value)) return "realtor";
+    if (["general", "owner", "public_user", "일반", "직접등록", "소유자"].includes(value)) return "general";
     return fallback;
   }
 

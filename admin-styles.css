@@ -942,13 +942,6 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
   background:var(--surface);padding:var(--sp-6) var(--sp-8);min-height:180px;
 }
 .daily-report-flow-empty{min-height:140px;display:grid;place-items:center;color:var(--text-3);font-size:13px;}
-.daily-full-note-wrap{border:1px solid var(--border);border-radius:var(--r-xl);background:var(--surface);padding:var(--sp-4);}
-.daily-full-note{
-  width:100%;min-height:110px;border:0;background:transparent;
-  color:var(--text);font-family:inherit;font-size:14px;font-weight:400;line-height:1.7;
-  resize:vertical;outline:none;
-}
-.daily-full-note::placeholder{color:var(--text-3);white-space:pre-line;}
 
 /* Daily report tree (work-mgmt 재사용) */
 .daily-full-flow .work-mgmt-canvas{grid-template-columns:96px minmax(0,1fr);gap:var(--sp-4);}
@@ -1529,8 +1522,6 @@ body{
 .page-agent .agent-workmgmt-panel{overflow:visible;}
 .page-agent .agent-workmgmt-shell{gap:24px;}
 .page-agent .agent-workmgmt-board{grid-template-columns:minmax(220px,280px) minmax(260px,360px) minmax(320px,1fr);}
-.page-agent .agent-daily-note-section{margin-top:8px;}
-.page-agent .agent-daily-note-card{box-shadow:0 8px 22px rgba(0,0,0,.045);}
 .page-agent .workmgmt-property-card[disabled]{cursor:default;}
 .page-agent .workmgmt-property-card[disabled]:hover{transform:none;border-color:var(--border);box-shadow:0 10px 30px rgba(0,0,0,.05);}
 

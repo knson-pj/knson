@@ -112,7 +112,6 @@
       };
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
-  const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
@@ -224,7 +223,6 @@
     els.dailyReportTotal = $("#dailyReportTotal");
     els.dailyReportLead = $("#dailyReportLead");
     els.dailyReportFlow = $("#dailyReportFlow");
-    els.dailyReportNote = $("#dailyReportNote");
 
     // Summary
     els.agSumTotal = $("#agSumTotal");
@@ -309,24 +307,6 @@
     }
   }
 
-  function getDailyReportNoteKey() {
-    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
-    return `${DAILY_REPORT_NOTE_PREFIX}${uid}_${getTodayDateKey()}`;
-  }
-
-  function loadDailyReportNote() {
-    try {
-      return String(localStorage.getItem(getDailyReportNoteKey()) || "");
-    } catch {
-      return "";
-    }
-  }
-
-  function saveDailyReportNote(value) {
-    try {
-      localStorage.setItem(getDailyReportNoteKey(), String(value || ""));
-    } catch {}
-  }
 
   function getActorIdentity(user) {
     return {
@@ -629,7 +609,6 @@
   }
 
   async function openDailyReportModal() {
-    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
     renderDailyReport();
     if (!els.dailyReportModal) return;
     document.body.classList.add("modal-open");
@@ -799,11 +778,6 @@
       els.dailyReportModal.addEventListener("click", (e) => {
         if (e.target?.dataset?.close === "true") closeDailyReportModal();
       });
-    }
-    if (els.dailyReportNote) {
-      els.dailyReportNote.addEventListener("input", debounce(() => {
-        saveDailyReportNote(els.dailyReportNote.value || "");
-      }, 120));
     }
 
     // 신규 물건 등록 모달
