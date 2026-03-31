@@ -40,9 +40,11 @@
   }
 
   function extractSchemaMissingColumn(err) {
-    const text = String(err?.message || err?.details || "").trim();
+    const text = [err?.message, err?.details, err?.hint].filter(Boolean).join(' ').trim();
     const m = text.match(/column\s+properties\.([a-zA-Z0-9_]+)\s+does not exist/i)
-      || text.match(/Could not find the '([a-zA-Z0-9_]+)' column of 'properties'/i);
+      || text.match(/column\s+([a-zA-Z0-9_]+)\s+does not exist/i)
+      || text.match(/Could not find the '([a-zA-Z0-9_]+)' column of 'properties'/i)
+      || text.match(/schema cache.*?column.*?'([a-zA-Z0-9_]+)'/i);
     return m ? String(m[1] || "").trim() : "";
   }
 

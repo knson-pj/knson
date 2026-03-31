@@ -57,11 +57,12 @@
   const els = {};
 
   const APP_PROPERTY_SELECT = [
+    // 지도/목록에서 공통으로 안전하게 쓰는 최소 컬럼만 조회합니다.
+    // 스키마 드리프트가 잦았던 floor/area/price alias 컬럼은 여기서 제외하고,
+    // source 판별과 카드 렌더에 필요한 값만 유지합니다.
     "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address",
     "assignee_id", "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
-    "latitude", "longitude", "date_uploaded", "created_at", "geocode_status", "geocoded_at",
-    "price_main", "lowprice", "status", "asset_type", "floor", "totalfloor", "useapproval",
-    "exclusivearea", "commonarea", "sitearea", "date_main", "rights_analysis", "site_inspection", "memo"
+    "latitude", "longitude", "status", "date_uploaded", "created_at", "raw"
   ].join(",");
 
   function getInitialViewFromUrl() {
@@ -358,7 +359,19 @@
 
   async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
-      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: APP_PROPERTY_SELECT, pageSize: 2500 });
+      try {
+        return await DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: APP_PROPERTY_SELECT, pageSize: 2500 });
+      } catch (err) {
+        const text = String(err?.message || err || "").toLowerCase();
+        if (/does not exist|schema cache|42703/.test(text)) {
+          const fallbackSelect = [
+            "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address",
+            "assignee_id", "submitter_type", "latitude", "longitude", "status", "date_uploaded", "created_at"
+          ].join(",");
+          return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: fallbackSelect, pageSize: 2500 });
+        }
+        throw err;
+      }
     }
     throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
