@@ -78,8 +78,9 @@
   };
 
   mod.fillStaffForm = function fillStaffForm(staff) {
-    const { els } = ctx();
+    const { els, state } = ctx();
     if (!els.staffForm) return;
+    state.staffEditingId = staff.id || "";
     els.staffForm.elements.id.value = staff.id || "";
     if (els.staffForm.elements.email) els.staffForm.elements.email.value = staff.email || "";
     els.staffForm.elements.name.value = staff.name || "";
@@ -91,8 +92,9 @@
   };
 
   mod.resetStaffForm = function resetStaffForm() {
-    const { els } = ctx();
+    const { els, state } = ctx();
     if (!els.staffForm) return;
+    state.staffEditingId = "";
     els.staffForm.reset();
     els.staffForm.elements.id.value = "";
     els.staffForm.elements.role.value = "staff";
@@ -137,15 +139,25 @@
 
   mod.bindStaffTableActions = function bindStaffTableActions() {
     const { els } = ctx();
-    if (!els.staffTableBody) return;
-    els.staffTableBody.querySelectorAll('button[data-act][data-id]').forEach((btn) => {
-      btn.onclick = async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+    const tbody = els.staffTableBody;
+    if (!tbody || tbody.__knsonStaffActionsBound) return;
+    tbody.__knsonStaffActionsBound = true;
+    tbody.addEventListener('click', async (e) => {
+      const btn = e.target && typeof e.target.closest === 'function'
+        ? e.target.closest('button[data-act][data-id]')
+        : null;
+      if (!btn || !tbody.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.dataset.busy === '1') return;
+      btn.dataset.busy = '1';
+      try {
         const id = String(btn.dataset.id || '');
         const act = String(btn.dataset.act || '');
         await handleStaffRowAction(act, id);
-      };
+      } finally {
+        btn.dataset.busy = '0';
+      }
     });
   };
 
@@ -189,7 +201,6 @@
       mod.resetStaffForm();
       await mod.loadStaff();
       mod.resetStaffForm();
-      mod.bindStaffTableActions();
       renderSummary();
       alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
       return;
