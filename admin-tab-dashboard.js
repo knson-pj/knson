@@ -260,6 +260,8 @@
   mod.renderSummary = function renderSummary() {
     const { state, els, utils } = ctx();
     const props = typeof utils.getAuxiliaryPropertiesSnapshot === 'function' ? (utils.getAuxiliaryPropertiesSnapshot() || []) : (state.properties || []);
+    const overview = state.propertyOverview && typeof state.propertyOverview === 'object' ? state.propertyOverview : null;
+    const hasSnapshotRows = Array.isArray(props) && props.length > 0;
     const staff = Array.isArray(state.staff) ? state.staff : [];
     const fmt = (n) => Number(n || 0).toLocaleString('ko-KR');
     const summary = state.propertySummary || ((utils.PropertyDomain && typeof utils.PropertyDomain.summarizeSourceBuckets === 'function')
@@ -294,30 +296,33 @@
     setProgress(els.homeProgressDirect, summary.realtor_direct);
     setProgress(els.homeProgressGeneral, summary.general);
 
-    const overview = state.propertyOverview || null;
     const dateKey = getTodayDateKey();
-    let todayParts = null;
-    let geoPending = null;
-    if (overview && typeof overview === 'object') {
-      const sourceToday = overview.today && typeof overview.today === 'object' ? overview.today : {};
-      todayParts = {
-        total: Number(sourceToday.total || 0),
-        auction: Number(sourceToday.auction || 0),
-        onbid: Number(sourceToday.onbid || 0),
-        realtor: Number(sourceToday.realtor || 0),
-        general: Number(sourceToday.general || 0),
-      };
-      geoPending = Number(overview.geoPending || 0);
-    }
-    if (!todayParts) {
-      todayParts = { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+    const todayParts = overview && !hasSnapshotRows
+      ? {
+          total: Number(overview?.today?.total || 0),
+          auction: Number(overview?.today?.auction || 0),
+          onbid: Number(overview?.today?.onbid || 0),
+          realtor: Number(overview?.today?.realtor || 0),
+          general: Number(overview?.today?.general || 0),
+        }
+      : { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 };
+    let geoPending = overview && !hasSnapshotRows ? Number(overview?.geoPending || 0) : 0;
+    if (hasSnapshotRows) {
+      todayParts.total = 0;
+      todayParts.auction = 0;
+      todayParts.onbid = 0;
+      todayParts.realtor = 0;
+      todayParts.general = 0;
       geoPending = 0;
       for (const item of Array.isArray(props) ? props : []) {
         const rawCreatedAt = item?.createdAt || item?._raw?.created_at || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
         if (sameDay(rawCreatedAt, dateKey)) {
           todayParts.total += 1;
-          const key = String(item?.sourceType || '').trim();
-          if (todayParts[key] !== undefined) todayParts[key] += 1;
+          const sourceKey = String(item?.sourceType || '').trim();
+          if (sourceKey === 'auction') todayParts.auction += 1;
+          else if (sourceKey === 'onbid') todayParts.onbid += 1;
+          else if (sourceKey === 'general') todayParts.general += 1;
+          else if (sourceKey === 'realtor') todayParts.realtor += 1;
         }
         const status = String(item?.geocodeStatus || item?._raw?.geocode_status || '').trim().toLowerCase();
         const lat = item?.latitude ?? item?._raw?.latitude;
@@ -333,7 +338,7 @@
     if (els.sumTodayRealtor) els.sumTodayRealtor.textContent = fmt(todayParts.realtor);
     if (els.homeGeoPending) els.homeGeoPending.textContent = fmt(geoPending);
     if (els.sumTodayDetail) {
-      const usingFullData = !!overview || Array.isArray(state.propertiesFullCache);
+      const usingFullData = Array.isArray(state.propertiesFullCache) || hasSnapshotRows;
       els.sumTodayDetail.innerHTML = formatTodayDetail(todayParts, usingFullData);
     }
   };

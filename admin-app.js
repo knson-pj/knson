@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260331-overview-fast1";
+  const ADMIN_FAST_BUILD = "20260331-overview-fast2";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -1032,12 +1032,176 @@ function bindEvents() {
         realtor_direct: Number(safe.realtor_direct || 0),
         general: Number(safe.general || 0),
       },
+      today: {
+        total: Number(safe?.today?.total || 0),
+        auction: Number(safe?.today?.auction || 0),
+        onbid: Number(safe?.today?.onbid || 0),
+        realtor: Number(safe?.today?.realtor || 0),
+        general: Number(safe?.today?.general || 0),
+      },
+      geoPending: Number(safe?.geoPending || safe?.geo_pending || 0),
+      filterCounts: safe?.filterCounts && typeof safe.filterCounts === 'object' ? safe.filterCounts : null,
+      generatedAt: safe?.generatedAt || safe?.generated_at || new Date().toISOString(),
+      fallback: true,
+    };
+  }
+
+  const OVERVIEW_AREA_OPTIONS = ['', '0-5', '5-10', '10-20', '20-30', '30-50', '50-100', '100-'];
+  const OVERVIEW_PRICE_OPTIONS = ['', '0-1', '1-3', '3-5', '5-10', '10-20', '20-'];
+  const OVERVIEW_RATIO_OPTIONS = ['', '50'];
+
+  function getOverviewAreaMatch(value, area) {
+    if (!value) return true;
+    const [minStr, maxStr] = String(value).split('-');
+    const min = parseFloat(minStr) || 0;
+    const max = maxStr ? parseFloat(maxStr) : Infinity;
+    const numericArea = Number(area);
+    if (!Number.isFinite(numericArea) || numericArea <= 0) return false;
+    return numericArea >= min && (max === Infinity || numericArea < max);
+  }
+
+  function getOverviewCurrentPriceValue(row) {
+    if (PropertyDomain && typeof PropertyDomain.getCurrentPriceValue === 'function') {
+      return Number(PropertyDomain.getCurrentPriceValue(row) || 0) || 0;
+    }
+    if (!row || row.lowprice == null || row.lowprice === '') return Number(row?.priceMain || row?.price_main || 0) || 0;
+    return Number(row.lowprice || row.low_price || 0) || 0;
+  }
+
+  function getOverviewPriceMatch(value, row) {
+    if (!value) return true;
+    const [minStr, maxStr] = String(value).split('-');
+    const min = (parseFloat(minStr) || 0) * 100000000;
+    const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
+    const sourceType = String(row?.sourceType || row?.source_type || '').trim();
+    const isAuctionType = sourceType === 'auction' || sourceType === 'onbid';
+    const price = isAuctionType ? getOverviewCurrentPriceValue(row) : (Number(row?.priceMain || row?.price_main || 0) || 0);
+    if (!price || price <= 0) return false;
+    return price >= min && (max === Infinity || price < max);
+  }
+
+  function getOverviewRatioMatch(value, row) {
+    if (!value) return true;
+    const sourceType = String(row?.sourceType || row?.source_type || '').trim();
+    if (sourceType !== 'auction' && sourceType !== 'onbid') return false;
+    const appraisal = Number(row?.priceMain || row?.price_main || 0) || 0;
+    const current = getOverviewCurrentPriceValue(row);
+    if (!appraisal || appraisal <= 0 || !current || current <= 0) return false;
+    return (current / appraisal) <= 0.5;
+  }
+
+  function createEmptyOverview() {
+    return {
+      summary: { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
       today: { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 },
       geoPending: 0,
-      filterCounts: null,
+      filterCounts: {
+        source: { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
+        area: { '': 0, '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 },
+        price: { '': 0, '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 },
+        ratio: { '': 0, '50': 0 },
+      },
       generatedAt: new Date().toISOString(),
       fallback: true,
     };
+  }
+
+  function appendRowToOverview(overview, row) {
+    const normalized = normalizeProperty(row);
+    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
+      ? PropertyDomain.getSourceBucket(normalized)
+      : (normalized.sourceType === 'realtor' ? (normalized.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : String(normalized.sourceType || 'general'));
+    overview.summary.total += 1;
+    if (Object.prototype.hasOwnProperty.call(overview.summary, bucket)) overview.summary[bucket] += 1;
+    overview.filterCounts.source[''] += 1;
+    if (Object.prototype.hasOwnProperty.call(overview.filterCounts.source, bucket)) overview.filterCounts.source[bucket] += 1;
+
+    overview.filterCounts.area[''] += 1;
+    OVERVIEW_AREA_OPTIONS.slice(1).forEach((value) => {
+      if (getOverviewAreaMatch(value, normalized?.exclusivearea)) overview.filterCounts.area[value] += 1;
+    });
+
+    overview.filterCounts.price[''] += 1;
+    OVERVIEW_PRICE_OPTIONS.slice(1).forEach((value) => {
+      if (getOverviewPriceMatch(value, normalized)) overview.filterCounts.price[value] += 1;
+    });
+
+    overview.filterCounts.ratio[''] += 1;
+    OVERVIEW_RATIO_OPTIONS.slice(1).forEach((value) => {
+      if (getOverviewRatioMatch(value, normalized)) overview.filterCounts.ratio[value] += 1;
+    });
+
+    const rawCreatedAt = normalized?.createdAt || normalized?._raw?.created_at || normalized?._raw?.date_uploaded || normalized?._raw?.raw?.firstRegisteredAt || normalized?._raw?.raw?.createdAt || '';
+    const d = new Date(rawCreatedAt);
+    if (!Number.isNaN(d.getTime())) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const dateKey = `${yyyy}-${mm}-${dd}`;
+      const now = new Date();
+      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (dateKey === todayKey) {
+        overview.today.total += 1;
+        if (bucket === 'auction') overview.today.auction += 1;
+        else if (bucket === 'onbid') overview.today.onbid += 1;
+        else if (bucket === 'general') overview.today.general += 1;
+        else if (bucket === 'realtor_naver' || bucket === 'realtor_direct') overview.today.realtor += 1;
+      }
+    }
+
+    const status = String(normalized?.geocodeStatus || normalized?._raw?.geocode_status || '').trim().toLowerCase();
+    const lat = normalized?.latitude ?? normalized?._raw?.latitude;
+    const lng = normalized?.longitude ?? normalized?._raw?.longitude;
+    const hasCoords = lat !== null && lat !== undefined && lat !== '' && lng !== null && lng !== undefined && lng !== '';
+    const address = String(normalized?.address || normalized?._raw?.address || '').trim();
+    if (!hasCoords && address && status !== 'failed' && status !== 'ok') overview.geoPending += 1;
+  }
+
+  function buildOverviewFromRows(rows) {
+    const overview = createEmptyOverview();
+    (Array.isArray(rows) ? rows : []).forEach((row) => appendRowToOverview(overview, row));
+    return overview;
+  }
+
+  function normalizeOverviewPayload(res) {
+    const candidate = (res?.overview && typeof res.overview === 'object')
+      ? res.overview
+      : (res && typeof res === 'object' ? res : null);
+    if (!candidate || typeof candidate !== 'object') return null;
+
+    if (candidate.summary && typeof candidate.summary === 'object') {
+      return {
+        summary: {
+          total: Number(candidate.summary.total || 0),
+          auction: Number(candidate.summary.auction || 0),
+          onbid: Number(candidate.summary.onbid || 0),
+          realtor_naver: Number(candidate.summary.realtor_naver || 0),
+          realtor_direct: Number(candidate.summary.realtor_direct || 0),
+          general: Number(candidate.summary.general || 0),
+        },
+        today: {
+          total: Number(candidate?.today?.total || 0),
+          auction: Number(candidate?.today?.auction || 0),
+          onbid: Number(candidate?.today?.onbid || 0),
+          realtor: Number(candidate?.today?.realtor || 0),
+          general: Number(candidate?.today?.general || 0),
+        },
+        geoPending: Number(candidate?.geoPending || candidate?.geo_pending || 0),
+        filterCounts: candidate?.filterCounts && typeof candidate.filterCounts === 'object' ? candidate.filterCounts : null,
+        generatedAt: candidate?.generatedAt || candidate?.generated_at || new Date().toISOString(),
+      };
+    }
+
+    const hasRootSummary = ['total', 'auction', 'onbid', 'realtor_naver', 'realtor_direct', 'general'].some((key) => Object.prototype.hasOwnProperty.call(candidate, key));
+    if (hasRootSummary) return buildOverviewFromSummary(candidate);
+
+    if (Array.isArray(candidate.items)) {
+      const rows = candidate.items.map(normalizeProperty);
+      state.homeSummarySnapshot = rows.slice();
+      return buildOverviewFromRows(rows);
+    }
+
+    return null;
   }
 
   async function fetchAdminPropertyOverview({ forceRefresh = false } = {}) {
@@ -1046,9 +1210,7 @@ function bindEvents() {
     const cacheBust = `_ts=${Date.now()}`;
     const path = `/admin/properties?mode=overview&${cacheBust}`;
     const res = await api(path, { auth: true });
-    const overview = res?.overview && typeof res.overview === 'object'
-      ? res.overview
-      : (res && typeof res === 'object' ? res : null);
+    const overview = normalizeOverviewPayload(res);
 
     if (!overview || !overview.summary) {
       throw new Error('대시보드 집계 응답 형식이 올바르지 않습니다.');

@@ -83,8 +83,24 @@
     { value: '100-', label: '100평 이상' },
   ];
 
+  const PRICE_FILTER_OPTIONS = [
+    { value: '', label: '전체 가격' },
+    { value: '0-1', label: '1억 미만' },
+    { value: '1-3', label: '1~3억' },
+    { value: '3-5', label: '3~5억' },
+    { value: '5-10', label: '5~10억' },
+    { value: '10-20', label: '10~20억' },
+    { value: '20-', label: '20억 이상' },
+  ];
+
+  const RATIO_FILTER_OPTIONS = [
+    { value: '', label: '전체 비율' },
+    { value: '50', label: '50% 이하' },
+  ];
+
   function getPropertyFilterSourceRows(state) {
     if (Array.isArray(state?.propertiesFullCache) && state.propertiesFullCache.length) return state.propertiesFullCache;
+    if (Array.isArray(state?.homeSummarySnapshot) && state.homeSummarySnapshot.length) return state.homeSummarySnapshot;
     return Array.isArray(state?.properties) ? state.properties : [];
   }
 
@@ -96,6 +112,26 @@
     const numericArea = Number(area);
     if (!Number.isFinite(numericArea) || numericArea <= 0) return false;
     return numericArea >= min && (max === Infinity || numericArea < max);
+  }
+
+  function getPriceFilterMatch(value, row) {
+    if (!value) return true;
+    const [minStr, maxStr] = String(value).split('-');
+    const min = (parseFloat(minStr) || 0) * 100000000;
+    const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
+    const sourceType = String(row?.sourceType || '').trim();
+    const isAuctionType = sourceType === 'auction' || sourceType === 'onbid';
+    const price = isAuctionType ? getCurrentPriceValue(row) : (Number(row?.priceMain || 0) || 0);
+    if (!price || price <= 0) return false;
+    return price >= min && (max === Infinity || price < max);
+  }
+
+  function getRatioFilterMatch(value, row) {
+    if (!value) return true;
+    const sourceType = String(row?.sourceType || '').trim();
+    if (sourceType !== 'auction' && sourceType !== 'onbid') return false;
+    const ratio = getRatioValue(row, {});
+    return Number.isFinite(ratio) && ratio >= 0 && ratio <= 0.5;
   }
 
   function formatOptionLabel(label, count) {
@@ -273,16 +309,22 @@
       String(state?.propertySort?.key || '').trim()
     );
     const overviewCounts = state?.propertyOverview?.filterCounts || null;
-    if (!Array.isArray(state?.propertiesFullCache) && !hasLocalOverrides && overviewCounts?.source && overviewCounts?.area) {
-      applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (els.propSourceFilter) els.propSourceFilter.value = String(state?.propertyFilters?.activeCard || '');
-      if (els.propAreaFilter) els.propAreaFilter.value = String(state?.propertyFilters?.area || '');
+    if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
+      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
+      if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
+      if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
+      if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
       return;
     }
 
     const sourceRows = mod.getFilteredProperties({ ignoreKeys: ['activeCard'] });
     const areaRows = mod.getFilteredProperties({ ignoreKeys: ['area'] });
+    const priceRows = mod.getFilteredProperties({ ignoreKeys: ['priceRange'] });
+    const ratioRows = mod.getFilteredProperties({ ignoreKeys: ['ratio50'] });
 
     const sourceCounts = { '': sourceRows.length, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     sourceRows.forEach((row) => {
@@ -299,10 +341,26 @@
       });
     });
 
+    const priceCounts = { '': priceRows.length, '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 };
+    priceRows.forEach((row) => {
+      PRICE_FILTER_OPTIONS.slice(1).forEach((optionDef) => {
+        if (getPriceFilterMatch(optionDef.value, row)) priceCounts[optionDef.value] += 1;
+      });
+    });
+
+    const ratioCounts = { '': ratioRows.length, '50': 0 };
+    ratioRows.forEach((row) => {
+      if (getRatioFilterMatch('50', row)) ratioCounts['50'] += 1;
+    });
+
     applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
     applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, areaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+    applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, priceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+    applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
     if (els.propSourceFilter) els.propSourceFilter.value = String(state?.propertyFilters?.activeCard || '');
     if (els.propAreaFilter) els.propAreaFilter.value = String(state?.propertyFilters?.area || '');
+    if (els.propPriceFilter) els.propPriceFilter.value = String(state?.propertyFilters?.priceRange || '');
+    if (els.propRatioFilter) els.propRatioFilter.value = String(state?.propertyFilters?.ratio50 || '');
   };
 
   mod.getPagedProperties = function getPagedProperties(rows) {

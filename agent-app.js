@@ -186,6 +186,21 @@
     { value: '100-', label: '100평 이상' },
   ];
 
+  const PRICE_FILTER_OPTIONS = [
+    { value: '', label: '전체 가격' },
+    { value: '0-1', label: '1억 미만' },
+    { value: '1-3', label: '1~3억' },
+    { value: '3-5', label: '3~5억' },
+    { value: '5-10', label: '5~10억' },
+    { value: '10-20', label: '10~20억' },
+    { value: '20-', label: '20억 이상' },
+  ];
+
+  const RATIO_FILTER_OPTIONS = [
+    { value: '', label: '전체 비율' },
+    { value: '50', label: '50% 이하' },
+  ];
+
   // ── Init ──
   function init() {
     cacheEls();
@@ -659,6 +674,27 @@
     const numericArea = Number(area);
     if (!Number.isFinite(numericArea) || numericArea <= 0) return false;
     return numericArea >= min && (max === Infinity || numericArea < max);
+  }
+
+  function getPriceFilterMatch(value, row) {
+    if (!value) return true;
+    const [minStr, maxStr] = String(value).split('-');
+    const min = (parseFloat(minStr) || 0) * 100000000;
+    const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
+    const isAuctionType = row?.sourceType === 'auction' || row?.sourceType === 'onbid';
+    const price = isAuctionType ? (row?.lowprice ?? row?.priceMain) : row?.priceMain;
+    const numericPrice = Number(price || 0) || 0;
+    if (!numericPrice || numericPrice <= 0) return false;
+    return numericPrice >= min && (max === Infinity || numericPrice < max);
+  }
+
+  function getRatioFilterMatch(value, row) {
+    if (!value) return true;
+    if (row?.sourceType !== 'auction' && row?.sourceType !== 'onbid') return false;
+    const base = Number(row?.priceMain || 0) || 0;
+    const current = Number((row?.lowprice ?? row?.priceMain ?? 0)) || 0;
+    if (!base || base <= 0 || !current || current <= 0) return false;
+    return (current / base) <= 0.5;
   }
 
   function formatOptionLabel(label, count) {
@@ -1393,6 +1429,8 @@
   function updateFilterOptionCounts() {
     const sourceRows = getFilteredProps({ ignoreKeys: ['activeCard'] });
     const areaRows = getFilteredProps({ ignoreKeys: ['area'] });
+    const priceRows = getFilteredProps({ ignoreKeys: ['priceRange'] });
+    const ratioRows = getFilteredProps({ ignoreKeys: ['ratio50'] });
     const sourceCounts = { '': sourceRows.length, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     sourceRows.forEach((row) => {
       const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
@@ -1408,10 +1446,26 @@
       });
     });
 
+    const priceCounts = { '': priceRows.length, '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 };
+    priceRows.forEach((row) => {
+      PRICE_FILTER_OPTIONS.slice(1).forEach((optionDef) => {
+        if (getPriceFilterMatch(optionDef.value, row)) priceCounts[optionDef.value] += 1;
+      });
+    });
+
+    const ratioCounts = { '': ratioRows.length, '50': 0 };
+    ratioRows.forEach((row) => {
+      if (getRatioFilterMatch('50', row)) ratioCounts['50'] += 1;
+    });
+
     applySelectOptionCounts(els.agSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts);
     applySelectOptionCounts(els.agAreaFilter, AREA_FILTER_OPTIONS, areaCounts);
+    applySelectOptionCounts(els.agPriceFilter, PRICE_FILTER_OPTIONS, priceCounts);
+    applySelectOptionCounts(els.agRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts);
     if (els.agSourceFilter) els.agSourceFilter.value = String(state.filters?.activeCard || '');
     if (els.agAreaFilter) els.agAreaFilter.value = String(state.filters?.area || '');
+    if (els.agPriceFilter) els.agPriceFilter.value = String(state.filters?.priceRange || '');
+    if (els.agRatioFilter) els.agRatioFilter.value = String(state.filters?.ratio50 || '');
   }
 
   function renderTable() {
