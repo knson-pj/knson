@@ -101,41 +101,51 @@
     mod.setStaffFormMode("create");
   };
 
-  mod.bindStaffTableActions = function bindStaffTableActions() {
-    const { els, state, api, utils } = ctx();
+  async function handleStaffRowAction(act, id) {
+    const { state, api, utils } = ctx();
     const { renderSummary, hydrateAssignedAgentNames, renderPropertiesTable, setActiveTab } = utils;
-    if (!els.staffTableBody || els.staffTableBody.dataset.boundStaffActions === 'true') return;
-    els.staffTableBody.dataset.boundStaffActions = 'true';
-    els.staffTableBody.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      const id = String(btn.dataset.id || '');
-      const act = String(btn.dataset.act || '');
-      const row = (Array.isArray(state.staff) ? state.staff : []).find((staff) => String(staff.id) === id);
-      if (!row) return;
+    const row = (Array.isArray(state.staff) ? state.staff : []).find((staff) => String(staff.id) === String(id || ''));
+    if (!row) return;
 
-      if (act === 'edit') {
-        mod.fillStaffForm(row);
-        setActiveTab('staff');
-        return;
-      }
+    if (act === 'edit') {
+      mod.fillStaffForm(row);
+      setActiveTab('staff');
+      try {
+        const firstInput = document.querySelector('#staffForm input[name="name"]');
+        if (firstInput && typeof firstInput.focus === 'function') firstInput.focus();
+      } catch {}
+      return;
+    }
 
-      if (act === 'delete') {
-        if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
-        try {
-          await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: 'DELETE', auth: true, body: { id } });
-          state.staff = state.staff.filter((staff) => String(staff.id) !== id);
-          mod.resetStaffForm();
-          mod.renderStaffTable();
-          mod.renderAssignmentTable();
-          renderSummary();
-          hydrateAssignedAgentNames();
-          renderPropertiesTable();
-        } catch (err) {
-          console.error(err);
-          alert(err.message || '삭제 실패');
-        }
+    if (act === 'delete') {
+      if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
+      try {
+        await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: 'DELETE', auth: true, body: { id } });
+        state.staff = state.staff.filter((staff) => String(staff.id) !== String(id));
+        mod.resetStaffForm();
+        mod.renderStaffTable();
+        mod.renderAssignmentTable();
+        renderSummary();
+        hydrateAssignedAgentNames();
+        renderPropertiesTable();
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '삭제 실패');
       }
+    }
+  }
+
+  mod.bindStaffTableActions = function bindStaffTableActions() {
+    const { els } = ctx();
+    if (!els.staffTableBody) return;
+    els.staffTableBody.querySelectorAll('button[data-act][data-id]').forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = String(btn.dataset.id || '');
+        const act = String(btn.dataset.act || '');
+        await handleStaffRowAction(act, id);
+      };
     });
   };
 
@@ -178,8 +188,9 @@
       }
       mod.resetStaffForm();
       await mod.loadStaff();
+      mod.resetStaffForm();
+      mod.bindStaffTableActions();
       renderSummary();
-      setFormBusy(e.currentTarget, false);
       alert(id ? "프로필이 저장되었습니다." : "계정이 생성되었습니다.");
       return;
     } catch (err) {
@@ -223,8 +234,8 @@
         <td class="staff-date-cell">${escapeHtml(formatDate(staff.createdAt) || "-")}</td>
         <td>
           <div class="action-row">
-            <button class="btn btn-secondary btn-sm" data-act="edit" data-id="${escapeAttr(staff.id)}">수정</button>
-            <button class="btn btn-ghost btn-sm" data-act="delete" data-id="${escapeAttr(staff.id)}">삭제</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-act="edit" data-id="${escapeAttr(staff.id)}">수정</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-act="delete" data-id="${escapeAttr(staff.id)}">삭제</button>
           </div>
         </td>
       `;

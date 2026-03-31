@@ -1440,24 +1440,10 @@ body{
 .admin-home-mini-copy p{font-size:18px;font-weight:700;color:#374151;}
 .admin-home-mini-copy strong{font-size:48px;line-height:1;font-weight:800;letter-spacing:-.04em;color:#111827;}
 .admin-home-map-card{padding:0;overflow:hidden;position:relative;min-height:270px;}
-.admin-home-map-art{
-  position:absolute;inset:0;
-  background:
-    linear-gradient(115deg, transparent 0 15%, rgba(181,136,53,.4) 15% 16.5%, transparent 16.5% 100%),
-    linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,.45)),
-    radial-gradient(circle at 12% 78%, #d6e8d9 0 10%, transparent 10.5%),
-    radial-gradient(circle at 86% 26%, #dbe7f2 0 11%, transparent 11.5%),
-    radial-gradient(circle at 68% 70%, #dfead7 0 10%, transparent 10.5%),
-    linear-gradient(90deg, transparent 0 14%, #d1d5db 14% 15%, transparent 15% 29%, #d1d5db 29% 30%, transparent 30% 48%, #d1d5db 48% 49%, transparent 49% 100%),
-    linear-gradient(0deg, transparent 0 18%, #d1d5db 18% 19%, transparent 19% 42%, #d1d5db 42% 43%, transparent 43% 68%, #d1d5db 68% 69%, transparent 69% 100%),
-    linear-gradient(180deg, #f6f7f9 0%, #eceff3 100%);
-}
-.admin-home-map-card::after{
-  content:'';
-  position:absolute;
-  inset:0;
-  background:linear-gradient(180deg, rgba(255,255,255,.15), rgba(255,255,255,.02));
-}
+.admin-home-map-link{display:block;text-decoration:none;cursor:pointer;transition:transform .18s ease, box-shadow .18s ease;}
+.admin-home-map-link:hover{transform:translateY(-2px);box-shadow:0 18px 36px rgba(15,23,42,.14);}
+.admin-home-map-link:focus-visible{outline:3px solid rgba(37,99,235,.28);outline-offset:3px;}
+.admin-home-map-image{display:block;width:100%;height:100%;min-height:270px;object-fit:cover;object-position:center;}
 
 .admin-bottom-nav{display:none;}
 
@@ -1470,6 +1456,7 @@ body{
   .admin-home-source-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
   .admin-home-updates-grid{grid-template-columns:1.2fr .8fr;}
   .admin-home-map-card{grid-column:1 / -1; min-height:220px;}
+  .admin-home-map-image{min-height:220px;}
 }
 
 @media (max-width: 980px){
@@ -1485,6 +1472,7 @@ body{
   .page-admin .card-unit{padding:26px 22px;border-radius:22px;}
   .page-admin .admin-home-source-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 18px;}
   .page-admin .admin-home-updates-grid{grid-template-columns:1fr;}
+  .page-admin .admin-home-map-image{min-height:200px;}
   .page-admin .admin-home-side-stack{grid-template-columns:1fr 1fr;}
   .page-admin .admin-bottom-nav{
     position:fixed;left:0;right:0;bottom:0;z-index:65;

@@ -56,6 +56,16 @@
 
   const els = {};
 
+  function getInitialViewFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const view = String(params.get('view') || '').trim().toLowerCase();
+      const hash = String(window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
+      if (view === 'map' || hash === 'map' || hash === 'mapview') return 'map';
+    } catch {}
+    return 'text';
+  }
+
   document.addEventListener("DOMContentLoaded", init);
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
@@ -103,7 +113,9 @@
       els.adminLink.classList.add("is-visible");
     }
 
+    state.view = getInitialViewFromUrl();
     bindEvents();
+    setView(state.view === 'map' ? 'map' : 'text');
     loadProperties();
   }
 

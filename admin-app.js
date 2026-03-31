@@ -616,6 +616,15 @@
   }
 
 function bindEvents() {
+    document.querySelectorAll('[data-keep-session-link="true"]').forEach((el) => {
+      el.addEventListener('click', () => {
+        try {
+          if (K && typeof K.setKeepSessionOnce === 'function') K.setKeepSessionOnce();
+          else sessionStorage.setItem('knson_nav_keep_session', '1');
+        } catch {}
+      }, { capture: true });
+    });
+
     // auth / password
     if (els.btnChangeMyPassword) els.btnChangeMyPassword.addEventListener("click", openPasswordChangeModal);
 
