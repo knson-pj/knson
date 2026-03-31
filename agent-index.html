@@ -157,8 +157,7 @@
 
     <!-- ── 전체 현황 (물건 목록) ── -->
     <section id="ag-view-list" class="ag-view hidden">
-      <section class="panel">
-        <div class="panel-title-row"><h2>전체 현황</h2></div>
+      <section class="panel agent-list-panel">
         <div class="toolbar toolbar-agent-properties">
           <input id="agKeyword" class="input toolbar-keyword" type="text" placeholder="주소 / 지역 검색" />
           <select id="agSourceFilter" class="select"><option value="">구분별 선택 필터</option><option value="auction">경매</option><option value="onbid">공매</option><option value="realtor_naver">네이버중개</option><option value="realtor_direct">일반중개</option><option value="general">일반</option></select>
@@ -169,7 +168,7 @@
           <button id="agDayFilter" class="btn-add-circle btn-day-circle" type="button" title="당일 입찰기일">D</button>
           <button id="btnNewProperty" class="btn-add-circle" type="button" title="신규 물건 등록">+</button>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap agent-list-table-wrap">
           <table class="table" id="agPropertiesTable">
             <thead><tr>
               <th class="fav-col"></th>
@@ -177,7 +176,7 @@
               <th>층수</th><th>전용면적(평)</th>
               <th>감정가(매각가)</th><th>현재가격</th><th>비율</th>
               <th>주요일정</th><th>진행상태</th>
-              <th>권리분석</th><th>현장실사</th><th>의견</th>
+              <th>권리분석</th><th>현장실사</th>
             </tr></thead>
             <tbody id="agTableBody"></tbody>
           </table>
@@ -244,7 +243,7 @@
 
 <script>
 (function(){
-  var TITLES={home:'홈',list:'전체 현황',dailyreport:'일일 업무 일지'};
+  var TITLES={home:'홈',list:'',dailyreport:''};
   document.querySelectorAll('.sidebar-group-btn').forEach(function(btn){
     var items=btn.closest('.sidebar-group').querySelector('.sidebar-group-items');
     items.style.maxHeight='0';
@@ -261,7 +260,7 @@
     document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(si){si.classList.toggle('is-active',si.dataset.view===viewName);});
     var active=document.querySelector('#agentSidebarNav .sidebar-nav-item.is-active');
     if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(gb && gi && !gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
-    if(titleEl&&TITLES[viewName])titleEl.textContent=TITLES[viewName];
+    if(titleEl){ titleEl.textContent = Object.prototype.hasOwnProperty.call(TITLES, viewName) ? TITLES[viewName] : ''; }
     if(viewName==='dailyreport' && typeof window.refreshAgentDailyReportView==='function'){window.refreshAgentDailyReportView();}
   }
 

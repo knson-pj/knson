@@ -1560,3 +1560,23 @@ body{
     width:100%;
   }
 }
+
+
+/* Agent list / diary follow-up fixes */
+.page-agent .agent-list-panel{overflow:hidden;max-width:100%;}
+.page-agent .agent-list-table-wrap{width:100%;max-width:100%;overflow:auto;}
+.page-agent #agPropertiesTable{min-width:1220px;}
+.page-agent #agPropertiesTable th,
+.page-agent #agPropertiesTable td{white-space:nowrap;}
+.page-agent #ag-view-list .toolbar.toolbar-agent-properties{grid-template-columns:minmax(220px,1.5fr) repeat(4,minmax(120px,1fr)) auto auto auto;}
+.page-agent .workmgmt-log-desc{margin-top:8px;}
+
+@media (max-width:1280px){
+  .page-agent #ag-view-list .toolbar.toolbar-agent-properties{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media (max-width:960px){
+  .page-agent #ag-view-list .toolbar.toolbar-agent-properties{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width:640px){
+  .page-agent #ag-view-list .toolbar.toolbar-agent-properties{grid-template-columns:1fr;}
+}

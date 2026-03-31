@@ -161,6 +161,7 @@
       counts: { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 },
       loadedAt: 0,
       loading: false,
+      selectedPropertyKey: "",
     },
   };
 
@@ -552,6 +553,32 @@
     const meta = [floor, area].filter(Boolean).join(" | ");
     return meta ? `${address} | ${meta}` : address;
   }
+
+  function getDailyReportRowKey(row) {
+    return String(row?.property_id || row?.property_identity_key || row?.property_item_no || row?.property_address || row?.id || "").trim();
+  }
+
+  function getDailyLogContent(row, matched) {
+    const note = String(row?.note || '').trim();
+    if (note) return note;
+    const raw = matched?._raw?.raw || {};
+    const action = String(row?.action_type || '').trim();
+    if (action === 'rights_analysis') {
+      return firstText(matched?.rightsAnalysis, raw.rightsAnalysis, raw.rights_analysis, '입력 내용 없음');
+    }
+    if (action === 'site_inspection') {
+      return firstText(matched?.siteInspection, raw.siteInspection, raw.site_inspection, '입력 내용 없음');
+    }
+    if (action === 'daily_issue') {
+      return firstText(matched?.opinion, raw.opinion, raw.memo, '입력 내용 없음');
+    }
+    if (action === 'new_property') {
+      return firstText(raw.opinion, raw.memo, matched?.opinion, '신규 등록');
+    }
+    const changed = Array.isArray(row?.changed_fields) ? row.changed_fields.map((v) => String(v || '').trim()).filter(Boolean) : [];
+    return changed.length ? changed.join(', ') : '입력 내용 없음';
+  }
+
 
   function renderDailyReport() {
     const counts = state.dailyReport?.counts || emptyDailyReportCounts();
@@ -1537,8 +1564,7 @@
       "<td>" + esc(formatDate(p.dateMain) || "-") + "</td>" +
       "<td>" + esc(statusLabel) + "</td>" +
       "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
-      "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
-      "<td>" + esc((p.opinion || "-").slice(0, 30)) + "</td>"
+      "<td>" + (p.siteInspection ? "✓" : "-") + "</td>"
     );
 
     tr.addEventListener("click", () => openEditModal(p));
@@ -2417,6 +2443,12 @@
     const actorName = esc(getDailyReportActorName());
     const propertyCount = groups.length;
     const updateCount = total;
+    const selectedKey = (() => {
+      const saved = String(state.dailyReport?.selectedPropertyKey || '').trim();
+      if (saved && groups.some((entry) => entry.key === saved)) return saved;
+      return groups[0]?.key || '';
+    })();
+    state.dailyReport.selectedPropertyKey = selectedKey;
 
     if (actorEl) {
       actorEl.innerHTML = `
@@ -2454,13 +2486,13 @@
           if (group.counts.daily_issue) actionSummary.push(`이슈 ${group.counts.daily_issue}건`);
           if (group.counts.new_property) actionSummary.push(`신규 ${group.counts.new_property}건`);
           const totalActions = Object.values(group.counts).reduce((sum, v) => sum + Number(v || 0), 0);
-          const canOpen = !!group.item;
+          const activeClass = selectedKey === group.key ? ' is-active' : '';
           return `
-            <button type="button" class="workmgmt-property-card${canOpen ? '' : '" disabled="disabled'}" data-daily-prop-key="${escAttr(group.key)}">
+            <button type="button" class="workmgmt-property-card${activeClass}" data-daily-prop-key="${escAttr(group.key)}">
               <div class="workmgmt-property-body is-compact">
                 <div class="workmgmt-property-top">
                   <span class="workmgmt-property-type ${bucketClass}">${esc(bucketLabel)}</span>
-                  <span class="workmgmt-property-mark">${canOpen ? '●' : '○'}</span>
+                  <span class="workmgmt-property-mark">${selectedKey === group.key ? '●' : '○'}</span>
                 </div>
                 <div class="workmgmt-property-title">${title}</div>
                 <div class="workmgmt-property-address">${meta}</div>
@@ -2472,16 +2504,17 @@
             </button>`;
         }).join('');
         propertiesEl.querySelectorAll('[data-daily-prop-key]').forEach((btn) => {
-          const key = String(btn.getAttribute('data-daily-prop-key') || '');
-          const group = groups.find((entry) => entry.key === key);
-          if (group?.item) {
-            btn.addEventListener('click', () => openEditModal(group.item));
-          }
+          btn.addEventListener('click', () => {
+            const key = String(btn.getAttribute('data-daily-prop-key') || '').trim();
+            state.dailyReport.selectedPropertyKey = key;
+            renderDailyReport();
+          });
         });
       }
     }
 
-    const rows = Array.isArray(state.dailyReport?.items) ? [...state.dailyReport.items] : [];
+    const rows = (Array.isArray(state.dailyReport?.items) ? [...state.dailyReport.items] : [])
+      .filter((row) => !selectedKey || getDailyReportRowKey(row) === selectedKey);
     rows.sort((a, b) => String(b?.created_at || b?.updated_at || b?.action_date || '').localeCompare(String(a?.created_at || a?.updated_at || a?.action_date || '')));
     if (logsEl) {
       if (!rows.length) {
@@ -2490,17 +2523,14 @@
         logsEl.innerHTML = rows.map((row) => {
           const meta = getDailyActionMeta(row?.action_type);
           const matched = findPropertyForActivityRow(row) || null;
-          const descBase = matched ? buildDailyReportPropertyTitle({ item: matched, row }) : String(row?.property_address || row?.property_item_no || '-').trim();
-          const desc = row?.action_type === 'daily_issue' && row?.note ? `${row.note}
-${descBase}` : descBase;
+          const content = getDailyLogContent(row, matched);
           return `
             <article class="workmgmt-log-card">
               <div class="workmgmt-log-top">
                 <span class="workmgmt-log-badge ${meta.badgeClass}">${meta.badgeLabel}</span>
                 <span class="workmgmt-log-time">${esc(formatDailyLogTime(row) || '')}</span>
               </div>
-              <div class="workmgmt-log-title">${esc(meta.title)}</div>
-              <div class="workmgmt-log-desc">${esc(desc || '')}</div>
+              <div class="workmgmt-log-desc">${esc(content || '입력 내용 없음')}</div>
             </article>`;
         }).join('');
       }
