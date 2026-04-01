@@ -503,6 +503,35 @@
     return map[String(bucket || "").trim()] || "general";
   }
 
+
+  function getSubmitterDisplayLabel(itemOrRow = null) {
+    const raw = itemOrRow?._raw?.raw && typeof itemOrRow._raw.raw === 'object' ? itemOrRow._raw.raw : (itemOrRow?._raw || {});
+    if (raw?.registeredByAdmin) return '관리자';
+    if (raw?.registeredByAgent) return '담당자';
+    const submitterType = String(
+      itemOrRow?.submitterType || itemOrRow?.submitter_type || raw?.submitter_type || raw?.submitterType || ''
+    ).trim().toLowerCase();
+    return submitterType === 'realtor' ? '공인중개사' : '소유자/일반';
+  }
+
+  function buildFormFeedbackHtml(text, kind = 'info') {
+    const message = String(text || '').trim();
+    if (!message) return '';
+    const strongText = kind === 'error' ? '오류' : kind === 'success' ? '완료' : '안내';
+    return `<div class="form-feedback-shell is-${kind}"><div class="admin-loading-box"><span class="admin-loading-spinner" aria-hidden="true"></span><div class="admin-loading-copy"><strong>${strongText}</strong><p>${esc(message)}</p></div></div></div>`;
+  }
+
+  function setAgentEditMsg(text, isError = true) {
+    if (!els.agEditMsg) return;
+    els.agEditMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
+  }
+
+  function refreshAgentPropertiesInBackground() {
+    Promise.resolve()
+      .then(() => loadProperties())
+      .catch((err) => console.warn('agent properties refresh failed', err));
+  }
+
   function findPropertyForActivityRow(row) {
     const propertyId = String(row?.property_id || "").trim();
     const propertyItemNo = String(row?.property_item_no || "").trim();
@@ -1869,9 +1898,9 @@
       }
 
       setAgentEditMsg('저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      await new Promise((resolve) => setTimeout(resolve, 650));
       closeEditModal();
-      await loadProperties();
+      refreshAgentPropertiesInBackground();
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
     } catch (err) {
@@ -2240,7 +2269,7 @@
       }
       if (activityError) setGlobalMsg(`물건 등록은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
-      setTimeout(() => { closeNewPropertyModal(); loadProperties(); }, 700);
+      setTimeout(() => { closeNewPropertyModal(); refreshAgentPropertiesInBackground(); }, 800);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }

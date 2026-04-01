@@ -1509,3 +1509,26 @@ body{
 .form-feedback-shell.is-info .admin-loading-box{border-color:#fde68a;background:#fffbeb;}
 .form-feedback-shell.is-info .admin-loading-spinner{border-color:rgba(245,158,11,.18);border-top-color:#f59e0b;}
 .form-feedback-shell .admin-loading-copy p{margin:0;}
+
+
+/* 관리자 전체리스트 툴바: 한 줄 고정 + 필요 시 가로 스크롤 */
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions{
+  display:grid;
+  grid-template-columns:minmax(240px,1.7fr) repeat(4,minmax(140px,.95fr)) auto auto;
+  align-items:center;
+  gap:var(--sp-2);
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding-bottom:4px;
+  scrollbar-width:thin;
+}
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions > *{min-width:0;}
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .toolbar-danger-btn{white-space:nowrap;}
+@media (max-width: 960px){
+  .toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions{
+    grid-auto-flow:column;
+    grid-auto-columns:minmax(140px,max-content);
+    grid-template-columns:none;
+  }
+  .toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .toolbar-keyword{min-width:220px;}
+}

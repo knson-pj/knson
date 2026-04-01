@@ -32,6 +32,14 @@
     els.npmMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
   }
 
+
+  function refreshPropertiesInBackground(state, utils) {
+    try { utils.invalidatePropertyCollections?.(); } catch {}
+    Promise.resolve()
+      .then(() => utils.loadProperties?.({ refreshSummary: state.activeTab === 'home' }))
+      .catch((err) => console.warn('properties refresh failed', err));
+  }
+
   function syncTypeCards(form) {
     form?.querySelectorAll?.('.npm-type-card')?.forEach((card) => {
       card.classList.toggle('is-active', !!card.querySelector('input[type=radio]')?.checked);
@@ -191,9 +199,8 @@
 
       window.setTimeout(() => {
         mod.closeNewPropertyModal();
-        utils.invalidatePropertyCollections?.();
-        utils.loadProperties?.({ refreshSummary: state.activeTab === 'home', homeOnly: state.activeTab === 'home' });
-      }, 700);
+        refreshPropertiesInBackground(state, utils);
+      }, 800);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }

@@ -327,6 +327,15 @@
     els.aemMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
   }
 
+
+  function refreshPropertiesInBackground(state, utils, options = {}) {
+    const refreshSummary = !!options.refreshSummary;
+    try { utils.invalidatePropertyCollections?.(); } catch {}
+    Promise.resolve()
+      .then(() => utils.loadProperties?.({ refreshSummary }))
+      .catch((err) => console.warn('properties refresh failed', err));
+  }
+
   function appendOpinionEntryLocal(history, newText, user) {
     const text = String(newText || '').trim();
     if (!text) return history;
@@ -940,10 +949,9 @@
       setAemMsg(els, '');
       await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
       setAemMsg(els, '저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      await new Promise((resolve) => setTimeout(resolve, 650));
       mod.closePropertyEditModal();
-      utils.invalidatePropertyCollections();
-      await utils.loadProperties({ refreshSummary: false });
+      refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' });
     } catch (err) {
       console.error(err);
       setAemMsg(els, err?.message || '저장 실패');
