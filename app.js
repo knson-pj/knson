@@ -39,7 +39,7 @@
     session: loadSession(),
     items: [],
     view: "text", // text | map
-    source: "all", // all | auction | onbid | realtor_naver | realtor_direct | general
+    source: "all", // all | auction | onbid | realtor | realtor_naver | realtor_direct | general
     keyword: "",
     status: "",
 
@@ -55,25 +55,6 @@
   };
 
   const els = {};
-
-  const APP_PROPERTY_SELECT = [
-    // 지도/목록에서 공통으로 안전하게 쓰는 최소 컬럼만 조회합니다.
-    // 스키마 드리프트가 잦았던 floor/area/price alias 컬럼은 여기서 제외하고,
-    // source 판별과 카드 렌더에 필요한 값만 유지합니다.
-    "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address",
-    "assignee_id", "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
-    "latitude", "longitude", "status", "date_uploaded", "created_at", "raw"
-  ].join(",");
-
-  function getInitialViewFromUrl() {
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const view = String(params.get('view') || '').trim().toLowerCase();
-      const hash = String(window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
-      if (view === 'map' || hash === 'map' || hash === 'mapview') return 'map';
-    } catch {}
-    return 'text';
-  }
 
   document.addEventListener("DOMContentLoaded", init);
   const sharedApi = (Shared && typeof Shared.createApiClient === "function")
@@ -122,9 +103,7 @@
       els.adminLink.classList.add("is-visible");
     }
 
-    state.view = getInitialViewFromUrl();
     bindEvents();
-    setView(state.view === 'map' ? 'map' : 'text');
     loadProperties();
   }
 
@@ -224,6 +203,9 @@
       el.addEventListener("click", () => {
         state.source = source;
         renderKPIs();
+        if (els.mvSourceFilter) {
+          els.mvSourceFilter.value = state.source === "all" ? "" : (state.source || "");
+        }
         if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
       });
     };
@@ -352,26 +334,14 @@
 
   async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchPropertiesBatch === "function") {
-      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select: APP_PROPERTY_SELECT, orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
+      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select: "*", orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
     }
     throw new Error("KNSN_DATA_ACCESS.fetchPropertiesBatch 를 찾을 수 없습니다.");
   }
 
   async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
-      try {
-        return await DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: APP_PROPERTY_SELECT, pageSize: 2500 });
-      } catch (err) {
-        const text = String(err?.message || err || "").toLowerCase();
-        if (/does not exist|schema cache|42703/.test(text)) {
-          const fallbackSelect = [
-            "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address",
-            "assignee_id", "submitter_type", "latitude", "longitude", "status", "date_uploaded", "created_at"
-          ].join(",");
-          return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: fallbackSelect, pageSize: 2500 });
-        }
-        throw err;
-      }
+      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: "*", pageSize: 1000 });
     }
     throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
@@ -457,28 +427,15 @@
     };
   }
 
-  function getBucketKey(item) {
-    const bucket = String(item?.sourceBucket || item?.source || item?.sourceType || "").trim();
-    return bucket || "general";
-  }
-
-  function matchesSourceFilter(item, filterValue) {
-    const target = String(filterValue || "all").trim();
-    if (!target || target === "all") return true;
-    const bucket = getBucketKey(item);
-    if (target === "realtor") return bucket === "realtor" || bucket === "realtor_naver" || bucket === "realtor_direct";
-    return bucket === target || String(item?.source || "").trim() === target;
-  }
-
-  function countByFilter(items, filterValue) {
-    return (Array.isArray(items) ? items : []).filter((item) => matchesSourceFilter(item, filterValue)).length;
-  }
-
   function getFilteredRows() {
     let list = state.items.slice();
 
     if (state.source !== "all") {
-      list = list.filter((p) => matchesSourceFilter(p, state.source));
+      list = list.filter((p) => {
+        const bucket = String(p.sourceBucket || p.source || "general").trim() || "general";
+        if (state.source === "realtor") return bucket === "realtor_naver" || bucket === "realtor_direct";
+        return bucket === state.source;
+      });
     }
 
     if (state.status) {
@@ -502,10 +459,10 @@
     const all = state.items;
 
     if (els.statTotal) els.statTotal.textContent = String(all.length);
-    if (els.statAuction) els.statAuction.textContent = String(countByFilter(all, "auction"));
-    if (els.statGongmae) els.statGongmae.textContent = String(countByFilter(all, "onbid"));
-    if (els.statRealtor) els.statRealtor.textContent = String(countByFilter(all, "realtor"));
-    if (els.statGeneral) els.statGeneral.textContent = String(countByFilter(all, "general"));
+    if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => (p.sourceBucket || p.source) === "auction").length);
+    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => (p.sourceBucket || p.source) === "onbid").length);
+    if (els.statRealtor) els.statRealtor.textContent = String(all.filter((p) => ["realtor_naver", "realtor_direct", "realtor"].includes(String(p.sourceBucket || p.source || ""))).length);
+    if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => (p.sourceBucket || p.source) === "general").length);
 
     const setActive = (card, on) => {
       if (!card) return;
@@ -769,9 +726,9 @@
         else if (addr.includes("\uC778\uCC9C")) regionCount["\uC778\uCC9C"]++;
         else regionCount["\uAE30\uD0C0"]++;
 
-        const bucket = (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function")
-          ? PropertyDomain.getSourceBucket({ sourceType: p.source, isDirectSubmission: p.isDirectSubmission, raw: p.raw })
-          : (p.source === "realtor" ? (p.isDirectSubmission ? "realtor_direct" : "realtor_naver") : p.source);
+        const bucket = String(p.sourceBucket || ((PropertyDomain && typeof PropertyDomain.getSourceBucket === "function")
+          ? PropertyDomain.getSourceBucket({ sourceType: p.source, sourceUrl: p.sourceUrl, isDirectSubmission: p.isDirectSubmission, raw: p.raw })
+          : (p.source === "realtor" ? (p.isDirectSubmission ? "realtor_direct" : "realtor_naver") : p.source)) || "general");
         if (bucket === "auction") sourceCount["\uACBD\uB9E4"]++;
         else if (bucket === "onbid") sourceCount["\uACF5\uB9E4"]++;
         else if (bucket === "realtor_naver") sourceCount["\uB124\uC774\uBC84\uC911\uAC1C"]++;
@@ -895,10 +852,10 @@
     if (!el) return;
     const items = state.items;
     const data = [
-      { label: "경매", count: items.filter((p) => p.source === "auction").length, color: "#D778F7" },
-      { label: "공매", count: items.filter((p) => p.source === "onbid").length, color: "#59A7FF" },
-      { label: "중개", count: items.filter((p) => p.source === "realtor").length, color: "#4AD8BA" },
-      { label: "일반", count: items.filter((p) => p.source === "general").length, color: "#F6B04A" },
+      { label: "경매", count: items.filter((p) => (p.sourceBucket || p.source) === "auction").length, color: "#D778F7" },
+      { label: "공매", count: items.filter((p) => (p.sourceBucket || p.source) === "onbid").length, color: "#59A7FF" },
+      { label: "중개", count: items.filter((p) => ["realtor_naver", "realtor_direct", "realtor"].includes(String(p.sourceBucket || p.source || ""))).length, color: "#4AD8BA" },
+      { label: "일반", count: items.filter((p) => (p.sourceBucket || p.source) === "general").length, color: "#F6B04A" },
     ];
     el.innerHTML = renderDonutSVG(data, items.length, "전체 물건");
   }
@@ -1285,7 +1242,7 @@
     card.setAttribute("data-id", p.id || "");
 
     let priceHtml = "";
-    if (p.source === "auction" || p.source === "onbid") {
+    if ((p.sourceBucket || p.source) === "auction" || (p.sourceBucket || p.source) === "onbid") {
       priceHtml = '<div class="mv-card-price">' +
         (appraisal ? '<span>감정가</span><strong>' + escapeHtml(appraisal) + '</strong>' : '') +
         (current ? '<span>현재가</span><strong>' + escapeHtml(current) + '</strong>' : '') +
@@ -1333,19 +1290,18 @@
   function renderMapSummary(total) {
     if (!els.mvSummary) return;
     const rows = getFilteredRows();
-    const withCoords = rows.filter((r) => r.latitude != null && r.longitude != null);
-    const auction = countByFilter(withCoords, "auction");
-    const onbid = countByFilter(withCoords, "onbid");
-    const realtorNaver = countByFilter(withCoords, "realtor_naver");
-    const realtorDirect = countByFilter(withCoords, "realtor_direct");
-    const general = countByFilter(withCoords, "general");
+    const counts = { auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+    rows.forEach((row) => {
+      const bucket = String(row.sourceBucket || row.source || "general").trim() || "general";
+      if (bucket in counts) counts[bucket] += 1;
+    });
     els.mvSummary.innerHTML =
       '<span>전체 <strong>' + total + '</strong>건</span>' +
-      '<span>경매 <strong>' + auction + '</strong></span>' +
-      '<span>공매 <strong>' + onbid + '</strong></span>' +
-      '<span>네이버중개 <strong>' + realtorNaver + '</strong></span>' +
-      '<span>일반중개 <strong>' + realtorDirect + '</strong></span>' +
-      '<span>일반 <strong>' + general + '</strong></span>';
+      '<span>경매 <strong>' + counts.auction + '</strong></span>' +
+      '<span>공매 <strong>' + counts.onbid + '</strong></span>' +
+      '<span>네이버중개 <strong>' + counts.realtor_naver + '</strong></span>' +
+      '<span>일반중개 <strong>' + counts.realtor_direct + '</strong></span>' +
+      '<span>일반 <strong>' + counts.general + '</strong></span>';
   }
 
   // ---- Map Detail Popup ----
@@ -1354,7 +1310,7 @@
 
     const src = getSourceStyle(item);
     els.mvDetailGrade.innerHTML =
-      '<span class="mv-detail-source-badge mv-badge-' + item.source + '" style="font-size:12px;padding:3px 10px;">' + escapeHtml(src.label) + '</span>';
+      '<span class="mv-detail-source-badge mv-badge-' + (item.sourceBucket || item.source) + '" style="font-size:12px;padding:3px 10px;">' + escapeHtml(src.label) + '</span>';
 
     const appraisal = item.appraisalPrice != null ? formatMoneyEok(item.appraisalPrice) : "-";
     const current = item.currentPrice != null ? formatMoneyEok(item.currentPrice) : "-";

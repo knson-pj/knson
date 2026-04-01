@@ -63,46 +63,6 @@
     return firstNonEmpty(...values);
   }
 
-  function inferSourceTypeFromContext(item, raw, submitterType) {
-    const row = item && typeof item === "object" ? item : {};
-    const baseRaw = raw && typeof raw === "object" ? raw : {};
-    const boolGeneral = row.is_general === true || row.isGeneral === true || baseRaw.is_general === true || baseRaw.isGeneral === true;
-    if (boolGeneral) return "general";
-
-    const explicitTexts = [
-      row.globalId, row.global_id, row.itemNo, row.item_no, row.sourceType, row.source_type, row.sourceUrl, row.source_url, row.url, row.link,
-      row.service, row.platform, row.origin, row.category, row.source,
-      baseRaw.globalId, baseRaw.global_id, baseRaw.sourceType, baseRaw.source_type, baseRaw.sourceUrl, baseRaw.source_url, baseRaw.url, baseRaw.link,
-      baseRaw.service, baseRaw.platform, baseRaw.origin, baseRaw.category, baseRaw.source, baseRaw.source_type, baseRaw.sourceType,
-      baseRaw["구분"], baseRaw["출처"], baseRaw["매체"], baseRaw["플랫폼"], baseRaw["서비스"], baseRaw["수집구분"]
-    ].map((v) => String(v || "").trim().toLowerCase()).filter(Boolean);
-
-    const joined = explicitTexts.join(' ');
-    if (joined.includes('auction') || joined.includes('courtauction') || joined.includes('court_auction') || joined.includes('경매')) return 'auction';
-    if (joined.includes('onbid') || joined.includes('gongmae') || joined.includes('공매') || joined.includes('public')) return 'onbid';
-    if (joined.includes('realtor') || joined.includes('broker') || joined.includes('naver') || joined.includes('중개') || joined.includes('중개사') || joined.includes('공인중개사') || joined.includes('네이버중개') || joined.includes('일반중개') || joined.includes('realtor_naver') || joined.includes('realtor_direct')) return 'realtor';
-    if (joined.includes('general') || joined.includes('owner') || joined.includes('public_user') || joined.includes('일반') || joined.includes('직접등록') || joined.includes('소유자')) return 'general';
-
-    const normalizedSubmitter = normalizeSubmitterType(submitterType, { fallback: "" });
-    if (normalizedSubmitter === "realtor") return "realtor";
-    if (normalizedSubmitter === "owner") return "general";
-
-    const sourceUrl = String(row.sourceUrl || row.source_url || baseRaw.sourceUrl || baseRaw.source_url || baseRaw.url || "").trim().toLowerCase();
-    if (sourceUrl) {
-      if (sourceUrl.includes('onbid.co.kr') || sourceUrl.includes('onbid')) return 'onbid';
-      if (sourceUrl.includes('courtauction.go.kr') || sourceUrl.includes('/pgj/') || sourceUrl.includes('auction')) return 'auction';
-      if (sourceUrl.includes('land.naver.com') || sourceUrl.includes('m.land.naver.com') || sourceUrl.includes('naver.com')) return 'realtor';
-    }
-
-    const globalId = String(row.globalId || row.global_id || "").trim().toLowerCase();
-    if (globalId.startsWith('auction:')) return 'auction';
-    if (globalId.startsWith('onbid:')) return 'onbid';
-    if (globalId.startsWith('realtor:')) return 'realtor';
-    if (globalId.startsWith('general:')) return 'general';
-
-    return "";
-  }
-
   function compactAddressText(value) {
     return String(value || "").trim().replace(/\s+/g, "");
   }
@@ -193,44 +153,102 @@
     return cleanCandidate(memo);
   }
 
+  function inferSourceTypeFromContext(context = {}) {
+    const raw = context && context.raw && typeof context.raw === "object" ? context.raw : {};
+    const rawSource = pickFirstText(
+      context.rawSource,
+      context.sourceType,
+      context.source_type,
+      context.source,
+      context.category,
+      raw.sourceType,
+      raw.source_type,
+      raw.source,
+      raw.category,
+      raw["구분"],
+      raw["출처"],
+      raw["플랫폼"],
+      raw["서비스"],
+      raw["수집구분"],
+      raw["매체"],
+      raw["사이트"],
+      raw.portal,
+      raw.provider,
+      raw.origin,
+      raw.origin_type,
+      raw.originType,
+      ""
+    );
+    const normalizedRaw = normalizeSourceType(rawSource, { fallback: "" });
+    if (normalizedRaw) return normalizedRaw;
+
+    const sourceUrl = pickFirstText(
+      context.sourceUrl,
+      context.source_url,
+      raw.sourceUrl,
+      raw.source_url,
+      raw.url,
+      raw["바로가기(엑셀)"],
+      raw["매물URL"],
+      ""
+    ).toLowerCase();
+    const globalId = pickFirstText(context.globalId, context.global_id, raw.globalId, raw.global_id, "").toLowerCase();
+    const submitterType = normalizeSubmitterType(
+      pickFirstText(context.submitterType, context.submitter_type, raw.submitterType, raw.submitter_type, ""),
+      { fallback: "" }
+    );
+    const isGeneral = Boolean(context.isGeneral ?? context.is_general ?? raw.is_general ?? raw.isGeneral);
+    const brokerOfficeName = pickFirstText(context.brokerOfficeName, context.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, "");
+    const joined = [sourceUrl, globalId, rawSource].filter(Boolean).join(" ");
+
+    if (/(^|\b)(auction|courtauction|court_auction)(:|\b)|법원경매|지지옥션|스피드옥션/i.test(joined)) return "auction";
+    if (/(^|\b)(onbid|gongmae|public)(:|\b)|온비드|공매|캠코/i.test(joined)) return "onbid";
+    if (/land\.naver\.com|new\.land\.naver\.com|m\.land\.naver\.com|fin\.land\.naver\.com|네이버/i.test(joined)) return "realtor";
+    if (/(중개|중개사|공인중개사|broker|realtor|agent)/i.test(rawSource)) return "realtor";
+    if (submitterType === "realtor") return "realtor";
+    if (brokerOfficeName) return "realtor";
+    if (isGeneral || submitterType === "owner") return "general";
+    return "general";
+  }
+
   function buildNormalizedPropertyBase(item, options) {
     const opts = options && typeof options === "object" ? options : {};
     const raw = item && item.raw && typeof item.raw === "object" ? item.raw : {};
+    const address = pickFirstText(item && item.address, item && item.location, item && item.addr, raw.address, raw.location, "");
+    const itemNo = pickFirstText(item && item.itemNo, item && item.caseNo, item && item.externalId, item && item.listingId, item && item.item_no, raw.itemNo, raw.item_no, "");
+    const sourceUrl = pickFirstText(item && item.sourceUrl, item && item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
+    const submitterType = normalizeSubmitterType(pickFirstText(item && item.submitterType, item && item.submitter_type, raw.submitterType, raw.submitter_type, ""));
+    const submitterName = pickFirstText(item && item.submitterName, item && item.submitter_name, raw.submitterName, raw.submitter_name, "");
+    const brokerOfficeName = pickFirstText(item && item.brokerOfficeName, item && item.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, "");
     const rawSource = pickFirstText(
       item && item.sourceType,
       item && item.source_type,
       item && item.source,
       item && item.category,
-      item && item.origin,
-      item && item.platform,
-      item && item.service,
-      item && item.sourceUrl,
-      item && item.source_url,
-      item && item.globalId,
-      item && item.global_id,
       raw.sourceType,
       raw.source_type,
       raw.source,
       raw.category,
-      raw.origin,
-      raw.platform,
-      raw.service,
       raw["구분"],
       raw["출처"],
-      raw["매체"],
       raw["플랫폼"],
       raw["서비스"],
-      raw["수집구분"]
+      raw["수집구분"],
+      raw["매체"],
+      raw["사이트"],
+      ""
     ).toLowerCase();
-    const submitterType = normalizeSubmitterType(pickFirstText(item && item.submitterType, item && item.submitter_type, raw.submitterType, raw.submitter_type, ""));
-    const inferredSourceType = inferSourceTypeFromContext(item, raw, submitterType);
-    const explicitSourceType = normalizeSourceType(rawSource, { fallback: "" });
-    const sourceType = normalizeSourceType(explicitSourceType || inferredSourceType, { fallback: opts.fallbackSource || "general" });
-    const address = pickFirstText(item && item.address, item && item.location, item && item.addr, raw.address, raw.location, "");
-    const itemNo = pickFirstText(item && item.itemNo, item && item.caseNo, item && item.externalId, item && item.listingId, item && item.item_no, raw.itemNo, raw.item_no, "");
-    const sourceUrl = pickFirstText(item && item.sourceUrl, item && item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
-    const submitterName = pickFirstText(item && item.submitterName, item && item.submitter_name, raw.submitterName, raw.submitter_name, "");
-    const brokerOfficeName = pickFirstText(item && item.brokerOfficeName, item && item.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, "");
+    const isGeneral = Boolean((item && ((item.isGeneral ?? item.is_general) || item.origin === "general")) || raw.is_general || raw.isGeneral);
+    const sourceType = inferSourceTypeFromContext({
+      rawSource,
+      sourceUrl,
+      globalId: item && (item.globalId || item.global_id),
+      submitterType,
+      isGeneral,
+      brokerOfficeName,
+      raw,
+      fallback: opts.fallbackSource || "general",
+    });
     const memoText = pickFirstText(item && item.memo, raw.memo, "");
     const opinionText = sourceType === "onbid"
       ? sanitizeOnbidOpinion(pickFirstText(item && item.opinion, raw.opinion, ""), memoText, address)
@@ -257,7 +275,7 @@
       submitterName,
       brokerOfficeName,
       isDirectSubmission,
-      isGeneral: Boolean((item && (item.isGeneral || item.is_general || item.origin === "general")) || sourceType === "general"),
+      isGeneral: Boolean(isGeneral || sourceType === "general"),
       itemNo,
       address,
       latitude: toNullableNumber(item && (item.latitude ?? item.lat ?? item.y ?? raw.latitude ?? raw.lat ?? "")),
@@ -620,10 +638,10 @@
     const fallback = String(options.fallback || "general").trim() || "general";
     const value = String(rawValue || "").trim().toLowerCase();
     if (!value) return fallback;
-    if (["auction", "courtauction", "court_auction", "경매"].includes(value)) return "auction";
+    if (["auction", "courtauction", "court_auction"].includes(value)) return "auction";
     if (["onbid", "public", "gongmae", "공매"].includes(value)) return "onbid";
-    if (["realtor", "broker", "naver", "realtor_naver", "realtor_direct", "중개", "중개사", "공인중개사", "네이버중개", "일반중개"].includes(value)) return "realtor";
-    if (["general", "owner", "public_user", "일반", "직접등록", "소유자"].includes(value)) return "general";
+    if (["realtor", "broker", "naver", "realtor_naver", "realtor_direct", "중개", "중개사"].includes(value)) return "realtor";
+    if (["general", "owner", "public_user", "일반", "직접등록"].includes(value)) return "general";
     return fallback;
   }
 
@@ -786,10 +804,18 @@
   }
 
   function isDirectRealtorSubmission(item) {
-    const sourceType = normalizeSourceType(
-      item?.sourceType || item?.source_type || item?.source || item?.category || item?.raw?.sourceType || item?.raw?.source_type || "",
-      { fallback: "general" }
-    );
+    const sourceType = inferSourceTypeFromContext({
+      sourceType: item?.sourceType,
+      source_type: item?.source_type,
+      source: item?.source,
+      category: item?.category,
+      sourceUrl: item?.sourceUrl || item?.source_url,
+      globalId: item?.globalId || item?.global_id,
+      submitterType: item?.submitterType || item?.submitter_type,
+      isGeneral: item?.isGeneral || item?.is_general,
+      brokerOfficeName: item?.brokerOfficeName || item?.broker_office_name,
+      raw: item?.raw,
+    });
     if (sourceType !== "realtor") return false;
     const submitterType = normalizeSubmitterType(
       item?.submitterType || item?.submitter_type || item?.raw?.submitterType || item?.raw?.submitter_type || "",
@@ -806,9 +832,19 @@
   }
 
   function getSourceBucket(item) {
-    const baseSourceType = normalizeSourceType(item?.sourceType || item?.source_type || item?.source || item?.category || item?.raw?.sourceType || item?.raw?.source_type || "", { fallback: "" });
-    const inferredSourceType = inferSourceTypeFromContext(item, item?.raw && typeof item.raw === "object" ? item.raw : {}, item?.submitterType || item?.submitter_type || item?.raw?.submitterType || item?.raw?.submitter_type || "");
-    const sourceType = normalizeSourceType(baseSourceType || inferredSourceType, { fallback: "general" });
+    const sourceType = inferSourceTypeFromContext({
+      sourceType: item?.sourceType,
+      source_type: item?.source_type,
+      source: item?.source,
+      category: item?.category,
+      sourceUrl: item?.sourceUrl || item?.source_url,
+      globalId: item?.globalId || item?.global_id,
+      submitterType: item?.submitterType || item?.submitter_type,
+      isGeneral: item?.isGeneral || item?.is_general,
+      brokerOfficeName: item?.brokerOfficeName || item?.broker_office_name,
+      raw: item?.raw,
+      rawSource: item?.rawSource || item?.raw_source,
+    });
     if (sourceType === "realtor") {
       if (typeof item?.isDirectSubmission === "boolean") return item.isDirectSubmission ? "realtor_direct" : "realtor_naver";
       if (typeof item?.is_direct_submission === "boolean") return item.is_direct_submission ? "realtor_direct" : "realtor_naver";
