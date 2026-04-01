@@ -69,8 +69,6 @@ body.is-map-view .content{padding:0;}
 .mv-badge-auction{background:rgba(215,120,247,.12);color:#D778F7;}
 .mv-badge-onbid{background:rgba(89,167,255,.12);color:#59A7FF;}
 .mv-badge-realtor{background:rgba(74,216,186,.12);color:#4AD8BA;}
-.mv-badge-realtor_naver{background:rgba(23,201,100,.12);color:#17C964;}
-.mv-badge-realtor_direct{background:rgba(15,166,139,.12);color:#0FA68B;}
 .mv-badge-general{background:rgba(246,176,74,.12);color:#F6B04A;}
 .mv-card-addr{font-size:12px;font-weight:700;letter-spacing:-.02em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .mv-card-info{font-size:10px;color:var(--muted);line-height:1.4;margin-top:2px;}
@@ -81,14 +79,11 @@ body.is-map-view .content{padding:0;}
 
 /* ── Sidebar Summary ── */
 .mv-sb-summary{
-  padding:8px 12px;
+  padding:10px 12px;
   border-top:1px solid var(--line);
-  border-bottom:1px solid var(--line);
-  display:flex;gap:8px 12px;
-  flex-wrap:wrap;
+  display:flex;gap:12px;
   font-size:11px;color:var(--muted);
   flex-shrink:0;
-  background:var(--surface);
 }
 .mv-sb-summary strong{color:var(--text);}
 

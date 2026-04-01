@@ -58,12 +58,51 @@ const OVERVIEW_SELECT = [
 const MAP_SCAN_SELECT = [
   'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
   'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
+  'floor', 'exclusive_area', 'status', 'price_main', 'lowprice', 'date_main',
+  'latitude', 'longitude', 'created_at', 'date_uploaded', 'raw'
+].join(',');
+
+const MAP_DETAIL_SELECT = [
+  'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
+  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
   'floor', 'total_floor', 'common_area', 'exclusive_area', 'site_area', 'use_approval',
   'status', 'price_main', 'lowprice', 'date_main', 'assignee_id', 'latitude', 'longitude',
   'memo', 'created_at', 'date_uploaded', 'raw'
 ].join(',');
 
 const AREA_KEYS = ['', '0-5', '5-10', '10-20', '20-30', '30-50', '50-100', '100-'];
+
+function toFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseMapBounds(options = {}) {
+  const swLat = toFiniteNumber(options.swLat);
+  const swLng = toFiniteNumber(options.swLng);
+  const neLat = toFiniteNumber(options.neLat);
+  const neLng = toFiniteNumber(options.neLng);
+  if ([swLat, swLng, neLat, neLng].some((v) => v == null)) return null;
+  return { swLat, swLng, neLat, neLng };
+}
+
+function rowWithinBounds(row, bounds) {
+  if (!bounds) return true;
+  const lat = Number(row?.latitude);
+  const lng = Number(row?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  return lat >= bounds.swLat && lat <= bounds.neLat && lng >= bounds.swLng && lng <= bounds.neLng;
+}
+
+function appendSupabaseBboxFilters(params, bounds) {
+  if (!bounds) return;
+  params.append('and', `(latitude.gte.${bounds.swLat},latitude.lte.${bounds.neLat},longitude.gte.${bounds.swLng},longitude.lte.${bounds.neLng})`);
+}
+
+function appendCommonMapFilters(params, { status = '' } = {}) {
+  if (status) params.append('status', `eq.${status}`);
+}
+
 
 async function supabaseHeadCount(path) {
   const { url } = getEnv();
@@ -402,79 +441,75 @@ function matchesMapFilters(row, { source = 'all', status = '', q = '' } = {}) {
   return true;
 }
 
-async function buildSupabaseMapResponse({ source = 'all', status = '', q = '', offset = 0, limit = 300, markerLimit = 1200, pageSize = 4000 } = {}) {
-  let from = 0;
-  let activeSelect = MAP_SCAN_SELECT;
-  const removed = new Set();
-  const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-  const items = [];
-  const markers = [];
+async function buildSupabaseMapResponse({ source = 'all', status = '', q = '', offset = 0, limit = 300, markerLimit = 1200, swLat = null, swLng = null, neLat = null, neLng = null } = {}) {
+  const bounds = parseMapBounds({ swLat, swLng, neLat, neLng });
+  const query = new URLSearchParams();
+  query.set('select', MAP_SCAN_SELECT);
+  query.set('order', 'date_uploaded.desc.nullslast,id.desc');
+  query.set('offset', '0');
+  query.set('limit', String(Math.max(Number(limit || 300), Number(markerLimit || 1200), 1200)));
+  appendCommonMapFilters(query, { status });
+  appendSupabaseBboxFilters(query, bounds);
 
-  while (true) {
-    let data;
-    try {
-      data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(activeSelect)}&order=date_uploaded.desc.nullslast,id.desc&offset=${from}&limit=${pageSize}`);
-    } catch (err) {
-      const missing = extractMissingColumn(err);
-      if (missing && !removed.has(missing)) {
-        const nextSelect = removeMissingColumnFromSelect(activeSelect, missing);
-        if (nextSelect && nextSelect !== activeSelect) {
-          removed.add(missing);
-          activeSelect = nextSelect;
-          from = 0;
-          items.length = 0;
-          markers.length = 0;
-          summary.total = 0; summary.auction = 0; summary.onbid = 0; summary.realtor_naver = 0; summary.realtor_direct = 0; summary.general = 0;
-          continue;
-        }
-      }
-      throw err;
-    }
-    const batch = Array.isArray(data) ? data : [];
-    for (const row of batch) {
-      const normalized = buildMapRow(row);
-      if (!matchesMapFilters(normalized, { source, status, q })) continue;
-      summary.total += 1;
-      if (Object.prototype.hasOwnProperty.call(summary, normalized.sourceBucket)) summary[normalized.sourceBucket] += 1;
-      const seen = summary.total - 1;
-      if (seen >= Number(offset || 0) && items.length < Number(limit || 300)) items.push(normalized);
-      if (markers.length < Number(markerLimit || 1200) && Number.isFinite(Number(normalized.latitude)) && Number.isFinite(Number(normalized.longitude))) {
-        markers.push({
-          id: normalized.id,
-          address: normalized.address,
-          type: normalized.type,
-          latitude: Number(normalized.latitude),
-          longitude: Number(normalized.longitude),
-          sourceBucket: normalized.sourceBucket,
-          source: normalized.source,
-        });
-      }
-    }
-    if (batch.length < pageSize) break;
-    from += pageSize;
+  const data = await supabaseRest(`/rest/v1/properties?${query.toString()}`);
+  const batch = Array.isArray(data) ? data : [];
+  const filtered = [];
+  const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+
+  for (const row of batch) {
+    const normalized = buildMapRow(row);
+    if (!rowWithinBounds(normalized, bounds)) continue;
+    if (!matchesMapFilters(normalized, { source, status, q })) continue;
+    filtered.push(normalized);
+    summary.total += 1;
+    if (Object.prototype.hasOwnProperty.call(summary, normalized.sourceBucket)) summary[normalized.sourceBucket] += 1;
   }
+
+  const safeOffset = Math.max(0, Number(offset || 0));
+  const safeLimit = Math.max(1, Number(limit || 300));
+  const safeMarkerLimit = Math.max(1, Number(markerLimit || 1200));
+  const items = filtered.slice(safeOffset, safeOffset + safeLimit);
+  const markers = filtered
+    .filter((row) => Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude)))
+    .slice(0, safeMarkerLimit)
+    .map((row) => ({
+      id: row.id,
+      address: row.address,
+      type: row.type,
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+      sourceBucket: row.sourceBucket,
+      source: row.source,
+    }));
 
   return { summary, total: summary.total, items, markers };
 }
 
 function buildStoreMapResponse(rows, options = {}) {
+  const bounds = parseMapBounds(options);
   const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
   const items = [];
   const markers = [];
   const offset = Number(options.offset || 0);
   const limit = Number(options.limit || 300);
   const markerLimit = Number(options.markerLimit || 1200);
+  const filtered = [];
+
   for (const row of Array.isArray(rows) ? rows : []) {
     const normalized = buildMapRow(row);
+    if (!rowWithinBounds(normalized, bounds)) continue;
     if (!matchesMapFilters(normalized, options)) continue;
+    filtered.push(normalized);
     summary.total += 1;
     if (Object.prototype.hasOwnProperty.call(summary, normalized.sourceBucket)) summary[normalized.sourceBucket] += 1;
-    const seen = summary.total - 1;
-    if (seen >= offset && items.length < limit) items.push(normalized);
-    if (markers.length < markerLimit && Number.isFinite(Number(normalized.latitude)) && Number.isFinite(Number(normalized.longitude))) {
-      markers.push({ id: normalized.id, address: normalized.address, type: normalized.type, latitude: Number(normalized.latitude), longitude: Number(normalized.longitude), sourceBucket: normalized.sourceBucket, source: normalized.source });
-    }
   }
+
+  filtered.slice(offset, offset + limit).forEach((row) => items.push(row));
+  filtered
+    .filter((row) => Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude)))
+    .slice(0, markerLimit)
+    .forEach((row) => markers.push({ id: row.id, address: row.address, type: row.type, latitude: Number(row.latitude), longitude: Number(row.longitude), sourceBucket: row.sourceBucket, source: row.source }));
+
   return { summary, total: summary.total, items, markers };
 }
 
@@ -531,18 +566,40 @@ module.exports = async function handler(req, res) {
       const offset = Number(url.searchParams.get('offset') || 0);
       const limit = Number(url.searchParams.get('limit') || 300);
       const markerLimit = Number(url.searchParams.get('markerLimit') || 1200);
+      const swLat = url.searchParams.get('swLat');
+      const swLng = url.searchParams.get('swLng');
+      const neLat = url.searchParams.get('neLat');
+      const neLng = url.searchParams.get('neLng');
       try {
         if (hasSupabaseAdminEnv()) {
-          const payload = await buildSupabaseMapResponse({ source, status, q, offset, limit, markerLimit });
+          const payload = await buildSupabaseMapResponse({ source, status, q, offset, limit, markerLimit, swLat, swLng, neLat, neLng });
           return send(res, 200, { ok: true, ...payload });
         }
-        return send(res, 200, { ok: true, ...buildStoreMapResponse(store.properties, { source, status, q, offset, limit, markerLimit }) });
+        return send(res, 200, { ok: true, ...buildStoreMapResponse(store.properties, { source, status, q, offset, limit, markerLimit, swLat, swLng, neLat, neLng }) });
       } catch (err) {
         return send(res, err?.status || 500, {
           ok: false,
           message: err?.message || '지도 데이터를 불러오지 못했습니다.',
           details: err?.data || null,
         });
+      }
+    }
+    if (mode === 'detail') {
+      const targetId = String(url.searchParams.get('id') || '').trim();
+      if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
+      try {
+        if (hasSupabaseAdminEnv()) {
+          const col = targetId.includes(':') ? 'global_id' : 'id';
+          const rows = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(MAP_DETAIL_SELECT)}&${col}=eq.${encodeURIComponent(targetId)}&limit=1`);
+          const row = Array.isArray(rows) ? rows[0] : rows;
+          if (!row) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
+          return send(res, 200, { ok: true, item: buildMapRow(row) });
+        }
+        const item = Array.isArray(store.properties) ? store.properties.find((row) => String(row?.id || row?.global_id || '').trim() === targetId || String(row?.global_id || '').trim() === targetId) : null;
+        if (!item) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
+        return send(res, 200, { ok: true, item: buildMapRow(item) });
+      } catch (err) {
+        return send(res, err?.status || 500, { ok: false, message: err?.message || '상세 데이터를 불러오지 못했습니다.', details: err?.data || null });
       }
     }
     if (mode === 'overview') {
