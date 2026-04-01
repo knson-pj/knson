@@ -313,7 +313,7 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
   background:var(--brand);color:#fff;border-color:var(--brand);
 }
 .btn-primary:hover{background:var(--brand-hover);border-color:var(--brand-hover);}
-.btn-ghost{background:transparent;border-color:transparent;}
+.btn-ghost{background:transparent;border-color:var(--border);}
 .btn-ghost:hover{background:var(--surface-2);border-color:var(--border);}
 .btn-secondary{background:var(--surface);border-color:var(--border);}
 .btn-danger{
@@ -1589,3 +1589,53 @@ textarea.form-textarea-tall{
 .toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .select,
 .toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .input{width:auto; min-width:140px;}
 .toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .toolbar-danger-btn{white-space:nowrap;}
+
+
+/* Agent combined log styling restore */
+.agent-combined-log-list{max-height:340px;}
+.agent-combined-log-item{display:grid;gap:10px;padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);}
+.agent-combined-log-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.agent-combined-log-badge{display:inline-flex;align-items:center;justify-content:center;min-height:24px;padding:0 8px;border-radius:999px;background:var(--surface-2);color:var(--text-2);font-size:11px;font-weight:700;}
+.agent-combined-log-badge.is-opinion,.agent-combined-log-badge.is-edit{background:rgba(49,92,246,.12);color:var(--brand);}
+.agent-combined-log-badge.is-registration,.agent-combined-log-badge.is-new{background:rgba(21,128,61,.12);color:#166534;}
+.agent-combined-log-badge.is-rights{background:rgba(147,51,234,.12);color:#7e22ce;}
+.agent-combined-log-badge.is-site{background:rgba(234,88,12,.12);color:#c2410c;}
+.agent-combined-log-date{font-size:12px;font-weight:600;color:var(--text-2);}
+.agent-combined-log-author{font-size:12px;color:var(--text-3);}
+.agent-combined-log-body{display:grid;gap:8px;}
+.agent-combined-log-text{font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word;}
+.agent-combined-log-changes{display:grid;gap:6px;}
+.agent-combined-log-change{display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr) auto minmax(0,1fr);gap:6px;align-items:start;font-size:12px;color:var(--text-2);}
+.agent-combined-log-label{font-weight:700;color:var(--text-2);}
+.agent-combined-log-value{min-width:0;word-break:break-word;}
+.agent-combined-log-arrow{color:var(--text-3);font-weight:700;}
+
+/* Agent properties toolbar: single row fixed with horizontal scroll */
+.toolbar.toolbar-agent-properties{
+  display:flex !important;
+  flex-wrap:nowrap !important;
+  align-items:center;
+  gap:var(--sp-2);
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding-bottom:4px;
+  scrollbar-width:thin;
+}
+.toolbar.toolbar-agent-properties > *{flex:0 0 auto;}
+.toolbar.toolbar-agent-properties .toolbar-keyword,
+.toolbar.toolbar-agent-properties #agKeyword{flex:1 0 280px;min-width:260px;max-width:none;}
+.toolbar.toolbar-agent-properties .select,
+.toolbar.toolbar-agent-properties .input{width:auto;min-width:132px;}
+.toolbar.toolbar-agent-properties .btn-add-circle{justify-self:auto;}
+
+/* Agent table source colors split */
+.kind-text.kind-realtor-naver{color:var(--c-realtor);font-weight:700;}
+.kind-text.kind-realtor-direct{color:var(--c-general);font-weight:700;}
+
+@media (max-width: 760px){
+  .agent-combined-log-item{padding:10px;}
+  .agent-combined-log-change{grid-template-columns:1fr;gap:4px;}
+  .agent-combined-log-arrow{display:none;}
+  .toolbar.toolbar-agent-properties .toolbar-keyword,
+  .toolbar.toolbar-agent-properties #agKeyword{min-width:220px;}
+}

@@ -1555,9 +1555,16 @@
   function renderRow(p) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
-    const kindClass = { auction: "kind-auction", onbid: "kind-gongmae", realtor: "kind-realtor", general: "kind-general" };
-    const kindLabel = kindMap[p.sourceType] || "일반";
+    const bucket = getPropertyBucket(p, p.sourceType);
+    const kindLabel = getPropertyKindLabel(p.sourceType, p);
+    const kindClassMap = {
+      auction: "kind-auction",
+      onbid: "kind-gongmae",
+      realtor_naver: "kind-realtor-naver",
+      realtor_direct: "kind-realtor-direct",
+      general: "kind-general",
+    };
+    const kindClass = kindClassMap[bucket] || "kind-general";
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
     const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
     const rate = calcRate(p.priceMain, p.lowprice);
@@ -1587,7 +1594,7 @@
 
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + (kindClass[p.sourceType] || "kind-general") + '">' + esc(kindLabel) + "</span></td>" +
+      '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
       "<td>" + esc(p.address || "-") + "</td>" +
       "<td>" + esc(p.assetType || "-") + "</td>" +
       "<td>" + esc(p.floor || "-") + "</td>" +
@@ -1903,9 +1910,9 @@
       }
 
       setAgentEditMsg('저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 1400));
+      await new Promise((resolve) => setTimeout(resolve, 2200));
       closeEditModal();
-      window.setTimeout(() => refreshAgentPropertiesInBackground(), 900);
+      window.setTimeout(() => refreshAgentPropertiesInBackground(), 2400);
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
     } catch (err) {
@@ -2279,7 +2286,7 @@
       }
       if (activityError) setGlobalMsg(`물건 등록은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
-      setTimeout(() => { closeNewPropertyModal(); refreshAgentPropertiesInBackground(); }, 800);
+      setTimeout(() => { closeNewPropertyModal(); window.setTimeout(() => refreshAgentPropertiesInBackground(), 2400); }, 2200);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }

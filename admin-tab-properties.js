@@ -953,9 +953,9 @@
       setAemMsg(els, '');
       await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
       setAemMsg(els, '저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 1400));
+      await new Promise((resolve) => setTimeout(resolve, 2200));
       mod.closePropertyEditModal();
-      window.setTimeout(() => refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' }), 900);
+      window.setTimeout(() => refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' }), 2400);
     } catch (err) {
       console.error(err);
       setAemMsg(els, err?.message || '저장 실패');

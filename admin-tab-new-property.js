@@ -204,8 +204,8 @@
 
       window.setTimeout(() => {
         mod.closeNewPropertyModal();
-        window.setTimeout(() => refreshPropertiesInBackground(state, utils), 900);
-      }, 1500);
+        window.setTimeout(() => refreshPropertiesInBackground(state, utils), 2400);
+      }, 2200);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }
