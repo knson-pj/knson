@@ -202,13 +202,66 @@
     return Number.isInteger(n) ? String(n) : String(n).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   }
 
-  function toggleBrokerFieldsBySource(els, sourceType) {
-    const hide = ['auction', 'onbid'].includes(String(sourceType || ''));
-    ['realtorname', 'realtorphone', 'realtorcell'].forEach((name) => {
-      const el = els.aemForm?.elements?.[name];
-      const field = el?.closest?.('.field');
-      if (field) field.classList.toggle('hidden', hide);
+  function resolvePropertySourceBucket(utils, item, sourceType, submitterType) {
+    const PropertyDomain = utils?.PropertyDomain;
+    const normalizedSource = PropertyDomain && typeof PropertyDomain.normalizeSourceType === 'function'
+      ? PropertyDomain.normalizeSourceType(sourceType || item?.sourceType || item?._raw?.source_type || item?._raw?.raw?.source_type || '', { fallback: '' })
+      : String(sourceType || item?.sourceType || '').trim().toLowerCase();
+    const normalizedSubmitter = PropertyDomain && typeof PropertyDomain.normalizeSubmitterType === 'function'
+      ? PropertyDomain.normalizeSubmitterType(submitterType || item?.submitterType || item?._raw?.submitter_type || item?._raw?.raw?.submitter_type || '', { fallback: '' })
+      : String(submitterType || item?.submitterType || '').trim().toLowerCase();
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function') {
+      return PropertyDomain.getSourceBucket({
+        ...(item || {}),
+        sourceType: normalizedSource || sourceType || item?.sourceType || '',
+        source_type: normalizedSource || sourceType || item?.sourceType || '',
+        submitterType: normalizedSubmitter || submitterType || item?.submitterType || '',
+        submitter_type: normalizedSubmitter || submitterType || item?.submitterType || '',
+      });
+    }
+    return normalizedSource || 'general';
+  }
+
+  function extractPropertyContactInfo(view = {}, item = {}) {
+    const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || {});
+    return {
+      realtorName: utilsFirstText(view?.realtorname, item?.broker_office_name, item?.realtorname, raw?.broker_office_name, raw?.brokerOfficeName, raw?.realtorname, raw?.realtorName, ''),
+      realtorPhone: utilsFirstText(view?.realtorphone, item?.realtorphone, raw?.realtorphone, raw?.realtorPhone, ''),
+      realtorCell: utilsFirstText(view?.realtorcell, item?.submitter_phone, item?.realtorcell, raw?.submitter_phone, raw?.submitterPhone, raw?.realtorcell, raw?.realtorCell, ''),
+      ownerName: utilsFirstText(view?.submitterName, item?.submitter_name, raw?.submitter_name, raw?.submitterName, raw?.registeredByName, ''),
+      ownerPhone: utilsFirstText(view?.submitterPhone, item?.submitter_phone, raw?.submitter_phone, raw?.submitterPhone, ''),
+    };
+  }
+
+  function utilsFirstText(...values) {
+    for (const value of values) {
+      if (value == null) continue;
+      const text = String(value).trim();
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
+    const form = els.aemForm;
+    if (!form) return;
+    const bucket = resolvePropertySourceBucket(utils, item, sourceType, submitterType);
+    const normalizedSource = utils?.PropertyDomain && typeof utils.PropertyDomain.normalizeSourceType === 'function'
+      ? utils.PropertyDomain.normalizeSourceType(sourceType || item?.sourceType || '', { fallback: '' })
+      : String(sourceType || item?.sourceType || '').trim().toLowerCase();
+    const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
+    const isGeneral = bucket === 'general' || normalizedSource === 'general';
+    const hideForPlain = isRealtor || isGeneral;
+    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="rightsAnalysis"]').forEach((node) => {
+      node.classList.toggle('hidden', hideForPlain);
     });
+    form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
+    form.querySelectorAll('[data-aem-section="owner"]').forEach((node) => node.classList.toggle('hidden', !isGeneral));
+    const info = extractPropertyContactInfo(view, item);
+    const ownerNameEl = form.elements['ownerNameDisplay'];
+    const ownerPhoneEl = form.elements['ownerPhoneDisplay'];
+    if (ownerNameEl) ownerNameEl.value = info.ownerName || '-';
+    if (ownerPhoneEl) ownerPhoneEl.value = info.ownerPhone || '-';
   }
 
   function toInputDateTimeLocal(value) {
@@ -673,13 +726,16 @@
     setVal('longitude', view.longitude ?? '');
 
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
-    toggleBrokerFieldsBySource(els, view.sourceType);
+    applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
     if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
     const sourceTypeEl = f.elements['sourceType'];
-    if (sourceTypeEl) sourceTypeEl.onchange = () => toggleBrokerFieldsBySource(els, sourceTypeEl.value);
+    const submitterTypeEl = f.elements['submitterType'];
+    const refreshFormMode = () => applyAdminPropertyFormMode(els, utils, workingItem, sourceTypeEl?.value || view.sourceType, submitterTypeEl?.value || view.submitterType, view);
+    if (sourceTypeEl) sourceTypeEl.onchange = refreshFormMode;
+    if (submitterTypeEl) submitterTypeEl.onchange = refreshFormMode;
 
     const hasText = (v) => v != null && String(v).trim() !== '';
     const hasNum = (v) => v != null && String(v).trim() !== '' && !Number.isNaN(Number(v));
@@ -766,13 +822,17 @@
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));
     const newOpinionText = readStr('opinion');
     const opinionHistory = appendOpinionEntryLocal(utils.loadOpinionHistory(item), newOpinionText, state.session?.user);
+    const sourceTypeValue = readStr('sourceType') || item.sourceType || '';
+    const submitterTypeValue = readStr('submitterType') || item.submitterType || '';
+    const sourceBucket = resolvePropertySourceBucket(utils, item, sourceTypeValue, submitterTypeValue);
+    const hiddenStatusFields = ['realtor_naver', 'realtor_direct', 'general'].includes(sourceBucket);
     const patch = {
       id: item.id || '',
       globalId: item.globalId || '',
       itemNo: readStr('itemNo') || null,
-      sourceType: readStr('sourceType') || null,
+      sourceType: sourceTypeValue || null,
       assigneeId: readStr('assigneeId') || null,
-      submitterType: readStr('submitterType') || null,
+      submitterType: submitterTypeValue || null,
       address: readStr('address') || null,
       assetType: readStr('assetType') || null,
       floor: readStr('floor') || null,
@@ -796,6 +856,11 @@
       latitude: readNum('latitude'),
       longitude: readNum('longitude'),
     };
+    if (hiddenStatusFields) {
+      delete patch.status;
+      delete patch.dateMain;
+      delete patch.rightsAnalysis;
+    }
     if (!isAdmin) {
       const allowIfEmpty = (k, oldVal) => {
         const v = patch[k];

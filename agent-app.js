@@ -112,6 +112,7 @@
       };
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
+  const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
@@ -223,6 +224,7 @@
     els.dailyReportTotal = $("#dailyReportTotal");
     els.dailyReportLead = $("#dailyReportLead");
     els.dailyReportFlow = $("#dailyReportFlow");
+    els.dailyReportNote = $("#dailyReportNote");
 
     // Summary
     els.agSumTotal = $("#agSumTotal");
@@ -307,6 +309,24 @@
     }
   }
 
+  function getDailyReportNoteKey() {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return `${DAILY_REPORT_NOTE_PREFIX}${uid}_${getTodayDateKey()}`;
+  }
+
+  function loadDailyReportNote() {
+    try {
+      return String(localStorage.getItem(getDailyReportNoteKey()) || "");
+    } catch {
+      return "";
+    }
+  }
+
+  function saveDailyReportNote(value) {
+    try {
+      localStorage.setItem(getDailyReportNoteKey(), String(value || ""));
+    } catch {}
+  }
 
   function getActorIdentity(user) {
     return {
@@ -539,21 +559,21 @@
   }
 
   function getDailyLogContent(row, matched) {
-    const note = String(row?.note || row?.content || '').trim();
+    const note = String(row?.note || '').trim();
     if (note) return note;
     const raw = matched?._raw?.raw || {};
     const action = String(row?.action_type || '').trim();
     if (action === 'rights_analysis') {
-      return firstText(row?.rights_analysis, matched?.rightsAnalysis, raw.rightsAnalysis, raw.rights_analysis, '입력 내용 없음');
+      return firstText(matched?.rightsAnalysis, raw.rightsAnalysis, raw.rights_analysis, '입력 내용 없음');
     }
     if (action === 'site_inspection') {
-      return firstText(row?.site_inspection, matched?.siteInspection, raw.siteInspection, raw.site_inspection, '입력 내용 없음');
+      return firstText(matched?.siteInspection, raw.siteInspection, raw.site_inspection, '입력 내용 없음');
     }
     if (action === 'daily_issue') {
-      return firstText(row?.opinion, matched?.opinion, raw.opinion, raw.memo, '입력 내용 없음');
+      return firstText(matched?.opinion, raw.opinion, raw.memo, '입력 내용 없음');
     }
     if (action === 'new_property') {
-      return firstText(row?.opinion, raw.opinion, raw.memo, matched?.opinion, '신규 등록');
+      return firstText(raw.opinion, raw.memo, matched?.opinion, '신규 등록');
     }
     const changed = Array.isArray(row?.changed_fields) ? row.changed_fields.map((v) => String(v || '').trim()).filter(Boolean) : [];
     return changed.length ? changed.join(', ') : '입력 내용 없음';
@@ -609,6 +629,7 @@
   }
 
   async function openDailyReportModal() {
+    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
     renderDailyReport();
     if (!els.dailyReportModal) return;
     document.body.classList.add("modal-open");
@@ -641,10 +662,6 @@
     const propertyId = String(options.propertyId || propertyLike?.id || propertyLike?.globalId || propertyLike?.global_id || "").trim();
     const propertyItemNo = String(propertyLike?.itemNo || propertyLike?.item_no || propertyLike?._raw?.item_no || "").trim();
     const propertyAddress = String(propertyLike?.address || propertyLike?.location || propertyLike?._raw?.address || propertyLike?.raw?.address || "").trim();
-    const rightsText = String(options.rightsAnalysisText || propertyLike?.rightsAnalysis || propertyLike?._raw?.raw?.rightsAnalysis || propertyLike?._raw?.raw?.rights_analysis || '').trim();
-    const siteText = String(options.siteInspectionText || propertyLike?.siteInspection || propertyLike?._raw?.raw?.siteInspection || propertyLike?._raw?.raw?.site_inspection || '').trim();
-    const issueText = String(options.dailyIssueText || propertyLike?.opinion || propertyLike?._raw?.raw?.opinion || propertyLike?._raw?.raw?.memo || '').trim();
-    const newPropertyText = String(options.newPropertyText || propertyLike?.opinion || propertyLike?._raw?.raw?.opinion || propertyLike?._raw?.raw?.memo || '').trim();
     return (Array.isArray(actionKeys) ? actionKeys : []).filter(Boolean).map((key) => ({
       actionType: DAILY_REPORT_ACTION_KEYS[key] || String(key || "").trim(),
       propertyId: propertyId || null,
@@ -652,12 +669,7 @@
       propertyItemNo: propertyItemNo || null,
       propertyAddress: propertyAddress || null,
       changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
-      note:
-        key === "dailyIssue" ? (issueText || null) :
-        key === "rightsAnalysis" ? (rightsText || null) :
-        key === "siteInspection" ? (siteText || null) :
-        key === "newProperty" ? (newPropertyText || '신규 등록') :
-        null,
+      note: key === "dailyIssue" ? (String(options.dailyIssueText || "").trim() || null) : null,
       actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
     }));
   }
@@ -787,6 +799,11 @@
       els.dailyReportModal.addEventListener("click", (e) => {
         if (e.target?.dataset?.close === "true") closeDailyReportModal();
       });
+    }
+    if (els.dailyReportNote) {
+      els.dailyReportNote.addEventListener("input", debounce(() => {
+        saveDailyReportNote(els.dailyReportNote.value || "");
+      }, 120));
     }
 
     // 신규 물건 등록 모달
@@ -1611,6 +1628,11 @@
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
       opinion: firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
+      realtorName: firstText(raw.realtorName, raw.realtorname, row.broker_office_name, item?._raw?.broker_office_name, ""),
+      realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, item?._raw?.realtor_phone, ""),
+      realtorCell: firstText(raw.realtorCell, raw.realtorcell, row.submitter_phone, item?._raw?.submitter_phone, ""),
+      submitterName: firstText(row.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      submitterPhone: firstText(row.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
     };
   }
 
@@ -1640,17 +1662,36 @@
     }
   }
 
+  function applyAgentEditFormMode(item, view) {
+    const form = els.agEditForm;
+    if (!form) return;
+    const bucket = getPropertyBucket(item, item?.sourceType || view?.sourceType || "");
+    const isRealtor = bucket === "realtor_naver" || bucket === "realtor_direct" || String(item?.sourceType || "").trim() === "realtor";
+    const isGeneral = bucket === "general" || String(item?.sourceType || "").trim() === "general";
+    const hideForPlain = isRealtor || isGeneral;
+    form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="rightsAnalysis"]').forEach((node) => {
+      node.classList.toggle("hidden", hideForPlain);
+    });
+    form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
+    form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
+    setVal(form, "brokerOfficeDisplay", view?.realtorName || "-");
+    setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
+    setVal(form, "brokerCellDisplay", view?.realtorCell || "-");
+    setVal(form, "ownerNameDisplay", view?.submitterName || "-");
+    setVal(form, "ownerPhoneDisplay", view?.submitterPhone || "-");
+  }
+
   function openEditModal(item) {
     state.editingProperty = item;
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
-    const kindMap = { auction: "경매", onbid: "공매", realtor: "중개", general: "일반" };
+    const kindLabel = getPropertyKindLabel(item.sourceType, item);
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
-    setVal(f, "sourceType", kindMap[item.sourceType] || "일반");
+    setVal(f, "sourceType", kindLabel || "일반");
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
@@ -1677,6 +1718,7 @@
 
     if (els.agEditMsg) els.agEditMsg.textContent = "";
     renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
+    applyAgentEditFormMode(item, view);
     setAgentEditSection("basic");
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
@@ -1701,7 +1743,10 @@
 
     const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
-    const rightsVal = readStr("rightsAnalysis") || null;
+    const bucket = getPropertyBucket(item, item?.sourceType || "");
+    const hidePlainFields = ["realtor_naver", "realtor_direct", "general"].includes(bucket);
+    const prev = getAgentEditableSnapshot(item);
+    let rightsVal = hidePlainFields ? (String(prev.rightsAnalysis || "").trim() || null) : (readStr("rightsAnalysis") || null);
     const siteVal = readStr("siteInspection") || null;
     const floorVal = readStr("floor") || null;
     const totalFloorVal = readStr("totalfloor") || null;
@@ -1711,7 +1756,7 @@
     const siteAreaVal = readNum("sitearea");
     const priceMainVal = readNum("priceMain");
     const currentPriceVal = readNum("currentPrice");
-    const dateMainVal = readStr("dateMain") || null;
+    const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
 
     patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
 
@@ -1780,7 +1825,6 @@
 
       const workCategories = [];
       const changedFields = {};
-      const prev = getAgentEditableSnapshot(item);
       if (rightsVal && rightsVal !== String(prev.rightsAnalysis || "").trim()) {
         workCategories.push("rightsAnalysis");
         changedFields.rightsAnalysis = ["rightsAnalysis"];
