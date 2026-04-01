@@ -50,6 +50,9 @@
     markers: [],
     geoCache: loadGeoCache(),
     staffAssignments: [],
+    mapSummary: null,
+    mapMarkers: [],
+    useServerMap: false,
     page: 1,
     pageSize: 30,
   };
@@ -206,7 +209,7 @@
         if (els.mvSourceFilter) {
           els.mvSourceFilter.value = state.source === "all" ? "" : (state.source || "");
         }
-        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
+        if (state.view === "map") { void refreshMapDataMaybe(); }
       });
     };
 
@@ -254,22 +257,22 @@
 
     // Map sidebar filters
     if (els.mvKeyword) {
-      els.mvKeyword.addEventListener("input", debounce((e) => {
+      els.mvKeyword.addEventListener("input", debounce(async (e) => {
         state.keyword = String(e.target.value || "").trim();
-        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
-      }, 150));
+        await refreshMapDataMaybe();
+      }, 200));
     }
     if (els.mvSourceFilter) {
-      els.mvSourceFilter.addEventListener("change", (e) => {
+      els.mvSourceFilter.addEventListener("change", async (e) => {
         state.source = String(e.target.value || "") || "all";
         renderKPIs();
-        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
+        await refreshMapDataMaybe();
       });
     }
     if (els.mvStatusFilter) {
-      els.mvStatusFilter.addEventListener("change", (e) => {
+      els.mvStatusFilter.addEventListener("change", async (e) => {
         state.status = String(e.target.value || "");
-        if (state.view === "map") { renderMapSidebar(); renderKakaoMarkers(); }
+        await refreshMapDataMaybe();
       });
     }
 
@@ -324,6 +327,50 @@
 
   // ---- Data ----
 
+  function shouldUseServerMap() {
+    return !!state.useServerMap;
+  }
+
+  async function refreshMapDataMaybe() {
+    if (state.view === "map" && shouldUseServerMap()) {
+      await loadAdminMapData();
+      return;
+    }
+    if (state.view === "map") {
+      renderMapSidebar();
+      await renderKakaoMarkers();
+    }
+  }
+
+  async function loadAdminMapData() {
+    const params = new URLSearchParams();
+    params.set('mode', 'map');
+    params.set('offset', String(Math.max(0, (state.page - 1) * state.pageSize)));
+    params.set('limit', String(Math.max(100, state.pageSize * 10)));
+    params.set('markerLimit', '1200');
+    if (state.source && state.source !== 'all') params.set('source', state.source);
+    if (state.status) params.set('status', state.status);
+    if (state.keyword) params.set('q', state.keyword);
+
+    const res = await api(`/admin/properties?${params.toString()}`, { auth: true });
+    const items = Array.isArray(res?.items) ? res.items : [];
+    const markers = Array.isArray(res?.markers) ? res.markers : [];
+    const summary = res?.summary && typeof res.summary === 'object' ? res.summary : null;
+
+    state.items = items.map((item) => {
+      const row = item && typeof item === 'object' ? item : {};
+      return {
+        ...row,
+        sourceBucket: String(row.sourceBucket || row.source || 'general').trim() || 'general',
+      };
+    });
+    state.mapMarkers = markers.map((item) => ({
+      ...item,
+      sourceBucket: String(item?.sourceBucket || item?.source || 'general').trim() || 'general',
+    }));
+    state.mapSummary = summary;
+  }
+
   function rowAssignedToUid(row, uid) {
     const target = String(uid || '').trim();
     if (!target) return false;
@@ -334,7 +381,7 @@
 
   async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchPropertiesBatch === "function") {
-      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select: "*", orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
+      return DataAccess.fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
     }
     throw new Error("KNSN_DATA_ACCESS.fetchPropertiesBatch 를 찾을 수 없습니다.");
   }
@@ -351,6 +398,9 @@
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
       let isAdmin = isAdminUser(state.session?.user);
       let staffPromise = Promise.resolve([]);
+      state.useServerMap = false;
+      state.mapSummary = null;
+      state.mapMarkers = [];
 
       if (sb) {
         try { await K.sbSyncLocalSession(); } catch {}
@@ -359,14 +409,24 @@
         isAdmin = isAdminUser(state.session?.user);
         if (isAdmin) staffPromise = loadStaffAssignments();
 
-        const data = await fetchAllPropertiesPaged(sb, { isAdmin, uid });
-        state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
+        if (isAdmin) {
+          state.useServerMap = true;
+          await loadAdminMapData();
+        } else {
+          const data = await fetchPropertiesBatch(sb, 0, 300, { isAdmin, uid });
+          state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
+        }
       } else {
         isAdmin = isAdminUser(state.session?.user);
-        if (isAdmin) staffPromise = loadStaffAssignments();
-        const scope = isAdmin ? "all" : "mine";
-        const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
-        state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
+        if (isAdmin) {
+          staffPromise = loadStaffAssignments();
+          state.useServerMap = true;
+          await loadAdminMapData();
+        } else {
+          const scope = isAdmin ? "all" : "mine";
+          const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
+          state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
+        }
       }
 
       try { state.staffAssignments = await staffPromise; } catch { state.staffAssignments = []; }
@@ -382,6 +442,8 @@
     } catch (err) {
       console.error(err);
       state.items = [];
+      state.mapSummary = null;
+      state.mapMarkers = [];
       renderKPIs();
       renderAgentChart();
       renderStatCharts();
@@ -475,13 +537,20 @@
   }
 
   function renderKPIs() {
+    const summary = shouldUseServerMap() && state.mapSummary ? state.mapSummary : null;
     const all = state.items;
 
-    if (els.statTotal) els.statTotal.textContent = String(all.length);
-    if (els.statAuction) els.statAuction.textContent = String(all.filter((p) => (p.sourceBucket || p.source) === "auction").length);
-    if (els.statGongmae) els.statGongmae.textContent = String(all.filter((p) => (p.sourceBucket || p.source) === "onbid").length);
-    if (els.statRealtor) els.statRealtor.textContent = String(all.filter((p) => ["realtor_naver", "realtor_direct", "realtor"].includes(String(p.sourceBucket || p.source || ""))).length);
-    if (els.statGeneral) els.statGeneral.textContent = String(all.filter((p) => (p.sourceBucket || p.source) === "general").length);
+    const totalCount = summary ? Number(summary.total || 0) : all.length;
+    const auctionCount = summary ? Number(summary.auction || 0) : all.filter((p) => (p.sourceBucket || p.source) === "auction").length;
+    const onbidCount = summary ? Number(summary.onbid || 0) : all.filter((p) => (p.sourceBucket || p.source) === "onbid").length;
+    const realtorCount = summary ? Number(summary.realtor_naver || 0) + Number(summary.realtor_direct || 0) : all.filter((p) => ["realtor_naver", "realtor_direct", "realtor"].includes(String(p.sourceBucket || p.source || ""))).length;
+    const generalCount = summary ? Number(summary.general || 0) : all.filter((p) => (p.sourceBucket || p.source) === "general").length;
+
+    if (els.statTotal) els.statTotal.textContent = String(totalCount);
+    if (els.statAuction) els.statAuction.textContent = String(auctionCount);
+    if (els.statGongmae) els.statGongmae.textContent = String(onbidCount);
+    if (els.statRealtor) els.statRealtor.textContent = String(realtorCount);
+    if (els.statGeneral) els.statGeneral.textContent = String(generalCount);
 
     const setActive = (card, on) => {
       if (!card) return;
@@ -1199,21 +1268,25 @@
 
     clearMapMarkers();
 
-    const rows = getFilteredRows();
-    // 좌표 있는 건만 (지오코딩 완료건)
-    const withCoords = rows.filter((r) => r.latitude != null && r.longitude != null);
-    if (!withCoords.length) return;
+    const serverMarkers = shouldUseServerMap() ? (Array.isArray(state.mapMarkers) ? state.mapMarkers : []) : [];
+    const rows = serverMarkers.length
+      ? serverMarkers
+      : getFilteredRows().filter((r) => r.latitude != null && r.longitude != null);
 
-    // 현재 맵 bounds 기준 뷰포트 내 항목만 렌더링 (최대 500)
+    if (!rows.length) {
+      renderMapSidebar();
+      return;
+    }
+
     const bounds = state.map.getBounds();
     const sw = bounds.getSouthWest();
     const ne = bounds.getNorthEast();
-    const inBounds = withCoords.filter((r) =>
+    const inBounds = rows.filter((r) =>
       r.latitude >= sw.getLat() && r.latitude <= ne.getLat() &&
       r.longitude >= sw.getLng() && r.longitude <= ne.getLng()
     );
 
-    const target = inBounds.length > 0 ? inBounds.slice(0, 500) : withCoords.slice(0, 100);
+    const target = inBounds.length > 0 ? inBounds.slice(0, 500) : rows.slice(0, 200);
 
     for (const it of target) {
       const pos = new kakao.maps.LatLng(it.latitude, it.longitude);
@@ -1222,7 +1295,6 @@
       state.markers.push(overlay);
     }
 
-    // 사이드바도 업데이트
     renderMapSidebar();
   }
 
@@ -1307,6 +1379,18 @@
 
   function renderMapSummary(total) {
     if (!els.mvSummary) return;
+    if (shouldUseServerMap() && state.mapSummary) {
+      const counts = state.mapSummary;
+      const summaryTotal = Number(counts.total || total || 0);
+      els.mvSummary.innerHTML =
+        '<span>전체 <strong>' + summaryTotal + '</strong>건</span>' +
+        '<span>경매 <strong>' + Number(counts.auction || 0) + '</strong></span>' +
+        '<span>공매 <strong>' + Number(counts.onbid || 0) + '</strong></span>' +
+        '<span>네이버중개 <strong>' + Number(counts.realtor_naver || 0) + '</strong></span>' +
+        '<span>일반중개 <strong>' + Number(counts.realtor_direct || 0) + '</strong></span>' +
+        '<span>일반 <strong>' + Number(counts.general || 0) + '</strong></span>';
+      return;
+    }
     const rows = getFilteredRows();
     const counts = { auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     rows.forEach((row) => {

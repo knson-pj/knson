@@ -55,6 +55,14 @@ const OVERVIEW_SELECT = [
   'address', 'latitude', 'longitude', 'geocode_status', 'exclusive_area', 'date_uploaded', 'created_at'
 ].join(',');
 
+const MAP_SCAN_SELECT = [
+  'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
+  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
+  'floor', 'total_floor', 'common_area', 'exclusive_area', 'site_area', 'use_approval',
+  'status', 'price_main', 'lowprice', 'date_main', 'assignee_id', 'latitude', 'longitude',
+  'memo', 'created_at', 'date_uploaded', 'raw'
+].join(',');
+
 const AREA_KEYS = ['', '0-5', '5-10', '10-20', '20-30', '30-50', '50-100', '100-'];
 
 async function supabaseHeadCount(path) {
@@ -306,6 +314,170 @@ function buildOverviewFromRows(rows) {
   return overview;
 }
 
+
+function buildMapRow(row) {
+  const base = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
+    ? PropertyDomain.buildNormalizedPropertyBase(row)
+    : row;
+  const sourceBucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
+    ? PropertyDomain.getSourceBucket({
+        ...row,
+        ...base,
+        raw: row?.raw || base?.raw || {},
+        sourceType: base?.sourceType || row?.source_type || row?.sourceType || row?.source,
+        source_type: row?.source_type || base?.sourceType || row?.sourceType || row?.source,
+        sourceUrl: base?.sourceUrl || row?.source_url || row?.sourceUrl,
+        source_url: row?.source_url || base?.sourceUrl || row?.sourceUrl,
+        globalId: base?.globalId || row?.global_id || row?.globalId,
+        global_id: row?.global_id || base?.globalId || row?.globalId,
+        submitterType: base?.submitterType || row?.submitter_type || row?.submitterType,
+        submitter_type: row?.submitter_type || base?.submitterType || row?.submitterType,
+        brokerOfficeName: base?.brokerOfficeName || row?.broker_office_name || row?.brokerOfficeName,
+        broker_office_name: row?.broker_office_name || base?.brokerOfficeName || row?.brokerOfficeName,
+        isGeneral: (row?.is_general ?? base?.isGeneral),
+        is_general: (row?.is_general ?? base?.isGeneral),
+      })
+    : String(base?.sourceType || row?.source_type || 'general');
+
+  return {
+    id: base?.id || row?.id || '',
+    itemNo: base?.itemNo || row?.item_no || '',
+    source: base?.sourceType || row?.source_type || 'general',
+    sourceBucket,
+    status: base?.status || row?.status || '',
+    address: base?.address || row?.address || '',
+    type: base?.assetType || row?.asset_type || '',
+    floor: base?.floor || row?.floor || '',
+    totalFloor: base?.totalfloor || row?.total_floor || '',
+    useapproval: base?.useapproval || row?.use_approval || '',
+    exclusivearea: base?.exclusivearea ?? row?.exclusive_area ?? null,
+    commonarea: base?.commonarea ?? row?.common_area ?? null,
+    sitearea: base?.sitearea ?? row?.site_area ?? null,
+    appraisalPrice: base?.priceMain ?? row?.price_main ?? null,
+    currentPrice: base?.lowprice ?? row?.lowprice ?? null,
+    bidDate: base?.dateMain || row?.date_main || '',
+    createdAt: base?.createdAt || row?.created_at || row?.date_uploaded || '',
+    assignedAgentId: base?.assignedAgentId || row?.assignee_id || '',
+    assignedAgentName: base?.assignedAgentName || '-',
+    rightsAnalysis: base?.rightsAnalysis || '',
+    siteInspection: base?.siteInspection || '',
+    opinion: base?.opinion || row?.memo || '',
+    regionGu: base?.regionGu || '',
+    regionDong: base?.regionDong || '',
+    latitude: base?.latitude ?? row?.latitude ?? null,
+    longitude: base?.longitude ?? row?.longitude ?? null,
+    sourceUrl: base?.sourceUrl || row?.source_url || '',
+    globalId: base?.globalId || row?.global_id || '',
+    submitterType: base?.submitterType || row?.submitter_type || '',
+    brokerOfficeName: base?.brokerOfficeName || row?.broker_office_name || '',
+    isDirectSubmission: !!base?.isDirectSubmission,
+    raw: row?.raw && typeof row.raw === 'object' ? row.raw : (base?.raw || {}),
+  };
+}
+
+function matchesMapFilters(row, { source = 'all', status = '', q = '' } = {}) {
+  const bucket = String(row?.sourceBucket || row?.source || 'general').trim() || 'general';
+  const sourceKey = String(source || 'all').trim() || 'all';
+  if (sourceKey !== 'all') {
+    if (sourceKey === 'realtor') {
+      if (!(bucket === 'realtor_naver' || bucket === 'realtor_direct')) return false;
+    } else if (bucket !== sourceKey) {
+      return false;
+    }
+  }
+
+  if (status) {
+    if (String(row?.status || '').trim() !== String(status).trim()) return false;
+  }
+
+  const keyword = String(q || '').trim().toLowerCase();
+  if (keyword) {
+    const hay = [
+      row?.address, row?.itemNo, row?.type, row?.opinion, row?.rightsAnalysis, row?.siteInspection,
+      row?.brokerOfficeName, row?.submitterType, row?.sourceBucket, row?.source,
+    ].map((value) => String(value || '').toLowerCase()).join(' ');
+    if (!hay.includes(keyword)) return false;
+  }
+
+  return true;
+}
+
+async function buildSupabaseMapResponse({ source = 'all', status = '', q = '', offset = 0, limit = 300, markerLimit = 1200, pageSize = 4000 } = {}) {
+  let from = 0;
+  let activeSelect = MAP_SCAN_SELECT;
+  const removed = new Set();
+  const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+  const items = [];
+  const markers = [];
+
+  while (true) {
+    let data;
+    try {
+      data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(activeSelect)}&order=date_uploaded.desc.nullslast,id.desc&offset=${from}&limit=${pageSize}`);
+    } catch (err) {
+      const missing = extractMissingColumn(err);
+      if (missing && !removed.has(missing)) {
+        const nextSelect = removeMissingColumnFromSelect(activeSelect, missing);
+        if (nextSelect && nextSelect !== activeSelect) {
+          removed.add(missing);
+          activeSelect = nextSelect;
+          from = 0;
+          items.length = 0;
+          markers.length = 0;
+          summary.total = 0; summary.auction = 0; summary.onbid = 0; summary.realtor_naver = 0; summary.realtor_direct = 0; summary.general = 0;
+          continue;
+        }
+      }
+      throw err;
+    }
+    const batch = Array.isArray(data) ? data : [];
+    for (const row of batch) {
+      const normalized = buildMapRow(row);
+      if (!matchesMapFilters(normalized, { source, status, q })) continue;
+      summary.total += 1;
+      if (Object.prototype.hasOwnProperty.call(summary, normalized.sourceBucket)) summary[normalized.sourceBucket] += 1;
+      const seen = summary.total - 1;
+      if (seen >= Number(offset || 0) && items.length < Number(limit || 300)) items.push(normalized);
+      if (markers.length < Number(markerLimit || 1200) && Number.isFinite(Number(normalized.latitude)) && Number.isFinite(Number(normalized.longitude))) {
+        markers.push({
+          id: normalized.id,
+          address: normalized.address,
+          type: normalized.type,
+          latitude: Number(normalized.latitude),
+          longitude: Number(normalized.longitude),
+          sourceBucket: normalized.sourceBucket,
+          source: normalized.source,
+        });
+      }
+    }
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return { summary, total: summary.total, items, markers };
+}
+
+function buildStoreMapResponse(rows, options = {}) {
+  const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+  const items = [];
+  const markers = [];
+  const offset = Number(options.offset || 0);
+  const limit = Number(options.limit || 300);
+  const markerLimit = Number(options.markerLimit || 1200);
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const normalized = buildMapRow(row);
+    if (!matchesMapFilters(normalized, options)) continue;
+    summary.total += 1;
+    if (Object.prototype.hasOwnProperty.call(summary, normalized.sourceBucket)) summary[normalized.sourceBucket] += 1;
+    const seen = summary.total - 1;
+    if (seen >= offset && items.length < limit) items.push(normalized);
+    if (markers.length < markerLimit && Number.isFinite(Number(normalized.latitude)) && Number.isFinite(Number(normalized.longitude))) {
+      markers.push({ id: normalized.id, address: normalized.address, type: normalized.type, latitude: Number(normalized.latitude), longitude: Number(normalized.longitude), sourceBucket: normalized.sourceBucket, source: normalized.source });
+    }
+  }
+  return { summary, total: summary.total, items, markers };
+}
+
 function buildSupabasePropertyPatch(body = {}) {
   return omitUndefined({
     item_no: body.item_no ?? body.itemNo,
@@ -349,6 +521,30 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     const url = new URL(req.url, 'http://localhost');
     const mode = String(url.searchParams.get('mode') || '').trim().toLowerCase();
+    if (mode === 'map') {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      const source = String(url.searchParams.get('source') || 'all').trim().toLowerCase();
+      const status = String(url.searchParams.get('status') || '').trim();
+      const q = String(url.searchParams.get('q') || '').trim();
+      const offset = Number(url.searchParams.get('offset') || 0);
+      const limit = Number(url.searchParams.get('limit') || 300);
+      const markerLimit = Number(url.searchParams.get('markerLimit') || 1200);
+      try {
+        if (hasSupabaseAdminEnv()) {
+          const payload = await buildSupabaseMapResponse({ source, status, q, offset, limit, markerLimit });
+          return send(res, 200, { ok: true, ...payload });
+        }
+        return send(res, 200, { ok: true, ...buildStoreMapResponse(store.properties, { source, status, q, offset, limit, markerLimit }) });
+      } catch (err) {
+        return send(res, err?.status || 500, {
+          ok: false,
+          message: err?.message || '지도 데이터를 불러오지 못했습니다.',
+          details: err?.data || null,
+        });
+      }
+    }
     if (mode === 'overview') {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       res.setHeader('Pragma', 'no-cache');

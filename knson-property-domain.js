@@ -155,7 +155,7 @@
 
   function inferSourceTypeFromContext(context = {}) {
     const raw = context && context.raw && typeof context.raw === "object" ? context.raw : {};
-    const rawSource = pickFirstText(
+    const sourceHints = [
       context.rawSource,
       context.sourceType,
       context.source_type,
@@ -177,10 +177,12 @@
       raw.origin,
       raw.origin_type,
       raw.originType,
-      ""
-    );
-    const normalizedRaw = normalizeSourceType(rawSource, { fallback: "" });
-    if (normalizedRaw && normalizedRaw !== "general") return normalizedRaw;
+    ].map((value) => String(value ?? "").trim()).filter(Boolean);
+
+    for (const hint of sourceHints) {
+      const normalized = normalizeSourceType(hint, { fallback: "" });
+      if (normalized && normalized !== "general") return normalized;
+    }
 
     const sourceUrl = pickFirstText(
       context.sourceUrl,
@@ -199,15 +201,18 @@
     );
     const isGeneral = Boolean(context.isGeneral ?? context.is_general ?? raw.is_general ?? raw.isGeneral);
     const brokerOfficeName = pickFirstText(context.brokerOfficeName, context.broker_office_name, raw.brokerOfficeName, raw.broker_office_name, "");
-    const joined = [sourceUrl, globalId, rawSource].filter(Boolean).join(" ");
+    const joined = [sourceUrl, globalId, ...sourceHints].filter(Boolean).join(" ");
 
     if (/(^|\b)(auction|courtauction|court_auction)(:|\b)|법원경매|지지옥션|스피드옥션/i.test(joined)) return "auction";
     if (/(^|\b)(onbid|gongmae|public)(:|\b)|온비드|공매|캠코/i.test(joined)) return "onbid";
     if (/land\.naver\.com|new\.land\.naver\.com|m\.land\.naver\.com|fin\.land\.naver\.com|네이버/i.test(joined)) return "realtor";
-    if (/(중개|중개사|공인중개사|broker|realtor|agent)/i.test(rawSource)) return "realtor";
+    if (sourceHints.some((hint) => /(중개|중개사|공인중개사|broker|realtor|agent)/i.test(hint))) return "realtor";
     if (submitterType === "realtor") return "realtor";
     if (brokerOfficeName) return "realtor";
-    if (normalizedRaw === "general") return "general";
+
+    for (const hint of sourceHints) {
+      if (normalizeSourceType(hint, { fallback: "" }) === "general") return "general";
+    }
     if (isGeneral || submitterType === "owner") return "general";
     return "general";
   }
