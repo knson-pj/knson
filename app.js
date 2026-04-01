@@ -39,7 +39,7 @@
     session: loadSession(),
     items: [],
     view: "text", // text | map
-    source: "all", // all | auction | onbid | realtor | general
+    source: "all", // all | auction | onbid | realtor_naver | realtor_direct | general
     keyword: "",
     status: "",
 
@@ -1336,13 +1336,15 @@
     const withCoords = rows.filter((r) => r.latitude != null && r.longitude != null);
     const auction = countByFilter(withCoords, "auction");
     const onbid = countByFilter(withCoords, "onbid");
-    const realtor = countByFilter(withCoords, "realtor");
+    const realtorNaver = countByFilter(withCoords, "realtor_naver");
+    const realtorDirect = countByFilter(withCoords, "realtor_direct");
     const general = countByFilter(withCoords, "general");
     els.mvSummary.innerHTML =
       '<span>전체 <strong>' + total + '</strong>건</span>' +
       '<span>경매 <strong>' + auction + '</strong></span>' +
       '<span>공매 <strong>' + onbid + '</strong></span>' +
-      '<span>중개 <strong>' + realtor + '</strong></span>' +
+      '<span>네이버중개 <strong>' + realtorNaver + '</strong></span>' +
+      '<span>일반중개 <strong>' + realtorDirect + '</strong></span>' +
       '<span>일반 <strong>' + general + '</strong></span>';
   }
 

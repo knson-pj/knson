@@ -70,18 +70,18 @@
     if (boolGeneral) return "general";
 
     const explicitTexts = [
-      row.globalId, row.global_id, row.itemNo, row.item_no, row.sourceUrl, row.source_url, row.url, row.link,
+      row.globalId, row.global_id, row.itemNo, row.item_no, row.sourceType, row.source_type, row.sourceUrl, row.source_url, row.url, row.link,
       row.service, row.platform, row.origin, row.category, row.source,
-      baseRaw.globalId, baseRaw.global_id, baseRaw.sourceUrl, baseRaw.source_url, baseRaw.url, baseRaw.link,
+      baseRaw.globalId, baseRaw.global_id, baseRaw.sourceType, baseRaw.source_type, baseRaw.sourceUrl, baseRaw.source_url, baseRaw.url, baseRaw.link,
       baseRaw.service, baseRaw.platform, baseRaw.origin, baseRaw.category, baseRaw.source, baseRaw.source_type, baseRaw.sourceType,
       baseRaw["구분"], baseRaw["출처"], baseRaw["매체"], baseRaw["플랫폼"], baseRaw["서비스"], baseRaw["수집구분"]
     ].map((v) => String(v || "").trim().toLowerCase()).filter(Boolean);
 
     const joined = explicitTexts.join(' ');
-    if (/(^|)(auction|courtauction|court_auction|경매)(|$)/.test(joined)) return "auction";
-    if (/(^|)(onbid|public|gongmae|공매)(|$)/.test(joined)) return "onbid";
-    if (/(^|)(realtor|broker|naver|중개|중개사|공인중개사|네이버중개|일반중개|realtor_naver|realtor_direct)(|$)/.test(joined)) return "realtor";
-    if (/(^|)(general|owner|public_user|일반|직접등록|소유자)(|$)/.test(joined)) return "general";
+    if (joined.includes('auction') || joined.includes('courtauction') || joined.includes('court_auction') || joined.includes('경매')) return 'auction';
+    if (joined.includes('onbid') || joined.includes('gongmae') || joined.includes('공매') || joined.includes('public')) return 'onbid';
+    if (joined.includes('realtor') || joined.includes('broker') || joined.includes('naver') || joined.includes('중개') || joined.includes('중개사') || joined.includes('공인중개사') || joined.includes('네이버중개') || joined.includes('일반중개') || joined.includes('realtor_naver') || joined.includes('realtor_direct')) return 'realtor';
+    if (joined.includes('general') || joined.includes('owner') || joined.includes('public_user') || joined.includes('일반') || joined.includes('직접등록') || joined.includes('소유자')) return 'general';
 
     const normalizedSubmitter = normalizeSubmitterType(submitterType, { fallback: "" });
     if (normalizedSubmitter === "realtor") return "realtor";
@@ -224,7 +224,8 @@
     ).toLowerCase();
     const submitterType = normalizeSubmitterType(pickFirstText(item && item.submitterType, item && item.submitter_type, raw.submitterType, raw.submitter_type, ""));
     const inferredSourceType = inferSourceTypeFromContext(item, raw, submitterType);
-    const sourceType = normalizeSourceType(rawSource || inferredSourceType, { fallback: opts.fallbackSource || "general" });
+    const explicitSourceType = normalizeSourceType(rawSource, { fallback: "" });
+    const sourceType = normalizeSourceType(explicitSourceType || inferredSourceType, { fallback: opts.fallbackSource || "general" });
     const address = pickFirstText(item && item.address, item && item.location, item && item.addr, raw.address, raw.location, "");
     const itemNo = pickFirstText(item && item.itemNo, item && item.caseNo, item && item.externalId, item && item.listingId, item && item.item_no, raw.itemNo, raw.item_no, "");
     const sourceUrl = pickFirstText(item && item.sourceUrl, item && item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
@@ -805,7 +806,9 @@
   }
 
   function getSourceBucket(item) {
-    const sourceType = normalizeSourceType(item?.sourceType || item?.source_type || item?.source || item?.category || item?.raw?.sourceType || item?.raw?.source_type || "", { fallback: "general" });
+    const baseSourceType = normalizeSourceType(item?.sourceType || item?.source_type || item?.source || item?.category || item?.raw?.sourceType || item?.raw?.source_type || "", { fallback: "" });
+    const inferredSourceType = inferSourceTypeFromContext(item, item?.raw && typeof item.raw === "object" ? item.raw : {}, item?.submitterType || item?.submitter_type || item?.raw?.submitterType || item?.raw?.submitter_type || "");
+    const sourceType = normalizeSourceType(baseSourceType || inferredSourceType, { fallback: "general" });
     if (sourceType === "realtor") {
       if (typeof item?.isDirectSubmission === "boolean") return item.isDirectSubmission ? "realtor_direct" : "realtor_naver";
       if (typeof item?.is_direct_submission === "boolean") return item.is_direct_submission ? "realtor_direct" : "realtor_naver";
