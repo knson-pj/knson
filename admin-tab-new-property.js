@@ -30,6 +30,11 @@
   function setNpmMsgLocal(els, text, isError = true) {
     if (!els.npmMsg) return;
     els.npmMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
+    if (String(text || '').trim()) {
+      window.requestAnimationFrame(() => {
+        try { els.npmMsg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+      });
+    }
   }
 
 
@@ -199,8 +204,8 @@
 
       window.setTimeout(() => {
         mod.closeNewPropertyModal();
-        refreshPropertiesInBackground(state, utils);
-      }, 800);
+        window.setTimeout(() => refreshPropertiesInBackground(state, utils), 900);
+      }, 1500);
     } finally {
       if (els.npmSave) els.npmSave.disabled = false;
     }

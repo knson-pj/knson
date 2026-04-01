@@ -524,6 +524,11 @@
   function setAgentEditMsg(text, isError = true) {
     if (!els.agEditMsg) return;
     els.agEditMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
+    if (String(text || '').trim()) {
+      window.requestAnimationFrame(() => {
+        try { els.agEditMsg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+      });
+    }
   }
 
   function refreshAgentPropertiesInBackground() {
@@ -1898,9 +1903,9 @@
       }
 
       setAgentEditMsg('저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 650));
+      await new Promise((resolve) => setTimeout(resolve, 1400));
       closeEditModal();
-      refreshAgentPropertiesInBackground();
+      window.setTimeout(() => refreshAgentPropertiesInBackground(), 900);
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
     } catch (err) {
@@ -2036,6 +2041,11 @@
   function setNpmMsg(text, isError = true) {
     if (!els.npmMsg) return;
     els.npmMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
+    if (String(text || '').trim()) {
+      window.requestAnimationFrame(() => {
+        try { els.npmMsg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+      });
+    }
   }
 
   function extractSchemaMissingColumn(err) {

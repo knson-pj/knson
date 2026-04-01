@@ -258,6 +258,8 @@
     const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || {});
     if (raw?.registeredByAdmin) return 'admin';
     if (raw?.registeredByAgent) return 'agent';
+    const bucket = toEditSourceTypeValue(item, view?.sourceType || item?.sourceType, view?.submitterType || item?.submitterType);
+    if (bucket === 'auction' || bucket === 'onbid' || bucket === 'realtor_naver') return 'admin';
     const value = String(view?.submitterType || item?.submitterType || raw?.submitter_type || raw?.submitterType || '').trim().toLowerCase();
     return value === 'realtor' ? 'realtor' : 'owner';
   }
@@ -325,6 +327,11 @@
   function setAemMsg(els, text, isError = true) {
     if (!els.aemMsg) return;
     els.aemMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
+    if (String(text || '').trim()) {
+      window.requestAnimationFrame(() => {
+        try { els.aemMsg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+      });
+    }
   }
 
 
@@ -765,7 +772,6 @@
     setVal('priceMain', utils.formatMoneyInputValue(view.priceMain ?? ''));
     setVal('lowprice', utils.formatMoneyInputValue(view.currentPriceValue ?? view.lowprice ?? ''));
     setVal('dateMain', toInputDate(view.dateMain) ?? '');
-    setVal('sourceUrl', view.sourceUrl ?? '');
     setVal('date', utils.formatDate(view.createdAt) ?? '');
     setVal('realtorname', view.realtorname ?? '');
     setVal('realtorphone', view.realtorphone ?? '');
@@ -807,7 +813,6 @@
     lockIfHas('priceMain', hasNum(view.priceMain));
     lockIfHas('lowprice', hasNum(view.lowprice));
     lockIfHas('dateMain', hasText(view.dateMain));
-    lockIfHas('sourceUrl', hasText(view.sourceUrl));
     lockIfHas('realtorname', hasText(view.realtorname));
     lockIfHas('realtorphone', hasText(view.realtorphone));
     lockIfHas('realtorcell', hasText(view.realtorcell));
@@ -903,7 +908,6 @@
       priceMain: readNum('priceMain'),
       lowprice: readNum('lowprice'),
       dateMain: readStr('dateMain') || null,
-      sourceUrl: readStr('sourceUrl') || null,
       realtorname: readStr('realtorname') || null,
       realtorphone: readStr('realtorphone') || null,
       realtorcell: readStr('realtorcell') || null,
@@ -928,7 +932,7 @@
         const ok = (typeof v === 'number') ? isEmptyOldNum : isEmptyOld;
         if (!ok) delete patch[k];
       };
-      ['itemNo','address','assetType','floor','totalfloor','useapproval','status','dateMain','sourceUrl','realtorname','realtorphone','realtorcell','rightsAnalysis','siteInspection'].forEach((k) => allowIfEmpty(k, item[k]));
+      ['itemNo','address','assetType','floor','totalfloor','useapproval','status','dateMain','realtorname','realtorphone','realtorcell','rightsAnalysis','siteInspection'].forEach((k) => allowIfEmpty(k, item[k]));
       ['commonarea','exclusivearea','sitearea','priceMain','lowprice','latitude','longitude'].forEach((k) => allowIfEmpty(k, item[k]));
       delete patch.sourceType;
       delete patch.assigneeId;
@@ -949,9 +953,9 @@
       setAemMsg(els, '');
       await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
       setAemMsg(els, '저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 650));
+      await new Promise((resolve) => setTimeout(resolve, 1400));
       mod.closePropertyEditModal();
-      refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' });
+      window.setTimeout(() => refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' }), 900);
     } catch (err) {
       console.error(err);
       setAemMsg(els, err?.message || '저장 실패');
@@ -985,7 +989,6 @@
         price_main: patch.priceMain,
         lowprice: patch.lowprice,
         date_main: patch.dateMain || null,
-        source_url: patch.sourceUrl,
         broker_office_name: patch.realtorname,
         submitter_phone: patch.realtorcell,
         memo: patch.opinion,

@@ -1532,3 +1532,60 @@ body{
   }
   .toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .toolbar-keyword{min-width:220px;}
 }
+
+
+/* 물건 수정 폼 개선 */
+.form-textarea-tall.input,
+textarea.form-textarea-tall{
+  min-height: 170px;
+  height: auto;
+  padding: 10px 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+.agent-edit-tabs{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:16px;
+}
+.agent-edit-tab{
+  height:36px;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--text-2);
+  border-radius:10px;
+  font-size:13px;
+  font-weight:700;
+}
+.agent-edit-tab.is-active{
+  background:var(--brand-light);
+  color:var(--brand);
+  border-color:rgba(232,93,16,.28);
+}
+.agent-edit-section{display:none;}
+.agent-edit-section.is-active{display:block;}
+.agent-edit-modal-card{max-width:920px;width:min(920px,calc(100vw - 48px));}
+.agent-edit-form{display:grid;gap:14px;}
+.agent-edit-form .modal-actions{margin-top:4px;}
+@media (max-width: 760px){
+  .agent-edit-tabs{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;}
+  .agent-edit-tab{font-size:12px;padding:0 6px;}
+}
+/* 관리자 전체리스트 툴바: 가로 1열 고정 */
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions{
+  display:flex !important;
+  flex-wrap:nowrap !important;
+  align-items:center;
+  gap:var(--sp-2);
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding-bottom:4px;
+}
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions > *{flex:0 0 auto;}
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .toolbar-keyword{flex:1 1 280px; min-width:280px;}
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .select,
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .input{width:auto; min-width:140px;}
+.toolbar.toolbar-admin-properties.toolbar-admin-properties--inline-actions .toolbar-danger-btn{white-space:nowrap;}
