@@ -44,6 +44,23 @@
       </div>`;
   }
 
+  function truncateDisplayText(value, maxChars) {
+    const text = String(value || '').trim();
+    const limit = Number(maxChars || 0);
+    if (!text || !Number.isFinite(limit) || limit <= 0) return text;
+    const chars = Array.from(text);
+    return chars.length > limit ? `${chars.slice(0, limit).join('')}...` : text;
+  }
+
+  function getFloorDisplayValue(row) {
+    const raw = row?._raw?.raw && typeof row._raw.raw === 'object' ? row._raw.raw : (row?._raw || {});
+    return utilsFirstText(row?.floor, raw?.floor, raw?.floorInfo, raw?.targetFloor, raw?.target_floor, '-');
+  }
+
+  function isPlainBucket(bucket) {
+    return ['realtor_naver', 'realtor_direct', 'general'].includes(String(bucket || '').trim());
+  }
+
 
   function getCurrentPriceValue(row) {
     if (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.getCurrentPriceValue === 'function') {
@@ -651,26 +668,35 @@
       const listView = (utils.PropertyDomain && typeof utils.PropertyDomain.buildPropertyListViewModel === 'function')
         ? utils.PropertyDomain.buildPropertyListViewModel(p)
         : null;
+      const bucket = (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function')
+        ? utils.PropertyDomain.getSourceBucket(p)
+        : (p.sourceType === 'realtor' ? (p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : String(p.sourceType || 'general'));
+      const isPlain = isPlainBucket(bucket);
       const kindLabel = listView?.kindLabel || ((utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function')
-        ? utils.PropertyDomain.getSourceBucketLabel((utils.PropertyDomain.getSourceBucket && utils.PropertyDomain.getSourceBucket(p)) || p.sourceType)
+        ? utils.PropertyDomain.getSourceBucketLabel(bucket)
         : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
       const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
-      const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
-      const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
+      const currentPrice = !isPlain && currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '';
+      const rate = !isPlain ? utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {}) : '';
+      const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
+      const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
+      const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
+      const scheduleHtml = !isPlain && typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '';
+      const rightsHtml = !isPlain ? renderDetailIndicator('rights', p.rightsAnalysis, utils) : '';
       tr.innerHTML = `
         <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
-        <td><span class="kind-text ${utils.escapeAttr(listView?.kindClass || (p.sourceType === 'auction' ? 'kind-auction' : p.sourceType === 'onbid' ? 'kind-gongmae' : p.sourceType === 'realtor' ? 'kind-realtor' : 'kind-general'))}">${utils.escapeHtml(kindLabel)}</span></td>
+        <td><span class="kind-text ${utils.escapeAttr(listView?.kindClass || (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general'))}">${utils.escapeHtml(kindLabel)}</span></td>
         <td>${utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
-        <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(listView?.address || p.address || '-')}</button></td>
-        <td>${utils.escapeHtml(listView?.assetType || p.assetType || '-')}</td>
-        <td>${utils.escapeHtml(String(listView?.floor || p.floor || '-'))}</td>
+        <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
+        <td>${utils.escapeHtml(assetTypeText)}</td>
+        <td>${utils.escapeHtml(String(floorText))}</td>
         <td>${p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-'}</td>
         <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
         <td>${utils.escapeHtml(currentPrice)}</td>
         <td>${utils.escapeHtml(rate)}</td>
-        <td class="schedule-cell">${typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-'}</td>
+        <td class="schedule-cell">${scheduleHtml}</td>
         <td>${utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정')}</td>
-        <td class="indicator-cell">${renderDetailIndicator('rights', p.rightsAnalysis, utils)}</td>
+        <td class="indicator-cell">${rightsHtml}</td>
         <td class="indicator-cell">${renderDetailIndicator('inspection', p.siteInspection, utils)}</td>
         <td>${utils.escapeHtml(utils.formatDate(p.createdAt) || '-')}</td>
       `;

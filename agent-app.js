@@ -112,7 +112,6 @@
       };
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
-  const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
@@ -224,7 +223,6 @@
     els.dailyReportTotal = $("#dailyReportTotal");
     els.dailyReportLead = $("#dailyReportLead");
     els.dailyReportFlow = $("#dailyReportFlow");
-    els.dailyReportNote = $("#dailyReportNote");
 
     // Summary
     els.agSumTotal = $("#agSumTotal");
@@ -307,25 +305,6 @@
     } catch {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
-  }
-
-  function getDailyReportNoteKey() {
-    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
-    return `${DAILY_REPORT_NOTE_PREFIX}${uid}_${getTodayDateKey()}`;
-  }
-
-  function loadDailyReportNote() {
-    try {
-      return String(localStorage.getItem(getDailyReportNoteKey()) || "");
-    } catch {
-      return "";
-    }
-  }
-
-  function saveDailyReportNote(value) {
-    try {
-      localStorage.setItem(getDailyReportNoteKey(), String(value || ""));
-    } catch {}
   }
 
   function getActorIdentity(user) {
@@ -663,7 +642,6 @@
   }
 
   async function openDailyReportModal() {
-    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
     renderDailyReport();
     if (!els.dailyReportModal) return;
     document.body.classList.add("modal-open");
@@ -833,11 +811,6 @@
       els.dailyReportModal.addEventListener("click", (e) => {
         if (e.target?.dataset?.close === "true") closeDailyReportModal();
       });
-    }
-    if (els.dailyReportNote) {
-      els.dailyReportNote.addEventListener("input", debounce(() => {
-        saveDailyReportNote(els.dailyReportNote.value || "");
-      }, 120));
     }
 
     // 신규 물건 등록 모달
@@ -1565,13 +1538,19 @@
       general: "kind-general",
     };
     const kindClass = kindClassMap[bucket] || "kind-general";
+    const isPlainBucket = isPlainPropertyBucket(bucket);
     const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
-    const current = p.lowprice != null ? formatEok(p.lowprice) : "-";
-    const rate = calcRate(p.priceMain, p.lowprice);
+    const current = !isPlainBucket && p.lowprice != null ? formatEok(p.lowprice) : "";
+    const rate = !isPlainBucket ? calcRate(p.priceMain, p.lowprice) : "";
     const statusLabel = normalizeStatus(p.status);
     const isFav = state.favorites.has(p.id);
+    const addressText = truncateDisplayText(p.address || "-", 40) || "-";
+    const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
+    const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
+    const scheduleText = !isPlainBucket ? (formatDate(p.dateMain) || "") : "";
+    const rightsText = !isPlainBucket && p.rightsAnalysis ? "✓" : "";
+    const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
 
-    // ☆ 버튼 셀 — 클릭해도 모달 열리지 않음
     const favTd = document.createElement("td");
     favTd.className = "fav-col";
     const favBtn = document.createElement("button");
@@ -1586,7 +1565,6 @@
       favBtn.textContent = nowFav ? "★" : "☆";
       favBtn.title = nowFav ? "관심 해제" : "관심 등록";
       favBtn.classList.toggle("is-active", nowFav);
-      // 관심물건 필터 활성 중이면 즉시 리렌더
       if (state.filters.favOnly) { state.page = 1; renderTable(); }
     });
     favTd.appendChild(favBtn);
@@ -1595,17 +1573,18 @@
     tr.insertAdjacentHTML("beforeend",
       "<td>" + esc(p.itemNo || "-") + "</td>" +
       '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
-      "<td>" + esc(p.address || "-") + "</td>" +
-      "<td>" + esc(p.assetType || "-") + "</td>" +
-      "<td>" + esc(p.floor || "-") + "</td>" +
+      "<td class=\"text-cell\">" + esc(addressText) + "</td>" +
+      "<td>" + esc(assetTypeText) + "</td>" +
+      "<td>" + esc(floorText) + "</td>" +
       "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
       "<td>" + esc(appraisal) + "</td>" +
       "<td>" + esc(current) + "</td>" +
       "<td>" + esc(rate) + "</td>" +
-      "<td>" + esc(formatDate(p.dateMain) || "-") + "</td>" +
+      "<td>" + esc(scheduleText) + "</td>" +
       "<td>" + esc(statusLabel) + "</td>" +
-      "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
-      "<td>" + (p.siteInspection ? "✓" : "-") + "</td>"
+      "<td>" + esc(rightsText) + "</td>" +
+      "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
+      "<td>" + esc(createdAtText) + "</td>"
     );
 
     tr.addEventListener("click", () => openEditModal(p));
@@ -1974,6 +1953,23 @@
   function escAttr(v) {
     if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
     return esc(v).replace(/'/g, "&#39;");
+  }
+
+  function truncateDisplayText(value, maxChars) {
+    const text = String(value || "").trim();
+    const limit = Number(maxChars || 0);
+    if (!text || !Number.isFinite(limit) || limit <= 0) return text;
+    const chars = Array.from(text);
+    return chars.length > limit ? `${chars.slice(0, limit).join("")}...` : text;
+  }
+
+  function getFloorDisplayValue(item) {
+    const raw = item?._raw?.raw || item?._raw || {};
+    return firstText(item?.floor, raw.floor, raw.floorInfo, raw.targetFloor, raw.target_floor, "-");
+  }
+
+  function isPlainPropertyBucket(bucket) {
+    return ["realtor_naver", "realtor_direct", "general"].includes(String(bucket || "").trim());
   }
 
   function formatEok(n) {
