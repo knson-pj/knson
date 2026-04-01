@@ -242,6 +242,49 @@
     return '';
   }
 
+  function buildFormFeedbackHtml(text, kind = 'info') {
+    const message = String(text || '').trim();
+    if (!message) return '';
+    const strongText = kind === 'error' ? '오류' : kind === 'success' ? '완료' : '안내';
+    return `<div class="form-feedback-shell is-${kind}"><div class="admin-loading-box"><span class="admin-loading-spinner" aria-hidden="true"></span><div class="admin-loading-copy"><strong>${strongText}</strong><p>${message}</p></div></div></div>`;
+  }
+
+  function toEditSourceTypeValue(item, sourceType, submitterType) {
+    const bucket = resolvePropertySourceBucket({ PropertyDomain: window.KNSN_PROPERTY_DOMAIN }, item, sourceType, submitterType);
+    return ['auction','onbid','realtor_naver','realtor_direct','general'].includes(bucket) ? bucket : 'general';
+  }
+
+  function deriveSubmitterDisplayType(item, view) {
+    const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || {});
+    if (raw?.registeredByAdmin) return 'admin';
+    if (raw?.registeredByAgent) return 'agent';
+    const value = String(view?.submitterType || item?.submitterType || raw?.submitter_type || raw?.submitterType || '').trim().toLowerCase();
+    return value === 'realtor' ? 'realtor' : 'owner';
+  }
+
+  function mapDisplaySubmitterLabel(value) {
+    const key = String(value || '').trim().toLowerCase();
+    if (key === 'admin') return '관리자';
+    if (key === 'agent') return '담당자';
+    if (key === 'realtor') return '공인중개사';
+    return '소유자/일반';
+  }
+
+  function toStoredSourceType(bucketValue) {
+    const bucket = String(bucketValue || '').trim().toLowerCase();
+    if (bucket === 'realtor_naver' || bucket === 'realtor_direct') return 'realtor';
+    if (bucket === 'auction' || bucket === 'onbid' || bucket === 'general') return bucket;
+    return 'general';
+  }
+
+  function toStoredSubmitterType(displayValue, bucketValue) {
+    const key = String(displayValue || '').trim().toLowerCase();
+    if (key === 'realtor') return 'realtor';
+    if (key === 'admin' || key === 'agent' || key === 'owner') return 'owner';
+    return String(bucketValue || '').startsWith('realtor_') ? 'realtor' : 'owner';
+  }
+
+
   function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
     const form = els.aemForm;
     if (!form) return;
@@ -252,7 +295,7 @@
     const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
     const isGeneral = bucket === 'general' || normalizedSource === 'general';
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="rightsAnalysis"]').forEach((node) => {
+    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="rightsAnalysis"], [data-aem-field="currentPrice"]').forEach((node) => {
       node.classList.toggle('hidden', hideForPlain);
     });
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
@@ -264,11 +307,11 @@
     if (ownerPhoneEl) ownerPhoneEl.value = info.ownerPhone || '-';
   }
 
-  function toInputDateTimeLocal(value) {
+  function toInputDate(value) {
     const s = String(value || '').trim();
     if (!s) return '';
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return s;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return s.slice(0, 10);
     const d = new Date(s);
     if (Number.isNaN(d.getTime())) return s;
     const yyyy = d.getFullYear();
@@ -276,13 +319,12 @@
     const dd = String(d.getDate()).padStart(2, '0');
     const hh = String(d.getHours()).padStart(2, '0');
     const mi = String(d.getMinutes()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+    return `${yyyy}-${mm}-${dd}`;
   }
 
   function setAemMsg(els, text, isError = true) {
     if (!els.aemMsg) return;
-    els.aemMsg.style.color = isError ? '#ff8b8b' : '#9ff0b6';
-    els.aemMsg.textContent = text || '';
+    els.aemMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
   }
 
   function appendOpinionEntryLocal(history, newText, user) {
@@ -699,9 +741,9 @@
       if (el) el.value = v == null ? '' : String(v);
     };
     setVal('itemNo', view.itemNo);
-    setVal('sourceType', view.sourceType);
+    setVal('sourceType', toEditSourceTypeValue(workingItem, view.sourceType, view.submitterType));
     mod.populateAssigneeSelect(view.assignedAgentId || workingItem.assignedAgentId || workingItem.assigneeId || workingItem.assignee_id || '');
-    setVal('submitterType', view.submitterType);
+    setVal('submitterType', deriveSubmitterDisplayType(workingItem, view));
     setVal('address', view.address);
     setVal('assetType', view.assetType);
     setVal('floor', view.floor ?? '');
@@ -713,7 +755,7 @@
     setVal('status', view.status ?? '');
     setVal('priceMain', utils.formatMoneyInputValue(view.priceMain ?? ''));
     setVal('lowprice', utils.formatMoneyInputValue(view.currentPriceValue ?? view.lowprice ?? ''));
-    setVal('dateMain', toInputDateTimeLocal(view.dateMain) ?? '');
+    setVal('dateMain', toInputDate(view.dateMain) ?? '');
     setVal('sourceUrl', view.sourceUrl ?? '');
     setVal('date', utils.formatDate(view.createdAt) ?? '');
     setVal('realtorname', view.realtorname ?? '');
@@ -822,17 +864,24 @@
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));
     const newOpinionText = readStr('opinion');
     const opinionHistory = appendOpinionEntryLocal(utils.loadOpinionHistory(item), newOpinionText, state.session?.user);
-    const sourceTypeValue = readStr('sourceType') || item.sourceType || '';
-    const submitterTypeValue = readStr('submitterType') || item.submitterType || '';
-    const sourceBucket = resolvePropertySourceBucket(utils, item, sourceTypeValue, submitterTypeValue);
+    const sourceBucketValue = readStr('sourceType') || toEditSourceTypeValue(item, item.sourceType, item.submitterType);
+    const submitterDisplayValue = readStr('submitterType') || deriveSubmitterDisplayType(item, item);
+    const sourceTypeValue = toStoredSourceType(sourceBucketValue);
+    const submitterTypeValue = toStoredSubmitterType(submitterDisplayValue, sourceBucketValue);
+    const sourceBucket = resolvePropertySourceBucket(utils, item, sourceBucketValue, submitterTypeValue);
     const hiddenStatusFields = ['realtor_naver', 'realtor_direct', 'general'].includes(sourceBucket);
     const patch = {
       id: item.id || '',
       globalId: item.globalId || '',
       itemNo: readStr('itemNo') || null,
       sourceType: sourceTypeValue || null,
+      sourceBucket: sourceBucketValue || null,
+      isDirectSubmission: sourceBucketValue === 'realtor_direct',
       assigneeId: readStr('assigneeId') || null,
       submitterType: submitterTypeValue || null,
+      submitterDisplayType: submitterDisplayValue || null,
+      registeredByAdmin: submitterDisplayValue === 'admin',
+      registeredByAgent: submitterDisplayValue === 'agent',
       address: readStr('address') || null,
       assetType: readStr('assetType') || null,
       floor: readStr('floor') || null,
@@ -860,6 +909,7 @@
       delete patch.status;
       delete patch.dateMain;
       delete patch.rightsAnalysis;
+      delete patch.lowprice;
     }
     if (!isAdmin) {
       const allowIfEmpty = (k, oldVal) => {
@@ -874,6 +924,11 @@
       delete patch.sourceType;
       delete patch.assigneeId;
       delete patch.submitterType;
+      delete patch.submitterDisplayType;
+      delete patch.sourceBucket;
+      delete patch.isDirectSubmission;
+      delete patch.registeredByAdmin;
+      delete patch.registeredByAgent;
     }
     const targetId = patch.id || patch.globalId;
     if (!targetId) {
@@ -884,7 +939,8 @@
       if (els.aemSave) els.aemSave.disabled = true;
       setAemMsg(els, '');
       await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
-      setAemMsg(els, '저장 완료', false);
+      setAemMsg(els, '저장되었습니다.', false);
+      await new Promise((resolve) => setTimeout(resolve, 450));
       mod.closePropertyEditModal();
       utils.invalidatePropertyCollections();
       await utils.loadProperties({ refreshSummary: false });

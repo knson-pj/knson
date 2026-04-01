@@ -19,10 +19,17 @@
     };
   }
 
+
+  function buildFormFeedbackHtml(text, kind = 'info') {
+    const message = String(text || '').trim();
+    if (!message) return '';
+    const strongText = kind === 'error' ? '오류' : kind === 'success' ? '완료' : '안내';
+    return `<div class="form-feedback-shell is-${kind}"><div class="admin-loading-box"><span class="admin-loading-spinner" aria-hidden="true"></span><div class="admin-loading-copy"><strong>${strongText}</strong><p>${message}</p></div></div></div>`;
+  }
+
   function setNpmMsgLocal(els, text, isError = true) {
     if (!els.npmMsg) return;
-    els.npmMsg.style.color = isError ? '#ff8b8b' : '#9ff0b6';
-    els.npmMsg.textContent = text || '';
+    els.npmMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
   }
 
   function syncTypeCards(form) {

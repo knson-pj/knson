@@ -1669,7 +1669,7 @@
     const isRealtor = bucket === "realtor_naver" || bucket === "realtor_direct" || String(item?.sourceType || "").trim() === "realtor";
     const isGeneral = bucket === "general" || String(item?.sourceType || "").trim() === "general";
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="rightsAnalysis"]').forEach((node) => {
+    form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="rightsAnalysis"], [data-ag-field="currentPrice"]').forEach((node) => {
       node.classList.toggle("hidden", hideForPlain);
     });
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
@@ -1692,6 +1692,7 @@
 
     setVal(f, "itemNo", item.itemNo);
     setVal(f, "sourceType", kindLabel || "일반");
+    setVal(f, "submitterType", getSubmitterDisplayLabel(item));
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
@@ -1703,7 +1704,7 @@
     setVal(f, "sitearea", view.sitearea != null ? fmtArea(view.sitearea) : "");
     setVal(f, "priceMain", view.priceMain != null ? formatMoneyInputValue(view.priceMain) : "");
     setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
-    setVal(f, "dateMain", view.dateMain || "");
+    setVal(f, "dateMain", formatDate(view.dateMain) || "");
     setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);
     setVal(f, "opinion", "");
@@ -1716,7 +1717,7 @@
       }
     });
 
-    if (els.agEditMsg) els.agEditMsg.textContent = "";
+    setAgentEditMsg('', true);
     renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
     applyAgentEditFormMode(item, view);
     setAgentEditSection("basic");
@@ -1867,12 +1868,14 @@
         }
       }
 
+      setAgentEditMsg('저장되었습니다.', false);
+      await new Promise((resolve) => setTimeout(resolve, 450));
       closeEditModal();
       await loadProperties();
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
     } catch (err) {
-      if (els.agEditMsg) els.agEditMsg.textContent = toUserErrorMessage(err, "저장 실패");
+      setAgentEditMsg(toUserErrorMessage(err, '저장 실패'));
     } finally {
       if (els.agEditSave) els.agEditSave.disabled = false;
     }
@@ -2003,8 +2006,7 @@
 
   function setNpmMsg(text, isError = true) {
     if (!els.npmMsg) return;
-    els.npmMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
-    els.npmMsg.textContent = text || "";
+    els.npmMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
   }
 
   function extractSchemaMissingColumn(err) {
