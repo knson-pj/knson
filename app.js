@@ -55,6 +55,8 @@
     useServerMap: false,
     mapDetailCache: new Map(),
     mapRequestToken: 0,
+    lastMapQueryKey: "",
+    mapQueryCache: new Map(),
     page: 1,
     pageSize: 30,
   };
@@ -363,8 +365,8 @@
     const params = new URLSearchParams();
     params.set('mode', 'map');
     params.set('offset', String(Math.max(0, (state.page - 1) * state.pageSize)));
-    params.set('limit', String(Math.max(120, state.pageSize * 8)));
-    params.set('markerLimit', '800');
+    params.set('limit', String(Math.max(120, state.pageSize * 6)));
+    params.set('markerLimit', '600');
     params.set('swLat', String(sw.getLat()));
     params.set('swLng', String(sw.getLng()));
     params.set('neLat', String(ne.getLat()));
@@ -373,26 +375,40 @@
     if (state.status) params.set('status', state.status);
     if (state.keyword) params.set('q', state.keyword);
 
+    const queryKey = params.toString();
+    const applyMapPayload = (res) => {
+      const items = Array.isArray(res?.items) ? res.items : [];
+      const markers = Array.isArray(res?.markers) ? res.markers : [];
+      const summary = res?.summary && typeof res.summary === 'object' ? res.summary : null;
+      state.items = items.map((item) => {
+        const row = item && typeof item === 'object' ? item : {};
+        return {
+          ...row,
+          sourceBucket: String(row.sourceBucket || row.source || 'general').trim() || 'general',
+        };
+      });
+      state.mapMarkers = markers.map((item) => ({
+        ...item,
+        sourceBucket: String(item?.sourceBucket || item?.source || 'general').trim() || 'general',
+      }));
+      state.mapSummary = summary;
+    };
+
+    if (state.lastMapQueryKey === queryKey && state.mapQueryCache.has(queryKey)) {
+      applyMapPayload(state.mapQueryCache.get(queryKey));
+      return;
+    }
+
     const requestToken = ++state.mapRequestToken;
-    const res = await api(`/admin/properties?${params.toString()}`, { auth: true });
+    const res = await api(`/admin/properties?${queryKey}`, { auth: true });
     if (requestToken !== state.mapRequestToken) return;
-
-    const items = Array.isArray(res?.items) ? res.items : [];
-    const markers = Array.isArray(res?.markers) ? res.markers : [];
-    const summary = res?.summary && typeof res.summary === 'object' ? res.summary : null;
-
-    state.items = items.map((item) => {
-      const row = item && typeof item === 'object' ? item : {};
-      return {
-        ...row,
-        sourceBucket: String(row.sourceBucket || row.source || 'general').trim() || 'general',
-      };
-    });
-    state.mapMarkers = markers.map((item) => ({
-      ...item,
-      sourceBucket: String(item?.sourceBucket || item?.source || 'general').trim() || 'general',
-    }));
-    state.mapSummary = summary;
+    state.lastMapQueryKey = queryKey;
+    state.mapQueryCache.set(queryKey, res || {});
+    if (state.mapQueryCache.size > 12) {
+      const firstKey = state.mapQueryCache.keys().next().value;
+      if (firstKey) state.mapQueryCache.delete(firstKey);
+    }
+    applyMapPayload(res || {});
   }
 
   function rowAssignedToUid(row, uid) {

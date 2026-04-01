@@ -58,16 +58,15 @@ const OVERVIEW_SELECT = [
 const MAP_SCAN_SELECT = [
   'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
   'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
-  'floor', 'exclusive_area', 'status', 'price_main', 'lowprice', 'date_main',
+  'exclusive_area', 'status', 'price_main',
   'latitude', 'longitude', 'created_at', 'date_uploaded', 'raw'
 ].join(',');
 
 const MAP_DETAIL_SELECT = [
   'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
   'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
-  'floor', 'total_floor', 'common_area', 'exclusive_area', 'site_area', 'use_approval',
-  'status', 'price_main', 'lowprice', 'date_main', 'assignee_id', 'latitude', 'longitude',
-  'memo', 'created_at', 'date_uploaded', 'raw'
+  'exclusive_area', 'status', 'price_main', 'latitude', 'longitude',
+  'created_at', 'date_uploaded', 'memo', 'raw'
 ].join(',');
 
 const AREA_KEYS = ['', '0-5', '5-10', '10-20', '20-30', '30-50', '50-100', '100-'];
@@ -346,6 +345,91 @@ async function fetchSupabaseOverviewRows(pageSize = 5000) {
   return rows;
 }
 
+
+async function fetchSupabaseRowsWithSafeSelect(buildPath, initialSelect) {
+  let activeSelect = initialSelect;
+  const removed = new Set();
+  while (true) {
+    try {
+      return await supabaseRest(buildPath(activeSelect));
+    } catch (err) {
+      const missing = extractMissingColumn(err);
+      if (missing && !removed.has(missing)) {
+        const nextSelect = removeMissingColumnFromSelect(activeSelect, missing);
+        if (nextSelect && nextSelect !== activeSelect) {
+          removed.add(missing);
+          activeSelect = nextSelect;
+          continue;
+        }
+      }
+      throw err;
+    }
+  }
+}
+
+async function fetchSupabaseHeadCountSafe(basePath, initialSelect = 'id') {
+  let activeSelect = initialSelect;
+  const removed = new Set();
+  while (true) {
+    try {
+      return await supabaseHeadCount(`${basePath}${basePath.includes('?') ? '&' : '?'}select=${encodeURIComponent(activeSelect)}`);
+    } catch (err) {
+      const missing = extractMissingColumn(err);
+      if (missing && !removed.has(missing)) {
+        const nextSelect = removeMissingColumnFromSelect(activeSelect, missing);
+        if (nextSelect && nextSelect !== activeSelect) {
+          removed.add(missing);
+          activeSelect = nextSelect;
+          continue;
+        }
+      }
+      throw err;
+    }
+  }
+}
+
+async function fetchSupabaseRealtorRowsForBounds(bounds, { status = '' } = {}) {
+  const query = new URLSearchParams();
+  query.set('select', 'source_type,source_url,is_general,submitter_type,submitter_name,broker_office_name,address,latitude,longitude,created_at,date_uploaded,raw,global_id');
+  query.set('source_type', 'eq.realtor');
+  appendCommonMapFilters(query, { status });
+  appendSupabaseBboxFilters(query, bounds);
+  return fetchSupabaseRowsWithSafeSelect(
+    (select) => {
+      query.set('select', select);
+      return `/rest/v1/properties?${query.toString()}`;
+    },
+    query.get('select')
+  );
+}
+
+async function buildSupabaseVisibleSummary(bounds, { status = '' } = {}) {
+  const query = new URLSearchParams();
+  appendCommonMapFilters(query, { status });
+  appendSupabaseBboxFilters(query, bounds);
+  const qs = query.toString();
+  const basePath = `/rest/v1/properties${qs ? `?${qs}` : ''}`;
+  const [total, auction, onbid, general, realtorRows] = await Promise.all([
+    fetchSupabaseHeadCountSafe(basePath),
+    fetchSupabaseHeadCountSafe(`${basePath}${basePath.includes('?') ? '&' : '?'}source_type=eq.auction`),
+    fetchSupabaseHeadCountSafe(`${basePath}${basePath.includes('?') ? '&' : '?'}source_type=eq.onbid`),
+    fetchSupabaseHeadCountSafe(`${basePath}${basePath.includes('?') ? '&' : '?'}source_type=eq.general`),
+    fetchSupabaseRealtorRowsForBounds(bounds, { status }).catch(() => []),
+  ]);
+  const summary = { total: Number(total || 0), auction: Number(auction || 0), onbid: Number(onbid || 0), realtor_naver: 0, realtor_direct: 0, general: Number(general || 0) };
+  for (const row of Array.isArray(realtorRows) ? realtorRows : []) {
+    const normalized = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
+      ? PropertyDomain.buildNormalizedPropertyBase(row)
+      : row;
+    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
+      ? PropertyDomain.getSourceBucket(normalized)
+      : (String(row?.source_url || '').trim() ? 'realtor_naver' : 'realtor_direct');
+    if (bucket === 'realtor_direct') summary.realtor_direct += 1;
+    else summary.realtor_naver += 1;
+  }
+  return summary;
+}
+
 function buildOverviewFromRows(rows) {
   const overview = createEmptyOverview();
   const todayKey = getTodayKey();
@@ -444,25 +528,24 @@ function matchesMapFilters(row, { source = 'all', status = '', q = '' } = {}) {
 async function buildSupabaseMapResponse({ source = 'all', status = '', q = '', offset = 0, limit = 300, markerLimit = 1200, swLat = null, swLng = null, neLat = null, neLng = null } = {}) {
   const bounds = parseMapBounds({ swLat, swLng, neLat, neLng });
   const query = new URLSearchParams();
-  query.set('select', MAP_SCAN_SELECT);
   query.set('order', 'date_uploaded.desc.nullslast,id.desc');
   query.set('offset', '0');
   query.set('limit', String(Math.max(Number(limit || 300), Number(markerLimit || 1200), 1200)));
   appendCommonMapFilters(query, { status });
   appendSupabaseBboxFilters(query, bounds);
 
-  const data = await supabaseRest(`/rest/v1/properties?${query.toString()}`);
+  const data = await fetchSupabaseRowsWithSafeSelect((select) => {
+    query.set('select', select);
+    return `/rest/v1/properties?${query.toString()}`;
+  }, MAP_SCAN_SELECT);
+
   const batch = Array.isArray(data) ? data : [];
   const filtered = [];
-  const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-
   for (const row of batch) {
     const normalized = buildMapRow(row);
     if (!rowWithinBounds(normalized, bounds)) continue;
     if (!matchesMapFilters(normalized, { source, status, q })) continue;
     filtered.push(normalized);
-    summary.total += 1;
-    if (Object.prototype.hasOwnProperty.call(summary, normalized.sourceBucket)) summary[normalized.sourceBucket] += 1;
   }
 
   const safeOffset = Math.max(0, Number(offset || 0));
@@ -482,7 +565,30 @@ async function buildSupabaseMapResponse({ source = 'all', status = '', q = '', o
       source: row.source,
     }));
 
-  return { summary, total: summary.total, items, markers };
+  let summary;
+  if (!String(q || '').trim()) {
+    summary = await buildSupabaseVisibleSummary(bounds, { status });
+    if (source && source !== 'all') {
+      const scoped = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+      if (source === 'realtor') {
+        scoped.realtor_naver = Number(summary.realtor_naver || 0);
+        scoped.realtor_direct = Number(summary.realtor_direct || 0);
+        scoped.total = scoped.realtor_naver + scoped.realtor_direct;
+      } else if (Object.prototype.hasOwnProperty.call(scoped, source)) {
+        scoped[source] = Number(summary[source] || 0);
+        scoped.total = scoped[source];
+      }
+      summary = scoped;
+    }
+  } else {
+    summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+    for (const row of filtered) {
+      summary.total += 1;
+      if (Object.prototype.hasOwnProperty.call(summary, row.sourceBucket)) summary[row.sourceBucket] += 1;
+    }
+  }
+
+  return { summary, total: Number(summary?.total || filtered.length || 0), items, markers };
 }
 
 function buildStoreMapResponse(rows, options = {}) {
@@ -590,7 +696,7 @@ module.exports = async function handler(req, res) {
       try {
         if (hasSupabaseAdminEnv()) {
           const col = targetId.includes(':') ? 'global_id' : 'id';
-          const rows = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(MAP_DETAIL_SELECT)}&${col}=eq.${encodeURIComponent(targetId)}&limit=1`);
+          const rows = await fetchSupabaseRowsWithSafeSelect((select) => `/rest/v1/properties?select=${encodeURIComponent(select)}&${col}=eq.${encodeURIComponent(targetId)}&limit=1`, MAP_DETAIL_SELECT);
           const row = Array.isArray(rows) ? rows[0] : rows;
           if (!row) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
           return send(res, 200, { ok: true, item: buildMapRow(row) });
