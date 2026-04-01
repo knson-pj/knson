@@ -14,7 +14,7 @@
     auction: { label: "경매", short: "경", solid: "#D778F7", bg: "#F7E5FF", border: "#E4B7FF" },
     onbid: { label: "공매", short: "$", solid: "#59A7FF", bg: "#E7F2FF", border: "#BFD9FF" },
     realtor_naver: { label: "네이버중개", short: "N", solid: "#17C964", bg: "#E7F8EE", border: "#B8E8CB" },
-    realtor_direct: { label: "일반중개", short: "중", solid: "#0FA68B", bg: "#E3F8F4", border: "#AEE6DA" },
+    realtor_direct: { label: "일반중개", short: "중", solid: "#D4A72C", bg: "#FFF4D6", border: "#E7CF87" },
     realtor: { label: "중개", short: "중", solid: "#0FA68B", bg: "#E3F8F4", border: "#AEE6DA" },
     general: { label: "일반", short: "일", solid: "#F6B04A", bg: "#FFF1DD", border: "#F7D39E" },
   };
@@ -279,6 +279,17 @@
         await refreshMapDataMaybe();
       });
     }
+    if (els.mvSummary) {
+      els.mvSummary.addEventListener("click", async (e) => {
+        const trigger = e.target.closest(".mv-summary-link[data-source]");
+        if (!trigger) return;
+        const nextSource = String(trigger.dataset.source || "all").trim() || "all";
+        state.source = nextSource;
+        if (els.mvSourceFilter) els.mvSourceFilter.value = nextSource === "all" ? "" : nextSource;
+        renderKPIs();
+        await refreshMapDataMaybe();
+      });
+    }
 
     // Map zoom
     if (els.mvZoomIn) els.mvZoomIn.addEventListener("click", () => { if (state.map) state.map.setLevel(state.map.getLevel() - 1); });
@@ -371,7 +382,6 @@
     params.set('swLng', String(sw.getLng()));
     params.set('neLat', String(ne.getLat()));
     params.set('neLng', String(ne.getLng()));
-    if (state.source && state.source !== 'all') params.set('source', state.source);
     if (state.status) params.set('status', state.status);
     if (state.keyword) params.set('q', state.keyword);
 
@@ -554,32 +564,37 @@
     };
   }
 
+  function matchesSourceFilter(item) {
+    const bucket = String(item?.sourceBucket || item?.source || "general").trim() || "general";
+    if (state.source === "all") return true;
+    if (state.source === "realtor") return bucket === "realtor_naver" || bucket === "realtor_direct";
+    return bucket === state.source;
+  }
+
+  function matchesStatusFilter(item) {
+    if (!state.status) return true;
+    return String(item?.status || "") === state.status;
+  }
+
+  function matchesKeywordFilter(item) {
+    if (!state.keyword) return true;
+    const q = state.keyword.toLowerCase();
+    const hay = [item?.address, item?.assignedAgentName, item?.regionGu, item?.regionDong, item?.type, item?.rightsAnalysis, item?.siteInspection, item?.opinion]
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  }
+
   function getFilteredRows() {
     let list = state.items.slice();
-
-    if (state.source !== "all") {
-      list = list.filter((p) => {
-        const bucket = String(p.sourceBucket || p.source || "general").trim() || "general";
-        if (state.source === "realtor") return bucket === "realtor_naver" || bucket === "realtor_direct";
-        return bucket === state.source;
-      });
-    }
-
-    if (state.status) {
-      list = list.filter((p) => String(p.status || "") === state.status);
-    }
-
-    if (state.keyword) {
-      const q = state.keyword.toLowerCase();
-      list = list.filter((p) => {
-        const hay = [p.address, p.assignedAgentName, p.regionGu, p.regionDong, p.type, p.rightsAnalysis, p.siteInspection, p.opinion]
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(q);
-      });
-    }
-
+    list = list.filter((p) => matchesSourceFilter(p) && matchesStatusFilter(p) && matchesKeywordFilter(p));
     return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  function getFilteredMapMarkers() {
+    let list = Array.isArray(state.mapMarkers) ? state.mapMarkers.slice() : [];
+    list = list.filter((p) => matchesSourceFilter(p) && matchesStatusFilter(p) && matchesKeywordFilter(p));
+    return list;
   }
 
   function renderKPIs() {
@@ -1319,7 +1334,7 @@
 
     clearMapMarkers();
 
-    const serverMarkers = shouldUseServerMap() ? (Array.isArray(state.mapMarkers) ? state.mapMarkers : []) : [];
+    const serverMarkers = shouldUseServerMap() ? getFilteredMapMarkers() : [];
     const rows = serverMarkers.length
       ? serverMarkers
       : getFilteredRows().filter((r) => r.latitude != null && r.longitude != null);
@@ -1433,31 +1448,45 @@
 
   function renderMapSummary(total) {
     if (!els.mvSummary) return;
+    const buildLink = (label, value, sourceKey, extraClass = '') => {
+      const active = state.source === sourceKey || (sourceKey === 'all' && state.source === 'all');
+      const classes = ['mv-summary-link'];
+      if (extraClass) classes.push(extraClass);
+      if (active) classes.push('is-active');
+      return '<button type="button" class="' + classes.join(' ') + '" data-source="' + sourceKey + '">' +
+        '<span class="mv-summary-label">' + label + '</span>' +
+        '<strong>' + Number(value || 0) + '</strong>' +
+        (sourceKey === 'all' ? '건' : '') +
+        '</button>';
+    };
+
     if (shouldUseServerMap() && state.mapSummary) {
       const counts = state.mapSummary;
       const summaryTotal = Number(counts.total || total || 0);
-      els.mvSummary.innerHTML =
-        '<span>전체 <strong>' + summaryTotal + '</strong>건</span>' +
-        '<span>경매 <strong>' + Number(counts.auction || 0) + '</strong></span>' +
-        '<span>공매 <strong>' + Number(counts.onbid || 0) + '</strong></span>' +
-        '<span>네이버중개 <strong>' + Number(counts.realtor_naver || 0) + '</strong></span>' +
-        '<span>일반중개 <strong>' + Number(counts.realtor_direct || 0) + '</strong></span>' +
-        '<span>일반 <strong>' + Number(counts.general || 0) + '</strong></span>';
+      els.mvSummary.innerHTML = [
+        buildLink('전체', summaryTotal, 'all', 'mv-summary-all'),
+        buildLink('경매', Number(counts.auction || 0), 'auction', 'mv-summary-auction'),
+        buildLink('공매', Number(counts.onbid || 0), 'onbid', 'mv-summary-onbid'),
+        buildLink('네이버중개', Number(counts.realtor_naver || 0), 'realtor_naver', 'mv-summary-realtor-naver'),
+        buildLink('일반중개', Number(counts.realtor_direct || 0), 'realtor_direct', 'mv-summary-realtor-direct'),
+        buildLink('일반', Number(counts.general || 0), 'general', 'mv-summary-general'),
+      ].join('');
       return;
     }
-    const rows = getFilteredRows();
+    const rows = Array.isArray(state.items) ? state.items : [];
     const counts = { auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     rows.forEach((row) => {
       const bucket = String(row.sourceBucket || row.source || "general").trim() || "general";
       if (bucket in counts) counts[bucket] += 1;
     });
-    els.mvSummary.innerHTML =
-      '<span>전체 <strong>' + total + '</strong>건</span>' +
-      '<span>경매 <strong>' + counts.auction + '</strong></span>' +
-      '<span>공매 <strong>' + counts.onbid + '</strong></span>' +
-      '<span>네이버중개 <strong>' + counts.realtor_naver + '</strong></span>' +
-      '<span>일반중개 <strong>' + counts.realtor_direct + '</strong></span>' +
-      '<span>일반 <strong>' + counts.general + '</strong></span>';
+    els.mvSummary.innerHTML = [
+      buildLink('전체', total, 'all', 'mv-summary-all'),
+      buildLink('경매', counts.auction, 'auction', 'mv-summary-auction'),
+      buildLink('공매', counts.onbid, 'onbid', 'mv-summary-onbid'),
+      buildLink('네이버중개', counts.realtor_naver, 'realtor_naver', 'mv-summary-realtor-naver'),
+      buildLink('일반중개', counts.realtor_direct, 'realtor_direct', 'mv-summary-realtor-direct'),
+      buildLink('일반', counts.general, 'general', 'mv-summary-general'),
+    ].join('');
   }
 
   // ---- Map Detail Popup ----

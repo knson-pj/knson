@@ -69,7 +69,9 @@ body.is-map-view .content{padding:0;}
 .mv-badge-auction{background:rgba(215,120,247,.12);color:#D778F7;}
 .mv-badge-onbid{background:rgba(89,167,255,.12);color:#59A7FF;}
 .mv-badge-realtor{background:rgba(74,216,186,.12);color:#4AD8BA;}
-.mv-badge-general{background:rgba(246,176,74,.12);color:#F6B04A;}
+.mv-badge-realtor_naver{background:rgba(23,201,100,.12);color:#17C964;}
+.mv-badge-realtor_direct{background:rgba(212,167,44,.14);color:#D4A72C;}
+.mv-badge-general{background:rgba(246,176,74,.12);color:#D4A72C;}
 .mv-card-addr{font-size:12px;font-weight:700;letter-spacing:-.02em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .mv-card-info{font-size:10px;color:var(--muted);line-height:1.4;margin-top:2px;}
 .mv-card-price{display:flex;gap:10px;margin-top:4px;font-size:11px;}
@@ -81,11 +83,19 @@ body.is-map-view .content{padding:0;}
 .mv-sb-summary{
   padding:10px 12px;
   border-top:1px solid var(--line);
-  display:flex;gap:12px;
+  display:flex;gap:8px;flex-wrap:wrap;
   font-size:11px;color:var(--muted);
   flex-shrink:0;
 }
-.mv-sb-summary strong{color:var(--text);}
+.mv-sb-summary strong{color:inherit;}
+.mv-summary-link{appearance:none;border:0;background:transparent;padding:0;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font:inherit;color:var(--muted);}
+.mv-summary-link:hover{opacity:.88;}
+.mv-summary-link.is-active{font-weight:800;text-decoration:underline;text-underline-offset:2px;}
+.mv-summary-all{color:var(--text);}
+.mv-summary-auction{color:#D778F7;}
+.mv-summary-onbid{color:#59A7FF;}
+.mv-summary-realtor-naver{color:#17C964;}
+.mv-summary-realtor-direct,.mv-summary-general{color:#D4A72C;}
 
 /* ── Map Area ── */
 .mv-map-area{position:relative;overflow:hidden;z-index:1;}
@@ -110,9 +120,9 @@ body.is-map-view .content{padding:0;}
   width:14px;height:14px;border-radius:999px;
   border:1.5px solid rgba(0,0,0,.3);
   display:flex;align-items:center;justify-content:center;
-  font-size:6px;font-weight:800;color:#fff;
+  font-size:6px;font-weight:800;color:#374151;
 }
-.mv-marker-type{font-size:8px;color:rgba(255,255,255,.8);line-height:1.2;white-space:nowrap;}
+.mv-marker-type{font-size:8px;color:#4b5563;line-height:1.2;white-space:nowrap;font-weight:700;}
 .mv-marker-arrow{
   width:0;height:0;
   border-left:5px solid transparent;
