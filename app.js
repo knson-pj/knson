@@ -341,7 +341,7 @@
 
   async function fetchAllPropertiesPaged(sb, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
-      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: "*", pageSize: 1000 });
+      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, pageSize: 1000 });
     }
     throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
@@ -395,6 +395,25 @@
       : null;
     if (!base) return p;
 
+    const sourceContext = {
+      ...p,
+      raw: p && p.raw && typeof p.raw === "object" ? p.raw : base.raw,
+      globalId: (p && (p.globalId || p.global_id)) || base.globalId,
+      global_id: (p && (p.global_id || p.globalId)) || base.globalId,
+      sourceType: p && (p.sourceType || p.source_type || p.source || p.category || p.rawSource || p.raw_source),
+      source_type: p && (p.source_type || p.sourceType || p.source || p.category || p.rawSource || p.raw_source),
+      sourceUrl: (p && (p.sourceUrl || p.source_url)) || base.sourceUrl,
+      source_url: (p && (p.source_url || p.sourceUrl)) || base.sourceUrl,
+      submitterType: (p && (p.submitterType || p.submitter_type)) || base.submitterType,
+      submitter_type: (p && (p.submitter_type || p.submitterType)) || base.submitterType,
+      brokerOfficeName: (p && (p.brokerOfficeName || p.broker_office_name)) || base.brokerOfficeName,
+      broker_office_name: (p && (p.broker_office_name || p.brokerOfficeName)) || base.brokerOfficeName,
+      isGeneral: (p && (p.isGeneral ?? p.is_general)) ?? base.isGeneral,
+      is_general: (p && (p.is_general ?? p.isGeneral)) ?? base.isGeneral,
+      isDirectSubmission: base.isDirectSubmission,
+      is_direct_submission: base.isDirectSubmission,
+    };
+
     return {
       id: base.id || "",
       itemNo: base.itemNo,
@@ -422,7 +441,7 @@
       latitude: base.latitude,
       longitude: base.longitude,
       isDirectSubmission: base.isDirectSubmission,
-      sourceBucket: (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") ? PropertyDomain.getSourceBucket(base) : base.sourceType,
+      sourceBucket: (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") ? PropertyDomain.getSourceBucket(sourceContext) : base.sourceType,
       raw: base.raw,
     };
   }
@@ -1211,23 +1230,22 @@
     if (!els.mvPropertyList) return;
 
     const rows = getFilteredRows();
-    const withCoords = rows.filter((r) => r.latitude != null && r.longitude != null);
 
     els.mvPropertyList.innerHTML = "";
-    if (!withCoords.length) {
+    if (!rows.length) {
       els.mvPropertyList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">표시할 매물이 없습니다.</div>';
       renderMapSummary(0);
       return;
     }
 
     const frag = document.createDocumentFragment();
-    const max = Math.min(withCoords.length, 300);
+    const max = Math.min(rows.length, 300);
     for (let i = 0; i < max; i++) {
-      const p = withCoords[i];
+      const p = rows[i];
       frag.appendChild(createSidebarCard(p));
     }
     els.mvPropertyList.appendChild(frag);
-    renderMapSummary(withCoords.length);
+    renderMapSummary(rows.length);
   }
 
   function createSidebarCard(p) {

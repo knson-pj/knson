@@ -180,7 +180,7 @@
       ""
     );
     const normalizedRaw = normalizeSourceType(rawSource, { fallback: "" });
-    if (normalizedRaw) return normalizedRaw;
+    if (normalizedRaw && normalizedRaw !== "general") return normalizedRaw;
 
     const sourceUrl = pickFirstText(
       context.sourceUrl,
@@ -207,6 +207,7 @@
     if (/(중개|중개사|공인중개사|broker|realtor|agent)/i.test(rawSource)) return "realtor";
     if (submitterType === "realtor") return "realtor";
     if (brokerOfficeName) return "realtor";
+    if (normalizedRaw === "general") return "general";
     if (isGeneral || submitterType === "owner") return "general";
     return "general";
   }
@@ -821,7 +822,7 @@
       item?.submitterType || item?.submitter_type || item?.raw?.submitterType || item?.raw?.submitter_type || "",
       { fallback: "" }
     );
-    const rawSource = String(item?.rawSource || item?.raw_source || item?.raw?.sourceType || item?.raw?.source_type || item?.source || item?.category || "").trim().toLowerCase();
+    const rawSource = String(item?.rawSource || item?.raw_source || item?.sourceType || item?.source_type || item?.raw?.sourceType || item?.raw?.source_type || item?.source || item?.category || "").trim().toLowerCase();
     if (["realtor_direct"].includes(rawSource)) return true;
     if (["realtor_naver", "naver", "broker"].includes(rawSource)) return false;
     const sourceUrl = pickFirstText(item?.sourceUrl, item?.source_url, item?.raw?.sourceUrl, item?.raw?.source_url, item?.raw?.url, item?.raw?.["바로가기(엑셀)"], item?.raw?.["매물URL"], "");
