@@ -54,78 +54,77 @@
     return `${text.slice(0, limit - 1)}…`;
   }
 
-  function getDisplaySources(item) {
-    const row = item && item._raw && typeof item._raw === 'object' ? item._raw : {};
-    const nestedRaw = row && row.raw && typeof row.raw === 'object' ? row.raw : {};
-    return [item || {}, row, nestedRaw];
+  function getPropertyRawLayers(item) {
+    const row = item?._raw && typeof item._raw === 'object' ? item._raw : {};
+    const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+    return { row, raw };
   }
 
-  function pickDisplayText(item, keys = [], extras = []) {
-    const sources = getDisplaySources(item);
-    for (const source of sources) {
-      if (!source || typeof source !== 'object') continue;
-      for (const key of keys) {
-        if (!key) continue;
-        const value = source[key];
-        const text = String(value ?? '').trim();
-        if (text) return text;
-      }
-    }
-    for (const value of extras) {
-      const text = String(value ?? '').trim();
+  function pickFirstText(...values) {
+    for (const value of values) {
+      if (value == null) continue;
+      const text = String(value).trim();
       if (text) return text;
     }
     return '';
   }
 
-  function pickDisplayNumber(item, keys = [], extras = []) {
-    const sources = getDisplaySources(item);
-    for (const source of sources) {
-      if (!source || typeof source !== 'object') continue;
-      for (const key of keys) {
-        if (!key) continue;
-        const value = source[key];
-        if (value == null || value === '') continue;
-        const numeric = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''));
-        if (Number.isFinite(numeric) && numeric > 0) return numeric;
-      }
-    }
-    for (const value of extras) {
+  function pickFirstNumber(...values) {
+    for (const value of values) {
       if (value == null || value === '') continue;
-      const numeric = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''));
-      if (Number.isFinite(numeric) && numeric > 0) return numeric;
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      const numeric = Number(String(value).replace(/[^0-9.-]/g, ''));
+      if (Number.isFinite(numeric)) return numeric;
     }
     return null;
   }
 
+  function getPlainPropertySnapshot(item) {
+    const { row, raw } = getPropertyRawLayers(item);
+    const floor = pickFirstText(
+      item?.floor, row.floor, row.floorText, raw.floor, raw.floorText,
+      row['층수'], row['층'], raw['층수'], raw['층']
+    );
+    const totalfloor = pickFirstText(
+      item?.totalfloor, item?.total_floor, row.totalfloor, row.total_floor, row.totalFloor,
+      raw.totalfloor, raw.total_floor, raw.totalFloor,
+      row['총층'], row['총층수'], raw['총층'], raw['총층수']
+    );
+    const exclusivearea = pickFirstNumber(
+      item?.exclusivearea, row.exclusivearea, row.exclusive_area, raw.exclusivearea, raw.exclusiveArea,
+      row['전용면적'], row['전용면적(㎡)'], raw['전용면적'], raw['전용면적(㎡)']
+    );
+    const commonarea = pickFirstNumber(
+      item?.commonarea, row.commonarea, row.common_area, raw.commonarea, raw.commonArea,
+      row['공용면적'], row['공용면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)']
+    );
+    const sitearea = pickFirstNumber(
+      item?.sitearea, row.sitearea, row.site_area, raw.sitearea, raw.siteArea,
+      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)']
+    );
+    const useapproval = pickFirstText(
+      item?.useapproval, row.useapproval, row.use_approval, row.useApproval,
+      raw.useapproval, raw.use_approval, raw.useApproval,
+      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일']
+    );
+    const appraisal = pickFirstNumber(
+      item?.priceMain, row.priceMain, row.price_main, raw.priceMain, raw.price_main,
+      row.appraisalPrice, raw.appraisalPrice,
+      row['감정가'], row['매각가'], row['가격'], raw['감정가'], raw['매각가'], raw['가격'],
+      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price
+    );
+    return { floor, totalfloor, exclusivearea, commonarea, sitearea, useapproval, appraisal };
+  }
+
   function getFloorDisplayValue(item) {
-    const floor = pickDisplayText(item, ['floor', 'floor_text', 'floor_korean', 'floorText', '해당층', '층수', '층']);
-    const total = pickDisplayText(item, ['totalfloor', 'total_floor', 'totalFloor', '총층']);
+    const plain = getPlainPropertySnapshot(item);
+    const floor = plain.floor;
+    const total = plain.totalfloor;
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
     }
     return floor || total || '';
-  }
-
-  function getExclusiveAreaValue(item) {
-    return pickDisplayNumber(item, ['exclusivearea', 'exclusive_area', 'exclusiveArea', '전용면적(평)', '전용면적']);
-  }
-
-  function getCommonAreaValue(item) {
-    return pickDisplayNumber(item, ['commonarea', 'common_area', 'commonArea', '공용면적(평)', '공용면적', '공급/계약면적(평)', '공급면적(평)', '공급면적']);
-  }
-
-  function getSiteAreaValue(item) {
-    return pickDisplayNumber(item, ['sitearea', 'site_area', 'siteArea', '토지면적(평)', '토지면적']);
-  }
-
-  function getUseApprovalValue(item) {
-    return pickDisplayText(item, ['useapproval', 'use_approval', 'useApproval', '사용승인일', '사용승인']);
-  }
-
-  function getAppraisalPriceValue(item) {
-    return pickDisplayNumber(item, ['priceMain', 'price_main', '감정가', '감정가(원)', '감정가(매각가)', '매매가', '매매금액', '매물가', '가격', '희망가', 'price']);
   }
 
   function formatDateCell(utils, value) {
@@ -266,19 +265,6 @@
 
   function formatOptionLabel(label, count) {
     return `${label} (${Number(count || 0).toLocaleString('ko-KR')})`;
-  }
-
-  function buildSelectCountsFromOverview(optionDefs, countsSource, defaultCount, allowDetailedCounts = true) {
-    const out = {};
-    (Array.isArray(optionDefs) ? optionDefs : []).forEach((optionDef, index) => {
-      const key = String(optionDef?.value ?? '');
-      if (!key && index === 0) out[key] = Number(defaultCount || 0);
-      else if (allowDetailedCounts) out[key] = Number(countsSource?.[key] || 0);
-      else out[key] = 0;
-    });
-    if (!Object.prototype.hasOwnProperty.call(out, '')) out[''] = Number(defaultCount || 0);
-    else out[''] = Number(defaultCount || 0);
-    return out;
   }
 
   function applySelectOptionCounts(selectEl, options, counts, formatter) {
@@ -553,33 +539,21 @@
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
     const { state, els, utils } = ctx();
     const filters = state?.propertyFilters || {};
-    const hasPrefetchedFullDataset = Array.isArray(state?.propertiesFullCache) || Array.isArray(state?.homeSummarySnapshot);
-    const hasKeywordAreaPriceRatioOverride = !!(
+    const hasLocalOverrides = !!(
+      String(filters.activeCard || '').trim() ||
+      String(filters.status || '').trim() ||
       String(filters.keyword || '').trim() ||
       String(filters.area || '').trim() ||
       String(filters.priceRange || '').trim() ||
       String(filters.ratio50 || '').trim() ||
       String(state?.propertySort?.key || '').trim()
     );
-    const hasStatusOverride = !!String(filters.status || '').trim();
     const overviewCounts = state?.propertyOverview?.filterCounts || null;
-
-    if (!hasPrefetchedFullDataset && !hasKeywordAreaPriceRatioOverride && !hasStatusOverride && overviewCounts) {
-      const activeCard = String(filters.activeCard || '').trim();
-      const sourceOverviewCounts = overviewCounts.source && typeof overviewCounts.source === 'object' ? overviewCounts.source : null;
-      const sourceBaseCount = activeCard
-        ? Number(sourceOverviewCounts?.[activeCard] || 0)
-        : Number(sourceOverviewCounts?.[''] || 0);
-      if (sourceOverviewCounts) {
-        applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceOverviewCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      }
-      const allowDetailedRangeCounts = !activeCard;
-      const areaCounts = buildSelectCountsFromOverview(AREA_FILTER_OPTIONS, overviewCounts.area, sourceBaseCount, allowDetailedRangeCounts);
-      const priceCounts = buildSelectCountsFromOverview(PRICE_FILTER_OPTIONS, overviewCounts.price, sourceBaseCount, allowDetailedRangeCounts);
-      const ratioCounts = buildSelectCountsFromOverview(RATIO_FILTER_OPTIONS, overviewCounts.ratio, sourceBaseCount, allowDetailedRangeCounts);
-      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, areaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, priceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+    if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
+      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
       if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
       if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
@@ -784,7 +758,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
     : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
   const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
-  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.sourceType);
+  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.activeCard);
 
   renderPropertiesTableHeader(usePlainLayout);
   if (!els.propertiesTableBody) return;
@@ -816,21 +790,18 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       ? utils.PropertyDomain.getSourceBucketLabel(bucket)
       : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
     const kindClass = listView?.kindClass || (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general');
-    const appraisalValue = getAppraisalPriceValue(p);
     const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
-    const rate = utils.formatPercent(appraisalValue ?? p.priceMain, currentPriceValue, p._raw || {});
+    const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
+    const plain = getPlainPropertySnapshot(p);
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
     const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
-    const exclusiveValue = getExclusiveAreaValue(p);
-    const commonValue = getCommonAreaValue(p);
-    const siteValue = getSiteAreaValue(p);
-    const useapprovalValue = getUseApprovalValue(p);
-    const exclusiveText = exclusiveValue != null ? utils.escapeHtml(utils.formatAreaPyeong(exclusiveValue)) : '-';
-    const commonText = commonValue != null ? utils.escapeHtml(utils.formatAreaPyeong(commonValue)) : '-';
-    const siteText = siteValue != null ? utils.escapeHtml(utils.formatAreaPyeong(siteValue)) : '-';
-    const useapprovalText = (utils.formatDate && utils.formatDate(useapprovalValue)) || (useapprovalValue ? utils.escapeHtml(String(useapprovalValue)) : '-');
+    const exclusiveText = plain.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(plain.exclusivearea)) : '-';
+    const commonText = plain.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(plain.commonarea)) : '-';
+    const siteText = plain.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(plain.sitearea)) : '-';
+    const useapprovalText = (utils.formatDate && utils.formatDate(plain.useapproval)) || '-';
+    const appraisalText = plain.appraisal != null ? utils.formatMoneyKRW(plain.appraisal) : '-';
     const scheduleHtml = typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-';
     const rightsHtml = renderDetailIndicator('rights', p.rightsAnalysis, utils);
     const inspectionHtml = renderDetailIndicator('inspection', p.siteInspection, utils);
@@ -847,7 +818,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${commonText}</td>
       <td>${siteText}</td>
       <td>${utils.escapeHtml(useapprovalText)}</td>
-      <td>${appraisalValue != null ? utils.formatMoneyKRW(appraisalValue) : '-'}</td>
+      <td>${appraisalText}</td>
       <td>${assigneeText}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
       <td>${formatDateCell(utils, p.createdAt)}</td>
@@ -860,7 +831,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
       <td>${exclusiveText}</td>
-      <td>${appraisalValue != null ? utils.formatMoneyKRW(appraisalValue) : '-'}</td>
+      <td>${appraisalText}</td>
       <td>${utils.escapeHtml(currentPrice)}</td>
       <td>${utils.escapeHtml(rate)}</td>
       <td class="schedule-cell">${scheduleHtml}</td>

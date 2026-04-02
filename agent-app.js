@@ -836,30 +836,7 @@
     if (els.agAreaFilter) els.agAreaFilter.addEventListener("change", (e) => { state.filters.area = e.target.value; state.page = 1; renderTable(); });
     if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
     if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
-    const applyAgentKeywordFilter = (rawValue) => {
-      const nextKeyword = String(rawValue || "").trim();
-      if (state.filters.keyword === nextKeyword) return;
-      state.filters.keyword = nextKeyword;
-      state.page = 1;
-      renderTable();
-    };
-    if (els.agKeyword) {
-      els.agKeyword.addEventListener("input", (e) => {
-        const nextValue = String(e.target.value || "");
-        if (!nextValue.trim()) applyAgentKeywordFilter("");
-      });
-      els.agKeyword.addEventListener("change", (e) => {
-        applyAgentKeywordFilter(e.target.value || "");
-      });
-      els.agKeyword.addEventListener("blur", (e) => {
-        applyAgentKeywordFilter(e.target.value || "");
-      });
-      els.agKeyword.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter" || e.isComposing) return;
-        e.preventDefault();
-        applyAgentKeywordFilter(e.target.value || "");
-      });
-    }
+    if (els.agKeyword) els.agKeyword.addEventListener("input", debounce((e) => { state.filters.keyword = String(e.target.value || "").trim(); state.page = 1; renderTable(); }, 150));
     if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
       state.filters.favOnly = !state.filters.favOnly;
       els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
@@ -1615,26 +1592,22 @@ function renderRow(p) {
     general: "kind-general",
   };
   const kindClass = kindClassMap[bucket] || "kind-general";
-  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.sourceType);
-  const appraisalValue = getAppraisalPriceValue(p);
-  const appraisal = appraisalValue != null ? formatEok(appraisalValue) : "-";
+  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.activeCard);
+  const plain = getPlainPropertySnapshot(p);
+  const appraisal = plain.appraisal != null ? formatEok(plain.appraisal) : "-";
   const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
-  const rate = !usePlainLayout ? calcRate(appraisalValue ?? p.priceMain, p.lowprice) : "";
+  const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
   const addressText = truncateDisplayText(p.address || "-", 40) || "-";
   const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
-  const scheduleHtml = !usePlainLayout ? formatScheduleHtml(p.dateMain) : "";
+  const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
   const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
   const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
-  const exclusiveValue = getExclusiveAreaValue(p);
-  const commonValue = getCommonAreaValue(p);
-  const siteValue = getSiteAreaValue(p);
-  const useapprovalValue = getUseApprovalValue(p);
-  const commonText = commonValue != null ? fmtArea(commonValue) : "-";
-  const siteText = siteValue != null ? fmtArea(siteValue) : "-";
-  const useapprovalText = formatDate(useapprovalValue) || (useapprovalValue ? String(useapprovalValue).trim() : "-");
+  const commonText = plain.commonarea != null ? fmtArea(plain.commonarea) : "-";
+  const siteText = plain.sitearea != null ? fmtArea(plain.sitearea) : "-";
+  const useapprovalText = formatDate(plain.useapproval || "") || "-";
 
   const favTd = document.createElement("td");
   favTd.className = "fav-col";
@@ -1662,7 +1635,7 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (exclusiveValue != null ? fmtArea(exclusiveValue) : "-") + "</td>" +
+        "<td>" + (plain.exclusivearea != null ? fmtArea(plain.exclusivearea) : "-") + "</td>" +
         "<td>" + esc(commonText) + "</td>" +
         "<td>" + esc(siteText) + "</td>" +
         "<td>" + esc(useapprovalText) + "</td>" +
@@ -1675,11 +1648,11 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (exclusiveValue != null ? fmtArea(exclusiveValue) : "-") + "</td>" +
+        "<td>" + (plain.exclusivearea != null ? fmtArea(plain.exclusivearea) : "-") + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(current) + "</td>" +
         "<td>" + esc(rate) + "</td>" +
-        "<td class=\"schedule-cell\">" + scheduleHtml + "</td>" +
+        "<td>" + esc(scheduleText) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
         "<td>" + esc(rightsText) + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
@@ -2036,133 +2009,68 @@ function renderPagination(totalPages) {
     return `${text.slice(0, limit - 1)}…`;
   }
 
-  function getDisplaySources(item) {
-    const row = item && item._raw && typeof item._raw === 'object' ? item._raw : {};
-    const nestedRaw = row && row.raw && typeof row.raw === 'object' ? row.raw : {};
-    return [item || {}, row, nestedRaw];
+  function getPropertyRawLayers(item) {
+    const row = item?._raw && typeof item._raw === "object" ? item._raw : {};
+    const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
+    return { row, raw };
   }
 
-  function pickDisplayText(item, keys = [], extras = []) {
-    const sources = getDisplaySources(item);
-    for (const source of sources) {
-      if (!source || typeof source !== 'object') continue;
-      for (const key of keys) {
-        if (!key) continue;
-        const value = source[key];
-        const text = String(value ?? '').trim();
-        if (text) return text;
-      }
-    }
-    for (const value of extras) {
-      const text = String(value ?? '').trim();
-      if (text) return text;
-    }
-    return '';
-  }
-
-  function pickDisplayNumber(item, keys = [], extras = []) {
-    const sources = getDisplaySources(item);
-    for (const source of sources) {
-      if (!source || typeof source !== 'object') continue;
-      for (const key of keys) {
-        if (!key) continue;
-        const value = source[key];
-        if (value == null || value === '') continue;
-        const numeric = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''));
-        if (Number.isFinite(numeric) && numeric > 0) return numeric;
-      }
-    }
-    for (const value of extras) {
-      if (value == null || value === '') continue;
-      const numeric = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''));
-      if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  function pickFirstNumber(...values) {
+    for (const value of values) {
+      if (value == null || value === "") continue;
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      const numeric = Number(String(value).replace(/[^0-9.-]/g, ""));
+      if (Number.isFinite(numeric)) return numeric;
     }
     return null;
   }
 
+  function getPlainPropertySnapshot(item) {
+    const { row, raw } = getPropertyRawLayers(item);
+    const floor = firstText(
+      item?.floor, row.floor, row.floorText, raw.floor, raw.floorText,
+      row['층수'], row['층'], raw['층수'], raw['층']
+    );
+    const totalfloor = firstText(
+      item?.totalfloor, item?.total_floor, row.totalfloor, row.total_floor, row.totalFloor,
+      raw.totalfloor, raw.total_floor, raw.totalFloor,
+      row['총층'], row['총층수'], raw['총층'], raw['총층수']
+    );
+    const exclusivearea = pickFirstNumber(
+      item?.exclusivearea, row.exclusivearea, row.exclusive_area, raw.exclusivearea, raw.exclusiveArea,
+      row['전용면적'], row['전용면적(㎡)'], raw['전용면적'], raw['전용면적(㎡)']
+    );
+    const commonarea = pickFirstNumber(
+      item?.commonarea, row.commonarea, row.common_area, raw.commonarea, raw.commonArea,
+      row['공용면적'], row['공용면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)']
+    );
+    const sitearea = pickFirstNumber(
+      item?.sitearea, row.sitearea, row.site_area, raw.sitearea, raw.siteArea,
+      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)']
+    );
+    const useapproval = firstText(
+      item?.useapproval, row.useapproval, row.use_approval, row.useApproval,
+      raw.useapproval, raw.use_approval, raw.useApproval,
+      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일']
+    );
+    const appraisal = pickFirstNumber(
+      item?.priceMain, row.priceMain, row.price_main, raw.priceMain, raw.price_main,
+      row.appraisalPrice, raw.appraisalPrice,
+      row['감정가'], row['매각가'], row['가격'], raw['감정가'], raw['매각가'], raw['가격'],
+      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price
+    );
+    return { floor, totalfloor, exclusivearea, commonarea, sitearea, useapproval, appraisal };
+  }
+
   function getFloorDisplayValue(item) {
-    const floor = pickDisplayText(item, ['floor', 'floor_text', 'floor_korean', 'floorText', '해당층', '층수', '층']);
-    const total = pickDisplayText(item, ['totalfloor', 'total_floor', 'totalFloor', '총층']);
+    const plain = getPlainPropertySnapshot(item);
+    const floor = plain.floor;
+    const total = plain.totalfloor;
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
     }
-    return floor || total || '';
-  }
-
-  function getExclusiveAreaValue(item) {
-    return pickDisplayNumber(item, ['exclusivearea', 'exclusive_area', 'exclusiveArea', '전용면적(평)', '전용면적']);
-  }
-
-  function getCommonAreaValue(item) {
-    return pickDisplayNumber(item, ['commonarea', 'common_area', 'commonArea', '공용면적(평)', '공용면적', '공급/계약면적(평)', '공급면적(평)', '공급면적']);
-  }
-
-  function getSiteAreaValue(item) {
-    return pickDisplayNumber(item, ['sitearea', 'site_area', 'siteArea', '토지면적(평)', '토지면적']);
-  }
-
-  function getUseApprovalValue(item) {
-    return pickDisplayText(item, ['useapproval', 'use_approval', 'useApproval', '사용승인일', '사용승인']);
-  }
-
-  function getAppraisalPriceValue(item) {
-    return pickDisplayNumber(item, ['priceMain', 'price_main', '감정가', '감정가(원)', '감정가(매각가)', '매매가', '매매금액', '매물가', '가격', '희망가', 'price']);
-  }
-
-  function parseFlexibleDateLocal(value) {
-    if (value == null) return null;
-    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-    const raw = String(value || '').trim();
-    if (!raw) return null;
-
-    const normalized = raw
-      .replace(/\./g, '-')
-      .replace(/년\s*/g, '-')
-      .replace(/월\s*/g, '-')
-      .replace(/일/g, '')
-      .replace(/\//g, '-')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const ymd = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\D.*)?$/);
-    if (ymd) {
-      const y = Number(ymd[1]);
-      const m = Number(ymd[2]);
-      const d = Number(ymd[3]);
-      const parsed = new Date(y, m - 1, d);
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  function computeDdayLabel(value) {
-    const target = parseFlexibleDateLocal(value);
-    if (!target) return '';
-
-    const today = new Date();
-    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const point = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-    const diffDays = Math.round((point.getTime() - base.getTime()) / 86400000);
-
-    if (diffDays === 0) return 'D-Day';
-    if (diffDays > 0) return `D-${diffDays}`;
-    return `D+${Math.abs(diffDays)}`;
-  }
-
-  function formatScheduleCountdown(value) {
-    const dateText = formatDate(value);
-    const dday = computeDdayLabel(value);
-    if (dateText && dday) return `${dateText} (${dday})`;
-    return dateText || dday || '-';
-  }
-
-  function formatScheduleHtml(value) {
-    const dateText = formatDate(value) || '-';
-    const dday = computeDdayLabel(value);
-    return `<span class="schedule-stack"><span class="schedule-date">${esc(dateText)}</span>${dday ? `<span class="schedule-dday">${esc(dday)}</span>` : '<span class="schedule-dday schedule-dday-empty"></span>'}</span>`;
+    return floor || total || "";
   }
 
   function firstText(...args) {
