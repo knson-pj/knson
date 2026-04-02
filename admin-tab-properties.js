@@ -33,7 +33,7 @@
   function renderDetailIndicator(kind, text, utils) {
     const raw = String(text || '').trim();
     if (!raw) return '-';
-    const label = kind === 'rights' ? '담당자 의견' : '현장실사';
+    const label = kind === 'rights' ? '권리분석' : '현장실사';
     const content = nl2brEscaped(utils, raw);
     return `
       <div class="detail-indicator" data-detail-kind="${utils.escapeAttr(kind)}">
@@ -54,112 +54,10 @@
     return `${text.slice(0, limit - 1)}…`;
   }
 
-  function getPropertyRawLayers(item) {
-    const row = item?._raw && typeof item._raw === 'object' ? item._raw : {};
-    const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
-    const deepSources = [raw, row, item].filter((entry) => entry && typeof entry === 'object');
-    return { row, raw, deepSources };
-  }
-
-  function pickFirstText(...values) {
-    for (const value of values) {
-      if (value == null) continue;
-      const text = String(value).trim();
-      if (text) return text;
-    }
-    return '';
-  }
-
-  function pickFirstNumber(...values) {
-    for (const value of values) {
-      if (value == null || value === '') continue;
-      if (typeof value === 'number' && Number.isFinite(value)) return value;
-      const numeric = Number(String(value).replace(/[^0-9.-]/g, ''));
-      if (Number.isFinite(numeric)) return numeric;
-    }
-    return null;
-  }
-
-
-  function pickNestedValue(source, candidates, { numeric = false, maxDepth = 3 } = {}) {
-    const keys = (Array.isArray(candidates) ? candidates : [candidates]).map((v) => String(v || '').trim()).filter(Boolean);
-    if (!source || typeof source !== 'object' || !keys.length) return numeric ? null : '';
-    const queue = [{ value: source, depth: 0 }];
-    const seen = new Set();
-    while (queue.length) {
-      const current = queue.shift();
-      const node = current?.value;
-      const depth = Number(current?.depth || 0);
-      if (!node || typeof node !== 'object') continue;
-      if (seen.has(node)) continue;
-      seen.add(node);
-      for (const key of keys) {
-        if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
-        const value = node[key];
-        if (numeric) {
-          const picked = pickFirstNumber(value);
-          if (picked != null) return picked;
-        } else {
-          const picked = pickFirstText(value);
-          if (picked) return picked;
-        }
-      }
-      if (depth >= maxDepth) continue;
-      for (const value of Object.values(node)) {
-        if (value && typeof value === 'object') queue.push({ value, depth: depth + 1 });
-      }
-    }
-    return numeric ? null : '';
-  }
-
-  function getPlainPropertySnapshot(item) {
-    const { row, raw, deepSources } = getPropertyRawLayers(item);
-    const floor = pickFirstText(
-      item?.floor, row.floor, row.floorText, raw.floor, raw.floorText,
-      row['층수'], row['층'], raw['층수'], raw['층'],
-      ...deepSources.map((source) => pickNestedValue(source, ['층수', '층', '해당층', '현재층', 'floor', 'floorText']))
-    );
-    const totalfloor = pickFirstText(
-      item?.totalfloor, item?.total_floor, row.totalfloor, row.total_floor, row.totalFloor,
-      raw.totalfloor, raw.total_floor, raw.totalFloor,
-      row['총층'], row['총층수'], raw['총층'], raw['총층수'],
-      ...deepSources.map((source) => pickNestedValue(source, ['총층', '총층수', '전체층', '최고층', 'total_floor', 'totalfloor', 'totalFloor']))
-    );
-    const exclusivearea = pickFirstNumber(
-      item?.exclusivearea, row.exclusivearea, row.exclusive_area, raw.exclusivearea, raw.exclusiveArea,
-      row['전용면적'], row['전용면적(㎡)'], row['전용면적(평)'], raw['전용면적'], raw['전용면적(㎡)'], raw['전용면적(평)'],
-      ...deepSources.map((source) => pickNestedValue(source, ['전용면적', '전용면적(㎡)', '전용면적(평)', 'exclusive_area', 'exclusivearea', 'exclusiveArea'], { numeric: true }))
-    );
-    const commonarea = pickFirstNumber(
-      item?.commonarea, row.commonarea, row.common_area, raw.commonarea, raw.commonArea,
-      row['공용면적'], row['공용면적(㎡)'], row['공급면적'], row['공급면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)'], raw['공급면적'], raw['공급면적(㎡)'],
-      ...deepSources.map((source) => pickNestedValue(source, ['공용면적', '공용면적(㎡)', '공급면적', '공급면적(㎡)', 'common_area', 'commonarea', 'commonArea'], { numeric: true }))
-    );
-    const sitearea = pickFirstNumber(
-      item?.sitearea, row.sitearea, row.site_area, raw.sitearea, raw.siteArea,
-      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)'],
-      ...deepSources.map((source) => pickNestedValue(source, ['토지면적', '토지면적(㎡)', '대지면적', '대지면적(㎡)', 'site_area', 'sitearea', 'siteArea'], { numeric: true }))
-    );
-    const useapproval = pickFirstText(
-      item?.useapproval, row.useapproval, row.use_approval, row.useApproval,
-      raw.useapproval, raw.use_approval, raw.useApproval,
-      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일'],
-      ...deepSources.map((source) => pickNestedValue(source, ['사용승인', '사용승인일', '승인일', '준공일', 'use_approval', 'useapproval', 'useApproval']))
-    );
-    const appraisal = pickFirstNumber(
-      item?.priceMain, row.priceMain, row.price_main, raw.priceMain, raw.price_main,
-      row.appraisalPrice, raw.appraisalPrice,
-      row['감정가'], row['감정가(매각가)'], row['매각가'], row['가격'], row['매매가'], raw['감정가'], raw['감정가(매각가)'], raw['매각가'], raw['가격'], raw['매매가'],
-      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price,
-      ...deepSources.map((source) => pickNestedValue(source, ['감정가', '감정가(매각가)', '매각가', '가격', '매매가', 'price_main', 'priceMain', 'appraisalPrice'], { numeric: true }))
-    );
-    return { floor, totalfloor, exclusivearea, commonarea, sitearea, useapproval, appraisal };
-  }
-
   function getFloorDisplayValue(item) {
-    const plain = getPlainPropertySnapshot(item);
-    const floor = plain.floor;
-    const total = plain.totalfloor;
+    const raw = item?._raw && typeof item._raw === 'object' ? item._raw : {};
+    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? '').trim();
+    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? '').trim();
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
@@ -241,13 +139,13 @@
         <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
         <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
         <th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th><th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th>
-        <th>담당자</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
+        <th>담당자</th><th>현장실사</th><th>등록일</th>
       `
       : `
         <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
         <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
         <th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th><th class="sortable-th" data-prop-sort="currentPrice">현재가격</th><th class="sortable-th" data-prop-sort="ratio">비율</th>
-        <th>주요일정</th><th>담당자</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
+        <th>주요일정</th><th>담당자</th><th>권리분석</th><th>현장실사</th><th>등록일</th>
       `;
     const selectAll = headRow.querySelector('#propSelectAll');
     if (selectAll) {
@@ -455,6 +353,55 @@
     return String(bucketValue || '').startsWith('realtor_') ? 'realtor' : 'owner';
   }
 
+  function findFieldShell(el, attrName) {
+    if (!el || typeof el.closest !== 'function') return null;
+    return el.closest(`[${attrName}]`) || el.closest('.form-field, .field, .input-row, .modal-field, .aem-field, .ag-field') || el.parentElement;
+  }
+
+  function setFieldLabel(shell, fallbackText) {
+    if (!shell) return;
+    const labelEl = shell.querySelector('label, .label, .field-label, .input-label, .modal-label, .aem-label');
+    if (labelEl) labelEl.textContent = fallbackText;
+  }
+
+  function repositionPlainOpinionField(form, attrName, hideForPlain) {
+    if (!form) return;
+    const siteShell = findFieldShell(form.elements['siteInspection'], attrName);
+    const opinionShell = findFieldShell(form.elements['opinion'], attrName);
+    if (!opinionShell) return;
+    setFieldLabel(opinionShell, '담당자 의견');
+    if (!hideForPlain) return;
+    if (siteShell && opinionShell !== siteShell && siteShell.parentElement) {
+      siteShell.insertAdjacentElement('afterend', opinionShell);
+      const parent = siteShell.parentElement;
+      if (parent && parent.style) {
+        if (!parent.style.display) parent.style.display = 'grid';
+        if (!parent.style.gridTemplateColumns) parent.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+        if (!parent.style.gap) parent.style.gap = '12px';
+      }
+    }
+  }
+
+  function appendTaggedHistoryEntry(history, kind, text, user, options = {}) {
+    const body = String(text || '').trim();
+    if (!body) return Array.isArray(history) ? history : [];
+    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
+    const titleMap = {
+      opinion: '담당자 의견',
+      siteInspection: '현장실사',
+      dailyIssue: '금일이슈사항',
+    };
+    const entry = {
+      kind: String(kind || 'opinion').trim() || 'opinion',
+      title: String(options.title || titleMap[kind] || '담당자 의견').trim(),
+      at,
+      date: String(options.date || (typeof options.formatDate === 'function' ? options.formatDate(at) : String(at).slice(0, 10))).trim() || String(at).slice(0, 10),
+      text: body,
+      author: String(options.author || user?.name || user?.email || '').trim(),
+    };
+    return [...(Array.isArray(history) ? history : []), entry];
+  }
+
 
   function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
     const form = els.aemForm;
@@ -471,6 +418,7 @@
     });
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
     form.querySelectorAll('[data-aem-section="owner"]').forEach((node) => node.classList.toggle('hidden', !isGeneral));
+    repositionPlainOpinionField(form, 'data-aem-field', hideForPlain);
     const info = extractPropertyContactInfo(view, item);
     const ownerNameEl = form.elements['ownerNameDisplay'];
     const ownerPhoneEl = form.elements['ownerPhoneDisplay'];
@@ -577,9 +525,10 @@
   };
 
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
-    const { state, els, utils, rt } = ctx();
+    const { state, els, utils } = ctx();
     const filters = state?.propertyFilters || {};
-    const hasStrictLocalOverrides = !!(
+    const hasLocalOverrides = !!(
+      String(filters.activeCard || '').trim() ||
       String(filters.status || '').trim() ||
       String(filters.keyword || '').trim() ||
       String(filters.area || '').trim() ||
@@ -588,27 +537,15 @@
       String(state?.propertySort?.key || '').trim()
     );
     const overviewCounts = state?.propertyOverview?.filterCounts || null;
-    const hasFullDataset = Array.isArray(state?.propertiesFullCache) || Array.isArray(state?.homeSummarySnapshot);
-    if (!hasFullDataset && overviewCounts && !hasStrictLocalOverrides) {
-      const activeCard = String(filters.activeCard || '').trim();
-      const sourceCounts = overviewCounts.source || { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-      const baseCount = activeCard && activeCard !== 'all'
-        ? Number(sourceCounts[activeCard] || 0)
-        : Number(sourceCounts[''] || 0);
-      const fallbackAreaCounts = { '': baseCount, '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 };
-      const fallbackPriceCounts = { '': baseCount, '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 };
-      const fallbackRatioCounts = { '': baseCount, '50': 0 };
-      applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, fallbackAreaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, fallbackPriceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, fallbackRatioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+    if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
+      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
       if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
       if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
       if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
-      if (rt?.utils && typeof rt.utils.warmPropertyFullCacheForFilters === 'function') {
-        Promise.resolve(rt.utils.warmPropertyFullCacheForFilters()).catch(() => {});
-      }
       return;
     }
 
@@ -809,7 +746,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
     : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
   const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
-  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.activeCard);
+  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.sourceType);
 
   renderPropertiesTableHeader(usePlainLayout);
   if (!els.propertiesTableBody) return;
@@ -844,15 +781,13 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
     const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
-    const plain = getPlainPropertySnapshot(p);
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
     const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
-    const exclusiveText = plain.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(plain.exclusivearea)) : '-';
-    const commonText = plain.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(plain.commonarea)) : '-';
-    const siteText = plain.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(plain.sitearea)) : '-';
-    const useapprovalText = (utils.formatDate && utils.formatDate(plain.useapproval)) || '-';
-    const appraisalText = plain.appraisal != null ? utils.formatMoneyKRW(plain.appraisal) : '-';
+    const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
+    const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
+    const siteText = p.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.sitearea)) : '-';
+    const useapprovalText = (utils.formatDate && utils.formatDate(p.useapproval)) || '-';
     const scheduleHtml = typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-';
     const rightsHtml = renderDetailIndicator('rights', p.rightsAnalysis, utils);
     const inspectionHtml = renderDetailIndicator('inspection', p.siteInspection, utils);
@@ -869,9 +804,8 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${commonText}</td>
       <td>${siteText}</td>
       <td>${utils.escapeHtml(useapprovalText)}</td>
-      <td>${appraisalText}</td>
+      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
       <td>${assigneeText}</td>
-      <td class="indicator-cell">${rightsHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
       <td>${formatDateCell(utils, p.createdAt)}</td>
     `
@@ -883,7 +817,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
       <td>${exclusiveText}</td>
-      <td>${appraisalText}</td>
+      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
       <td>${utils.escapeHtml(currentPrice)}</td>
       <td>${utils.escapeHtml(rate)}</td>
       <td class="schedule-cell">${scheduleHtml}</td>
@@ -1096,7 +1030,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const readStr = (k) => String(fd.get(k) || '').trim();
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));
     const newOpinionText = readStr('opinion');
-    const opinionHistory = appendOpinionEntryLocal(utils.loadOpinionHistory(item), newOpinionText, state.session?.user);
+    let opinionHistory = utils.loadOpinionHistory(item);
     const sourceBucketValue = readStr('sourceType') || toEditSourceTypeValue(item, item.sourceType, item.submitterType);
     const submitterDisplayValue = readStr('submitterType') || deriveSubmitterDisplayType(item, item);
     const sourceTypeValue = toStoredSourceType(sourceBucketValue);
@@ -1132,11 +1066,22 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       realtorcell: readStr('realtorcell') || null,
       rightsAnalysis: readStr('rightsAnalysis') || null,
       siteInspection: readStr('siteInspection') || null,
-      opinion: opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null),
+      opinion: item.opinion || null,
       opinionHistory,
       latitude: readNum('latitude'),
       longitude: readNum('longitude'),
     };
+    const prevSiteInspection = String(item?.siteInspection || '').trim();
+    const nextSiteInspection = String(patch.siteInspection || '').trim();
+    if (nextSiteInspection && nextSiteInspection !== prevSiteInspection) {
+      opinionHistory = appendTaggedHistoryEntry(opinionHistory, 'siteInspection', nextSiteInspection, state.session?.user, { formatDate: utils.formatDate });
+    }
+    if (newOpinionText) {
+      opinionHistory = appendTaggedHistoryEntry(opinionHistory, 'opinion', newOpinionText, state.session?.user, { formatDate: utils.formatDate });
+    }
+    patch.opinionHistory = opinionHistory;
+    const latestOpinionEntry = opinionHistory.slice().reverse().find((entry) => !entry?.kind || entry.kind === 'opinion');
+    patch.opinion = latestOpinionEntry ? latestOpinionEntry.text : (item.opinion || null);
     if (hiddenStatusFields) {
       delete patch.status;
       delete patch.dateMain;
@@ -1162,6 +1107,52 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       delete patch.registeredByAdmin;
       delete patch.registeredByAgent;
     }
+
+    const mergedRawBase = utils.mergePropertyRaw(item, patch);
+    const currentAssigneeId = String(item?.assignedAgentId || item?.assigneeId || item?._raw?.assignee_id || item?._raw?.raw?.assignee_id || '').trim();
+    const nextAssigneeId = String(patch.assigneeId || '').trim();
+    const onlyAssigneeChange = isAdmin && nextAssigneeId !== currentAssigneeId && Object.keys(patch)
+      .filter((key) => key !== 'assigneeId' && key !== 'opinion' && key !== 'opinionHistory' && key !== 'raw' && key !== 'id' && key !== 'globalId')
+      .every((key) => {
+        const value = patch[key];
+        return value == null || value === '';
+      });
+    const regContext = typeof utils.buildRegisterLogContext === 'function'
+      ? utils.buildRegisterLogContext(onlyAssigneeChange ? '담당자 배정' : '물건 정보 수정', state.session?.user)
+      : { at: new Date().toISOString(), route: onlyAssigneeChange ? '담당자 배정' : '물건 정보 수정', actor: String(state.session?.user?.name || state.session?.user?.email || '').trim() };
+    if (typeof utils.buildRegistrationDbRowForExisting === 'function') {
+      const incomingRow = {
+        item_no: patch.itemNo,
+        source_type: patch.sourceType,
+        submitter_type: patch.submitterType,
+        address: patch.address,
+        asset_type: patch.assetType,
+        floor: patch.floor,
+        total_floor: patch.totalfloor,
+        common_area: patch.commonarea,
+        exclusive_area: patch.exclusivearea,
+        site_area: patch.sitearea,
+        use_approval: patch.useapproval,
+        status: patch.status,
+        price_main: patch.priceMain,
+        lowprice: patch.lowprice,
+        date_main: patch.dateMain,
+        broker_office_name: patch.realtorname,
+        submitter_phone: patch.realtorcell,
+        memo: patch.opinion,
+        latitude: patch.latitude,
+        longitude: patch.longitude,
+        assignee_id: patch.assigneeId,
+        assignee_name: patch.assigneeId ? (utils.getStaffNameById?.(patch.assigneeId) || '') : '',
+        raw: mergedRawBase,
+      };
+      const mergedReg = utils.buildRegistrationDbRowForExisting(item, incomingRow, regContext, { assignIfEmpty: true });
+      patch.opinionHistory = opinionHistory;
+      patch.raw = { ...(mergedReg?.row?.raw || mergedRawBase), opinionHistory: opinionHistory, opinion: patch.opinion, memo: patch.opinion };
+    } else {
+      patch.raw = { ...mergedRawBase, opinionHistory: opinionHistory, opinion: patch.opinion, memo: patch.opinion };
+    }
+
     const targetId = patch.id || patch.globalId;
     if (!targetId) {
       setAemMsg(els, '저장 실패: 물건 식별자(id)가 없습니다.');
@@ -1186,7 +1177,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
+    const payload = { ...patch, raw: patch.raw || utils.mergePropertyRaw(item, patch) };
 
     // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
     // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.

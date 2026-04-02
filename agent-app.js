@@ -216,14 +216,14 @@
         <th class="fav-col"></th>
         <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th>
         <th>층수</th><th>전용면적(평)</th><th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th>
-        <th>감정가(매각가)</th><th>진행상태</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
+        <th>감정가(매각가)</th><th>진행상태</th><th>현장실사</th><th>등록일</th>
       `
       : `
         <th class="fav-col"></th>
         <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th>
         <th>층수</th><th>전용면적(평)</th>
         <th>감정가(매각가)</th><th>현재가격</th><th>비율</th>
-        <th>주요일정</th><th>진행상태</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
+        <th>주요일정</th><th>진행상태</th><th>권리분석</th><th>현장실사</th><th>등록일</th>
       `;
   }
 
@@ -665,7 +665,7 @@
                 const kindClass = getPropertyKindClass(item?.sourceType || group.row?.property_source_type, kindTarget);
                 const title = buildDailyReportPropertyTitle(group);
                 const actions = [
-                  ["rights_analysis", "담당자 의견"],
+                  ["rights_analysis", "권리분석"],
                   ["site_inspection", "현장조사"],
                   ["daily_issue", "금일이슈사항"],
                   ["new_property", "신규물건등록"],
@@ -999,6 +999,8 @@
     useapproval: "사용승인일",
     status: "진행상태",
     priceMain: "매매가",
+    lowprice: "현재가격",
+    dateMain: "주요일정",
     sourceUrl: "원문링크",
     realtorName: "중개사무소명",
     realtorPhone: "유선전화",
@@ -1169,6 +1171,8 @@
       useapproval: firstText(raw.useapproval, raw.useApproval, ""),
       status: firstText(item?.status, raw.status, ""),
       priceMain: item?.priceMain ?? raw.priceMain ?? null,
+      lowprice: item?.lowprice ?? item?.currentPrice ?? raw.currentPrice ?? raw.lowprice ?? null,
+      dateMain: firstText(item?.dateMain, raw.dateMain, ""),
       sourceUrl: firstText(raw.sourceUrl, item?._raw?.source_url, ""),
       realtorName: firstText(raw.realtorName, raw.realtorname, item?._raw?.broker_office_name, ""),
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
@@ -1193,6 +1197,8 @@
       useapproval: firstText(row?.use_approval, raw.useapproval, raw.useApproval, ""),
       status: firstText(row?.status, raw.status, ""),
       priceMain: row?.price_main ?? raw.priceMain ?? null,
+      lowprice: row?.lowprice ?? row?.low_price ?? raw.currentPrice ?? raw.lowprice ?? null,
+      dateMain: firstText(row?.date_main, raw.dateMain, ""),
       sourceUrl: firstText(row?.source_url, raw.sourceUrl, ""),
       realtorName: firstText(row?.broker_office_name, raw.realtorName, raw.realtorname, ""),
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
@@ -1269,7 +1275,7 @@
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
     const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot);
     const nextRow = { ...base };
-    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo"].forEach((key) => {
+    ["address","asset_type","floor","total_floor","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","broker_office_name","submitter_name","submitter_phone","memo"].forEach((key) => {
       if (hasMeaningfulValue(incomingRow?.[key])) nextRow[key] = incomingRow[key];
     });
     if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
@@ -1556,7 +1562,7 @@
 
   function renderTable() {
     if (!els.agTableBody) return;
-    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.activeCard));
+    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.sourceType));
     updateFilterOptionCounts();
     const rows = getFilteredProps();
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
@@ -1592,9 +1598,8 @@ function renderRow(p) {
     general: "kind-general",
   };
   const kindClass = kindClassMap[bucket] || "kind-general";
-  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.activeCard);
-  const plain = getPlainPropertySnapshot(p);
-  const appraisal = plain.appraisal != null ? formatEok(plain.appraisal) : "-";
+  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.sourceType);
+  const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
   const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
   const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
   const statusLabel = normalizeStatus(p.status);
@@ -1605,9 +1610,9 @@ function renderRow(p) {
   const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
   const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
   const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
-  const commonText = plain.commonarea != null ? fmtArea(plain.commonarea) : "-";
-  const siteText = plain.sitearea != null ? fmtArea(plain.sitearea) : "-";
-  const useapprovalText = formatDate(plain.useapproval || "") || "-";
+  const commonText = p.commonarea != null ? fmtArea(p.commonarea) : "-";
+  const siteText = p.sitearea != null ? fmtArea(p.sitearea) : "-";
+  const useapprovalText = formatDate(p.useapproval || p._raw?.useapproval || p._raw?.use_approval || p._raw?.useApproval || "") || "-";
 
   const favTd = document.createElement("td");
   favTd.className = "fav-col";
@@ -1635,13 +1640,12 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (plain.exclusivearea != null ? fmtArea(plain.exclusivearea) : "-") + "</td>" +
+        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
         "<td>" + esc(commonText) + "</td>" +
         "<td>" + esc(siteText) + "</td>" +
         "<td>" + esc(useapprovalText) + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + esc(p.rightsAnalysis ? "✓" : "-") + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + esc(p.itemNo || "-") + "</td>" +
@@ -1649,7 +1653,7 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (plain.exclusivearea != null ? fmtArea(plain.exclusivearea) : "-") + "</td>" +
+        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(current) + "</td>" +
         "<td>" + esc(rate) + "</td>" +
@@ -1755,6 +1759,70 @@ function renderPagination(totalPages) {
     }
   }
 
+  function findAgentFieldShell(el) {
+    if (!el || typeof el.closest !== 'function') return null;
+    return el.closest('[data-ag-field]') || el.closest('.form-field, .field, .input-row, .modal-field, .ag-field') || el.parentElement;
+  }
+
+  function setAgentFieldLabel(shell, text) {
+    if (!shell) return;
+    const labelEl = shell.querySelector('label, .label, .field-label, .input-label, .modal-label, .ag-label');
+    if (labelEl) labelEl.textContent = text;
+  }
+
+  function repositionAgentPlainOpinionField(form, hideForPlain) {
+    if (!form) return;
+    const siteShell = findAgentFieldShell(form.elements['siteInspection']);
+    const opinionShell = findAgentFieldShell(form.elements['opinion']);
+    if (!opinionShell) return;
+    setAgentFieldLabel(opinionShell, '담당자 의견');
+    if (!hideForPlain) return;
+    if (siteShell && opinionShell !== siteShell && siteShell.parentElement) {
+      siteShell.insertAdjacentElement('afterend', opinionShell);
+      const parent = siteShell.parentElement;
+      if (parent && parent.style) {
+        if (!parent.style.display) parent.style.display = 'grid';
+        if (!parent.style.gridTemplateColumns) parent.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+        if (!parent.style.gap) parent.style.gap = '12px';
+      }
+    }
+  }
+
+  function buildPropertyHistoryEntry(kind, text, user, options = {}) {
+    const body = String(text || '').trim();
+    if (!body) return null;
+    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
+    const titleMap = {
+      opinion: '담당자 의견',
+      siteInspection: '현장실사',
+      dailyIssue: '금일이슈사항',
+    };
+    return {
+      kind: String(kind || 'opinion').trim() || 'opinion',
+      title: String(options.title || titleMap[kind] || '담당자 의견').trim(),
+      at,
+      date: String(options.date || formatDate(at) || String(at).slice(0, 10)).trim() || String(at).slice(0, 10),
+      text: body,
+      author: String(options.author || user?.name || user?.email || '').trim(),
+    };
+  }
+
+  function normalizePropertyHistoryEntry(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const text = String(entry.text || entry.note || '').trim();
+    if (!text) return null;
+    const kind = String(entry.kind || entry.type || 'opinion').trim() || 'opinion';
+    const date = String(entry.date || entry.at || '').trim();
+    return { ...entry, kind, title: String(entry.title || '').trim(), date, at: String(entry.at || date).trim(), text, author: String(entry.author || entry.actor || '').trim() };
+  }
+
+  function getPropertyHistoryMeta(entry) {
+    const kind = String(entry?.kind || 'opinion').trim();
+    if (kind === 'siteInspection') return { badgeClass: 'is-site', badgeLabel: '현장실사', title: '현장실사' };
+    if (kind === 'dailyIssue') return { badgeClass: 'is-edit', badgeLabel: '이슈Log', title: '금일이슈사항' };
+    return { badgeClass: 'is-opinion', badgeLabel: '이슈Log', title: '담당자 의견' };
+  }
+
   function applyAgentEditFormMode(item, view) {
     const form = els.agEditForm;
     if (!form) return;
@@ -1767,6 +1835,7 @@ function renderPagination(totalPages) {
     });
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
     form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
+    repositionAgentPlainOpinionField(form, hideForPlain);
     setVal(form, "brokerOfficeDisplay", view?.realtorName || "-");
     setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
     setVal(form, "brokerCellDisplay", view?.realtorCell || "-");
@@ -1833,7 +1902,7 @@ function renderPagination(totalPages) {
     const readStr = (name) => String((f.elements[name]?.value) || "").trim();
     const readNum = (name) => parseFlexibleNumber(f.elements[name]?.value);
     const newOpinionText = readStr("opinion");
-    const opinionHistory = appendOpinionEntry(loadOpinionHistory(item), newOpinionText, state.session?.user);
+    let opinionHistory = loadOpinionHistory(item);
 
     const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
@@ -1852,7 +1921,15 @@ function renderPagination(totalPages) {
     const currentPriceVal = readNum("currentPrice");
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
 
-    patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
+    const prevSiteInspectionText = String(prev.siteInspection || "").trim();
+    if (siteVal && siteVal !== prevSiteInspectionText) {
+      opinionHistory = [...opinionHistory, buildPropertyHistoryEntry('siteInspection', siteVal, state.session?.user)].filter(Boolean);
+    }
+    if (newOpinionText) {
+      opinionHistory = [...opinionHistory, buildPropertyHistoryEntry('opinion', newOpinionText, state.session?.user)].filter(Boolean);
+    }
+    const latestOpinionEntry = opinionHistory.slice().reverse().find((entry) => !entry?.kind || entry.kind === 'opinion');
+    patch.memo = latestOpinionEntry ? latestOpinionEntry.text : (item.opinion || null);
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -1915,6 +1992,8 @@ function renderPagination(totalPages) {
       maybeAssignInitialColumnValue(patch, "exclusive_area", exclusiveAreaVal, item?._raw?.exclusive_area);
       maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
       maybeAssignInitialColumnValue(patch, "price_main", priceMainVal, item?._raw?.price_main);
+      maybeAssignInitialColumnValue(patch, "lowprice", currentPriceVal, item?._raw?.lowprice ?? item?._raw?.low_price);
+      maybeAssignInitialColumnValue(patch, "status", hidePlainFields ? null : (readStr("status") || null), item?._raw?.status);
       maybeAssignInitialColumnValue(patch, "date_main", dateMainVal, item?._raw?.date_main);
 
       const workCategories = [];
@@ -1931,7 +2010,27 @@ function renderPagination(totalPages) {
         workCategories.push("dailyIssue");
         changedFields.dailyIssue = ["opinion"];
       }
-      patch.raw = newRaw;
+      const regContext = buildRegisterLogContext("담당자 수정", state.session?.user);
+      const mergedRegistration = buildRegistrationDbRowForExisting(item, {
+        item_no: item?.itemNo || item?._raw?.item_no || null,
+        source_type: normalizedSourceType || null,
+        submitter_type: normalizedSubmitterType || null,
+        address: readStr("address") || item?.address || null,
+        asset_type: readStr("assetType") || item?.assetType || null,
+        floor: floorVal,
+        total_floor: totalFloorVal,
+        common_area: commonAreaVal,
+        exclusive_area: exclusiveAreaVal,
+        site_area: siteAreaVal,
+        use_approval: useApprovalVal,
+        status: hidePlainFields ? null : (readStr("status") || null),
+        price_main: priceMainVal,
+        lowprice: currentPriceVal,
+        date_main: dateMainVal,
+        memo: patch.memo,
+        raw: newRaw,
+      }, regContext, { assignIfEmpty: false });
+      patch.raw = { ...(mergedRegistration?.row?.raw || newRaw), opinionHistory };
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
       const updatedRow = await updatePropertyRowResilient(sb, targetId, patch);
@@ -1974,38 +2073,6 @@ function renderPagination(totalPages) {
     }
   }
 
-  function parseFlexibleDateLocal(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return null;
-    const normalized = raw.replace(/\./g, '-').replace(/\//g, '-');
-    const datePart = normalized.match(/^(\d{4}-\d{1,2}-\d{1,2})/);
-    if (datePart) {
-      const [y, m, d] = datePart[1].split('-').map((v) => Number(v));
-      const dt = new Date(y, Math.max(0, m - 1), d);
-      return Number.isNaN(dt.getTime()) ? null : dt;
-    }
-    const dt = new Date(raw);
-    return Number.isNaN(dt.getTime()) ? null : new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
-  }
-
-  function computeDdayLabel(value) {
-    const target = parseFlexibleDateLocal(value);
-    if (!target) return '';
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
-    if (diff === 0) return 'D-Day';
-    if (diff > 0) return `D-${diff}`;
-    return `D+${Math.abs(diff)}`;
-  }
-
-  function formatScheduleCountdown(value) {
-    const dateText = formatDate(value || '') || '-';
-    const dday = computeDdayLabel(value);
-    if (!dday || dateText === '-') return dateText;
-    return `${dateText} (${dday})`;
-  }
-
   // ── Password Change ──
   function openPwdModal() {
     if (els.pwdModal) { els.pwdModal.classList.remove("hidden"); els.pwdModal.setAttribute("aria-hidden", "false"); }
@@ -2042,103 +2109,10 @@ function renderPagination(totalPages) {
     return `${text.slice(0, limit - 1)}…`;
   }
 
-  function getPropertyRawLayers(item) {
-    const row = item?._raw && typeof item._raw === "object" ? item._raw : {};
-    const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
-    const deepSources = [raw, row, item].filter((entry) => entry && typeof entry === "object");
-    return { row, raw, deepSources };
-  }
-
-  function pickFirstNumber(...values) {
-    for (const value of values) {
-      if (value == null || value === "") continue;
-      if (typeof value === "number" && Number.isFinite(value)) return value;
-      const numeric = Number(String(value).replace(/[^0-9.-]/g, ""));
-      if (Number.isFinite(numeric)) return numeric;
-    }
-    return null;
-  }
-
-
-  function pickNestedValue(source, candidates, { numeric = false, maxDepth = 3 } = {}) {
-    const keys = (Array.isArray(candidates) ? candidates : [candidates]).map((v) => String(v || '').trim()).filter(Boolean);
-    if (!source || typeof source !== 'object' || !keys.length) return numeric ? null : '';
-    const queue = [{ value: source, depth: 0 }];
-    const seen = new Set();
-    while (queue.length) {
-      const current = queue.shift();
-      const node = current?.value;
-      const depth = Number(current?.depth || 0);
-      if (!node || typeof node !== 'object') continue;
-      if (seen.has(node)) continue;
-      seen.add(node);
-      for (const key of keys) {
-        if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
-        const value = node[key];
-        if (numeric) {
-          const picked = pickFirstNumber(value);
-          if (picked != null) return picked;
-        } else {
-          const picked = firstText(value);
-          if (picked) return picked;
-        }
-      }
-      if (depth >= maxDepth) continue;
-      for (const value of Object.values(node)) {
-        if (value && typeof value === 'object') queue.push({ value, depth: depth + 1 });
-      }
-    }
-    return numeric ? null : '';
-  }
-
-  function getPlainPropertySnapshot(item) {
-    const { row, raw, deepSources } = getPropertyRawLayers(item);
-    const floor = firstText(
-      item?.floor, row.floor, row.floorText, raw.floor, raw.floorText,
-      row['층수'], row['층'], raw['층수'], raw['층'],
-      ...deepSources.map((source) => pickNestedValue(source, ['층수', '층', '해당층', '현재층', 'floor', 'floorText']))
-    );
-    const totalfloor = firstText(
-      item?.totalfloor, item?.total_floor, row.totalfloor, row.total_floor, row.totalFloor,
-      raw.totalfloor, raw.total_floor, raw.totalFloor,
-      row['총층'], row['총층수'], raw['총층'], raw['총층수'],
-      ...deepSources.map((source) => pickNestedValue(source, ['총층', '총층수', '전체층', '최고층', 'total_floor', 'totalfloor', 'totalFloor']))
-    );
-    const exclusivearea = pickFirstNumber(
-      item?.exclusivearea, row.exclusivearea, row.exclusive_area, raw.exclusivearea, raw.exclusiveArea,
-      row['전용면적'], row['전용면적(㎡)'], row['전용면적(평)'], raw['전용면적'], raw['전용면적(㎡)'], raw['전용면적(평)'],
-      ...deepSources.map((source) => pickNestedValue(source, ['전용면적', '전용면적(㎡)', '전용면적(평)', 'exclusive_area', 'exclusivearea', 'exclusiveArea'], { numeric: true }))
-    );
-    const commonarea = pickFirstNumber(
-      item?.commonarea, row.commonarea, row.common_area, raw.commonarea, raw.commonArea,
-      row['공용면적'], row['공용면적(㎡)'], row['공급면적'], row['공급면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)'], raw['공급면적'], raw['공급면적(㎡)'],
-      ...deepSources.map((source) => pickNestedValue(source, ['공용면적', '공용면적(㎡)', '공급면적', '공급면적(㎡)', 'common_area', 'commonarea', 'commonArea'], { numeric: true }))
-    );
-    const sitearea = pickFirstNumber(
-      item?.sitearea, row.sitearea, row.site_area, raw.sitearea, raw.siteArea,
-      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)'],
-      ...deepSources.map((source) => pickNestedValue(source, ['토지면적', '토지면적(㎡)', '대지면적', '대지면적(㎡)', 'site_area', 'sitearea', 'siteArea'], { numeric: true }))
-    );
-    const useapproval = firstText(
-      item?.useapproval, row.useapproval, row.use_approval, row.useApproval,
-      raw.useapproval, raw.use_approval, raw.useApproval,
-      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일'],
-      ...deepSources.map((source) => pickNestedValue(source, ['사용승인', '사용승인일', '승인일', '준공일', 'use_approval', 'useapproval', 'useApproval']))
-    );
-    const appraisal = pickFirstNumber(
-      item?.priceMain, row.priceMain, row.price_main, raw.priceMain, raw.price_main,
-      row.appraisalPrice, raw.appraisalPrice,
-      row['감정가'], row['감정가(매각가)'], row['매각가'], row['가격'], row['매매가'], raw['감정가'], raw['감정가(매각가)'], raw['매각가'], raw['가격'], raw['매매가'],
-      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price,
-      ...deepSources.map((source) => pickNestedValue(source, ['감정가', '감정가(매각가)', '매각가', '가격', '매매가', 'price_main', 'priceMain', 'appraisalPrice'], { numeric: true }))
-    );
-    return { floor, totalfloor, exclusivearea, commonarea, sitearea, useapproval, appraisal };
-  }
-
   function getFloorDisplayValue(item) {
-    const plain = getPlainPropertySnapshot(item);
-    const floor = plain.floor;
-    const total = plain.totalfloor;
+    const raw = item?._raw && typeof item._raw === "object" ? item._raw : {};
+    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? "").trim();
+    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? "").trim();
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
@@ -2527,17 +2501,18 @@ function renderPagination(totalPages) {
     const rows = [];
 
     opinions.forEach((entry, idx) => {
-      const text = String(entry?.text || "").trim();
-      if (!text) return;
-      const at = String(entry?.date || entry?.at || "").trim();
+      const normalized = normalizePropertyHistoryEntry(entry);
+      if (!normalized) return;
+      const meta = getPropertyHistoryMeta(normalized);
       rows.push({
-        kind: "opinion",
-        sortAt: toTimelineTimestamp(at),
-        at,
-        badgeClass: "is-opinion",
-        badgeLabel: "담당의견",
-        author: String(entry?.author || "").trim(),
-        text,
+        kind: normalized.kind || "opinion",
+        sortAt: toTimelineTimestamp(normalized.at || normalized.date || ""),
+        at: normalized.at || normalized.date || "",
+        badgeClass: meta.badgeClass,
+        badgeLabel: meta.badgeLabel,
+        author: normalized.author || "",
+        title: normalized.title || meta.title,
+        text: normalized.text,
         order: idx,
       });
     });
@@ -2553,7 +2528,7 @@ function renderPagination(totalPages) {
         sortAt: toTimelineTimestamp(at),
         at,
         badgeClass: "is-registration",
-        badgeLabel: "등록LOG",
+        badgeLabel: "물건Log",
         author: actor,
         title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
         route,
@@ -2582,8 +2557,9 @@ function renderPagination(totalPages) {
         entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : "",
       ].filter(Boolean).join("");
 
-      if (entry.kind === "opinion") {
-        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
+      if (entry.kind === "opinion" || entry.kind === "siteInspection" || entry.kind === "dailyIssue") {
+        const titleHtml = entry.title ? `<div class="agent-combined-log-text"><strong>${esc(entry.title)}</strong></div>` : "";
+        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
       }
 
       const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : "";
@@ -2620,25 +2596,26 @@ function renderPagination(totalPages) {
 
   // ── Opinion History 유틸 ──
   function loadOpinionHistory(item) {
-    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
+    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") {
+      const external = PropertyDomain.loadOpinionHistory(item);
+      if (Array.isArray(external) && external.length) return external.map((entry) => normalizePropertyHistoryEntry(entry)).filter(Boolean);
+    }
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
-    if (Array.isArray(hist)) return hist;
+    if (Array.isArray(hist) && hist.length) return hist.map((entry) => normalizePropertyHistoryEntry(entry)).filter(Boolean);
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
-      return [{ date: formatDate(item?.createdAt) || "unknown", text: legacy, author: "" }];
+      const entry = buildPropertyHistoryEntry('opinion', legacy, { name: '' }, { at: item?.createdAt || new Date().toISOString() });
+      return entry ? [entry] : [];
     }
     return [];
   }
 
   function appendOpinionEntry(history, newText, user) {
     if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
-    const text = String(newText || "").trim();
-    if (!text) return history;
-    const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    const author = String(user?.name || user?.email || "").trim();
-    return [...history, { date: today, text, author }];
+    const entry = buildPropertyHistoryEntry('opinion', newText, user);
+    if (!entry) return Array.isArray(history) ? history : [];
+    return [...(Array.isArray(history) ? history : []), entry];
   }
 
   function renderOpinionHistory(container, history, isAdmin) {
@@ -2648,16 +2625,17 @@ function renderPagination(totalPages) {
       return;
     }
     const reversed = [...history].reverse();
-    container.innerHTML = reversed.map((entry) =>
-      `<div class="history-item">
+    container.innerHTML = reversed.map((entry) => {
+      const meta = getPropertyHistoryMeta(entry);
+      return `<div class="history-item">
         <div class="history-meta">
+          <span class="agent-combined-log-badge ${esc(meta.badgeClass)}">${esc(entry.title || meta.title)}</span>
           <span class="history-date">${esc(entry.date || "")}</span>
           ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
         </div>
         <div class="history-text">${esc(entry.text || "")}</div>
-      </div>`
-    ).join("");
-    // isAdmin=false → 편집 버튼 없음 (담당자 읽기 전용)
+      </div>`;
+    }).join("");
   }
 
   function debounce(fn, ms) {
@@ -2677,7 +2655,7 @@ function renderPagination(totalPages) {
 
   function getDailyActionMeta(actionType) {
     const key = String(actionType || "").trim();
-    if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "담당자 의견", title: "담당자 의견" };
+    if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
     if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장조사", title: "현장조사" };
     if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일 이슈사항" };
     if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
@@ -2813,7 +2791,7 @@ function renderPagination(totalPages) {
     if (statsEl) {
       statsEl.innerHTML = `
         <article class="workmgmt-stat-card is-brand"><div class="workmgmt-stat-label">총 업무</div><div class="workmgmt-stat-value">${Number(total || 0)}</div></article>
-        <article class="workmgmt-stat-card is-soft"><div class="workmgmt-stat-label">담당자 의견</div><div class="workmgmt-stat-value">${Number(counts.rightsAnalysis || 0)}</div></article>
+        <article class="workmgmt-stat-card is-soft"><div class="workmgmt-stat-label">권리분석</div><div class="workmgmt-stat-value">${Number(counts.rightsAnalysis || 0)}</div></article>
         <article class="workmgmt-stat-card is-warm"><div class="workmgmt-stat-label">현장조사</div><div class="workmgmt-stat-value">${Number(counts.siteInspection || 0)}</div></article>
         <article class="workmgmt-stat-card is-danger"><div class="workmgmt-stat-label">신규등록</div><div class="workmgmt-stat-value">${Number(counts.newProperty || 0)}</div></article>`;
     }

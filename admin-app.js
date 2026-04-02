@@ -188,7 +188,6 @@
 
   const els = {};
   const loadingState = { activeKeys: new Set(), messages: new Map() };
-  let propertyLoadSeq = 0;
 
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
 
@@ -233,7 +232,6 @@
         loadProperties,
         ensureAuxiliaryPropertiesForAdmin,
         getAuxiliaryPropertiesSnapshot,
-        warmPropertyFullCacheForFilters,
         buildRegisterLogContext,
         getFilteredProperties,
         getPagedProperties,
@@ -820,29 +818,22 @@ function bindEvents() {
     });
   }
 
-  let propertyFilterWarmPromise = null;
   async function warmPropertyFullCacheForFilters() {
     if (normalizeRole(state.session?.user?.role) !== "admin") return;
     if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
       if (state.activeTab === "properties") renderPropertiesTable();
       return;
     }
-    if (propertyFilterWarmPromise) return propertyFilterWarmPromise;
     if (!isSupabaseMode()) return;
     const sb = K.initSupabase();
     if (!sb) return;
-    propertyFilterWarmPromise = (async () => {
-      const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
-      const currentSession = synced || state.session || loadSession() || null;
-      if (currentSession) state.session = currentSession;
-      const user = currentSession?.user || null;
-      const uid = String(user?.id || "").trim();
-      await ensureFullPropertiesCache(sb, { isAdmin: true, uid, forceRefresh: false });
-      if (state.activeTab === "properties") renderPropertiesTable();
-    })().finally(() => {
-      propertyFilterWarmPromise = null;
-    });
-    return propertyFilterWarmPromise;
+    const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
+    const currentSession = synced || state.session || loadSession() || null;
+    if (currentSession) state.session = currentSession;
+    const user = currentSession?.user || null;
+    const uid = String(user?.id || "").trim();
+    await ensureFullPropertiesCache(sb, { isAdmin: true, uid, forceRefresh: false });
+    if (state.activeTab === "properties") renderPropertiesTable();
   }
 
   function renderSessionUI() {
@@ -916,7 +907,7 @@ function bindEvents() {
     "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
     "memo", "latitude", "longitude", "date_uploaded", "created_at",
-    "geocode_status", "geocoded_at", "raw"
+    "geocode_status", "geocoded_at"
   ].join(",");
 
   const PROPERTY_HOME_SUMMARY_SELECT = [
@@ -965,30 +956,6 @@ function bindEvents() {
       activeCard: String(f.activeCard || '').trim(),
       status: String(f.status || '').trim(),
     };
-  }
-
-  function filterFetchedPropertiesByServerFilters(rows, filters = {}) {
-    const list = Array.isArray(rows) ? rows : [];
-    const activeCard = String(filters?.activeCard || '').trim();
-    const status = String(filters?.status || '').trim();
-    return list.filter((row) => {
-      if (activeCard && activeCard !== 'all') {
-        if (PropertyDomain && typeof PropertyDomain.matchesSourceBucket === 'function') {
-          if (!PropertyDomain.matchesSourceBucket(row, activeCard)) return false;
-        } else if (activeCard === 'realtor_naver') {
-          if (row?.sourceType !== 'realtor' || !!row?.isDirectSubmission) return false;
-        } else if (activeCard === 'realtor_direct') {
-          if (row?.sourceType !== 'realtor' || !row?.isDirectSubmission) return false;
-        } else if (row?.sourceType !== activeCard) {
-          return false;
-        }
-      }
-      if (status) {
-        const rowStatus = String(row?.status || '').trim();
-        if (!rowStatus || !rowStatus.includes(status)) return false;
-      }
-      return true;
-    });
   }
 
   function shouldUseFullPropertyDataset() {
@@ -1418,7 +1385,6 @@ function bindEvents() {
     let overview = null;
     try {
       const res = await api(path, { auth: true });
-    if (isStale()) return;
       overview = normalizeOverviewPayload(res);
     } catch (err) {
       console.warn('server overview request failed', err);
@@ -1478,8 +1444,6 @@ function bindEvents() {
   }
 
   async function loadProperties(options = {}) {
-    const requestSeq = ++propertyLoadSeq;
-    const isStale = () => requestSeq !== propertyLoadSeq;
     const refreshSummary = options.refreshSummary !== false;
     const forceFull = !!options.forceFull;
     const forceRefreshFull = !!options.forceRefreshFull;
@@ -1494,7 +1458,6 @@ function bindEvents() {
 
       if (sb) {
       const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
-      if (isStale()) return;
       const currentSession = synced || loadSession() || state.session || null;
       if (currentSession) state.session = currentSession;
 
@@ -1522,8 +1485,6 @@ function bindEvents() {
 
       if (state.activeTab === 'home' && !needsFull && isAdmin) {
         const overview = await overviewPromise;
-      if (isStale()) return;
-        if (isStale()) return;
         if (overview?.summary) {
           state.propertyOverview = overview;
           state.propertySummary = overview.summary;
@@ -1538,21 +1499,17 @@ function bindEvents() {
 
       if (needsFull) {
         const data = await ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: forceRefreshFull });
-        if (isStale()) return;
-        state.properties = filterFetchedPropertiesByServerFilters(Array.isArray(data) ? data.slice() : [], getServerBackedPropertyFilters());
+        state.properties = Array.isArray(data) ? data.slice() : [];
         state.propertyMode = 'full';
         state.propertyTotalCount = state.properties.length;
       } else {
         let pageData = await fetchPropertiesPageLight(sb, state.propertyPage, state.propertyPageSize, { isAdmin, uid });
-        if (isStale()) return;
         const maxPage = Math.max(1, Math.ceil(Number(pageData?.total || 0) / state.propertyPageSize));
         if (state.propertyPage > maxPage) {
           state.propertyPage = maxPage;
           pageData = await fetchPropertiesPageLight(sb, state.propertyPage, state.propertyPageSize, { isAdmin, uid });
-          if (isStale()) return;
         }
-        const normalizedPageItems = Array.isArray(pageData?.items) ? pageData.items.map(normalizeProperty) : [];
-        state.properties = filterFetchedPropertiesByServerFilters(normalizedPageItems, getServerBackedPropertyFilters());
+        state.properties = Array.isArray(pageData?.items) ? pageData.items.map(normalizeProperty) : [];
         state.propertyMode = 'page';
         state.propertyTotalCount = Number(pageData?.total || 0);
       }
@@ -1569,9 +1526,6 @@ function bindEvents() {
       hydrateAssignedAgentNames();
       renderPropertiesTable();
       renderSummary();
-      if (state.activeTab === 'properties' && isAdmin && !Array.isArray(state.propertiesFullCache)) {
-        void warmPropertyFullCacheForFilters().catch((err) => console.warn('property filter warm cache failed', err));
-      }
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
       if (state.activeTab === 'home') renderSummary();
       return;
@@ -1591,7 +1545,7 @@ function bindEvents() {
     updateGeocodeStatusBar();
     if (state.activeTab === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
     } finally {
-      if (!isStale()) setAdminLoading("properties", false);
+      setAdminLoading("properties", false);
     }
   }
 
@@ -1785,6 +1739,7 @@ function bindEvents() {
     realtorPhone: "유선전화",
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
+    assigneeName: "담당자",
     memo: "메모/의견",
     latitude: "위도",
     longitude: "경도",
@@ -1967,6 +1922,7 @@ function bindEvents() {
       realtorPhone: firstText(item?.realtorphone, raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(item?.realtorcell, raw.realtorCell, raw.realtorcell, item?._raw?.submitter_phone, item?._raw?.submitterPhone, ""),
       submitterName: firstText(raw.registeredByName, item?._raw?.registeredByName, item?._raw?.submitter_name, item?._raw?.submitterName, raw.submitterName, raw.submitter_name, ""),
+      assigneeName: firstText(item?.assignedAgentName, item?.assigneeName, item?._raw?.assignee_name, raw.assigneeName, raw.assignedAgentName, raw.assignee_name, ""),
       memo: firstText(item?.memo, item?.opinion, raw.memo, raw.opinion, ""),
       latitude: item?.latitude ?? raw.latitude ?? null,
       longitude: item?.longitude ?? raw.longitude ?? null,
@@ -1994,6 +1950,7 @@ function bindEvents() {
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(row?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
       submitterName: firstText(raw.registeredByName, row?.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      assigneeName: firstText(row?.assignee_name, row?.assigneeName, raw.assigneeName, raw.assignedAgentName, raw.assignee_name, ""),
       memo: firstText(row?.memo, raw.memo, raw.opinion, ""),
       latitude: row?.latitude ?? raw.latitude ?? null,
       longitude: row?.longitude ?? raw.longitude ?? null,
@@ -2075,13 +2032,23 @@ function bindEvents() {
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
     const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot);
     const nextRow = { ...base };
-    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","source_url","broker_office_name","submitter_name","submitter_phone","memo","latitude","longitude","floor","total_floor"].forEach((key) => {
+    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","source_url","broker_office_name","submitter_name","submitter_phone","memo","latitude","longitude","floor","total_floor","assignee_id","assignee_name"].forEach((key) => {
       if (hasMeaningfulValue(incomingRow?.[key])) nextRow[key] = incomingRow[key];
     });
     if (!hasMeaningfulValue(nextRow.item_no) && hasMeaningfulValue(incomingRow?.item_no)) nextRow.item_no = incomingRow.item_no;
     if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) nextRow.source_type = incomingRow.source_type;
-    if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
+    if (hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
+    else if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
     const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
+    if (hasMeaningfulValue(incomingRow?.assignee_id)) {
+      mergedRaw.assigneeId = incomingRow.assignee_id;
+      mergedRaw.assignee_id = incomingRow.assignee_id;
+    }
+    if (hasMeaningfulValue(incomingRow?.assignee_name)) {
+      mergedRaw.assigneeName = incomingRow.assignee_name;
+      mergedRaw.assignedAgentName = incomingRow.assignee_name;
+      mergedRaw.assignee_name = incomingRow.assignee_name;
+    }
     nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergedRaw, context, changes), nextSnapshot);
     return { row: nextRow, changes };
   }
@@ -2135,27 +2102,66 @@ function bindEvents() {
   // ---------------------------
   // Opinion History 유틸
   // ---------------------------
+  function normalizeOpinionHistoryEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const text = String(entry.text || entry.note || "").trim();
+    if (!text) return null;
+    const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
+    const title = String(entry.title || entry.label || "").trim();
+    const date = String(entry.date || entry.at || "").trim();
+    const author = String(entry.author || entry.actor || "").trim();
+    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author };
+  }
+
+  function buildOpinionHistoryEntry(kind, text, user, options = {}) {
+    const body = String(text || "").trim();
+    if (!body) return null;
+    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
+    const fallbackDate = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    })();
+    const author = String(options.author || user?.name || user?.email || "").trim();
+    const titleMap = {
+      opinion: "담당자 의견",
+      siteInspection: "현장실사",
+      dailyIssue: "금일이슈사항",
+    };
+    return {
+      kind: String(kind || "opinion").trim() || "opinion",
+      title: String(options.title || titleMap[kind] || "담당자 의견").trim(),
+      date: String(options.date || formatDate(at) || fallbackDate).trim() || fallbackDate,
+      at,
+      text: body,
+      author,
+    };
+  }
+
   function loadOpinionHistory(item) {
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
-    if (Array.isArray(hist)) return hist;
-    // 기존 opinion 텍스트가 있으면 히스토리 첫 항목으로 변환
+    if (Array.isArray(hist) && hist.length) {
+      return hist.map((entry) => normalizeOpinionHistoryEntry(entry)).filter(Boolean);
+    }
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
-      return [{ date: formatDate(item?.createdAt) || "unknown", text: legacy, author: "" }];
+      const entry = buildOpinionHistoryEntry("opinion", legacy, { name: "" }, { at: item?.createdAt || raw.firstRegisteredAt || new Date().toISOString() });
+      return entry ? [entry] : [];
     }
     return [];
   }
 
-  function appendOpinionEntry(history, newText, user) {
-    const text = String(newText || "").trim();
-    if (!text) return history; // 빈 텍스트면 추가하지 않음
-    const today = (() => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    })();
-    const author = String(user?.name || user?.email || "").trim();
-    return [...history, { date: today, text, author }];
+  function appendOpinionEntry(history, newText, user, options = {}) {
+    const entry = buildOpinionHistoryEntry(options.kind || "opinion", newText, user, options);
+    if (!entry) return Array.isArray(history) ? history : [];
+    return [...(Array.isArray(history) ? history : []), entry];
+  }
+
+  function getOpinionHistoryMeta(entry) {
+    const kind = String(entry?.kind || "opinion").trim();
+    if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
+    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일이슈사항" };
+    return { badgeClass: "is-opinion", badgeLabel: "담당자 의견", title: "담당자 의견" };
   }
 
   function renderOpinionHistory(container, history, isAdmin) {
@@ -2164,10 +2170,12 @@ function bindEvents() {
       container.innerHTML = '<div class="history-empty">등록된 의견이 없습니다.</div>';
       return;
     }
-    const reversed = [...history].reverse(); // 최신 순
+    const reversed = [...history].reverse();
     container.innerHTML = reversed.map((entry, idx) => {
-      const realIdx = history.length - 1 - idx; // 원본 배열 index
-      const adminControls = isAdmin
+      const realIdx = history.length - 1 - idx;
+      const meta = getOpinionHistoryMeta(entry);
+      const isEditable = (!entry?.kind || entry.kind === 'opinion') && isAdmin;
+      const adminControls = isEditable
         ? `<div class="history-actions">
             <button type="button" class="history-edit-btn" data-idx="${realIdx}" title="수정">✎</button>
             <button type="button" class="history-del-btn" data-idx="${realIdx}" title="삭제">✕</button>
@@ -2175,24 +2183,24 @@ function bindEvents() {
         : "";
       return `<div class="history-item" data-idx="${realIdx}">
         <div class="history-meta">
+          <span class="reglog-badge ${esc(meta.badgeClass)}">${esc(entry.title || meta.badgeLabel)}</span>
           <span class="history-date">${esc(entry.date || "")}</span>
           ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
           ${adminControls}
         </div>
         <div class="history-text" id="historyText_${realIdx}">${esc(entry.text || "")}</div>
-        <div class="history-edit-area hidden" id="historyEdit_${realIdx}">
+        ${isEditable ? `<div class="history-edit-area hidden" id="historyEdit_${realIdx}">
           <textarea class="input history-edit-textarea" rows="3">${esc(entry.text || "")}</textarea>
           <div class="history-edit-btns">
             <button type="button" class="btn btn-primary btn-sm history-save-btn" data-idx="${realIdx}">저장</button>
             <button type="button" class="btn btn-ghost btn-sm history-cancel-btn" data-idx="${realIdx}">취소</button>
           </div>
-        </div>
+        </div>` : ""}
       </div>`;
     }).join("");
 
     if (!isAdmin) return;
 
-    // 편집 버튼 이벤트 (관리자만)
     container.querySelectorAll(".history-edit-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const idx = Number(btn.dataset.idx);
@@ -2218,7 +2226,6 @@ function bindEvents() {
         const hist = loadOpinionHistory(item);
         hist[idx] = { ...hist[idx], text: newText };
         await patchOpinionHistory(item, hist);
-        // 로컬 상태 갱신
         if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
         renderOpinionHistory(container, hist, true);
       });
@@ -2242,7 +2249,8 @@ function bindEvents() {
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (!sb) throw new Error("Supabase 연동 필요");
     const targetId = item.id || item.globalId;
-    const latestOpinion = history.length ? history[history.length - 1].text : null;
+    const latestOpinionEntry = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => !entry?.kind || entry.kind === 'opinion');
+    const latestOpinion = latestOpinionEntry ? latestOpinionEntry.text : null;
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
     const nextRaw = { ...currentRaw, opinionHistory: history, opinion: latestOpinion, memo: latestOpinion };
     if (!DataAccess || typeof DataAccess.updatePropertyMemoRaw !== "function") {
