@@ -2042,6 +2042,55 @@ function renderPagination(totalPages) {
     return floor || total || "";
   }
 
+  function parseFlexibleDateLocal(value) {
+    if (value == null) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const normalized = raw
+      .replace(/\./g, '-')
+      .replace(/년\s*/g, '-')
+      .replace(/월\s*/g, '-')
+      .replace(/일/g, '')
+      .replace(/\//g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const ymd = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\D.*)?$/);
+    if (ymd) {
+      const y = Number(ymd[1]);
+      const m = Number(ymd[2]);
+      const d = Number(ymd[3]);
+      const parsed = new Date(y, m - 1, d);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function computeDdayLabel(value) {
+    const target = parseFlexibleDateLocal(value);
+    if (!target) return '';
+
+    const today = new Date();
+    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const point = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+    const diffDays = Math.round((point.getTime() - base.getTime()) / 86400000);
+
+    if (diffDays === 0) return 'D-Day';
+    if (diffDays > 0) return `D-${diffDays}`;
+    return `D+${Math.abs(diffDays)}`;
+  }
+
+  function formatScheduleCountdown(value) {
+    const dateText = formatDate(value);
+    const dday = computeDdayLabel(value);
+    if (dateText && dday) return `${dateText} (${dday})`;
+    return dateText || dday || '-';
+  }
+
   function firstText(...args) {
     if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...args);
     for (const v of args) {
