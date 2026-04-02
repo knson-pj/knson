@@ -57,7 +57,8 @@
   function getPropertyRawLayers(item) {
     const row = item?._raw && typeof item._raw === 'object' ? item._raw : {};
     const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
-    return { row, raw };
+    const deepSources = [raw, row, item].filter((entry) => entry && typeof entry === 'object');
+    return { row, raw, deepSources };
   }
 
   function pickFirstText(...values) {
@@ -79,39 +80,78 @@
     return null;
   }
 
+
+  function pickNestedValue(source, candidates, { numeric = false, maxDepth = 3 } = {}) {
+    const keys = (Array.isArray(candidates) ? candidates : [candidates]).map((v) => String(v || '').trim()).filter(Boolean);
+    if (!source || typeof source !== 'object' || !keys.length) return numeric ? null : '';
+    const queue = [{ value: source, depth: 0 }];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      const node = current?.value;
+      const depth = Number(current?.depth || 0);
+      if (!node || typeof node !== 'object') continue;
+      if (seen.has(node)) continue;
+      seen.add(node);
+      for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+        const value = node[key];
+        if (numeric) {
+          const picked = pickFirstNumber(value);
+          if (picked != null) return picked;
+        } else {
+          const picked = pickFirstText(value);
+          if (picked) return picked;
+        }
+      }
+      if (depth >= maxDepth) continue;
+      for (const value of Object.values(node)) {
+        if (value && typeof value === 'object') queue.push({ value, depth: depth + 1 });
+      }
+    }
+    return numeric ? null : '';
+  }
+
   function getPlainPropertySnapshot(item) {
-    const { row, raw } = getPropertyRawLayers(item);
+    const { row, raw, deepSources } = getPropertyRawLayers(item);
     const floor = pickFirstText(
       item?.floor, row.floor, row.floorText, raw.floor, raw.floorText,
-      row['층수'], row['층'], raw['층수'], raw['층']
+      row['층수'], row['층'], raw['층수'], raw['층'],
+      ...deepSources.map((source) => pickNestedValue(source, ['층수', '층', '해당층', '현재층', 'floor', 'floorText']))
     );
     const totalfloor = pickFirstText(
       item?.totalfloor, item?.total_floor, row.totalfloor, row.total_floor, row.totalFloor,
       raw.totalfloor, raw.total_floor, raw.totalFloor,
-      row['총층'], row['총층수'], raw['총층'], raw['총층수']
+      row['총층'], row['총층수'], raw['총층'], raw['총층수'],
+      ...deepSources.map((source) => pickNestedValue(source, ['총층', '총층수', '전체층', '최고층', 'total_floor', 'totalfloor', 'totalFloor']))
     );
     const exclusivearea = pickFirstNumber(
       item?.exclusivearea, row.exclusivearea, row.exclusive_area, raw.exclusivearea, raw.exclusiveArea,
-      row['전용면적'], row['전용면적(㎡)'], raw['전용면적'], raw['전용면적(㎡)']
+      row['전용면적'], row['전용면적(㎡)'], row['전용면적(평)'], raw['전용면적'], raw['전용면적(㎡)'], raw['전용면적(평)'],
+      ...deepSources.map((source) => pickNestedValue(source, ['전용면적', '전용면적(㎡)', '전용면적(평)', 'exclusive_area', 'exclusivearea', 'exclusiveArea'], { numeric: true }))
     );
     const commonarea = pickFirstNumber(
       item?.commonarea, row.commonarea, row.common_area, raw.commonarea, raw.commonArea,
-      row['공용면적'], row['공용면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)']
+      row['공용면적'], row['공용면적(㎡)'], row['공급면적'], row['공급면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)'], raw['공급면적'], raw['공급면적(㎡)'],
+      ...deepSources.map((source) => pickNestedValue(source, ['공용면적', '공용면적(㎡)', '공급면적', '공급면적(㎡)', 'common_area', 'commonarea', 'commonArea'], { numeric: true }))
     );
     const sitearea = pickFirstNumber(
       item?.sitearea, row.sitearea, row.site_area, raw.sitearea, raw.siteArea,
-      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)']
+      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)'],
+      ...deepSources.map((source) => pickNestedValue(source, ['토지면적', '토지면적(㎡)', '대지면적', '대지면적(㎡)', 'site_area', 'sitearea', 'siteArea'], { numeric: true }))
     );
     const useapproval = pickFirstText(
       item?.useapproval, row.useapproval, row.use_approval, row.useApproval,
       raw.useapproval, raw.use_approval, raw.useApproval,
-      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일']
+      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일'],
+      ...deepSources.map((source) => pickNestedValue(source, ['사용승인', '사용승인일', '승인일', '준공일', 'use_approval', 'useapproval', 'useApproval']))
     );
     const appraisal = pickFirstNumber(
       item?.priceMain, row.priceMain, row.price_main, raw.priceMain, raw.price_main,
       row.appraisalPrice, raw.appraisalPrice,
-      row['감정가'], row['매각가'], row['가격'], raw['감정가'], raw['매각가'], raw['가격'],
-      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price
+      row['감정가'], row['감정가(매각가)'], row['매각가'], row['가격'], row['매매가'], raw['감정가'], raw['감정가(매각가)'], raw['매각가'], raw['가격'], raw['매매가'],
+      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price,
+      ...deepSources.map((source) => pickNestedValue(source, ['감정가', '감정가(매각가)', '매각가', '가격', '매매가', 'price_main', 'priceMain', 'appraisalPrice'], { numeric: true }))
     );
     return { floor, totalfloor, exclusivearea, commonarea, sitearea, useapproval, appraisal };
   }
@@ -537,10 +577,9 @@
   };
 
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
-    const { state, els, utils } = ctx();
+    const { state, els, utils, rt } = ctx();
     const filters = state?.propertyFilters || {};
-    const hasLocalOverrides = !!(
-      String(filters.activeCard || '').trim() ||
+    const hasStrictLocalOverrides = !!(
       String(filters.status || '').trim() ||
       String(filters.keyword || '').trim() ||
       String(filters.area || '').trim() ||
@@ -549,15 +588,27 @@
       String(state?.propertySort?.key || '').trim()
     );
     const overviewCounts = state?.propertyOverview?.filterCounts || null;
-    if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
-      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+    const hasFullDataset = Array.isArray(state?.propertiesFullCache) || Array.isArray(state?.homeSummarySnapshot);
+    if (!hasFullDataset && overviewCounts && !hasStrictLocalOverrides) {
+      const activeCard = String(filters.activeCard || '').trim();
+      const sourceCounts = overviewCounts.source || { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+      const baseCount = activeCard && activeCard !== 'all'
+        ? Number(sourceCounts[activeCard] || 0)
+        : Number(sourceCounts[''] || 0);
+      const fallbackAreaCounts = { '': baseCount, '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 };
+      const fallbackPriceCounts = { '': baseCount, '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 };
+      const fallbackRatioCounts = { '': baseCount, '50': 0 };
+      applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, fallbackAreaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, fallbackPriceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, fallbackRatioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
       if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
       if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
       if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
+      if (rt?.utils && typeof rt.utils.warmPropertyFullCacheForFilters === 'function') {
+        Promise.resolve(rt.utils.warmPropertyFullCacheForFilters()).catch(() => {});
+      }
       return;
     }
 

@@ -233,6 +233,7 @@
         loadProperties,
         ensureAuxiliaryPropertiesForAdmin,
         getAuxiliaryPropertiesSnapshot,
+        warmPropertyFullCacheForFilters,
         buildRegisterLogContext,
         getFilteredProperties,
         getPagedProperties,
@@ -819,22 +820,29 @@ function bindEvents() {
     });
   }
 
+  let propertyFilterWarmPromise = null;
   async function warmPropertyFullCacheForFilters() {
     if (normalizeRole(state.session?.user?.role) !== "admin") return;
     if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
       if (state.activeTab === "properties") renderPropertiesTable();
       return;
     }
+    if (propertyFilterWarmPromise) return propertyFilterWarmPromise;
     if (!isSupabaseMode()) return;
     const sb = K.initSupabase();
     if (!sb) return;
-    const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
-    const currentSession = synced || state.session || loadSession() || null;
-    if (currentSession) state.session = currentSession;
-    const user = currentSession?.user || null;
-    const uid = String(user?.id || "").trim();
-    await ensureFullPropertiesCache(sb, { isAdmin: true, uid, forceRefresh: false });
-    if (state.activeTab === "properties") renderPropertiesTable();
+    propertyFilterWarmPromise = (async () => {
+      const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
+      const currentSession = synced || state.session || loadSession() || null;
+      if (currentSession) state.session = currentSession;
+      const user = currentSession?.user || null;
+      const uid = String(user?.id || "").trim();
+      await ensureFullPropertiesCache(sb, { isAdmin: true, uid, forceRefresh: false });
+      if (state.activeTab === "properties") renderPropertiesTable();
+    })().finally(() => {
+      propertyFilterWarmPromise = null;
+    });
+    return propertyFilterWarmPromise;
   }
 
   function renderSessionUI() {
@@ -908,7 +916,7 @@ function bindEvents() {
     "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
     "memo", "latitude", "longitude", "date_uploaded", "created_at",
-    "geocode_status", "geocoded_at"
+    "geocode_status", "geocoded_at", "raw"
   ].join(",");
 
   const PROPERTY_HOME_SUMMARY_SELECT = [
@@ -1561,6 +1569,9 @@ function bindEvents() {
       hydrateAssignedAgentNames();
       renderPropertiesTable();
       renderSummary();
+      if (state.activeTab === 'properties' && isAdmin && !Array.isArray(state.propertiesFullCache)) {
+        void warmPropertyFullCacheForFilters().catch((err) => console.warn('property filter warm cache failed', err));
+      }
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
       if (state.activeTab === 'home') renderSummary();
       return;

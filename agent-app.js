@@ -1556,7 +1556,7 @@
 
   function renderTable() {
     if (!els.agTableBody) return;
-    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.sourceType));
+    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.activeCard));
     updateFilterOptionCounts();
     const rows = getFilteredProps();
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
@@ -1973,6 +1973,38 @@ function renderPagination(totalPages) {
     }
   }
 
+  function parseFlexibleDateLocal(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const normalized = raw.replace(/\./g, '-').replace(/\//g, '-');
+    const datePart = normalized.match(/^(\d{4}-\d{1,2}-\d{1,2})/);
+    if (datePart) {
+      const [y, m, d] = datePart[1].split('-').map((v) => Number(v));
+      const dt = new Date(y, Math.max(0, m - 1), d);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    const dt = new Date(raw);
+    return Number.isNaN(dt.getTime()) ? null : new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  }
+
+  function computeDdayLabel(value) {
+    const target = parseFlexibleDateLocal(value);
+    if (!target) return '';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+    if (diff === 0) return 'D-Day';
+    if (diff > 0) return `D-${diff}`;
+    return `D+${Math.abs(diff)}`;
+  }
+
+  function formatScheduleCountdown(value) {
+    const dateText = formatDate(value || '') || '-';
+    const dday = computeDdayLabel(value);
+    if (!dday || dateText === '-') return dateText;
+    return `${dateText} (${dday})`;
+  }
+
   // ── Password Change ──
   function openPwdModal() {
     if (els.pwdModal) { els.pwdModal.classList.remove("hidden"); els.pwdModal.setAttribute("aria-hidden", "false"); }
@@ -2012,7 +2044,8 @@ function renderPagination(totalPages) {
   function getPropertyRawLayers(item) {
     const row = item?._raw && typeof item._raw === "object" ? item._raw : {};
     const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
-    return { row, raw };
+    const deepSources = [raw, row, item].filter((entry) => entry && typeof entry === "object");
+    return { row, raw, deepSources };
   }
 
   function pickFirstNumber(...values) {
@@ -2025,39 +2058,78 @@ function renderPagination(totalPages) {
     return null;
   }
 
+
+  function pickNestedValue(source, candidates, { numeric = false, maxDepth = 3 } = {}) {
+    const keys = (Array.isArray(candidates) ? candidates : [candidates]).map((v) => String(v || '').trim()).filter(Boolean);
+    if (!source || typeof source !== 'object' || !keys.length) return numeric ? null : '';
+    const queue = [{ value: source, depth: 0 }];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      const node = current?.value;
+      const depth = Number(current?.depth || 0);
+      if (!node || typeof node !== 'object') continue;
+      if (seen.has(node)) continue;
+      seen.add(node);
+      for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+        const value = node[key];
+        if (numeric) {
+          const picked = pickFirstNumber(value);
+          if (picked != null) return picked;
+        } else {
+          const picked = firstText(value);
+          if (picked) return picked;
+        }
+      }
+      if (depth >= maxDepth) continue;
+      for (const value of Object.values(node)) {
+        if (value && typeof value === 'object') queue.push({ value, depth: depth + 1 });
+      }
+    }
+    return numeric ? null : '';
+  }
+
   function getPlainPropertySnapshot(item) {
-    const { row, raw } = getPropertyRawLayers(item);
+    const { row, raw, deepSources } = getPropertyRawLayers(item);
     const floor = firstText(
       item?.floor, row.floor, row.floorText, raw.floor, raw.floorText,
-      row['층수'], row['층'], raw['층수'], raw['층']
+      row['층수'], row['층'], raw['층수'], raw['층'],
+      ...deepSources.map((source) => pickNestedValue(source, ['층수', '층', '해당층', '현재층', 'floor', 'floorText']))
     );
     const totalfloor = firstText(
       item?.totalfloor, item?.total_floor, row.totalfloor, row.total_floor, row.totalFloor,
       raw.totalfloor, raw.total_floor, raw.totalFloor,
-      row['총층'], row['총층수'], raw['총층'], raw['총층수']
+      row['총층'], row['총층수'], raw['총층'], raw['총층수'],
+      ...deepSources.map((source) => pickNestedValue(source, ['총층', '총층수', '전체층', '최고층', 'total_floor', 'totalfloor', 'totalFloor']))
     );
     const exclusivearea = pickFirstNumber(
       item?.exclusivearea, row.exclusivearea, row.exclusive_area, raw.exclusivearea, raw.exclusiveArea,
-      row['전용면적'], row['전용면적(㎡)'], raw['전용면적'], raw['전용면적(㎡)']
+      row['전용면적'], row['전용면적(㎡)'], row['전용면적(평)'], raw['전용면적'], raw['전용면적(㎡)'], raw['전용면적(평)'],
+      ...deepSources.map((source) => pickNestedValue(source, ['전용면적', '전용면적(㎡)', '전용면적(평)', 'exclusive_area', 'exclusivearea', 'exclusiveArea'], { numeric: true }))
     );
     const commonarea = pickFirstNumber(
       item?.commonarea, row.commonarea, row.common_area, raw.commonarea, raw.commonArea,
-      row['공용면적'], row['공용면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)']
+      row['공용면적'], row['공용면적(㎡)'], row['공급면적'], row['공급면적(㎡)'], raw['공용면적'], raw['공용면적(㎡)'], raw['공급면적'], raw['공급면적(㎡)'],
+      ...deepSources.map((source) => pickNestedValue(source, ['공용면적', '공용면적(㎡)', '공급면적', '공급면적(㎡)', 'common_area', 'commonarea', 'commonArea'], { numeric: true }))
     );
     const sitearea = pickFirstNumber(
       item?.sitearea, row.sitearea, row.site_area, raw.sitearea, raw.siteArea,
-      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)']
+      row['토지면적'], row['토지면적(㎡)'], raw['토지면적'], raw['토지면적(㎡)'],
+      ...deepSources.map((source) => pickNestedValue(source, ['토지면적', '토지면적(㎡)', '대지면적', '대지면적(㎡)', 'site_area', 'sitearea', 'siteArea'], { numeric: true }))
     );
     const useapproval = firstText(
       item?.useapproval, row.useapproval, row.use_approval, row.useApproval,
       raw.useapproval, raw.use_approval, raw.useApproval,
-      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일']
+      row['사용승인'], row['사용승인일'], raw['사용승인'], raw['사용승인일'],
+      ...deepSources.map((source) => pickNestedValue(source, ['사용승인', '사용승인일', '승인일', '준공일', 'use_approval', 'useapproval', 'useApproval']))
     );
     const appraisal = pickFirstNumber(
       item?.priceMain, row.priceMain, row.price_main, raw.priceMain, raw.price_main,
       row.appraisalPrice, raw.appraisalPrice,
-      row['감정가'], row['매각가'], row['가격'], raw['감정가'], raw['매각가'], raw['가격'],
-      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price
+      row['감정가'], row['감정가(매각가)'], row['매각가'], row['가격'], row['매매가'], raw['감정가'], raw['감정가(매각가)'], raw['매각가'], raw['가격'], raw['매매가'],
+      item?.lowprice, row.lowprice, row.low_price, raw.lowprice, raw.low_price,
+      ...deepSources.map((source) => pickNestedValue(source, ['감정가', '감정가(매각가)', '매각가', '가격', '매매가', 'price_main', 'priceMain', 'appraisalPrice'], { numeric: true }))
     );
     return { floor, totalfloor, exclusivearea, commonarea, sitearea, useapproval, appraisal };
   }
