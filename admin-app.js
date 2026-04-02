@@ -286,6 +286,7 @@
         saveSession,
         goLoginPage,
         setModalOpen,
+        warmPropertyFullCacheForFilters,
       },
     };
     return window.KNSN_ADMIN_RUNTIME;

@@ -53,11 +53,63 @@
     if (limit <= 1) return text.slice(0, limit);
     return `${text.slice(0, limit - 1)}…`;
   }
+  function getPropertyDataLayers(item) {
+    const direct = item && typeof item === 'object' ? item : {};
+    const raw = direct._raw && typeof direct._raw === 'object' ? direct._raw : {};
+    const nested = raw.raw && typeof raw.raw === 'object' ? raw.raw : {};
+    const plainRaw = direct.raw && typeof direct.raw === 'object' ? direct.raw : {};
+    return [direct, raw, nested, plainRaw];
+  }
+
+  function pickFirstTextByKeys(item, keys) {
+    const list = Array.isArray(keys) ? keys : [keys];
+    for (const layer of getPropertyDataLayers(item)) {
+      for (const key of list) {
+        const value = layer?.[key];
+        if (value == null) continue;
+        const text = String(value).trim();
+        if (text) return text;
+      }
+    }
+    return '';
+  }
+
+  function pickFirstNumberByKeys(item, keys) {
+    const list = Array.isArray(keys) ? keys : [keys];
+    for (const layer of getPropertyDataLayers(item)) {
+      for (const key of list) {
+        const value = layer?.[key];
+        if (value == null || value === '') continue;
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        const num = Number(String(value).replace(/[^0-9.-]/g, ''));
+        if (Number.isFinite(num)) return num;
+      }
+    }
+    return null;
+  }
+
+  function formatAreaDisplay(utils, value, fallback = '-') {
+    if (value == null || value === '') return fallback;
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0 && typeof utils?.formatAreaPyeong === 'function') {
+      return utils.escapeHtml(utils.formatAreaPyeong(num));
+    }
+    return utils.escapeHtml(String(value).trim() || fallback);
+  }
+
+  function formatMoneyDisplay(utils, value, fallback = '-') {
+    if (value == null || value === '') return fallback;
+    const num = Number(String(value).replace(/[^0-9.-]/g, ''));
+    if (Number.isFinite(num) && num > 0 && typeof utils?.formatMoneyKRW === 'function') {
+      return utils.formatMoneyKRW(num);
+    }
+    return utils.escapeHtml(String(value).trim() || fallback);
+  }
+
 
   function getFloorDisplayValue(item) {
-    const raw = item?._raw && typeof item._raw === 'object' ? item._raw : {};
-    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? '').trim();
-    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? '').trim();
+    const floor = pickFirstTextByKeys(item, ['floor', 'floorText', '층수', '층', '해당층']);
+    const total = pickFirstTextByKeys(item, ['totalfloor', 'total_floor', 'totalFloor', '총층', '총층수']);
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
@@ -358,20 +410,54 @@
     return el.closest(`[${attrName}]`) || el.closest('.form-field, .field, .input-row, .modal-field, .aem-field, .ag-field') || el.parentElement;
   }
 
-  function setFieldLabel(shell, fallbackText) {
+  function setFieldLabel(shell, fallbackText, inputEl) {
     if (!shell) return;
-    const labelEl = shell.querySelector('label, .label, .field-label, .input-label, .modal-label, .aem-label');
-    if (labelEl) labelEl.textContent = fallbackText;
+    const doc = shell.ownerDocument || document;
+    const labelSelectors = 'label, .label, .field-label, .input-label, .modal-label, .aem-label';
+    const applyText = (node) => { if (node) node.textContent = fallbackText; };
+    applyText(shell.querySelector(labelSelectors));
+    if (inputEl?.id) {
+      try { applyText(doc.querySelector(`label[for="${inputEl.id}"]`)); } catch {}
+    }
+    if (shell.previousElementSibling && shell.previousElementSibling.matches?.('label')) applyText(shell.previousElementSibling);
+  }
+
+  function ensureAdminOpinionField(form, attrName) {
+    if (!form) return null;
+    let field = form.elements['opinion'];
+    if (field) return field;
+    const siteShell = findFieldShell(form.elements['siteInspection'], attrName);
+    const host = siteShell?.parentElement || form;
+    const shell = document.createElement('div');
+    shell.className = 'aem-field form-field';
+    shell.setAttribute(attrName, 'opinion');
+    const label = document.createElement('label');
+    label.textContent = '담당자 의견';
+    label.htmlFor = 'aemOpinion';
+    const textarea = document.createElement('textarea');
+    textarea.name = 'opinion';
+    textarea.id = 'aemOpinion';
+    textarea.rows = 3;
+    textarea.placeholder = '담당자 의견을 입력하세요';
+    shell.appendChild(label);
+    shell.appendChild(textarea);
+    if (siteShell && siteShell.parentElement) siteShell.insertAdjacentElement('afterend', shell);
+    else host.appendChild(shell);
+    return textarea;
   }
 
   function repositionPlainOpinionField(form, attrName, hideForPlain) {
     if (!form) return;
     const siteShell = findFieldShell(form.elements['siteInspection'], attrName);
-    const rightsShell = findFieldShell(form.elements['rightsAnalysis'], attrName);
-    if (rightsShell) setFieldLabel(rightsShell, '담당자 의견');
-    const opinionShell = findFieldShell(form.elements['opinion'], attrName);
-    if (opinionShell) setFieldLabel(opinionShell, '담당자 의견');
+    const rightsEl = form.elements['rightsAnalysis'];
+    const rightsShell = findFieldShell(rightsEl, attrName);
+    if (rightsShell) setFieldLabel(rightsShell, '담당자 의견', rightsEl);
+    let opinionEl = form.elements['opinion'];
+    if (hideForPlain && !opinionEl) opinionEl = ensureAdminOpinionField(form, attrName);
+    const opinionShell = findFieldShell(opinionEl, attrName);
+    if (opinionShell) setFieldLabel(opinionShell, '담당자 의견', opinionEl);
     if (!opinionShell) return;
+    opinionShell.classList.toggle('hidden', !hideForPlain);
     if (!hideForPlain) return;
     if (siteShell && opinionShell !== siteShell && siteShell.parentElement) {
       siteShell.insertAdjacentElement('afterend', opinionShell);
@@ -415,9 +501,11 @@
     const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
     const isGeneral = bucket === 'general' || normalizedSource === 'general';
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="rightsAnalysis"], [data-aem-field="currentPrice"]').forEach((node) => {
+    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="currentPrice"]').forEach((node) => {
       node.classList.toggle('hidden', hideForPlain);
     });
+    const rightsShell = findFieldShell(form.elements['rightsAnalysis'], 'data-aem-field');
+    if (rightsShell) rightsShell.classList.remove('hidden');
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
     form.querySelectorAll('[data-aem-section="owner"]').forEach((node) => node.classList.toggle('hidden', !isGeneral));
     repositionPlainOpinionField(form, 'data-aem-field', hideForPlain);
@@ -529,21 +617,31 @@
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
     const { state, els, utils } = ctx();
     const filters = state?.propertyFilters || {};
-    const hasLocalOverrides = !!(
-      String(filters.activeCard || '').trim() ||
-      String(filters.status || '').trim() ||
+    const overviewCounts = state?.propertyOverview?.filterCounts || null;
+    const hasLocalOnlyOverrides = !!(
       String(filters.keyword || '').trim() ||
       String(filters.area || '').trim() ||
       String(filters.priceRange || '').trim() ||
       String(filters.ratio50 || '').trim() ||
+      String(filters.status || '').trim() ||
       String(state?.propertySort?.key || '').trim()
     );
-    const overviewCounts = state?.propertyOverview?.filterCounts || null;
-    if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
-      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+
+    const noFullCache = !Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot);
+    if (noFullCache && overviewCounts && !hasLocalOnlyOverrides) {
+      const sourceCounts = overviewCounts.source && typeof overviewCounts.source === 'object' ? overviewCounts.source : { '': Number(state?.propertyTotalCount || 0) || 0 };
+      const selectedKey = String(filters.activeCard || '').trim();
+      const selectedTotal = Number(sourceCounts[selectedKey || ''] ?? sourceCounts[''] ?? state?.propertyTotalCount ?? 0) || 0;
+      const areaCounts = overviewCounts.area && typeof overviewCounts.area === 'object' ? { ...overviewCounts.area } : { '': selectedTotal };
+      const priceCounts = overviewCounts.price && typeof overviewCounts.price === 'object' ? { ...overviewCounts.price } : { '': selectedTotal };
+      const ratioCounts = overviewCounts.ratio && typeof overviewCounts.ratio === 'object' ? { ...overviewCounts.ratio } : { '': selectedTotal, '50': 0 };
+      areaCounts[''] = selectedTotal;
+      priceCounts[''] = selectedTotal;
+      ratioCounts[''] = selectedTotal;
+      applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, areaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, priceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
       if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
       if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
@@ -756,6 +854,8 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   els.propertiesTableBody.innerHTML = '';
 
   mod.updatePropertyFilterOptionCounts();
+  const warmFilters = utils?.warmPropertyFullCacheForFilters;
+  if (!Array.isArray(state?.propertiesFullCache) && typeof warmFilters === 'function') { Promise.resolve().then(() => warmFilters()).catch(() => {}); }
 
   if (!rows.length) {
     if (els.propertiesEmpty) els.propertiesEmpty.classList.remove('hidden');
@@ -781,15 +881,20 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
     const kindClass = listView?.kindClass || (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general');
     const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
+    const priceMainValue = p.priceMain ?? pickFirstNumberByKeys(p, ['priceMain', 'price_main', '매매가', '매매금액', '거래가', 'price', '감정가', '감정가(매각가)']);
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
-    const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
+    const rate = utils.formatPercent(priceMainValue, currentPriceValue, p._raw || {});
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
     const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
-    const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
-    const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
-    const siteText = p.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.sitearea)) : '-';
-    const useapprovalText = (utils.formatDate && utils.formatDate(p.useapproval)) || '-';
+    const exclusiveValue = p.exclusivearea ?? pickFirstNumberByKeys(p, ['exclusivearea', 'exclusive_area', 'exclusiveArea', '전용면적', '전용면적(평)']) ?? pickFirstTextByKeys(p, ['전용면적', '전용면적(평)']);
+    const commonValue = p.commonarea ?? pickFirstNumberByKeys(p, ['commonarea', 'common_area', 'commonArea', '공용면적', '공용면적(평)']) ?? pickFirstTextByKeys(p, ['공용면적', '공용면적(평)']);
+    const siteValue = p.sitearea ?? pickFirstNumberByKeys(p, ['sitearea', 'site_area', 'siteArea', '토지면적', '토지면적(평)']) ?? pickFirstTextByKeys(p, ['토지면적', '토지면적(평)']);
+    const exclusiveText = formatAreaDisplay(utils, exclusiveValue);
+    const commonText = formatAreaDisplay(utils, commonValue);
+    const siteText = formatAreaDisplay(utils, siteValue);
+    const useapprovalRaw = pickFirstTextByKeys(p, ['useapproval', 'use_approval', 'useApproval', '사용승인', '사용승인일', '승인일']);
+    const useapprovalText = (utils.formatDate && utils.formatDate(useapprovalRaw)) || useapprovalRaw || '-';
     const scheduleHtml = typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-';
     const rightsTextSource = String(p.opinion || p.rightsAnalysis || '').trim();
     const rightsHtml = renderDetailIndicator('rights', rightsTextSource, utils);
@@ -807,7 +912,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${commonText}</td>
       <td>${siteText}</td>
       <td>${utils.escapeHtml(useapprovalText)}</td>
-      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
+      <td>${formatMoneyDisplay(utils, priceMainValue)}</td>
       <td>${assigneeText}</td>
       <td class="indicator-cell">${rightsHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
@@ -821,7 +926,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
       <td>${exclusiveText}</td>
-      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
+      <td>${formatMoneyDisplay(utils, priceMainValue)}</td>
       <td>${utils.escapeHtml(currentPrice)}</td>
       <td>${utils.escapeHtml(rate)}</td>
       <td class="schedule-cell">${scheduleHtml}</td>
@@ -941,6 +1046,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
 
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
+    setVal('opinion', view.opinion ?? '');
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);

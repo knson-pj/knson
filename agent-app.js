@@ -1599,22 +1599,27 @@ function renderRow(p) {
   };
   const kindClass = kindClassMap[bucket] || "kind-general";
   const usePlainLayout = isPlainSourceFilterSelected(state.filters?.activeCard);
-  const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
+  const priceMainValue = p.priceMain ?? pickFirstNumberByKeys(p, ['priceMain', 'price_main', '매매가', '매매금액', '거래가', 'price', '감정가', '감정가(매각가)']);
+  const appraisal = priceMainValue != null ? formatEok(priceMainValue) : "-";
   const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
-  const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
+  const rate = !usePlainLayout ? calcRate(priceMainValue, p.lowprice) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
   const addressText = truncateDisplayText(p.address || "-", 40) || "-";
   const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
-  const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
+  const scheduleText = !usePlainLayout ? ((typeof formatScheduleCountdown === 'function' ? formatScheduleCountdown(p.dateMain) : (formatDate(p.dateMain) || '-'))) : "";
   const opinionMark = (usePlainLayout ? String(p.opinion || p.rightsAnalysis || '').trim() : String(p.rightsAnalysis || p.opinion || '').trim()) ? '✓' : '';
   const rightsText = !usePlainLayout ? opinionMark : '';
   const plainOpinionText = usePlainLayout ? opinionMark : '';
   const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
-  const commonText = p.commonarea != null ? fmtArea(p.commonarea) : "-";
-  const siteText = p.sitearea != null ? fmtArea(p.sitearea) : "-";
-  const useapprovalText = formatDate(p.useapproval || p._raw?.useapproval || p._raw?.use_approval || p._raw?.useApproval || "") || "-";
+  const exclusiveValue = p.exclusivearea ?? pickFirstNumberByKeys(p, ['exclusivearea', 'exclusive_area', 'exclusiveArea', '전용면적', '전용면적(평)']) ?? pickFirstTextByKeys(p, ['전용면적', '전용면적(평)']);
+  const commonValue = p.commonarea ?? pickFirstNumberByKeys(p, ['commonarea', 'common_area', 'commonArea', '공용면적', '공용면적(평)']) ?? pickFirstTextByKeys(p, ['공용면적', '공용면적(평)']);
+  const siteValue = p.sitearea ?? pickFirstNumberByKeys(p, ['sitearea', 'site_area', 'siteArea', '토지면적', '토지면적(평)']) ?? pickFirstTextByKeys(p, ['토지면적', '토지면적(평)']);
+  const commonText = commonValue != null && commonValue !== '' ? (Number.isFinite(Number(commonValue)) ? fmtArea(Number(commonValue)) : String(commonValue)) : "-";
+  const siteText = siteValue != null && siteValue !== '' ? (Number.isFinite(Number(siteValue)) ? fmtArea(Number(siteValue)) : String(siteValue)) : "-";
+  const useapprovalRaw = pickFirstTextByKeys(p, ['useapproval', 'use_approval', 'useApproval', '사용승인', '사용승인일', '승인일']);
+  const useapprovalText = formatDate(useapprovalRaw || "") || useapprovalRaw || "-";
 
   const favTd = document.createElement("td");
   favTd.className = "fav-col";
@@ -1642,7 +1647,7 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
+        "<td>" + (exclusiveValue != null && exclusiveValue !== "" ? (Number.isFinite(Number(exclusiveValue)) ? fmtArea(Number(exclusiveValue)) : esc(String(exclusiveValue))) : "-") + "</td>" +
         "<td>" + esc(commonText) + "</td>" +
         "<td>" + esc(siteText) + "</td>" +
         "<td>" + esc(useapprovalText) + "</td>" +
@@ -1656,7 +1661,7 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
+        "<td>" + (exclusiveValue != null && exclusiveValue !== "" ? (Number.isFinite(Number(exclusiveValue)) ? fmtArea(Number(exclusiveValue)) : esc(String(exclusiveValue))) : "-") + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(current) + "</td>" +
         "<td>" + esc(rate) + "</td>" +
@@ -1767,20 +1772,54 @@ function renderPagination(totalPages) {
     return el.closest('[data-ag-field]') || el.closest('.form-field, .field, .input-row, .modal-field, .ag-field') || el.parentElement;
   }
 
-  function setAgentFieldLabel(shell, text) {
+  function setAgentFieldLabel(shell, text, inputEl) {
     if (!shell) return;
-    const labelEl = shell.querySelector('label, .label, .field-label, .input-label, .modal-label, .ag-label');
-    if (labelEl) labelEl.textContent = text;
+    const doc = shell.ownerDocument || document;
+    const selectors = 'label, .label, .field-label, .input-label, .modal-label, .ag-label';
+    const applyText = (node) => { if (node) node.textContent = text; };
+    applyText(shell.querySelector(selectors));
+    if (inputEl?.id) {
+      try { applyText(doc.querySelector(`label[for="${inputEl.id}"]`)); } catch {}
+    }
+    if (shell.previousElementSibling && shell.previousElementSibling.matches?.('label')) applyText(shell.previousElementSibling);
+  }
+
+  function ensureAgentOpinionField(form) {
+    if (!form) return null;
+    let field = form.elements['opinion'];
+    if (field) return field;
+    const siteShell = findAgentFieldShell(form.elements['siteInspection']);
+    const host = siteShell?.parentElement || form;
+    const shell = document.createElement('div');
+    shell.className = 'ag-field form-field';
+    shell.setAttribute('data-ag-field', 'opinion');
+    const label = document.createElement('label');
+    label.textContent = '담당자 의견';
+    label.htmlFor = 'agOpinion';
+    const textarea = document.createElement('textarea');
+    textarea.name = 'opinion';
+    textarea.id = 'agOpinion';
+    textarea.rows = 3;
+    textarea.placeholder = '담당자 의견을 입력하세요';
+    shell.appendChild(label);
+    shell.appendChild(textarea);
+    if (siteShell && siteShell.parentElement) siteShell.insertAdjacentElement('afterend', shell);
+    else host.appendChild(shell);
+    return textarea;
   }
 
   function repositionAgentPlainOpinionField(form, hideForPlain) {
     if (!form) return;
     const siteShell = findAgentFieldShell(form.elements['siteInspection']);
-    const rightsShell = findAgentFieldShell(form.elements['rightsAnalysis']);
-    if (rightsShell) setAgentFieldLabel(rightsShell, '담당자 의견');
-    const opinionShell = findAgentFieldShell(form.elements['opinion']);
-    if (opinionShell) setAgentFieldLabel(opinionShell, '담당자 의견');
+    const rightsEl = form.elements['rightsAnalysis'];
+    const rightsShell = findAgentFieldShell(rightsEl);
+    if (rightsShell) setAgentFieldLabel(rightsShell, '담당자 의견', rightsEl);
+    let opinionEl = form.elements['opinion'];
+    if (hideForPlain && !opinionEl) opinionEl = ensureAgentOpinionField(form);
+    const opinionShell = findAgentFieldShell(opinionEl);
+    if (opinionShell) setAgentFieldLabel(opinionShell, '담당자 의견', opinionEl);
     if (!opinionShell) return;
+    opinionShell.classList.toggle('hidden', !hideForPlain);
     if (!hideForPlain) return;
     if (siteShell && opinionShell !== siteShell && siteShell.parentElement) {
       siteShell.insertAdjacentElement('afterend', opinionShell);
@@ -1835,9 +1874,11 @@ function renderPagination(totalPages) {
     const isRealtor = bucket === "realtor_naver" || bucket === "realtor_direct" || String(item?.sourceType || "").trim() === "realtor";
     const isGeneral = bucket === "general" || String(item?.sourceType || "").trim() === "general";
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="rightsAnalysis"], [data-ag-field="currentPrice"]').forEach((node) => {
+    form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="currentPrice"]').forEach((node) => {
       node.classList.toggle("hidden", hideForPlain);
     });
+    const rightsShell = findAgentFieldShell(form.elements['rightsAnalysis']);
+    if (rightsShell) rightsShell.classList.remove('hidden');
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
     form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
     repositionAgentPlainOpinionField(form, hideForPlain);
@@ -1887,6 +1928,7 @@ function renderPagination(totalPages) {
     setAgentEditMsg('', true);
     renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
     applyAgentEditFormMode(item, view);
+    setVal(f, "opinion", view.opinion || "");
     setAgentEditSection("basic");
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
@@ -2114,10 +2156,44 @@ function renderPagination(totalPages) {
     return `${text.slice(0, limit - 1)}…`;
   }
 
+  function getPropertyDataLayers(item) {
+    const direct = item && typeof item === "object" ? item : {};
+    const raw = direct._raw && typeof direct._raw === "object" ? direct._raw : {};
+    const nested = raw.raw && typeof raw.raw === "object" ? raw.raw : {};
+    const plainRaw = direct.raw && typeof direct.raw === "object" ? direct.raw : {};
+    return [direct, raw, nested, plainRaw];
+  }
+
+  function pickFirstTextByKeys(item, keys) {
+    const list = Array.isArray(keys) ? keys : [keys];
+    for (const layer of getPropertyDataLayers(item)) {
+      for (const key of list) {
+        const value = layer?.[key];
+        if (value == null) continue;
+        const text = String(value).trim();
+        if (text) return text;
+      }
+    }
+    return "";
+  }
+
+  function pickFirstNumberByKeys(item, keys) {
+    const list = Array.isArray(keys) ? keys : [keys];
+    for (const layer of getPropertyDataLayers(item)) {
+      for (const key of list) {
+        const value = layer?.[key];
+        if (value == null || value === "") continue;
+        if (typeof value === "number" && Number.isFinite(value)) return value;
+        const num = Number(String(value).replace(/[^0-9.-]/g, ""));
+        if (Number.isFinite(num)) return num;
+      }
+    }
+    return null;
+  }
+
   function getFloorDisplayValue(item) {
-    const raw = item?._raw && typeof item._raw === "object" ? item._raw : {};
-    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? "").trim();
-    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? "").trim();
+    const floor = pickFirstTextByKeys(item, ['floor', 'floorText', '층수', '층', '해당층']);
+    const total = pickFirstTextByKeys(item, ['totalfloor', 'total_floor', 'totalFloor', '총층', '총층수']);
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
