@@ -205,6 +205,19 @@
     return `${label} (${Number(count || 0).toLocaleString('ko-KR')})`;
   }
 
+  function buildSelectCountsFromOverview(optionDefs, countsSource, defaultCount, allowDetailedCounts = true) {
+    const out = {};
+    (Array.isArray(optionDefs) ? optionDefs : []).forEach((optionDef, index) => {
+      const key = String(optionDef?.value ?? '');
+      if (!key && index === 0) out[key] = Number(defaultCount || 0);
+      else if (allowDetailedCounts) out[key] = Number(countsSource?.[key] || 0);
+      else out[key] = 0;
+    });
+    if (!Object.prototype.hasOwnProperty.call(out, '')) out[''] = Number(defaultCount || 0);
+    else out[''] = Number(defaultCount || 0);
+    return out;
+  }
+
   function applySelectOptionCounts(selectEl, options, counts, formatter) {
     if (!selectEl) return;
     const countMap = counts || {};
@@ -489,19 +502,26 @@
     const overviewCounts = state?.propertyOverview?.filterCounts || null;
 
     if (!hasPrefetchedFullDataset && !hasKeywordAreaPriceRatioOverride && !hasStatusOverride && overviewCounts) {
-      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (!String(filters.activeCard || '').trim()) {
-        if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-        if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-        if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      const activeCard = String(filters.activeCard || '').trim();
+      const sourceOverviewCounts = overviewCounts.source && typeof overviewCounts.source === 'object' ? overviewCounts.source : null;
+      const sourceBaseCount = activeCard
+        ? Number(sourceOverviewCounts?.[activeCard] || 0)
+        : Number(sourceOverviewCounts?.[''] || 0);
+      if (sourceOverviewCounts) {
+        applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceOverviewCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       }
+      const allowDetailedRangeCounts = !activeCard;
+      const areaCounts = buildSelectCountsFromOverview(AREA_FILTER_OPTIONS, overviewCounts.area, sourceBaseCount, allowDetailedRangeCounts);
+      const priceCounts = buildSelectCountsFromOverview(PRICE_FILTER_OPTIONS, overviewCounts.price, sourceBaseCount, allowDetailedRangeCounts);
+      const ratioCounts = buildSelectCountsFromOverview(RATIO_FILTER_OPTIONS, overviewCounts.ratio, sourceBaseCount, allowDetailedRangeCounts);
+      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, areaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, priceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
-      if (!String(filters.activeCard || '').trim()) {
-        if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
-        if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
-        if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
-        return;
-      }
+      if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
+      if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
+      if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
+      return;
     }
 
     const sourceRows = mod.getFilteredProperties({ ignoreKeys: ['activeCard'] });

@@ -672,6 +672,9 @@ function bindEvents() {
           if (key === "properties" && (prevTab !== "properties" || !Array.isArray(state.properties) || !state.properties.length || state.propertyMode !== "page")) {
             loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
           }
+          if (key === "properties") {
+            warmPropertyFullCacheForFilters().catch((err) => console.warn('property filter cache warm failed', err));
+          }
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
           if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { renderAssignmentTable(); }).catch((e)=>handleAsyncError(e,"지역 데이터 로드 실패"));
           if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
@@ -731,11 +734,30 @@ function bindEvents() {
       state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
-    if (els.propKeyword) els.propKeyword.addEventListener("input", debounce((e) => {
-      state.propertyFilters.keyword = String(e.target.value || "").toLowerCase();
+    const applyPropertyKeywordFilter = (rawValue) => {
+      const nextKeyword = String(rawValue || "").trim().toLowerCase();
+      if (state.propertyFilters.keyword === nextKeyword) return;
+      state.propertyFilters.keyword = nextKeyword;
       state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
-    }, 150));
+    };
+    if (els.propKeyword) {
+      els.propKeyword.addEventListener("input", (e) => {
+        const nextValue = String(e.target.value || "");
+        if (!nextValue.trim()) applyPropertyKeywordFilter("");
+      });
+      els.propKeyword.addEventListener("change", (e) => {
+        applyPropertyKeywordFilter(e.target.value || "");
+      });
+      els.propKeyword.addEventListener("blur", (e) => {
+        applyPropertyKeywordFilter(e.target.value || "");
+      });
+      els.propKeyword.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
+        applyPropertyKeywordFilter(e.target.value || "");
+      });
+    }
 
     // CSV import (관리자만)
     if (els.btnCsvUpload) els.btnCsvUpload.addEventListener("click", () => {
@@ -818,22 +840,32 @@ function bindEvents() {
     });
   }
 
-  async function warmPropertyFullCacheForFilters() {
+  async function warmPropertyFullCacheForFilters(options = {}) {
+    const forceRefresh = !!options.forceRefresh;
     if (normalizeRole(state.session?.user?.role) !== "admin") return;
-    if (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
+    if (!forceRefresh && Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length) {
       if (state.activeTab === "properties") renderPropertiesTable();
       return;
     }
+    if (state.propertyFilterWarmPromise && !forceRefresh) return state.propertyFilterWarmPromise;
     if (!isSupabaseMode()) return;
     const sb = K.initSupabase();
     if (!sb) return;
-    const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
-    const currentSession = synced || state.session || loadSession() || null;
-    if (currentSession) state.session = currentSession;
-    const user = currentSession?.user || null;
-    const uid = String(user?.id || "").trim();
-    await ensureFullPropertiesCache(sb, { isAdmin: true, uid, forceRefresh: false });
-    if (state.activeTab === "properties") renderPropertiesTable();
+    const runner = (async () => {
+      const synced = await syncSupabaseSessionIfNeeded().catch(() => state.session);
+      const currentSession = synced || state.session || loadSession() || null;
+      if (currentSession) state.session = currentSession;
+      const user = currentSession?.user || null;
+      const uid = String(user?.id || "").trim();
+      await ensureFullPropertiesCache(sb, { isAdmin: true, uid, forceRefresh });
+      if (state.activeTab === "properties") renderPropertiesTable();
+    })();
+    state.propertyFilterWarmPromise = runner;
+    try {
+      await runner;
+    } finally {
+      if (state.propertyFilterWarmPromise === runner) state.propertyFilterWarmPromise = null;
+    }
   }
 
   function renderSessionUI() {
@@ -1526,6 +1558,9 @@ function bindEvents() {
       hydrateAssignedAgentNames();
       renderPropertiesTable();
       renderSummary();
+      if (isAdmin && state.activeTab === 'properties' && !Array.isArray(state.propertiesFullCache)) {
+        warmPropertyFullCacheForFilters().catch((err) => console.warn('property filter cache warm failed', err));
+      }
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
       if (state.activeTab === 'home') renderSummary();
       return;

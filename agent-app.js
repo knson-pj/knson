@@ -836,7 +836,30 @@
     if (els.agAreaFilter) els.agAreaFilter.addEventListener("change", (e) => { state.filters.area = e.target.value; state.page = 1; renderTable(); });
     if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
     if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
-    if (els.agKeyword) els.agKeyword.addEventListener("input", debounce((e) => { state.filters.keyword = String(e.target.value || "").trim(); state.page = 1; renderTable(); }, 150));
+    const applyAgentKeywordFilter = (rawValue) => {
+      const nextKeyword = String(rawValue || "").trim();
+      if (state.filters.keyword === nextKeyword) return;
+      state.filters.keyword = nextKeyword;
+      state.page = 1;
+      renderTable();
+    };
+    if (els.agKeyword) {
+      els.agKeyword.addEventListener("input", (e) => {
+        const nextValue = String(e.target.value || "");
+        if (!nextValue.trim()) applyAgentKeywordFilter("");
+      });
+      els.agKeyword.addEventListener("change", (e) => {
+        applyAgentKeywordFilter(e.target.value || "");
+      });
+      els.agKeyword.addEventListener("blur", (e) => {
+        applyAgentKeywordFilter(e.target.value || "");
+      });
+      els.agKeyword.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
+        applyAgentKeywordFilter(e.target.value || "");
+      });
+    }
     if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
       state.filters.favOnly = !state.filters.favOnly;
       els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
@@ -2082,37 +2105,6 @@ function renderPagination(totalPages) {
     const d = new Date(s);
     if (isNaN(d.getTime())) return s.slice(0, 10);
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-  }
-
-  function parseFlexibleDateLocal(value) {
-    if (Shared && typeof Shared.parseFlexibleDate === 'function') return Shared.parseFlexibleDate(value);
-    const s = String(value || '').trim();
-    if (!s) return null;
-    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
-    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    m = s.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
-    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    const d = new Date(s);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-
-  function computeDdayLabel(value) {
-    const d = parseFlexibleDateLocal(value);
-    if (!d) return '';
-    const today = new Date();
-    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const diff = Math.round((target - startToday) / 86400000);
-    if (diff === 0) return 'D-Day';
-    if (diff > 0) return `D-${diff}`;
-    return `D+${Math.abs(diff)}`;
-  }
-
-  function formatScheduleCountdown(value) {
-    const dateText = formatDate(value) || '-';
-    if (dateText === '-') return '-';
-    const dday = computeDdayLabel(value);
-    return dday ? `${dateText} ${dday}` : dateText;
   }
 
   function setVal(form, name, value) {
