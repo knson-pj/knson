@@ -2080,23 +2080,42 @@ function bindEvents() {
       return;
     }
     const reversed = list.slice().reverse();
-    container.innerHTML = reversed.map((entry) => {
-      const meta = [formatRegLogAt(entry.at || entry.date || ""), entry.route || "", entry.actor || ""].filter(Boolean).map((v) => `<span>${esc(v)}</span>`).join("");
+    container.innerHTML = `<div class="reglog-list">${reversed.map((entry) => {
+      const atText = formatRegLogAt(entry.at || entry.date || "");
+      const routeText = String(entry.route || '').trim();
+      const actorText = String(entry.actor || '').trim();
+      const meta = `
+        <div class="reglog-meta" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+          ${atText ? `<span class="reglog-chip" style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#f5f6f8;color:#475467;font-size:12px;font-weight:700;">${esc(atText)}</span>` : ''}
+          ${routeText ? `<span class="reglog-chip is-route" style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#fff4e8;color:#b54708;font-size:12px;font-weight:700;">${esc(routeText)}</span>` : ''}
+          ${actorText ? `<span class="reglog-chip is-actor" style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef4ff;color:#175cd3;font-size:12px;font-weight:700;">${esc(actorText)}</span>` : ''}
+        </div>`;
       if (entry.type === "created") {
-        return `<div class="reglog-item">
-          <div class="reglog-meta">${meta}</div>
-          <div class="reglog-badge">최초 등록</div>
+        return `<div class="reglog-item" style="padding:12px 14px;border:1px solid #eaecf0;border-radius:14px;background:#ffffff;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-bottom:10px;">
+          ${meta}
+          <div class="reglog-summary" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="reglog-badge" style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#ecfdf3;color:#027a48;font-size:12px;font-weight:800;">최초 등록</span>
+            <span style="color:#667085;font-size:13px;">물건이 처음 등록되었습니다.</span>
+          </div>
         </div>`;
       }
       const changes = (Array.isArray(entry.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
       const rows = changes.length
-        ? `<div class="reglog-changes">${changes.map((change) => `<div class="reglog-change-row"><span class="reglog-label">${esc(change.label || "")}</span><span class="reglog-arrow">${esc(change.before || "-")}</span><span class="reglog-sep">→</span><span class="reglog-arrow is-next">${esc(change.after || "-")}</span></div>`).join("")}</div>`
-        : `<div class="reglog-badge">변경 없음</div>`;
-      return `<div class="reglog-item">
-        <div class="reglog-meta">${meta}</div>
+        ? `<div class="reglog-changes" style="display:flex;flex-direction:column;gap:8px;">${changes.map((change) => `<div class="reglog-change-row" style="display:grid;grid-template-columns:minmax(84px,120px) minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:start;padding:10px 12px;border-radius:12px;background:#f8fafc;">
+              <span class="reglog-label" style="font-size:12px;font-weight:800;color:#344054;">${esc(change.label || "")}</span>
+              <span class="reglog-before" style="min-width:0;color:#667085;font-size:13px;word-break:break-word;">${esc(change.before || "-")}</span>
+              <span class="reglog-sep" style="color:#98a2b3;font-weight:800;">→</span>
+              <span class="reglog-after" style="min-width:0;color:#101828;font-size:13px;font-weight:700;word-break:break-word;">${esc(change.after || "-")}</span>
+            </div>`).join("")}</div>`
+        : `<div class="reglog-summary" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="reglog-badge" style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#f2f4f7;color:#344054;font-size:12px;font-weight:800;">변경 없음</span>
+            <span style="color:#667085;font-size:13px;">저장되었지만 변경 항목은 없습니다.</span>
+          </div>`;
+      return `<div class="reglog-item" style="padding:12px 14px;border:1px solid #eaecf0;border-radius:14px;background:#ffffff;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-bottom:10px;">
+        ${meta}
         ${rows}
       </div>`;
-    }).join("");
+    }).join("")}</div>`;
   }
 
   // ---------------------------

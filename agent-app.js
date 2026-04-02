@@ -1562,7 +1562,7 @@
 
   function renderTable() {
     if (!els.agTableBody) return;
-    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.sourceType));
+    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.activeCard));
     updateFilterOptionCounts();
     const rows = getFilteredProps();
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
@@ -1598,7 +1598,7 @@ function renderRow(p) {
     general: "kind-general",
   };
   const kindClass = kindClassMap[bucket] || "kind-general";
-  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.sourceType);
+  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.activeCard);
   const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
   const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
   const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
@@ -2183,6 +2183,48 @@ function renderPagination(totalPages) {
     const d = new Date(s);
     if (isNaN(d.getTime())) return s.slice(0, 10);
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  function parseFlexibleDateLocal(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const onlyDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (onlyDate) {
+      const y = Number(onlyDate[1]);
+      const m = Number(onlyDate[2]) - 1;
+      const d = Number(onlyDate[3]);
+      const dt = new Date(y, m, d);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    const normalized = raw.replace(' ', 'T');
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+    const fallback = raw.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!fallback) return null;
+    const y = Number(fallback[1]);
+    const m = Number(fallback[2]) - 1;
+    const d = Number(fallback[3]);
+    const dt = new Date(y, m, d);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  function computeDdayLabel(value) {
+    const target = parseFlexibleDateLocal(value);
+    if (!target) return '';
+    const today = new Date();
+    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const compare = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+    const diff = Math.round((compare.getTime() - base.getTime()) / 86400000);
+    if (diff === 0) return 'D-Day';
+    if (diff > 0) return `D-${diff}`;
+    return `D+${Math.abs(diff)}`;
+  }
+
+  function formatScheduleCountdown(value) {
+    const dateText = formatDate(value);
+    if (!dateText) return '-';
+    const dday = computeDdayLabel(value);
+    return dday ? `${dateText} (${dday})` : dateText;
   }
 
   function setVal(form, name, value) {

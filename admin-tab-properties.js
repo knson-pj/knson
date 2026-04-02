@@ -746,7 +746,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
     : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
   const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
-  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.sourceType);
+  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.activeCard);
 
   renderPropertiesTableHeader(usePlainLayout);
   if (!els.propertiesTableBody) return;
