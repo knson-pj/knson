@@ -54,15 +54,78 @@
     return `${text.slice(0, limit - 1)}…`;
   }
 
+  function getDisplaySources(item) {
+    const row = item && item._raw && typeof item._raw === 'object' ? item._raw : {};
+    const nestedRaw = row && row.raw && typeof row.raw === 'object' ? row.raw : {};
+    return [item || {}, row, nestedRaw];
+  }
+
+  function pickDisplayText(item, keys = [], extras = []) {
+    const sources = getDisplaySources(item);
+    for (const source of sources) {
+      if (!source || typeof source !== 'object') continue;
+      for (const key of keys) {
+        if (!key) continue;
+        const value = source[key];
+        const text = String(value ?? '').trim();
+        if (text) return text;
+      }
+    }
+    for (const value of extras) {
+      const text = String(value ?? '').trim();
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function pickDisplayNumber(item, keys = [], extras = []) {
+    const sources = getDisplaySources(item);
+    for (const source of sources) {
+      if (!source || typeof source !== 'object') continue;
+      for (const key of keys) {
+        if (!key) continue;
+        const value = source[key];
+        if (value == null || value === '') continue;
+        const numeric = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''));
+        if (Number.isFinite(numeric) && numeric > 0) return numeric;
+      }
+    }
+    for (const value of extras) {
+      if (value == null || value === '') continue;
+      const numeric = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''));
+      if (Number.isFinite(numeric) && numeric > 0) return numeric;
+    }
+    return null;
+  }
+
   function getFloorDisplayValue(item) {
-    const raw = item?._raw && typeof item._raw === 'object' ? item._raw : {};
-    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? '').trim();
-    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? '').trim();
+    const floor = pickDisplayText(item, ['floor', 'floor_text', 'floor_korean', 'floorText', '해당층', '층수', '층']);
+    const total = pickDisplayText(item, ['totalfloor', 'total_floor', 'totalFloor', '총층']);
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
     }
     return floor || total || '';
+  }
+
+  function getExclusiveAreaValue(item) {
+    return pickDisplayNumber(item, ['exclusivearea', 'exclusive_area', 'exclusiveArea', '전용면적(평)', '전용면적']);
+  }
+
+  function getCommonAreaValue(item) {
+    return pickDisplayNumber(item, ['commonarea', 'common_area', 'commonArea', '공용면적(평)', '공용면적', '공급/계약면적(평)', '공급면적(평)', '공급면적']);
+  }
+
+  function getSiteAreaValue(item) {
+    return pickDisplayNumber(item, ['sitearea', 'site_area', 'siteArea', '토지면적(평)', '토지면적']);
+  }
+
+  function getUseApprovalValue(item) {
+    return pickDisplayText(item, ['useapproval', 'use_approval', 'useApproval', '사용승인일', '사용승인']);
+  }
+
+  function getAppraisalPriceValue(item) {
+    return pickDisplayNumber(item, ['priceMain', 'price_main', '감정가', '감정가(원)', '감정가(매각가)', '매매가', '매매금액', '매물가', '가격', '희망가', 'price']);
   }
 
   function formatDateCell(utils, value) {
@@ -753,16 +816,21 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       ? utils.PropertyDomain.getSourceBucketLabel(bucket)
       : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
     const kindClass = listView?.kindClass || (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general');
+    const appraisalValue = getAppraisalPriceValue(p);
     const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
-    const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
+    const rate = utils.formatPercent(appraisalValue ?? p.priceMain, currentPriceValue, p._raw || {});
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
     const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
-    const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
-    const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
-    const siteText = p.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.sitearea)) : '-';
-    const useapprovalText = (utils.formatDate && utils.formatDate(p.useapproval)) || '-';
+    const exclusiveValue = getExclusiveAreaValue(p);
+    const commonValue = getCommonAreaValue(p);
+    const siteValue = getSiteAreaValue(p);
+    const useapprovalValue = getUseApprovalValue(p);
+    const exclusiveText = exclusiveValue != null ? utils.escapeHtml(utils.formatAreaPyeong(exclusiveValue)) : '-';
+    const commonText = commonValue != null ? utils.escapeHtml(utils.formatAreaPyeong(commonValue)) : '-';
+    const siteText = siteValue != null ? utils.escapeHtml(utils.formatAreaPyeong(siteValue)) : '-';
+    const useapprovalText = (utils.formatDate && utils.formatDate(useapprovalValue)) || (useapprovalValue ? utils.escapeHtml(String(useapprovalValue)) : '-');
     const scheduleHtml = typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-';
     const rightsHtml = renderDetailIndicator('rights', p.rightsAnalysis, utils);
     const inspectionHtml = renderDetailIndicator('inspection', p.siteInspection, utils);
@@ -779,7 +847,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${commonText}</td>
       <td>${siteText}</td>
       <td>${utils.escapeHtml(useapprovalText)}</td>
-      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
+      <td>${appraisalValue != null ? utils.formatMoneyKRW(appraisalValue) : '-'}</td>
       <td>${assigneeText}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
       <td>${formatDateCell(utils, p.createdAt)}</td>
@@ -792,7 +860,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
       <td>${exclusiveText}</td>
-      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
+      <td>${appraisalValue != null ? utils.formatMoneyKRW(appraisalValue) : '-'}</td>
       <td>${utils.escapeHtml(currentPrice)}</td>
       <td>${utils.escapeHtml(rate)}</td>
       <td class="schedule-cell">${scheduleHtml}</td>
