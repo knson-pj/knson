@@ -2084,6 +2084,37 @@ function renderPagination(totalPages) {
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
 
+  function parseFlexibleDateLocal(value) {
+    if (Shared && typeof Shared.parseFlexibleDate === 'function') return Shared.parseFlexibleDate(value);
+    const s = String(value || '').trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    m = s.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function computeDdayLabel(value) {
+    const d = parseFlexibleDateLocal(value);
+    if (!d) return '';
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diff = Math.round((target - startToday) / 86400000);
+    if (diff === 0) return 'D-Day';
+    if (diff > 0) return `D-${diff}`;
+    return `D+${Math.abs(diff)}`;
+  }
+
+  function formatScheduleCountdown(value) {
+    const dateText = formatDate(value) || '-';
+    if (dateText === '-') return '-';
+    const dday = computeDdayLabel(value);
+    return dday ? `${dateText} ${dday}` : dateText;
+  }
+
   function setVal(form, name, value) {
     const el = form.elements[name];
     if (!el) return;

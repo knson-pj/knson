@@ -65,6 +65,12 @@
     return floor || total || '';
   }
 
+  function formatDateCell(utils, value) {
+    const text = typeof utils?.formatDate === 'function' ? utils.formatDate(value) : String(value || '').trim();
+    const normalized = String(text || '').trim() || '-';
+    return typeof utils?.escapeHtml === 'function' ? utils.escapeHtml(normalized) : normalized;
+  }
+
   function getCurrentPriceValue(row) {
     if (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.getCurrentPriceValue === 'function') {
       return window.KNSN_PROPERTY_DOMAIN.getCurrentPriceValue(row);
