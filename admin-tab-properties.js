@@ -98,6 +98,47 @@
     { value: '50', label: '50% 이하' },
   ];
 
+
+  function isPlainSourceFilterSelected(value) {
+    const key = String(value || '').trim();
+    return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
+  }
+
+  function renderPropertiesTableHeader(usePlainLayout) {
+    const { els } = ctx();
+    const headRow = els.propertiesTableHeadRow || document.getElementById('propertiesTableHeadRow');
+    if (!headRow) return;
+    headRow.innerHTML = usePlainLayout
+      ? `
+        <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
+        <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
+        <th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th><th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th>
+        <th>담당자</th><th>현장실사</th><th>등록일</th>
+      `
+      : `
+        <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
+        <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
+        <th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th><th class="sortable-th" data-prop-sort="currentPrice">현재가격</th><th class="sortable-th" data-prop-sort="ratio">비율</th>
+        <th>주요일정</th><th>담당자</th><th>권리분석</th><th>현장실사</th><th>등록일</th>
+      `;
+    const selectAll = headRow.querySelector('#propSelectAll');
+    if (selectAll) {
+      selectAll.checked = false;
+      selectAll.addEventListener('change', (e) => {
+        const checked = !!e.target.checked;
+        document.querySelectorAll('.prop-row-check').forEach((node) => {
+          node.checked = checked;
+          const id = String(node.dataset.propId || '').trim();
+          if (!id) return;
+          const { state } = ctx();
+          if (checked) state.selectedPropertyIds.add(id);
+          else state.selectedPropertyIds.delete(id);
+          node.closest('tr')?.classList.toggle('row-selected', checked);
+        });
+      });
+    }
+  }
+
   function getPropertyFilterSourceRows(state) {
     if (Array.isArray(state?.propertiesFullCache) && state.propertiesFullCache.length) return state.propertiesFullCache;
     if (Array.isArray(state?.homeSummarySnapshot) && state.homeSummarySnapshot.length) return state.homeSummarySnapshot;
