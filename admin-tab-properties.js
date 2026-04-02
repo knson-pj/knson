@@ -33,7 +33,7 @@
   function renderDetailIndicator(kind, text, utils) {
     const raw = String(text || '').trim();
     if (!raw) return '-';
-    const label = kind === 'rights' ? '권리분석' : '현장실사';
+    const label = kind === 'rights' ? '담당자 의견' : '현장실사';
     const content = nl2brEscaped(utils, raw);
     return `
       <div class="detail-indicator" data-detail-kind="${utils.escapeAttr(kind)}">
@@ -241,13 +241,13 @@
         <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
         <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
         <th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th><th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th>
-        <th>담당자</th><th>현장실사</th><th>등록일</th>
+        <th>담당자</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
       `
       : `
         <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
         <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
         <th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th><th class="sortable-th" data-prop-sort="currentPrice">현재가격</th><th class="sortable-th" data-prop-sort="ratio">비율</th>
-        <th>주요일정</th><th>담당자</th><th>권리분석</th><th>현장실사</th><th>등록일</th>
+        <th>주요일정</th><th>담당자</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
       `;
     const selectAll = headRow.querySelector('#propSelectAll');
     if (selectAll) {
@@ -871,6 +871,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(useapprovalText)}</td>
       <td>${appraisalText}</td>
       <td>${assigneeText}</td>
+      <td class="indicator-cell">${rightsHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
       <td>${formatDateCell(utils, p.createdAt)}</td>
     `
