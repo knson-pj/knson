@@ -216,14 +216,14 @@
         <th class="fav-col"></th>
         <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th>
         <th>층수</th><th>전용면적(평)</th><th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th>
-        <th>감정가(매각가)</th><th>진행상태</th><th>현장실사</th><th>등록일</th>
+        <th>감정가(매각가)</th><th>진행상태</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
       `
       : `
         <th class="fav-col"></th>
         <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th>
         <th>층수</th><th>전용면적(평)</th>
         <th>감정가(매각가)</th><th>현재가격</th><th>비율</th>
-        <th>주요일정</th><th>진행상태</th><th>권리분석</th><th>현장실사</th><th>등록일</th>
+        <th>주요일정</th><th>진행상태</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
       `;
   }
 
@@ -665,7 +665,7 @@
                 const kindClass = getPropertyKindClass(item?.sourceType || group.row?.property_source_type, kindTarget);
                 const title = buildDailyReportPropertyTitle(group);
                 const actions = [
-                  ["rights_analysis", "권리분석"],
+                  ["rights_analysis", "담당자 의견"],
                   ["site_inspection", "현장조사"],
                   ["daily_issue", "금일이슈사항"],
                   ["new_property", "신규물건등록"],
@@ -1608,7 +1608,9 @@ function renderRow(p) {
   const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
   const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
-  const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
+  const opinionMark = (usePlainLayout ? String(p.opinion || p.rightsAnalysis || '').trim() : String(p.rightsAnalysis || p.opinion || '').trim()) ? '✓' : '';
+  const rightsText = !usePlainLayout ? opinionMark : '';
+  const plainOpinionText = usePlainLayout ? opinionMark : '';
   const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
   const commonText = p.commonarea != null ? fmtArea(p.commonarea) : "-";
   const siteText = p.sitearea != null ? fmtArea(p.sitearea) : "-";
@@ -1646,6 +1648,7 @@ function renderRow(p) {
         "<td>" + esc(useapprovalText) + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
+        "<td>" + (plainOpinionText || "-") + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + esc(p.itemNo || "-") + "</td>" +
@@ -1773,9 +1776,11 @@ function renderPagination(totalPages) {
   function repositionAgentPlainOpinionField(form, hideForPlain) {
     if (!form) return;
     const siteShell = findAgentFieldShell(form.elements['siteInspection']);
+    const rightsShell = findAgentFieldShell(form.elements['rightsAnalysis']);
+    if (rightsShell) setAgentFieldLabel(rightsShell, '담당자 의견');
     const opinionShell = findAgentFieldShell(form.elements['opinion']);
+    if (opinionShell) setAgentFieldLabel(opinionShell, '담당자 의견');
     if (!opinionShell) return;
-    setAgentFieldLabel(opinionShell, '담당자 의견');
     if (!hideForPlain) return;
     if (siteShell && opinionShell !== siteShell && siteShell.parentElement) {
       siteShell.insertAdjacentElement('afterend', opinionShell);
@@ -1869,7 +1874,7 @@ function renderPagination(totalPages) {
     setVal(f, "dateMain", formatDate(view.dateMain) || "");
     setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);
-    setVal(f, "opinion", "");
+    setVal(f, "opinion", view.opinion || "");
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
@@ -2697,7 +2702,7 @@ function renderPagination(totalPages) {
 
   function getDailyActionMeta(actionType) {
     const key = String(actionType || "").trim();
-    if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
+    if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "담당자 의견", title: "담당자 의견" };
     if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장조사", title: "현장조사" };
     if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일 이슈사항" };
     if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
@@ -2833,7 +2838,7 @@ function renderPagination(totalPages) {
     if (statsEl) {
       statsEl.innerHTML = `
         <article class="workmgmt-stat-card is-brand"><div class="workmgmt-stat-label">총 업무</div><div class="workmgmt-stat-value">${Number(total || 0)}</div></article>
-        <article class="workmgmt-stat-card is-soft"><div class="workmgmt-stat-label">권리분석</div><div class="workmgmt-stat-value">${Number(counts.rightsAnalysis || 0)}</div></article>
+        <article class="workmgmt-stat-card is-soft"><div class="workmgmt-stat-label">담당자 의견</div><div class="workmgmt-stat-value">${Number(counts.rightsAnalysis || 0)}</div></article>
         <article class="workmgmt-stat-card is-warm"><div class="workmgmt-stat-label">현장조사</div><div class="workmgmt-stat-value">${Number(counts.siteInspection || 0)}</div></article>
         <article class="workmgmt-stat-card is-danger"><div class="workmgmt-stat-label">신규등록</div><div class="workmgmt-stat-value">${Number(counts.newProperty || 0)}</div></article>`;
     }
