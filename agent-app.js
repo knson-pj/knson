@@ -112,6 +112,7 @@
       };
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
+  const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
@@ -223,6 +224,7 @@
     els.dailyReportTotal = $("#dailyReportTotal");
     els.dailyReportLead = $("#dailyReportLead");
     els.dailyReportFlow = $("#dailyReportFlow");
+    els.dailyReportNote = $("#dailyReportNote");
 
     // Summary
     els.agSumTotal = $("#agSumTotal");
@@ -305,6 +307,25 @@
     } catch {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
+  }
+
+  function getDailyReportNoteKey() {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return `${DAILY_REPORT_NOTE_PREFIX}${uid}_${getTodayDateKey()}`;
+  }
+
+  function loadDailyReportNote() {
+    try {
+      return String(localStorage.getItem(getDailyReportNoteKey()) || "");
+    } catch {
+      return "";
+    }
+  }
+
+  function saveDailyReportNote(value) {
+    try {
+      localStorage.setItem(getDailyReportNoteKey(), String(value || ""));
+    } catch {}
   }
 
   function getActorIdentity(user) {
@@ -642,6 +663,7 @@
   }
 
   async function openDailyReportModal() {
+    if (els.dailyReportNote) els.dailyReportNote.value = loadDailyReportNote();
     renderDailyReport();
     if (!els.dailyReportModal) return;
     document.body.classList.add("modal-open");
@@ -811,6 +833,11 @@
       els.dailyReportModal.addEventListener("click", (e) => {
         if (e.target?.dataset?.close === "true") closeDailyReportModal();
       });
+    }
+    if (els.dailyReportNote) {
+      els.dailyReportNote.addEventListener("input", debounce(() => {
+        saveDailyReportNote(els.dailyReportNote.value || "");
+      }, 120));
     }
 
     // 신규 물건 등록 모달
@@ -1504,6 +1531,7 @@
 
   function renderTable() {
     if (!els.agTableBody) return;
+    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.sourceType));
     updateFilterOptionCounts();
     const rows = getFilteredProps();
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
@@ -1525,73 +1553,91 @@
     renderPagination(totalPages);
   }
 
-  function renderRow(p) {
-    const tr = document.createElement("tr");
-    tr.style.cursor = "pointer";
-    const bucket = getPropertyBucket(p, p.sourceType);
-    const kindLabel = getPropertyKindLabel(p.sourceType, p);
-    const kindClassMap = {
-      auction: "kind-auction",
-      onbid: "kind-gongmae",
-      realtor_naver: "kind-realtor-naver",
-      realtor_direct: "kind-realtor-direct",
-      general: "kind-general",
-    };
-    const kindClass = kindClassMap[bucket] || "kind-general";
-    const isPlainBucket = isPlainPropertyBucket(bucket);
-    const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
-    const current = !isPlainBucket && p.lowprice != null ? formatEok(p.lowprice) : "";
-    const rate = !isPlainBucket ? calcRate(p.priceMain, p.lowprice) : "";
-    const statusLabel = normalizeStatus(p.status);
-    const isFav = state.favorites.has(p.id);
-    const addressText = truncateDisplayText(p.address || "-", 40) || "-";
-    const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
-    const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
-    const scheduleText = !isPlainBucket ? (formatDate(p.dateMain) || "") : "";
-    const rightsText = !isPlainBucket && p.rightsAnalysis ? "✓" : "";
-    const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
 
-    const favTd = document.createElement("td");
-    favTd.className = "fav-col";
-    const favBtn = document.createElement("button");
-    favBtn.type = "button";
-    favBtn.className = "btn-fav" + (isFav ? " is-active" : "");
-    favBtn.textContent = isFav ? "★" : "☆";
-    favBtn.title = isFav ? "관심 해제" : "관심 등록";
-    favBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleFavorite(p.id);
-      const nowFav = state.favorites.has(p.id);
-      favBtn.textContent = nowFav ? "★" : "☆";
-      favBtn.title = nowFav ? "관심 해제" : "관심 등록";
-      favBtn.classList.toggle("is-active", nowFav);
-      if (state.filters.favOnly) { state.page = 1; renderTable(); }
-    });
-    favTd.appendChild(favBtn);
-    tr.appendChild(favTd);
+function renderRow(p) {
+  const tr = document.createElement("tr");
+  tr.style.cursor = "pointer";
+  const bucket = getPropertyBucket(p, p.sourceType);
+  const kindLabel = getPropertyKindLabel(p.sourceType, p);
+  const kindClassMap = {
+    auction: "kind-auction",
+    onbid: "kind-gongmae",
+    realtor_naver: "kind-realtor-naver",
+    realtor_direct: "kind-realtor-direct",
+    general: "kind-general",
+  };
+  const kindClass = kindClassMap[bucket] || "kind-general";
+  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.sourceType);
+  const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
+  const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
+  const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
+  const statusLabel = normalizeStatus(p.status);
+  const isFav = state.favorites.has(p.id);
+  const addressText = truncateDisplayText(p.address || "-", 40) || "-";
+  const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
+  const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
+  const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
+  const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
+  const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
+  const commonText = p.commonarea != null ? fmtArea(p.commonarea) : "-";
+  const siteText = p.sitearea != null ? fmtArea(p.sitearea) : "-";
+  const useapprovalText = formatDate(p.useapproval || p._raw?.useapproval || p._raw?.use_approval || p._raw?.useApproval || "") || "-";
 
-    tr.insertAdjacentHTML("beforeend",
-      "<td>" + esc(p.itemNo || "-") + "</td>" +
-      '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
-      "<td class=\"text-cell\">" + esc(addressText) + "</td>" +
-      "<td>" + esc(assetTypeText) + "</td>" +
-      "<td>" + esc(floorText) + "</td>" +
-      "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
-      "<td>" + esc(appraisal) + "</td>" +
-      "<td>" + esc(current) + "</td>" +
-      "<td>" + esc(rate) + "</td>" +
-      "<td>" + esc(scheduleText) + "</td>" +
-      "<td>" + esc(statusLabel) + "</td>" +
-      "<td>" + esc(rightsText) + "</td>" +
-      "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
-      "<td>" + esc(createdAtText) + "</td>"
-    );
+  const favTd = document.createElement("td");
+  favTd.className = "fav-col";
+  const favBtn = document.createElement("button");
+  favBtn.type = "button";
+  favBtn.className = "btn-fav" + (isFav ? " is-active" : "");
+  favBtn.textContent = isFav ? "★" : "☆";
+  favBtn.title = isFav ? "관심 해제" : "관심 등록";
+  favBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleFavorite(p.id);
+    const nowFav = state.favorites.has(p.id);
+    favBtn.textContent = nowFav ? "★" : "☆";
+    favBtn.title = nowFav ? "관심 해제" : "관심 등록";
+    favBtn.classList.toggle("is-active", nowFav);
+    if (state.filters.favOnly) { state.page = 1; renderTable(); }
+  });
+  favTd.appendChild(favBtn);
+  tr.appendChild(favTd);
 
-    tr.addEventListener("click", () => openEditModal(p));
-    return tr;
-  }
+  tr.insertAdjacentHTML("beforeend",
+    usePlainLayout
+      ? "<td>" + esc(p.itemNo || "-") + "</td>" +
+        '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
+        '<td class="text-cell">' + esc(addressText) + "</td>" +
+        "<td>" + esc(assetTypeText) + "</td>" +
+        "<td>" + esc(floorText) + "</td>" +
+        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
+        "<td>" + esc(commonText) + "</td>" +
+        "<td>" + esc(siteText) + "</td>" +
+        "<td>" + esc(useapprovalText) + "</td>" +
+        "<td>" + esc(appraisal) + "</td>" +
+        "<td>" + esc(statusLabel) + "</td>" +
+        "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
+        "<td>" + esc(createdAtText) + "</td>"
+      : "<td>" + esc(p.itemNo || "-") + "</td>" +
+        '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
+        '<td class="text-cell">' + esc(addressText) + "</td>" +
+        "<td>" + esc(assetTypeText) + "</td>" +
+        "<td>" + esc(floorText) + "</td>" +
+        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
+        "<td>" + esc(appraisal) + "</td>" +
+        "<td>" + esc(current) + "</td>" +
+        "<td>" + esc(rate) + "</td>" +
+        "<td>" + esc(scheduleText) + "</td>" +
+        "<td>" + esc(statusLabel) + "</td>" +
+        "<td>" + esc(rightsText) + "</td>" +
+        "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
+        "<td>" + esc(createdAtText) + "</td>"
+  );
 
-  function renderPagination(totalPages) {
+  tr.addEventListener("click", () => openEditModal(p));
+  return tr;
+}
+
+function renderPagination(totalPages) {
     if (!els.agPagination) return;
     els.agPagination.innerHTML = "";
     if (totalPages <= 1) { els.agPagination.classList.add("hidden"); return; }
@@ -1953,23 +1999,6 @@
   function escAttr(v) {
     if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
     return esc(v).replace(/'/g, "&#39;");
-  }
-
-  function truncateDisplayText(value, maxChars) {
-    const text = String(value || "").trim();
-    const limit = Number(maxChars || 0);
-    if (!text || !Number.isFinite(limit) || limit <= 0) return text;
-    const chars = Array.from(text);
-    return chars.length > limit ? `${chars.slice(0, limit).join("")}...` : text;
-  }
-
-  function getFloorDisplayValue(item) {
-    const raw = item?._raw?.raw || item?._raw || {};
-    return firstText(item?.floor, raw.floor, raw.floorInfo, raw.targetFloor, raw.target_floor, "-");
-  }
-
-  function isPlainPropertyBucket(bucket) {
-    return ["realtor_naver", "realtor_direct", "general"].includes(String(bucket || "").trim());
   }
 
   function formatEok(n) {

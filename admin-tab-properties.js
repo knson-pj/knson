@@ -44,23 +44,6 @@
       </div>`;
   }
 
-  function truncateDisplayText(value, maxChars) {
-    const text = String(value || '').trim();
-    const limit = Number(maxChars || 0);
-    if (!text || !Number.isFinite(limit) || limit <= 0) return text;
-    const chars = Array.from(text);
-    return chars.length > limit ? `${chars.slice(0, limit).join('')}...` : text;
-  }
-
-  function getFloorDisplayValue(row) {
-    const raw = row?._raw?.raw && typeof row._raw.raw === 'object' ? row._raw.raw : (row?._raw || {});
-    return utilsFirstText(row?.floor, raw?.floor, raw?.floorInfo, raw?.targetFloor, raw?.target_floor, '-');
-  }
-
-  function isPlainBucket(bucket) {
-    return ['realtor_naver', 'realtor_direct', 'general'].includes(String(bucket || '').trim());
-  }
-
 
   function getCurrentPriceValue(row) {
     if (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.getCurrentPriceValue === 'function') {
@@ -637,104 +620,131 @@
     alert('전체삭제가 완료되었습니다.');
   };
 
-  mod.renderPropertiesTable = function renderPropertiesTable() {
-    const { state, els, utils } = ctx();
-    const pageMode = state.propertyMode === 'page' && !String(state?.propertySort?.key || '').trim();
-    const rows = pageMode ? (state.properties || []) : mod.getFilteredProperties();
-    const totalPages = pageMode
-      ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
-      : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
-    const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
 
-    if (!els.propertiesTableBody) return;
-    bindPropertySortHeaders();
-    els.propertiesTableBody.innerHTML = '';
+mod.renderPropertiesTable = function renderPropertiesTable() {
+  const { state, els, utils } = ctx();
+  const pageMode = state.propertyMode === 'page' && !String(state?.propertySort?.key || '').trim();
+  const rows = pageMode ? (state.properties || []) : mod.getFilteredProperties();
+  const totalPages = pageMode
+    ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
+    : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
+  const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
+  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.sourceType);
 
-    mod.updatePropertyFilterOptionCounts();
+  renderPropertiesTableHeader(usePlainLayout);
+  if (!els.propertiesTableBody) return;
+  bindPropertySortHeaders();
+  els.propertiesTableBody.innerHTML = '';
 
-    if (!rows.length) {
-      if (els.propertiesEmpty) els.propertiesEmpty.classList.remove('hidden');
-      mod.updatePropertySelectionControls();
-      mod.renderAdminPropertiesPagination(0);
-      return;
-    }
-    if (els.propertiesEmpty) els.propertiesEmpty.classList.add('hidden');
+  mod.updatePropertyFilterOptionCounts();
 
-    const frag = document.createDocumentFragment();
-    for (const p of displayRows) {
-      const rowId = String(p.id || p.globalId || '').trim();
-      const tr = document.createElement('tr');
-      if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
-      const listView = (utils.PropertyDomain && typeof utils.PropertyDomain.buildPropertyListViewModel === 'function')
-        ? utils.PropertyDomain.buildPropertyListViewModel(p)
-        : null;
-      const bucket = (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function')
-        ? utils.PropertyDomain.getSourceBucket(p)
-        : (p.sourceType === 'realtor' ? (p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : String(p.sourceType || 'general'));
-      const isPlain = isPlainBucket(bucket);
-      const kindLabel = listView?.kindLabel || ((utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function')
-        ? utils.PropertyDomain.getSourceBucketLabel(bucket)
-        : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
-      const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
-      const currentPrice = !isPlain && currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '';
-      const rate = !isPlain ? utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {}) : '';
-      const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
-      const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
-      const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
-      const scheduleHtml = !isPlain && typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '';
-      const rightsHtml = !isPlain ? renderDetailIndicator('rights', p.rightsAnalysis, utils) : '';
-      tr.innerHTML = `
-        <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
-        <td><span class="kind-text ${utils.escapeAttr(listView?.kindClass || (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general'))}">${utils.escapeHtml(kindLabel)}</span></td>
-        <td>${utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
-        <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
-        <td>${utils.escapeHtml(assetTypeText)}</td>
-        <td>${utils.escapeHtml(String(floorText))}</td>
-        <td>${p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-'}</td>
-        <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
-        <td>${utils.escapeHtml(currentPrice)}</td>
-        <td>${utils.escapeHtml(rate)}</td>
-        <td class="schedule-cell">${scheduleHtml}</td>
-        <td>${utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정')}</td>
-        <td class="indicator-cell">${rightsHtml}</td>
-        <td class="indicator-cell">${renderDetailIndicator('inspection', p.siteInspection, utils)}</td>
-        <td>${utils.escapeHtml(utils.formatDate(p.createdAt) || '-')}</td>
-      `;
-      const checkbox = tr.querySelector('.prop-row-check');
-      if (checkbox) {
-        checkbox.addEventListener('click', (e) => e.stopPropagation());
-        checkbox.addEventListener('change', (e) => {
-          mod.togglePropertySelection(rowId, !!e.target.checked);
-          tr.classList.toggle('row-selected', !!e.target.checked);
-        });
-      }
-      const addressTrigger = tr.querySelector('.address-trigger');
-      if (addressTrigger) {
-        addressTrigger.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void mod.openPropertyEditModal(p);
-        });
-      }
-      tr.querySelectorAll('.detail-indicator').forEach((wrap) => {
-        const btn = wrap.querySelector('.detail-ok-btn');
-        if (!btn) return;
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const willOpen = !wrap.classList.contains('is-open');
-          document.querySelectorAll('.detail-indicator.is-open').forEach((node) => {
-            if (node !== wrap) node.classList.remove('is-open');
-          });
-          wrap.classList.toggle('is-open', willOpen);
-        });
-      });
-      frag.appendChild(tr);
-    }
-    els.propertiesTableBody.appendChild(frag);
+  if (!rows.length) {
+    if (els.propertiesEmpty) els.propertiesEmpty.classList.remove('hidden');
     mod.updatePropertySelectionControls();
-    mod.renderAdminPropertiesPagination(totalPages);
-  };
+    mod.renderAdminPropertiesPagination(0);
+    return;
+  }
+  if (els.propertiesEmpty) els.propertiesEmpty.classList.add('hidden');
+
+  const frag = document.createDocumentFragment();
+  for (const p of displayRows) {
+    const rowId = String(p.id || p.globalId || '').trim();
+    const tr = document.createElement('tr');
+    if (rowId && state.selectedPropertyIds.has(rowId)) tr.classList.add('row-selected');
+    const listView = (utils.PropertyDomain && typeof utils.PropertyDomain.buildPropertyListViewModel === 'function')
+      ? utils.PropertyDomain.buildPropertyListViewModel(p)
+      : null;
+    const bucket = (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function')
+      ? utils.PropertyDomain.getSourceBucket(p)
+      : (p.sourceType === 'realtor' ? (p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : String(p.sourceType || 'general'));
+    const kindLabel = listView?.kindLabel || ((utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function')
+      ? utils.PropertyDomain.getSourceBucketLabel(bucket)
+      : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
+    const kindClass = listView?.kindClass || (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general');
+    const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
+    const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
+    const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
+    const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
+    const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
+    const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
+    const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
+    const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
+    const siteText = p.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.sitearea)) : '-';
+    const useapprovalText = (utils.formatDate && utils.formatDate(p.useapproval)) || '-';
+    const scheduleHtml = typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-';
+    const rightsHtml = renderDetailIndicator('rights', p.rightsAnalysis, utils);
+    const inspectionHtml = renderDetailIndicator('inspection', p.siteInspection, utils);
+    const assigneeText = utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정');
+    tr.innerHTML = usePlainLayout
+      ? `
+      <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
+      <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
+      <td>${utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
+      <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
+      <td>${utils.escapeHtml(assetTypeText)}</td>
+      <td>${utils.escapeHtml(String(floorText))}</td>
+      <td>${exclusiveText}</td>
+      <td>${commonText}</td>
+      <td>${siteText}</td>
+      <td>${utils.escapeHtml(useapprovalText)}</td>
+      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
+      <td>${assigneeText}</td>
+      <td class="indicator-cell">${inspectionHtml}</td>
+      <td>${formatDateCell(utils, p.createdAt)}</td>
+    `
+      : `
+      <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
+      <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
+      <td>${utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
+      <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
+      <td>${utils.escapeHtml(assetTypeText)}</td>
+      <td>${utils.escapeHtml(String(floorText))}</td>
+      <td>${exclusiveText}</td>
+      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
+      <td>${utils.escapeHtml(currentPrice)}</td>
+      <td>${utils.escapeHtml(rate)}</td>
+      <td class="schedule-cell">${scheduleHtml}</td>
+      <td>${assigneeText}</td>
+      <td class="indicator-cell">${rightsHtml}</td>
+      <td class="indicator-cell">${inspectionHtml}</td>
+      <td>${formatDateCell(utils, p.createdAt)}</td>
+    `;
+    const checkbox = tr.querySelector('.prop-row-check');
+    if (checkbox) {
+      checkbox.addEventListener('click', (e) => e.stopPropagation());
+      checkbox.addEventListener('change', (e) => {
+        mod.togglePropertySelection(rowId, !!e.target.checked);
+        tr.classList.toggle('row-selected', !!e.target.checked);
+      });
+    }
+    const addressTrigger = tr.querySelector('.address-trigger');
+    if (addressTrigger) {
+      addressTrigger.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void mod.openPropertyEditModal(p);
+      });
+    }
+    tr.querySelectorAll('.detail-indicator').forEach((wrap) => {
+      const btn = wrap.querySelector('.detail-ok-btn');
+      if (!btn) return;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const willOpen = !wrap.classList.contains('is-open');
+        document.querySelectorAll('.detail-indicator.is-open').forEach((node) => {
+          if (node !== wrap) node.classList.remove('is-open');
+        });
+        wrap.classList.toggle('is-open', willOpen);
+      });
+    });
+    frag.appendChild(tr);
+  }
+  els.propertiesTableBody.appendChild(frag);
+  mod.updatePropertySelectionControls();
+  mod.renderAdminPropertiesPagination(totalPages);
+};
+
 
   mod.ensureStaffForPropertyModal = async function ensureStaffForPropertyModal() {
     const { state, api, utils } = ctx();
