@@ -932,6 +932,7 @@ function bindEvents() {
     const f = state.propertyFilters || {};
     return !!(
       String(f.activeCard || '').trim() ||
+      String(f.status || '').trim() ||
       String(f.keyword || '').trim() ||
       String(f.area || '').trim() ||
       String(f.priceRange || '').trim() ||
@@ -939,8 +940,26 @@ function bindEvents() {
     );
   }
 
+  function hasLocalOnlyPropertyFilters() {
+    const f = state.propertyFilters || {};
+    return !!(
+      String(f.keyword || '').trim() ||
+      String(f.area || '').trim() ||
+      String(f.priceRange || '').trim() ||
+      String(f.ratio50 || '').trim()
+    );
+  }
+
+  function getServerBackedPropertyFilters() {
+    const f = state.propertyFilters || {};
+    return {
+      activeCard: String(f.activeCard || '').trim(),
+      status: String(f.status || '').trim(),
+    };
+  }
+
   function shouldUseFullPropertyDataset() {
-    return hasActivePropertyFilters();
+    return hasLocalOnlyPropertyFilters();
   }
 
   async function fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid }) {
@@ -949,6 +968,7 @@ function bindEvents() {
         isAdmin,
         uid,
         select: PROPERTY_LIST_SELECT,
+        filters: getServerBackedPropertyFilters(),
         totalFallback: isAdmin && !hasActivePropertyFilters() ? Number(state.propertySummary?.total || 0) : 0,
       });
     }
@@ -957,7 +977,13 @@ function bindEvents() {
 
   async function fetchAllPropertiesLight(sb, { isAdmin, uid }) {
     if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
-      return DataAccess.fetchAllProperties(sb, { isAdmin, uid, select: PROPERTY_LIST_SELECT, pageSize: 1000 });
+      return DataAccess.fetchAllProperties(sb, {
+        isAdmin,
+        uid,
+        select: PROPERTY_LIST_SELECT,
+        pageSize: 1000,
+        filters: getServerBackedPropertyFilters(),
+      });
     }
     throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }

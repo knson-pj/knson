@@ -184,6 +184,31 @@
     ];
   }
 
+
+  function escapeLikeValue(value) {
+    return String(value || '').replace(/[%,]/g, ' ').trim();
+  }
+
+  function applyServerBackedPropertyFilters(query, filters = {}) {
+    let q = query;
+    const activeCard = String(filters?.activeCard || '').trim();
+    const status = String(filters?.status || '').trim();
+
+    if (activeCard === 'auction' || activeCard === 'onbid' || activeCard === 'general') {
+      q = q.eq('source_type', activeCard);
+    } else if (activeCard === 'realtor_naver') {
+      q = q.eq('source_type', 'realtor').not('source_url', 'is', null);
+    } else if (activeCard === 'realtor_direct') {
+      q = q.eq('source_type', 'realtor').is('source_url', null);
+    }
+
+    if (status) {
+      q = q.ilike('status', `%${escapeLikeValue(status)}%`);
+    }
+
+    return q;
+  }
+
   async function runAssignedQuery(queryBase, uid, { clientSideFilter = true } = {}) {
     const filters = buildAssignedFilters(uid);
     let lastError = null;
@@ -202,12 +227,13 @@
     throw lastError;
   }
 
-  async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select = "*", orderColumn = "date_uploaded", ascending = false, clientSideFilter = true } = {}) {
+  async function fetchPropertiesBatch(sb, from, pageSize, { isAdmin, uid, select = "*", orderColumn = "date_uploaded", ascending = false, clientSideFilter = true, filters = null } = {}) {
     const safeFrom = Math.max(0, Number(from || 0));
     const safePageSize = Math.max(1, Number(pageSize || 1));
     const to = safeFrom + safePageSize - 1;
     const queryBase = (filter, activeSelect = select, activeOrderColumn = orderColumn) => {
       let q = sb.from("properties").select(activeSelect).order(activeOrderColumn, { ascending }).order("id", { ascending }).range(safeFrom, to);
+      q = applyServerBackedPropertyFilters(q, filters);
       if (filter) q = q.or(filter);
       return q;
     };
@@ -220,16 +246,18 @@
     return result.data;
   }
 
-  async function fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid, select = PROPERTY_LIST_SELECT, totalFallback = 0 } = {}) {
+  async function fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid, select = PROPERTY_LIST_SELECT, totalFallback = 0, filters = null } = {}) {
     const safePage = Math.max(1, Number(page || 1));
     const safePageSize = Math.max(1, Number(pageSize || 30));
     const from = Math.max(0, (safePage - 1) * safePageSize);
     const to = from + safePageSize;
-    const selectOptions = from === 0 ? { count: "estimated" } : undefined;
+    const hasServerFilters = !!(String(filters?.activeCard || '').trim() || String(filters?.status || '').trim());
+    const selectOptions = (from === 0 || hasServerFilters) ? { count: "estimated" } : undefined;
     const queryBase = (filter, activeSelect = select, activeOrderColumn = "date_uploaded") => {
       let q = sb.from("properties");
       q = selectOptions ? q.select(activeSelect, selectOptions) : q.select(activeSelect);
       q = q.order(activeOrderColumn, { ascending: false }).order("id", { ascending: false }).range(from, to);
+      q = applyServerBackedPropertyFilters(q, filters);
       if (filter) q = q.or(filter);
       return q;
     };
@@ -250,12 +278,12 @@
     return finalize(result.data, result.count);
   }
 
-  async function fetchAllProperties(sb, { isAdmin, uid, select = PROPERTY_LIST_SELECT, pageSize = 1000 } = {}) {
+  async function fetchAllProperties(sb, { isAdmin, uid, select = PROPERTY_LIST_SELECT, pageSize = 1000, filters = null } = {}) {
     const out = [];
     let from = 0;
     const safePageSize = Math.max(1, Number(pageSize || 1000));
     while (true) {
-      const rows = await fetchPropertiesBatch(sb, from, safePageSize, { isAdmin, uid, select, orderColumn: "date_uploaded", ascending: false, clientSideFilter: true });
+      const rows = await fetchPropertiesBatch(sb, from, safePageSize, { isAdmin, uid, select, orderColumn: "date_uploaded", ascending: false, clientSideFilter: true, filters });
       out.push(...rows);
       if (rows.length < safePageSize) break;
       from += safePageSize;
