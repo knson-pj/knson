@@ -374,16 +374,37 @@
     return control.closest('[data-aem-field]') || control.closest('.form-field') || control.parentElement || null;
   }
 
+  function findAdminFieldLabelElement(shell) {
+    if (!shell) return null;
+    const explicit = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label, [class*="label"], [class*="title"]');
+    if (explicit) return explicit;
+    const directChildren = Array.from(shell.children || []);
+    return directChildren.find((node) => {
+      if (!node || node.dataset?.generatedFieldTitle === 'true') return false;
+      const tag = String(node.tagName || '').toLowerCase();
+      if (!tag || ['input', 'textarea', 'select', 'option', 'button'].includes(tag)) return false;
+      if (node.querySelector('input, textarea, select, button')) return false;
+      const textValue = String(node.textContent || '').trim();
+      return !!textValue && textValue.length <= 40;
+    }) || null;
+  }
+
   function setAdminFieldLabel(shell, text) {
     if (!shell) return;
-    const label = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label');
-    if (label) {
-      label.textContent = text;
+    const generatedLabels = Array.from(shell.querySelectorAll('[data-generated-field-title="true"]'));
+    const explicit = findAdminFieldLabelElement(shell);
+    if (explicit) {
+      explicit.textContent = text;
+      generatedLabels.forEach((node) => {
+        if (node !== explicit) node.remove();
+      });
       return;
     }
-    const node = document.createElement('label');
-    node.textContent = text;
-    shell.insertBefore(node, shell.firstChild || null);
+    const generated = generatedLabels[0] || document.createElement('label');
+    generated.dataset.generatedFieldTitle = 'true';
+    generated.textContent = text;
+    if (!generated.parentElement) shell.insertBefore(generated, shell.firstChild || null);
+    generatedLabels.slice(1).forEach((node) => node.remove());
   }
 
   function ensureAdminTextareaField(form, fieldName, shell) {

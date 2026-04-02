@@ -1774,16 +1774,37 @@ function renderPagination(totalPages) {
     return control.closest('[data-ag-field]') || control.closest('.form-field') || control.parentElement || null;
   }
 
+  function findAgentFieldLabelElement(shell) {
+    if (!shell) return null;
+    const explicit = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label, .ag-label, [class*="label"], [class*="title"]');
+    if (explicit) return explicit;
+    const directChildren = Array.from(shell.children || []);
+    return directChildren.find((node) => {
+      if (!node || node.dataset?.generatedFieldTitle === 'true') return false;
+      const tag = String(node.tagName || '').toLowerCase();
+      if (!tag || ['input', 'textarea', 'select', 'option', 'button'].includes(tag)) return false;
+      if (node.querySelector('input, textarea, select, button')) return false;
+      const textValue = String(node.textContent || '').trim();
+      return !!textValue && textValue.length <= 40;
+    }) || null;
+  }
+
   function setAgentFieldLabel(shell, text) {
     if (!shell) return;
-    const label = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label, .ag-label');
-    if (label) {
-      label.textContent = text;
+    const generatedLabels = Array.from(shell.querySelectorAll('[data-generated-field-title="true"]'));
+    const explicit = findAgentFieldLabelElement(shell);
+    if (explicit) {
+      explicit.textContent = text;
+      generatedLabels.forEach((node) => {
+        if (node !== explicit) node.remove();
+      });
       return;
     }
-    const title = document.createElement('label');
-    title.textContent = text;
-    shell.insertBefore(title, shell.firstChild || null);
+    const generated = generatedLabels[0] || document.createElement('label');
+    generated.dataset.generatedFieldTitle = 'true';
+    generated.textContent = text;
+    if (!generated.parentElement) shell.insertBefore(generated, shell.firstChild || null);
+    generatedLabels.slice(1).forEach((node) => node.remove());
   }
 
   function ensureAgentTextareaField(form, fieldName, shell) {
@@ -2174,6 +2195,42 @@ function renderPagination(totalPages) {
     const d = new Date(s);
     if (isNaN(d.getTime())) return s.slice(0, 10);
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+
+  function parseFlexibleDateLocal(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [y, m, d] = raw.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+      const datePart = raw.slice(0, 10);
+      const [y, m, d] = datePart.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+
+  function computeDdayLabel(value) {
+    const target = parseFlexibleDateLocal(value);
+    if (!target) return '';
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
+    if (diffDays === 0) return 'D-Day';
+    if (diffDays > 0) return `D-${diffDays}`;
+    return `D+${Math.abs(diffDays)}`;
+  }
+
+  function formatScheduleCountdown(value) {
+    const dateText = formatDate(value);
+    if (!dateText) return '-';
+    const dday = computeDdayLabel(value);
+    return dday ? `${dateText} (${dday})` : dateText;
   }
 
   function setVal(form, name, value) {
