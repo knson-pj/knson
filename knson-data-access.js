@@ -20,6 +20,62 @@
     "exclusive_area", "date_uploaded", "created_at"
   ].join(",");
 
+  const EFFECTIVE_SELECT_CACHE = new Map();
+  const EFFECTIVE_ORDER_CACHE = new Map();
+
+  function getSelectCacheKey(select) {
+    return String(select || '').trim();
+  }
+
+  function getEffectiveSelect(select) {
+    const key = getSelectCacheKey(select);
+    return key ? (EFFECTIVE_SELECT_CACHE.get(key) || key) : '';
+  }
+
+  function rememberEffectiveSelect(requestedSelect, effectiveSelect) {
+    const requested = getSelectCacheKey(requestedSelect);
+    if (!requested) return;
+    const effective = getSelectCacheKey(effectiveSelect) || requested;
+    EFFECTIVE_SELECT_CACHE.set(requested, effective);
+  }
+
+  function getOrderCacheKey(orderColumn) {
+    return String(orderColumn || '').trim();
+  }
+
+  function buildOrderCandidates(orderColumn) {
+    const requested = getOrderCacheKey(orderColumn) || 'id';
+    const cached = EFFECTIVE_ORDER_CACHE.get(requested);
+    return [...new Set([cached, requested, 'date_uploaded', 'created_at', 'id'].filter(Boolean))];
+  }
+
+  function rememberEffectiveOrder(requestedOrder, effectiveOrder) {
+    const requested = getOrderCacheKey(requestedOrder);
+    const effective = getOrderCacheKey(effectiveOrder);
+    if (!requested || !effective) return;
+    EFFECTIVE_ORDER_CACHE.set(requested, effective);
+  }
+
+  async function runOrderedSelectQueryResilient(buildQuery, { select = '*', orderColumn = 'id', maxRetries = 8 } = {}) {
+    const requestedSelect = getSelectCacheKey(select) || '*';
+    const seededSelect = getEffectiveSelect(requestedSelect) || requestedSelect;
+    let lastResult = null;
+    for (const candidateOrder of buildOrderCandidates(orderColumn)) {
+      const result = await runSelectQueryResilient((activeSelect) => buildQuery(activeSelect, candidateOrder), seededSelect, { maxRetries });
+      if (!result?.error) {
+        rememberEffectiveSelect(requestedSelect, result.__effectiveSelect || seededSelect);
+        rememberEffectiveOrder(orderColumn, candidateOrder);
+        if (candidateOrder !== orderColumn) result.__effectiveOrderColumn = candidateOrder;
+        return result;
+      }
+      lastResult = result;
+      const missing = extractSchemaMissingColumn(result.error);
+      if (missing && missing === String(candidateOrder || '').trim()) continue;
+      return result;
+    }
+    return lastResult;
+  }
+
   function chunkArray(arr, size) {
     if (K && typeof K.chunk === "function") return K.chunk(arr, size);
     const out = [];
@@ -150,17 +206,17 @@
     const safeFrom = Math.max(0, Number(from || 0));
     const safePageSize = Math.max(1, Number(pageSize || 1));
     const to = safeFrom + safePageSize - 1;
-    const queryBase = (filter, activeSelect = select) => {
-      let q = sb.from("properties").select(activeSelect).order(orderColumn, { ascending }).order("id", { ascending }).range(safeFrom, to);
+    const queryBase = (filter, activeSelect = select, activeOrderColumn = orderColumn) => {
+      let q = sb.from("properties").select(activeSelect).order(activeOrderColumn, { ascending }).order("id", { ascending }).range(safeFrom, to);
       if (filter) q = q.or(filter);
       return q;
     };
     if (isAdmin) {
-      const { data, error } = await runSelectQueryResilient((activeSelect) => queryBase(null, activeSelect), select);
+      const { data, error } = await runOrderedSelectQueryResilient((activeSelect, activeOrderColumn) => queryBase(null, activeSelect, activeOrderColumn), { select, orderColumn });
       if (error) throw error;
       return Array.isArray(data) ? data : [];
     }
-    const result = await runAssignedQuery((filter) => runSelectQueryResilient((activeSelect) => queryBase(filter, activeSelect), select), uid, { clientSideFilter });
+    const result = await runAssignedQuery((filter) => runOrderedSelectQueryResilient((activeSelect, activeOrderColumn) => queryBase(filter, activeSelect, activeOrderColumn), { select, orderColumn }), uid, { clientSideFilter });
     return result.data;
   }
 
@@ -170,10 +226,10 @@
     const from = Math.max(0, (safePage - 1) * safePageSize);
     const to = from + safePageSize;
     const selectOptions = from === 0 ? { count: "estimated" } : undefined;
-    const queryBase = (filter, activeSelect = select) => {
+    const queryBase = (filter, activeSelect = select, activeOrderColumn = "date_uploaded") => {
       let q = sb.from("properties");
       q = selectOptions ? q.select(activeSelect, selectOptions) : q.select(activeSelect);
-      q = q.order("date_uploaded", { ascending: false }).order("id", { ascending: false }).range(from, to);
+      q = q.order(activeOrderColumn, { ascending: false }).order("id", { ascending: false }).range(from, to);
       if (filter) q = q.or(filter);
       return q;
     };
@@ -186,11 +242,11 @@
       return { items, total, hasMore, totalIsEstimated: !numericCount };
     };
     if (isAdmin) {
-      const { data, error, count } = await runSelectQueryResilient((activeSelect) => queryBase(null, activeSelect), select);
+      const { data, error, count } = await runOrderedSelectQueryResilient((activeSelect, activeOrderColumn) => queryBase(null, activeSelect, activeOrderColumn), { select, orderColumn: "date_uploaded" });
       if (error) throw error;
       return finalize(data, count);
     }
-    const result = await runAssignedQuery((filter) => runSelectQueryResilient((activeSelect) => queryBase(filter, activeSelect), select), uid, { clientSideFilter: true });
+    const result = await runAssignedQuery((filter) => runOrderedSelectQueryResilient((activeSelect, activeOrderColumn) => queryBase(filter, activeSelect, activeOrderColumn), { select, orderColumn: "date_uploaded" }), uid, { clientSideFilter: true });
     return finalize(result.data, result.count);
   }
 
@@ -240,11 +296,11 @@
     let activeSelect = PROPERTY_HOME_SUMMARY_SELECT;
     while (true) {
       const to = from + safePageSize - 1;
-      const { data, error, __effectiveSelect } = await runSelectQueryResilient((selectText) => sb.from("properties")
+      const { data, error, __effectiveSelect } = await runOrderedSelectQueryResilient((selectText, activeOrderColumn) => sb.from("properties")
         .select(selectText)
-        .order("date_uploaded", { ascending: false })
+        .order(activeOrderColumn, { ascending: false })
         .order("id", { ascending: false })
-        .range(from, to), activeSelect);
+        .range(from, to), { select: activeSelect, orderColumn: "date_uploaded" });
       if (error) throw error;
       if (__effectiveSelect) activeSelect = __effectiveSelect;
       const rows = Array.isArray(data) ? data : [];

@@ -1999,6 +1999,26 @@ function renderPagination(totalPages) {
   }
 
   // ── Utilities ──
+  function truncateDisplayText(value, maxLength) {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    const limit = Number(maxLength || 0);
+    if (!text) return '';
+    if (!Number.isFinite(limit) || limit <= 0 || text.length <= limit) return text;
+    if (limit <= 1) return text.slice(0, limit);
+    return `${text.slice(0, limit - 1)}…`;
+  }
+
+  function getFloorDisplayValue(item) {
+    const raw = item?._raw && typeof item._raw === "object" ? item._raw : {};
+    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? "").trim();
+    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? "").trim();
+    if (floor && total) {
+      if (floor.includes('/')) return floor;
+      return `${floor}/${total}`;
+    }
+    return floor || total || "";
+  }
+
   function firstText(...args) {
     if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...args);
     for (const v of args) {
