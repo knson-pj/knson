@@ -10,8 +10,8 @@
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
     "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
-    "memo", "latitude", "longitude", "date_uploaded", "created_at",
-    "geocode_status", "geocoded_at", "raw"
+    "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
+    "geocode_status", "geocoded_at"
   ].join(",");
 
   const PROPERTY_HOME_SUMMARY_SELECT = [

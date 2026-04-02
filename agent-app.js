@@ -1772,6 +1772,33 @@ function renderPagination(totalPages) {
     return el.closest('[data-ag-field]') || el.closest('.form-field, .field, .input-row, .modal-field, .ag-field') || el.parentElement;
   }
 
+  function getUsableAgentOpinionField(form) {
+    if (!form || typeof form.querySelector !== 'function') return null;
+    const visible = form.querySelector('textarea[name="opinion"], input[name="opinion"]:not([type="hidden"])');
+    if (visible) return visible;
+    const fallback = form.elements['opinion'];
+    if (!fallback || typeof fallback !== 'object') return null;
+    const tag = String(fallback.tagName || '').toUpperCase();
+    const type = String(fallback.type || '').toLowerCase();
+    if (tag === 'TEXTAREA' || (tag === 'INPUT' && type !== 'hidden')) return fallback;
+    return null;
+  }
+
+  function getAgentOpinionValue(form) {
+    const field = getUsableAgentOpinionField(form);
+    if (field) return String(field.value || '').trim();
+    const rawField = form?.elements?.['opinion'];
+    return rawField ? String(rawField.value || '').trim() : '';
+  }
+
+  function setAgentOpinionValue(form, value) {
+    const text = value == null ? '' : String(value);
+    const field = getUsableAgentOpinionField(form);
+    if (field) field.value = text;
+    const rawField = form?.elements?.['opinion'];
+    if (rawField && rawField !== field && typeof rawField.value !== 'undefined') rawField.value = text;
+  }
+
   function setAgentFieldLabel(shell, text, inputEl) {
     if (!shell) return;
     const doc = shell.ownerDocument || document;
@@ -1786,8 +1813,14 @@ function renderPagination(totalPages) {
 
   function ensureAgentOpinionField(form) {
     if (!form) return null;
-    let field = form.elements['opinion'];
+    let field = getUsableAgentOpinionField(form);
     if (field) return field;
+    const rawField = form.elements['opinion'];
+    const previousValue = rawField && typeof rawField.value !== 'undefined' ? String(rawField.value || '') : '';
+    if (rawField && rawField !== field && rawField.name === 'opinion') {
+      rawField.name = '_legacyOpinion';
+      rawField.setAttribute('data-legacy-opinion', 'true');
+    }
     const siteShell = findAgentFieldShell(form.elements['siteInspection']);
     const host = siteShell?.parentElement || form;
     const shell = document.createElement('div');
@@ -1801,6 +1834,7 @@ function renderPagination(totalPages) {
     textarea.id = 'agOpinion';
     textarea.rows = 3;
     textarea.placeholder = '담당자 의견을 입력하세요';
+    textarea.value = previousValue;
     shell.appendChild(label);
     shell.appendChild(textarea);
     if (siteShell && siteShell.parentElement) siteShell.insertAdjacentElement('afterend', shell);
@@ -1813,8 +1847,11 @@ function renderPagination(totalPages) {
     const siteShell = findAgentFieldShell(form.elements['siteInspection']);
     const rightsEl = form.elements['rightsAnalysis'];
     const rightsShell = findAgentFieldShell(rightsEl);
-    if (rightsShell) setAgentFieldLabel(rightsShell, '담당자 의견', rightsEl);
-    let opinionEl = form.elements['opinion'];
+    if (rightsShell) {
+      setAgentFieldLabel(rightsShell, '담당자 의견', rightsEl);
+      rightsShell.classList.toggle('hidden', !!hideForPlain);
+    }
+    let opinionEl = getUsableAgentOpinionField(form);
     if (hideForPlain && !opinionEl) opinionEl = ensureAgentOpinionField(form);
     const opinionShell = findAgentFieldShell(opinionEl);
     if (opinionShell) setAgentFieldLabel(opinionShell, '담당자 의견', opinionEl);
@@ -1915,7 +1952,7 @@ function renderPagination(totalPages) {
     setVal(f, "dateMain", formatDate(view.dateMain) || "");
     setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);
-    setVal(f, "opinion", view.opinion || "");
+    setAgentOpinionValue(f, view.opinion || "");
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
@@ -1928,7 +1965,7 @@ function renderPagination(totalPages) {
     setAgentEditMsg('', true);
     renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
     applyAgentEditFormMode(item, view);
-    setVal(f, "opinion", view.opinion || "");
+    setAgentOpinionValue(f, view.opinion || "");
     setAgentEditSection("basic");
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
@@ -1948,7 +1985,7 @@ function renderPagination(totalPages) {
     const f = els.agEditForm;
     const readStr = (name) => String((f.elements[name]?.value) || "").trim();
     const readNum = (name) => parseFlexibleNumber(f.elements[name]?.value);
-    const newOpinionText = readStr("opinion");
+    const newOpinionText = getAgentOpinionValue(f);
     let opinionHistory = loadOpinionHistory(item);
 
     const currentUserId = String(state.session?.user?.id || "").trim();
@@ -2192,12 +2229,14 @@ function renderPagination(totalPages) {
   }
 
   function getFloorDisplayValue(item) {
+    const floorInfo = pickFirstTextByKeys(item, ['floorInfo', 'floor_info', '층정보', '층정보요약']);
     const floor = pickFirstTextByKeys(item, ['floor', 'floorText', '층수', '층', '해당층']);
     const total = pickFirstTextByKeys(item, ['totalfloor', 'total_floor', 'totalFloor', '총층', '총층수']);
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
     }
+    if (floorInfo) return floorInfo;
     return floor || total || "";
   }
 
@@ -2309,7 +2348,7 @@ function renderPagination(totalPages) {
   }
 
   function setVal(form, name, value) {
-    const el = form.elements[name];
+    const el = name === 'opinion' ? getUsableAgentOpinionField(form) || form.elements[name] : form.elements[name];
     if (!el) return;
     el.value = value || "";
   }

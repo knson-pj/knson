@@ -108,12 +108,14 @@
 
 
   function getFloorDisplayValue(item) {
+    const floorInfo = pickFirstTextByKeys(item, ['floorInfo', 'floor_info', '층정보', '층정보요약']);
     const floor = pickFirstTextByKeys(item, ['floor', 'floorText', '층수', '층', '해당층']);
     const total = pickFirstTextByKeys(item, ['totalfloor', 'total_floor', 'totalFloor', '총층', '총층수']);
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
     }
+    if (floorInfo) return floorInfo;
     return floor || total || '';
   }
 
@@ -422,10 +424,43 @@
     if (shell.previousElementSibling && shell.previousElementSibling.matches?.('label')) applyText(shell.previousElementSibling);
   }
 
+  function getUsableAdminOpinionField(form) {
+    if (!form || typeof form.querySelector !== 'function') return null;
+    const visible = form.querySelector('textarea[name="opinion"], input[name="opinion"]:not([type="hidden"])');
+    if (visible) return visible;
+    const fallback = form.elements['opinion'];
+    if (!fallback || typeof fallback !== 'object') return null;
+    const tag = String(fallback.tagName || '').toUpperCase();
+    const type = String(fallback.type || '').toLowerCase();
+    if (tag === 'TEXTAREA' || (tag === 'INPUT' && type !== 'hidden')) return fallback;
+    return null;
+  }
+
+  function getAdminOpinionValue(form) {
+    const field = getUsableAdminOpinionField(form);
+    if (field) return String(field.value || '').trim();
+    const rawField = form?.elements?.['opinion'];
+    return rawField ? String(rawField.value || '').trim() : '';
+  }
+
+  function setAdminOpinionValue(form, value) {
+    const text = value == null ? '' : String(value);
+    const field = getUsableAdminOpinionField(form);
+    if (field) field.value = text;
+    const rawField = form?.elements?.['opinion'];
+    if (rawField && rawField !== field && typeof rawField.value !== 'undefined') rawField.value = text;
+  }
+
   function ensureAdminOpinionField(form, attrName) {
     if (!form) return null;
-    let field = form.elements['opinion'];
+    let field = getUsableAdminOpinionField(form);
     if (field) return field;
+    const rawField = form.elements['opinion'];
+    const previousValue = rawField && typeof rawField.value !== 'undefined' ? String(rawField.value || '') : '';
+    if (rawField && rawField !== field && rawField.name === 'opinion') {
+      rawField.name = '_legacyOpinion';
+      rawField.setAttribute('data-legacy-opinion', 'true');
+    }
     const siteShell = findFieldShell(form.elements['siteInspection'], attrName);
     const host = siteShell?.parentElement || form;
     const shell = document.createElement('div');
@@ -439,6 +474,7 @@
     textarea.id = 'aemOpinion';
     textarea.rows = 3;
     textarea.placeholder = '담당자 의견을 입력하세요';
+    textarea.value = previousValue;
     shell.appendChild(label);
     shell.appendChild(textarea);
     if (siteShell && siteShell.parentElement) siteShell.insertAdjacentElement('afterend', shell);
@@ -451,8 +487,11 @@
     const siteShell = findFieldShell(form.elements['siteInspection'], attrName);
     const rightsEl = form.elements['rightsAnalysis'];
     const rightsShell = findFieldShell(rightsEl, attrName);
-    if (rightsShell) setFieldLabel(rightsShell, '담당자 의견', rightsEl);
-    let opinionEl = form.elements['opinion'];
+    if (rightsShell) {
+      setFieldLabel(rightsShell, '담당자 의견', rightsEl);
+      rightsShell.classList.toggle('hidden', !!hideForPlain);
+    }
+    let opinionEl = getUsableAdminOpinionField(form);
     if (hideForPlain && !opinionEl) opinionEl = ensureAdminOpinionField(form, attrName);
     const opinionShell = findFieldShell(opinionEl, attrName);
     if (opinionShell) setFieldLabel(opinionShell, '담당자 의견', opinionEl);
@@ -627,8 +666,8 @@
       String(state?.propertySort?.key || '').trim()
     );
 
-    const noFullCache = !Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot);
-    if (noFullCache && overviewCounts && !hasLocalOnlyOverrides) {
+    const hasFullDetailedCounts = Array.isArray(state?.propertiesFullCache) && state.propertiesFullCache.length > 0;
+    if (!hasFullDetailedCounts && overviewCounts && !hasLocalOnlyOverrides) {
       const sourceCounts = overviewCounts.source && typeof overviewCounts.source === 'object' ? overviewCounts.source : { '': Number(state?.propertyTotalCount || 0) || 0 };
       const selectedKey = String(filters.activeCard || '').trim();
       const selectedTotal = Number(sourceCounts[selectedKey || ''] ?? sourceCounts[''] ?? state?.propertyTotalCount ?? 0) || 0;
@@ -1015,7 +1054,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       ? (utils.PropertyDomain.buildPropertyEditViewModel(workingItem) || workingItem)
       : workingItem;
     const setVal = (name, v) => {
-      const el = f.elements[name];
+      const el = name === 'opinion' ? getUsableAdminOpinionField(f) || f.elements[name] : f.elements[name];
       if (el) el.value = v == null ? '' : String(v);
     };
     setVal('itemNo', view.itemNo);
@@ -1040,14 +1079,14 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('realtorcell', view.realtorcell ?? '');
     setVal('rightsAnalysis', view.rightsAnalysis ?? '');
     setVal('siteInspection', view.siteInspection ?? '');
-    setVal('opinion', view.opinion ?? '');
+    setAdminOpinionValue(f, view.opinion ?? '');
     setVal('latitude', view.latitude ?? '');
     setVal('longitude', view.longitude ?? '');
 
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
-    setVal('opinion', view.opinion ?? '');
-    const opinionEl = f.elements['opinion'];
+    setAdminOpinionValue(f, view.opinion ?? '');
+    const opinionEl = getUsableAdminOpinionField(f) || f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
     if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
@@ -1060,7 +1099,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const hasText = (v) => v != null && String(v).trim() !== '';
     const hasNum = (v) => v != null && String(v).trim() !== '' && !Number.isNaN(Number(v));
     const lockIfHas = (name, has) => {
-      const el = f.elements[name];
+      const el = name === 'opinion' ? getUsableAdminOpinionField(f) || f.elements[name] : f.elements[name];
       if (el) el.disabled = !isAdmin && has;
     };
     lockIfHas('itemNo', hasText(view.itemNo));
@@ -1139,7 +1178,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const fd = new FormData(els.aemForm);
     const readStr = (k) => String(fd.get(k) || '').trim();
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));
-    const newOpinionText = readStr('opinion');
+    const newOpinionText = getAdminOpinionValue(f);
     let opinionHistory = utils.loadOpinionHistory(item);
     const sourceBucketValue = readStr('sourceType') || toEditSourceTypeValue(item, item.sourceType, item.submitterType);
     const submitterDisplayValue = readStr('submitterType') || deriveSubmitterDisplayType(item, item);

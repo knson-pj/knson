@@ -907,7 +907,7 @@ function bindEvents() {
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
     "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
-    "memo", "latitude", "longitude", "date_uploaded", "created_at",
+    "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
     "geocode_status", "geocoded_at"
   ].join(",");
 
@@ -1526,6 +1526,7 @@ function bindEvents() {
       pruneSelectedPropertyIds();
       hydrateAssignedAgentNames();
       renderPropertiesTable();
+      if (isAdmin && state.propertyMode === "page" && !Array.isArray(state.propertiesFullCache)) { Promise.resolve().then(() => warmPropertyFullCacheForFilters()).catch(() => {}); }
       renderSummary();
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
       if (state.activeTab === 'home') renderSummary();
