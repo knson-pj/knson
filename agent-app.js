@@ -665,7 +665,7 @@
                 const kindClass = getPropertyKindClass(item?.sourceType || group.row?.property_source_type, kindTarget);
                 const title = buildDailyReportPropertyTitle(group);
                 const actions = [
-                  ["rights_analysis", "담당자 의견"],
+                  ["rights_analysis", "권리분석"],
                   ["site_inspection", "현장조사"],
                   ["daily_issue", "금일이슈사항"],
                   ["new_property", "신규물건등록"],
@@ -999,8 +999,6 @@
     useapproval: "사용승인일",
     status: "진행상태",
     priceMain: "매매가",
-    lowprice: "현재가격",
-    dateMain: "주요일정",
     sourceUrl: "원문링크",
     realtorName: "중개사무소명",
     realtorPhone: "유선전화",
@@ -1171,8 +1169,6 @@
       useapproval: firstText(raw.useapproval, raw.useApproval, ""),
       status: firstText(item?.status, raw.status, ""),
       priceMain: item?.priceMain ?? raw.priceMain ?? null,
-      lowprice: item?.lowprice ?? item?.currentPrice ?? raw.currentPrice ?? raw.lowprice ?? null,
-      dateMain: firstText(item?.dateMain, raw.dateMain, ""),
       sourceUrl: firstText(raw.sourceUrl, item?._raw?.source_url, ""),
       realtorName: firstText(raw.realtorName, raw.realtorname, item?._raw?.broker_office_name, ""),
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
@@ -1197,8 +1193,6 @@
       useapproval: firstText(row?.use_approval, raw.useapproval, raw.useApproval, ""),
       status: firstText(row?.status, raw.status, ""),
       priceMain: row?.price_main ?? raw.priceMain ?? null,
-      lowprice: row?.lowprice ?? row?.low_price ?? raw.currentPrice ?? raw.lowprice ?? null,
-      dateMain: firstText(row?.date_main, raw.dateMain, ""),
       sourceUrl: firstText(row?.source_url, raw.sourceUrl, ""),
       realtorName: firstText(row?.broker_office_name, raw.realtorName, raw.realtorname, ""),
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
@@ -1275,7 +1269,7 @@
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
     const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot);
     const nextRow = { ...base };
-    ["address","asset_type","floor","total_floor","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","broker_office_name","submitter_name","submitter_phone","memo"].forEach((key) => {
+    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo"].forEach((key) => {
       if (hasMeaningfulValue(incomingRow?.[key])) nextRow[key] = incomingRow[key];
     });
     if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
@@ -1599,27 +1593,20 @@ function renderRow(p) {
   };
   const kindClass = kindClassMap[bucket] || "kind-general";
   const usePlainLayout = isPlainSourceFilterSelected(state.filters?.activeCard);
-  const priceMainValue = p.priceMain ?? pickFirstNumberByKeys(p, ['priceMain', 'price_main', '매매가', '매매금액', '거래가', 'price', '감정가', '감정가(매각가)']);
-  const appraisal = priceMainValue != null ? formatEok(priceMainValue) : "-";
+  const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
   const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
-  const rate = !usePlainLayout ? calcRate(priceMainValue, p.lowprice) : "";
+  const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
   const addressText = truncateDisplayText(p.address || "-", 40) || "-";
   const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
-  const scheduleText = !usePlainLayout ? ((typeof formatScheduleCountdown === 'function' ? formatScheduleCountdown(p.dateMain) : (formatDate(p.dateMain) || '-'))) : "";
-  const opinionMark = (usePlainLayout ? String(p.opinion || p.rightsAnalysis || '').trim() : String(p.rightsAnalysis || p.opinion || '').trim()) ? '✓' : '';
-  const rightsText = !usePlainLayout ? opinionMark : '';
-  const plainOpinionText = usePlainLayout ? opinionMark : '';
+  const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
+  const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
   const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
-  const exclusiveValue = p.exclusivearea ?? pickFirstNumberByKeys(p, ['exclusivearea', 'exclusive_area', 'exclusiveArea', '전용면적', '전용면적(평)']) ?? pickFirstTextByKeys(p, ['전용면적', '전용면적(평)']);
-  const commonValue = p.commonarea ?? pickFirstNumberByKeys(p, ['commonarea', 'common_area', 'commonArea', '공용면적', '공용면적(평)']) ?? pickFirstTextByKeys(p, ['공용면적', '공용면적(평)']);
-  const siteValue = p.sitearea ?? pickFirstNumberByKeys(p, ['sitearea', 'site_area', 'siteArea', '토지면적', '토지면적(평)']) ?? pickFirstTextByKeys(p, ['토지면적', '토지면적(평)']);
-  const commonText = commonValue != null && commonValue !== '' ? (Number.isFinite(Number(commonValue)) ? fmtArea(Number(commonValue)) : String(commonValue)) : "-";
-  const siteText = siteValue != null && siteValue !== '' ? (Number.isFinite(Number(siteValue)) ? fmtArea(Number(siteValue)) : String(siteValue)) : "-";
-  const useapprovalRaw = pickFirstTextByKeys(p, ['useapproval', 'use_approval', 'useApproval', '사용승인', '사용승인일', '승인일']);
-  const useapprovalText = formatDate(useapprovalRaw || "") || useapprovalRaw || "-";
+  const commonText = p.commonarea != null ? fmtArea(p.commonarea) : "-";
+  const siteText = p.sitearea != null ? fmtArea(p.sitearea) : "-";
+  const useapprovalText = formatDate(p.useapproval || p._raw?.useapproval || p._raw?.use_approval || p._raw?.useApproval || "") || "-";
 
   const favTd = document.createElement("td");
   favTd.className = "fav-col";
@@ -1647,13 +1634,13 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (exclusiveValue != null && exclusiveValue !== "" ? (Number.isFinite(Number(exclusiveValue)) ? fmtArea(Number(exclusiveValue)) : esc(String(exclusiveValue))) : "-") + "</td>" +
+        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
         "<td>" + esc(commonText) + "</td>" +
         "<td>" + esc(siteText) + "</td>" +
         "<td>" + esc(useapprovalText) + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + (plainOpinionText || "-") + "</td>" +
+        "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + esc(p.itemNo || "-") + "</td>" +
@@ -1661,7 +1648,7 @@ function renderRow(p) {
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
-        "<td>" + (exclusiveValue != null && exclusiveValue !== "" ? (Number.isFinite(Number(exclusiveValue)) ? fmtArea(Number(exclusiveValue)) : esc(String(exclusiveValue))) : "-") + "</td>" +
+        "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(current) + "</td>" +
         "<td>" + esc(rate) + "</td>" +
@@ -1767,141 +1754,93 @@ function renderPagination(totalPages) {
     }
   }
 
-  function findAgentFieldShell(el) {
-    if (!el || typeof el.closest !== 'function') return null;
-    return el.closest('[data-ag-field]') || el.closest('.form-field, .field, .input-row, .modal-field, .ag-field') || el.parentElement;
-  }
 
-  function getUsableAgentOpinionField(form) {
-    if (!form || typeof form.querySelector !== 'function') return null;
-    const visible = form.querySelector('textarea[name="opinion"], input[name="opinion"]:not([type="hidden"])');
-    if (visible) return visible;
-    const fallback = form.elements['opinion'];
-    if (!fallback || typeof fallback !== 'object') return null;
-    const tag = String(fallback.tagName || '').toUpperCase();
-    const type = String(fallback.type || '').toLowerCase();
-    if (tag === 'TEXTAREA' || (tag === 'INPUT' && type !== 'hidden')) return fallback;
+  function getNamedFormControl(form, name) {
+    if (!form || !name) return null;
+    const control = form.elements?.[name];
+    if (!control) return null;
+    if (typeof control.tagName === 'string') return control;
+    if (typeof control.length === 'number') {
+      for (const node of Array.from(control)) {
+        if (node && typeof node.tagName === 'string') return node;
+      }
+    }
     return null;
   }
 
-  function getAgentOpinionValue(form) {
-    const field = getUsableAgentOpinionField(form);
-    if (field) return String(field.value || '').trim();
-    const rawField = form?.elements?.['opinion'];
-    return rawField ? String(rawField.value || '').trim() : '';
+  function findAgentFieldShell(form, fieldName) {
+    const control = getNamedFormControl(form, fieldName);
+    if (!control) return null;
+    return control.closest('[data-ag-field]') || control.closest('.form-field') || control.parentElement || null;
   }
 
-  function setAgentOpinionValue(form, value) {
-    const text = value == null ? '' : String(value);
-    const field = getUsableAgentOpinionField(form);
-    if (field) field.value = text;
-    const rawField = form?.elements?.['opinion'];
-    if (rawField && rawField !== field && typeof rawField.value !== 'undefined') rawField.value = text;
-  }
-
-  function setAgentFieldLabel(shell, text, inputEl) {
+  function setAgentFieldLabel(shell, text) {
     if (!shell) return;
-    const doc = shell.ownerDocument || document;
-    const selectors = 'label, .label, .field-label, .input-label, .modal-label, .ag-label';
-    const applyText = (node) => { if (node) node.textContent = text; };
-    applyText(shell.querySelector(selectors));
-    if (inputEl?.id) {
-      try { applyText(doc.querySelector(`label[for="${inputEl.id}"]`)); } catch {}
+    const label = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label, .ag-label');
+    if (label) {
+      label.textContent = text;
+      return;
     }
-    if (shell.previousElementSibling && shell.previousElementSibling.matches?.('label')) applyText(shell.previousElementSibling);
+    const title = document.createElement('label');
+    title.textContent = text;
+    shell.insertBefore(title, shell.firstChild || null);
   }
 
-  function ensureAgentOpinionField(form) {
-    if (!form) return null;
-    let field = getUsableAgentOpinionField(form);
-    if (field) return field;
-    const rawField = form.elements['opinion'];
-    const previousValue = rawField && typeof rawField.value !== 'undefined' ? String(rawField.value || '') : '';
-    if (rawField && rawField !== field && rawField.name === 'opinion') {
-      rawField.name = '_legacyOpinion';
-      rawField.setAttribute('data-legacy-opinion', 'true');
+  function ensureAgentTextareaField(form, fieldName, shell) {
+    if (!form || !shell || !fieldName) return null;
+    let control = getNamedFormControl(form, fieldName);
+    const isUsable = control && String(control.type || '').toLowerCase() !== 'hidden';
+    if (isUsable) {
+      control.hidden = false;
+      control.style.display = '';
+      return control;
     }
-    const siteShell = findAgentFieldShell(form.elements['siteInspection']);
-    const host = siteShell?.parentElement || form;
-    const shell = document.createElement('div');
-    shell.className = 'ag-field form-field';
-    shell.setAttribute('data-ag-field', 'opinion');
-    const label = document.createElement('label');
-    label.textContent = '담당자 의견';
-    label.htmlFor = 'agOpinion';
-    const textarea = document.createElement('textarea');
-    textarea.name = 'opinion';
-    textarea.id = 'agOpinion';
-    textarea.rows = 3;
-    textarea.placeholder = '담당자 의견을 입력하세요';
-    textarea.value = previousValue;
-    shell.appendChild(label);
-    shell.appendChild(textarea);
-    if (siteShell && siteShell.parentElement) siteShell.insertAdjacentElement('afterend', shell);
-    else host.appendChild(shell);
-    return textarea;
+    if (control && String(control.type || '').toLowerCase() === 'hidden') control.disabled = true;
+    const area = document.createElement('textarea');
+    area.name = fieldName;
+    area.rows = 6;
+    area.className = (control && control.className) ? String(control.className) : 'ag-textarea';
+    shell.appendChild(area);
+    return area;
   }
 
-  function repositionAgentPlainOpinionField(form, hideForPlain) {
+  function arrangeAgentOpinionFields(form) {
     if (!form) return;
-    const siteShell = findAgentFieldShell(form.elements['siteInspection']);
-    const rightsEl = form.elements['rightsAnalysis'];
-    const rightsShell = findAgentFieldShell(rightsEl);
+    const siteShell = findAgentFieldShell(form, 'siteInspection');
+    const rightsShell = findAgentFieldShell(form, 'rightsAnalysis');
+    const opinionShell = findAgentFieldShell(form, 'opinion');
+    ensureAgentTextareaField(form, 'siteInspection', siteShell);
+    ensureAgentTextareaField(form, 'rightsAnalysis', rightsShell);
+    ensureAgentTextareaField(form, 'opinion', opinionShell);
+    if (siteShell) {
+      siteShell.classList.remove('hidden');
+      siteShell.style.display = '';
+      siteShell.hidden = false;
+      siteShell.style.gridColumn = '';
+      setAgentFieldLabel(siteShell, '현장실사');
+    }
     if (rightsShell) {
-      setAgentFieldLabel(rightsShell, '담당자 의견', rightsEl);
-      rightsShell.classList.toggle('hidden', !!hideForPlain);
+      rightsShell.classList.remove('hidden');
+      rightsShell.style.display = '';
+      rightsShell.hidden = false;
+      rightsShell.style.gridColumn = '';
+      setAgentFieldLabel(rightsShell, '담당자 의견');
     }
-    let opinionEl = getUsableAgentOpinionField(form);
-    if (hideForPlain && !opinionEl) opinionEl = ensureAgentOpinionField(form);
-    const opinionShell = findAgentFieldShell(opinionEl);
-    if (opinionShell) setAgentFieldLabel(opinionShell, '담당자 의견', opinionEl);
-    if (!opinionShell) return;
-    opinionShell.classList.toggle('hidden', !hideForPlain);
-    if (!hideForPlain) return;
-    if (siteShell && opinionShell !== siteShell && siteShell.parentElement) {
-      siteShell.insertAdjacentElement('afterend', opinionShell);
-      const parent = siteShell.parentElement;
-      if (parent && parent.style) {
-        if (!parent.style.display) parent.style.display = 'grid';
-        if (!parent.style.gridTemplateColumns) parent.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-        if (!parent.style.gap) parent.style.gap = '12px';
-      }
+    if (opinionShell) {
+      opinionShell.classList.remove('hidden');
+      opinionShell.style.display = '';
+      opinionShell.hidden = false;
+      opinionShell.style.gridColumn = '1 / -1';
+      setAgentFieldLabel(opinionShell, '금일 이슈사항');
     }
-  }
-
-  function buildPropertyHistoryEntry(kind, text, user, options = {}) {
-    const body = String(text || '').trim();
-    if (!body) return null;
-    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
-    const titleMap = {
-      opinion: '담당자 의견',
-      siteInspection: '현장실사',
-      dailyIssue: '금일이슈사항',
-    };
-    return {
-      kind: String(kind || 'opinion').trim() || 'opinion',
-      title: String(options.title || titleMap[kind] || '담당자 의견').trim(),
-      at,
-      date: String(options.date || formatDate(at) || String(at).slice(0, 10)).trim() || String(at).slice(0, 10),
-      text: body,
-      author: String(options.author || user?.name || user?.email || '').trim(),
-    };
-  }
-
-  function normalizePropertyHistoryEntry(entry) {
-    if (!entry || typeof entry !== 'object') return null;
-    const text = String(entry.text || entry.note || '').trim();
-    if (!text) return null;
-    const kind = String(entry.kind || entry.type || 'opinion').trim() || 'opinion';
-    const date = String(entry.date || entry.at || '').trim();
-    return { ...entry, kind, title: String(entry.title || '').trim(), date, at: String(entry.at || date).trim(), text, author: String(entry.author || entry.actor || '').trim() };
-  }
-
-  function getPropertyHistoryMeta(entry) {
-    const kind = String(entry?.kind || 'opinion').trim();
-    if (kind === 'siteInspection') return { badgeClass: 'is-site', badgeLabel: '현장실사', title: '현장실사' };
-    if (kind === 'dailyIssue') return { badgeClass: 'is-edit', badgeLabel: '이슈Log', title: '금일이슈사항' };
-    return { badgeClass: 'is-opinion', badgeLabel: '이슈Log', title: '담당자 의견' };
+    const parent = siteShell && rightsShell && opinionShell && siteShell.parentElement === rightsShell.parentElement && rightsShell.parentElement === opinionShell.parentElement
+      ? siteShell.parentElement
+      : null;
+    if (parent) {
+      parent.appendChild(siteShell);
+      parent.appendChild(rightsShell);
+      parent.appendChild(opinionShell);
+    }
   }
 
   function applyAgentEditFormMode(item, view) {
@@ -1914,16 +1853,14 @@ function renderPagination(totalPages) {
     form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="currentPrice"]').forEach((node) => {
       node.classList.toggle("hidden", hideForPlain);
     });
-    const rightsShell = findAgentFieldShell(form.elements['rightsAnalysis']);
-    if (rightsShell) rightsShell.classList.remove('hidden');
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
     form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
-    repositionAgentPlainOpinionField(form, hideForPlain);
     setVal(form, "brokerOfficeDisplay", view?.realtorName || "-");
     setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
     setVal(form, "brokerCellDisplay", view?.realtorCell || "-");
     setVal(form, "ownerNameDisplay", view?.submitterName || "-");
     setVal(form, "ownerPhoneDisplay", view?.submitterPhone || "-");
+    arrangeAgentOpinionFields(form);
   }
 
   function openEditModal(item) {
@@ -1952,7 +1889,7 @@ function renderPagination(totalPages) {
     setVal(f, "dateMain", formatDate(view.dateMain) || "");
     setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);
-    setAgentOpinionValue(f, view.opinion || "");
+    setVal(f, "opinion", view.opinion || "");
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
@@ -1965,7 +1902,7 @@ function renderPagination(totalPages) {
     setAgentEditMsg('', true);
     renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
     applyAgentEditFormMode(item, view);
-    setAgentOpinionValue(f, view.opinion || "");
+    arrangeAgentOpinionFields(f);
     setAgentEditSection("basic");
     els.agEditModal.classList.remove("hidden");
     els.agEditModal.setAttribute("aria-hidden", "false");
@@ -1985,15 +1922,15 @@ function renderPagination(totalPages) {
     const f = els.agEditForm;
     const readStr = (name) => String((f.elements[name]?.value) || "").trim();
     const readNum = (name) => parseFlexibleNumber(f.elements[name]?.value);
-    const newOpinionText = getAgentOpinionValue(f);
-    let opinionHistory = loadOpinionHistory(item);
+    const newOpinionText = readStr("opinion");
+    const opinionHistory = appendOpinionEntry(loadOpinionHistory(item), newOpinionText, state.session?.user);
 
     const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
     const bucket = getPropertyBucket(item, item?.sourceType || "");
     const hidePlainFields = ["realtor_naver", "realtor_direct", "general"].includes(bucket);
     const prev = getAgentEditableSnapshot(item);
-    let rightsVal = hidePlainFields ? (String(prev.rightsAnalysis || "").trim() || null) : (readStr("rightsAnalysis") || null);
+    let rightsVal = readStr("rightsAnalysis") || null;
     const siteVal = readStr("siteInspection") || null;
     const floorVal = readStr("floor") || null;
     const totalFloorVal = readStr("totalfloor") || null;
@@ -2005,15 +1942,7 @@ function renderPagination(totalPages) {
     const currentPriceVal = readNum("currentPrice");
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
 
-    const prevSiteInspectionText = String(prev.siteInspection || "").trim();
-    if (siteVal && siteVal !== prevSiteInspectionText) {
-      opinionHistory = [...opinionHistory, buildPropertyHistoryEntry('siteInspection', siteVal, state.session?.user)].filter(Boolean);
-    }
-    if (newOpinionText) {
-      opinionHistory = [...opinionHistory, buildPropertyHistoryEntry('opinion', newOpinionText, state.session?.user)].filter(Boolean);
-    }
-    const latestOpinionEntry = opinionHistory.slice().reverse().find((entry) => !entry?.kind || entry.kind === 'opinion');
-    patch.memo = latestOpinionEntry ? latestOpinionEntry.text : (item.opinion || null);
+    patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -2076,8 +2005,6 @@ function renderPagination(totalPages) {
       maybeAssignInitialColumnValue(patch, "exclusive_area", exclusiveAreaVal, item?._raw?.exclusive_area);
       maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
       maybeAssignInitialColumnValue(patch, "price_main", priceMainVal, item?._raw?.price_main);
-      maybeAssignInitialColumnValue(patch, "lowprice", currentPriceVal, item?._raw?.lowprice ?? item?._raw?.low_price);
-      maybeAssignInitialColumnValue(patch, "status", hidePlainFields ? null : (readStr("status") || null), item?._raw?.status);
       maybeAssignInitialColumnValue(patch, "date_main", dateMainVal, item?._raw?.date_main);
 
       const workCategories = [];
@@ -2094,27 +2021,7 @@ function renderPagination(totalPages) {
         workCategories.push("dailyIssue");
         changedFields.dailyIssue = ["opinion"];
       }
-      const regContext = buildRegisterLogContext("담당자 수정", state.session?.user);
-      const mergedRegistration = buildRegistrationDbRowForExisting(item, {
-        item_no: item?.itemNo || item?._raw?.item_no || null,
-        source_type: normalizedSourceType || null,
-        submitter_type: normalizedSubmitterType || null,
-        address: readStr("address") || item?.address || null,
-        asset_type: readStr("assetType") || item?.assetType || null,
-        floor: floorVal,
-        total_floor: totalFloorVal,
-        common_area: commonAreaVal,
-        exclusive_area: exclusiveAreaVal,
-        site_area: siteAreaVal,
-        use_approval: useApprovalVal,
-        status: hidePlainFields ? null : (readStr("status") || null),
-        price_main: priceMainVal,
-        lowprice: currentPriceVal,
-        date_main: dateMainVal,
-        memo: patch.memo,
-        raw: newRaw,
-      }, regContext, { assignIfEmpty: false });
-      patch.raw = { ...(mergedRegistration?.row?.raw || newRaw), opinionHistory };
+      patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
       const updatedRow = await updatePropertyRowResilient(sb, targetId, patch);
@@ -2193,50 +2100,14 @@ function renderPagination(totalPages) {
     return `${text.slice(0, limit - 1)}…`;
   }
 
-  function getPropertyDataLayers(item) {
-    const direct = item && typeof item === "object" ? item : {};
-    const raw = direct._raw && typeof direct._raw === "object" ? direct._raw : {};
-    const nested = raw.raw && typeof raw.raw === "object" ? raw.raw : {};
-    const plainRaw = direct.raw && typeof direct.raw === "object" ? direct.raw : {};
-    return [direct, raw, nested, plainRaw];
-  }
-
-  function pickFirstTextByKeys(item, keys) {
-    const list = Array.isArray(keys) ? keys : [keys];
-    for (const layer of getPropertyDataLayers(item)) {
-      for (const key of list) {
-        const value = layer?.[key];
-        if (value == null) continue;
-        const text = String(value).trim();
-        if (text) return text;
-      }
-    }
-    return "";
-  }
-
-  function pickFirstNumberByKeys(item, keys) {
-    const list = Array.isArray(keys) ? keys : [keys];
-    for (const layer of getPropertyDataLayers(item)) {
-      for (const key of list) {
-        const value = layer?.[key];
-        if (value == null || value === "") continue;
-        if (typeof value === "number" && Number.isFinite(value)) return value;
-        const num = Number(String(value).replace(/[^0-9.-]/g, ""));
-        if (Number.isFinite(num)) return num;
-      }
-    }
-    return null;
-  }
-
   function getFloorDisplayValue(item) {
-    const floorInfo = pickFirstTextByKeys(item, ['floorInfo', 'floor_info', '층정보', '층정보요약']);
-    const floor = pickFirstTextByKeys(item, ['floor', 'floorText', '층수', '층', '해당층']);
-    const total = pickFirstTextByKeys(item, ['totalfloor', 'total_floor', 'totalFloor', '총층', '총층수']);
+    const raw = item?._raw && typeof item._raw === "object" ? item._raw : {};
+    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? "").trim();
+    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? "").trim();
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
     }
-    if (floorInfo) return floorInfo;
     return floor || total || "";
   }
 
@@ -2305,50 +2176,8 @@ function renderPagination(totalPages) {
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
 
-  function parseFlexibleDateLocal(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return null;
-    const onlyDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (onlyDate) {
-      const y = Number(onlyDate[1]);
-      const m = Number(onlyDate[2]) - 1;
-      const d = Number(onlyDate[3]);
-      const dt = new Date(y, m, d);
-      return Number.isNaN(dt.getTime()) ? null : dt;
-    }
-    const normalized = raw.replace(' ', 'T');
-    const parsed = new Date(normalized);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-    const fallback = raw.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!fallback) return null;
-    const y = Number(fallback[1]);
-    const m = Number(fallback[2]) - 1;
-    const d = Number(fallback[3]);
-    const dt = new Date(y, m, d);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  }
-
-  function computeDdayLabel(value) {
-    const target = parseFlexibleDateLocal(value);
-    if (!target) return '';
-    const today = new Date();
-    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const compare = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-    const diff = Math.round((compare.getTime() - base.getTime()) / 86400000);
-    if (diff === 0) return 'D-Day';
-    if (diff > 0) return `D-${diff}`;
-    return `D+${Math.abs(diff)}`;
-  }
-
-  function formatScheduleCountdown(value) {
-    const dateText = formatDate(value);
-    if (!dateText) return '-';
-    const dday = computeDdayLabel(value);
-    return dday ? `${dateText} (${dday})` : dateText;
-  }
-
   function setVal(form, name, value) {
-    const el = name === 'opinion' ? getUsableAgentOpinionField(form) || form.elements[name] : form.elements[name];
+    const el = form.elements[name];
     if (!el) return;
     el.value = value || "";
   }
@@ -2663,18 +2492,17 @@ function renderPagination(totalPages) {
     const rows = [];
 
     opinions.forEach((entry, idx) => {
-      const normalized = normalizePropertyHistoryEntry(entry);
-      if (!normalized) return;
-      const meta = getPropertyHistoryMeta(normalized);
+      const text = String(entry?.text || "").trim();
+      if (!text) return;
+      const at = String(entry?.date || entry?.at || "").trim();
       rows.push({
-        kind: normalized.kind || "opinion",
-        sortAt: toTimelineTimestamp(normalized.at || normalized.date || ""),
-        at: normalized.at || normalized.date || "",
-        badgeClass: meta.badgeClass,
-        badgeLabel: meta.badgeLabel,
-        author: normalized.author || "",
-        title: normalized.title || meta.title,
-        text: normalized.text,
+        kind: "opinion",
+        sortAt: toTimelineTimestamp(at),
+        at,
+        badgeClass: "is-opinion",
+        badgeLabel: "담당의견",
+        author: String(entry?.author || "").trim(),
+        text,
         order: idx,
       });
     });
@@ -2690,7 +2518,7 @@ function renderPagination(totalPages) {
         sortAt: toTimelineTimestamp(at),
         at,
         badgeClass: "is-registration",
-        badgeLabel: "물건Log",
+        badgeLabel: "등록LOG",
         author: actor,
         title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
         route,
@@ -2719,9 +2547,8 @@ function renderPagination(totalPages) {
         entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : "",
       ].filter(Boolean).join("");
 
-      if (entry.kind === "opinion" || entry.kind === "siteInspection" || entry.kind === "dailyIssue") {
-        const titleHtml = entry.title ? `<div class="agent-combined-log-text"><strong>${esc(entry.title)}</strong></div>` : "";
-        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
+      if (entry.kind === "opinion") {
+        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
       }
 
       const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : "";
@@ -2758,26 +2585,25 @@ function renderPagination(totalPages) {
 
   // ── Opinion History 유틸 ──
   function loadOpinionHistory(item) {
-    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") {
-      const external = PropertyDomain.loadOpinionHistory(item);
-      if (Array.isArray(external) && external.length) return external.map((entry) => normalizePropertyHistoryEntry(entry)).filter(Boolean);
-    }
+    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
-    if (Array.isArray(hist) && hist.length) return hist.map((entry) => normalizePropertyHistoryEntry(entry)).filter(Boolean);
+    if (Array.isArray(hist)) return hist;
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
-      const entry = buildPropertyHistoryEntry('opinion', legacy, { name: '' }, { at: item?.createdAt || new Date().toISOString() });
-      return entry ? [entry] : [];
+      return [{ date: formatDate(item?.createdAt) || "unknown", text: legacy, author: "" }];
     }
     return [];
   }
 
   function appendOpinionEntry(history, newText, user) {
     if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
-    const entry = buildPropertyHistoryEntry('opinion', newText, user);
-    if (!entry) return Array.isArray(history) ? history : [];
-    return [...(Array.isArray(history) ? history : []), entry];
+    const text = String(newText || "").trim();
+    if (!text) return history;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const author = String(user?.name || user?.email || "").trim();
+    return [...history, { date: today, text, author }];
   }
 
   function renderOpinionHistory(container, history, isAdmin) {
@@ -2787,17 +2613,16 @@ function renderPagination(totalPages) {
       return;
     }
     const reversed = [...history].reverse();
-    container.innerHTML = reversed.map((entry) => {
-      const meta = getPropertyHistoryMeta(entry);
-      return `<div class="history-item">
+    container.innerHTML = reversed.map((entry) =>
+      `<div class="history-item">
         <div class="history-meta">
-          <span class="agent-combined-log-badge ${esc(meta.badgeClass)}">${esc(entry.title || meta.title)}</span>
           <span class="history-date">${esc(entry.date || "")}</span>
           ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
         </div>
         <div class="history-text">${esc(entry.text || "")}</div>
-      </div>`;
-    }).join("");
+      </div>`
+    ).join("");
+    // isAdmin=false → 편집 버튼 없음 (담당자 읽기 전용)
   }
 
   function debounce(fn, ms) {
@@ -2817,7 +2642,7 @@ function renderPagination(totalPages) {
 
   function getDailyActionMeta(actionType) {
     const key = String(actionType || "").trim();
-    if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "담당자 의견", title: "담당자 의견" };
+    if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
     if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장조사", title: "현장조사" };
     if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일 이슈사항" };
     if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
@@ -2953,7 +2778,7 @@ function renderPagination(totalPages) {
     if (statsEl) {
       statsEl.innerHTML = `
         <article class="workmgmt-stat-card is-brand"><div class="workmgmt-stat-label">총 업무</div><div class="workmgmt-stat-value">${Number(total || 0)}</div></article>
-        <article class="workmgmt-stat-card is-soft"><div class="workmgmt-stat-label">담당자 의견</div><div class="workmgmt-stat-value">${Number(counts.rightsAnalysis || 0)}</div></article>
+        <article class="workmgmt-stat-card is-soft"><div class="workmgmt-stat-label">권리분석</div><div class="workmgmt-stat-value">${Number(counts.rightsAnalysis || 0)}</div></article>
         <article class="workmgmt-stat-card is-warm"><div class="workmgmt-stat-label">현장조사</div><div class="workmgmt-stat-value">${Number(counts.siteInspection || 0)}</div></article>
         <article class="workmgmt-stat-card is-danger"><div class="workmgmt-stat-label">신규등록</div><div class="workmgmt-stat-value">${Number(counts.newProperty || 0)}</div></article>`;
     }

@@ -33,7 +33,7 @@
   function renderDetailIndicator(kind, text, utils) {
     const raw = String(text || '').trim();
     if (!raw) return '-';
-    const label = kind === 'rights' ? '담당자 의견' : '현장실사';
+    const label = kind === 'rights' ? '권리분석' : '현장실사';
     const content = nl2brEscaped(utils, raw);
     return `
       <div class="detail-indicator" data-detail-kind="${utils.escapeAttr(kind)}">
@@ -53,69 +53,15 @@
     if (limit <= 1) return text.slice(0, limit);
     return `${text.slice(0, limit - 1)}…`;
   }
-  function getPropertyDataLayers(item) {
-    const direct = item && typeof item === 'object' ? item : {};
-    const raw = direct._raw && typeof direct._raw === 'object' ? direct._raw : {};
-    const nested = raw.raw && typeof raw.raw === 'object' ? raw.raw : {};
-    const plainRaw = direct.raw && typeof direct.raw === 'object' ? direct.raw : {};
-    return [direct, raw, nested, plainRaw];
-  }
-
-  function pickFirstTextByKeys(item, keys) {
-    const list = Array.isArray(keys) ? keys : [keys];
-    for (const layer of getPropertyDataLayers(item)) {
-      for (const key of list) {
-        const value = layer?.[key];
-        if (value == null) continue;
-        const text = String(value).trim();
-        if (text) return text;
-      }
-    }
-    return '';
-  }
-
-  function pickFirstNumberByKeys(item, keys) {
-    const list = Array.isArray(keys) ? keys : [keys];
-    for (const layer of getPropertyDataLayers(item)) {
-      for (const key of list) {
-        const value = layer?.[key];
-        if (value == null || value === '') continue;
-        if (typeof value === 'number' && Number.isFinite(value)) return value;
-        const num = Number(String(value).replace(/[^0-9.-]/g, ''));
-        if (Number.isFinite(num)) return num;
-      }
-    }
-    return null;
-  }
-
-  function formatAreaDisplay(utils, value, fallback = '-') {
-    if (value == null || value === '') return fallback;
-    const num = Number(value);
-    if (Number.isFinite(num) && num > 0 && typeof utils?.formatAreaPyeong === 'function') {
-      return utils.escapeHtml(utils.formatAreaPyeong(num));
-    }
-    return utils.escapeHtml(String(value).trim() || fallback);
-  }
-
-  function formatMoneyDisplay(utils, value, fallback = '-') {
-    if (value == null || value === '') return fallback;
-    const num = Number(String(value).replace(/[^0-9.-]/g, ''));
-    if (Number.isFinite(num) && num > 0 && typeof utils?.formatMoneyKRW === 'function') {
-      return utils.formatMoneyKRW(num);
-    }
-    return utils.escapeHtml(String(value).trim() || fallback);
-  }
-
 
   function getFloorDisplayValue(item) {
-    const floorInfo = pickFirstTextByKeys(item, ['floorInfo', 'floor_info', '층정보', '층정보요약']);
-    const floor = pickFirstTextByKeys(item, ['floor', 'floorText', '층수', '층', '해당층']);
-    const total = pickFirstTextByKeys(item, ['totalfloor', 'total_floor', 'totalFloor', '총층', '총층수']);
+    const raw = item?._raw && typeof item._raw === 'object' ? item._raw : {};
+    const floor = String(item?.floor ?? raw.floor ?? raw.floorText ?? '').trim();
+    const total = String(item?.totalfloor ?? item?.total_floor ?? raw.totalfloor ?? raw.total_floor ?? raw.totalFloor ?? '').trim();
     if (floor && total) {
       if (floor.includes('/')) return floor;
       return `${floor}/${total}`;
     }
-    if (floorInfo) return floorInfo;
     return floor || total || '';
   }
 
@@ -193,7 +139,7 @@
         <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
         <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
         <th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th><th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th>
-        <th>담당자</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
+        <th>담당자</th><th>현장실사</th><th>등록일</th>
       `
       : `
         <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
@@ -407,130 +353,97 @@
     return String(bucketValue || '').startsWith('realtor_') ? 'realtor' : 'owner';
   }
 
-  function findFieldShell(el, attrName) {
-    if (!el || typeof el.closest !== 'function') return null;
-    return el.closest(`[${attrName}]`) || el.closest('.form-field, .field, .input-row, .modal-field, .aem-field, .ag-field') || el.parentElement;
-  }
 
-  function setFieldLabel(shell, fallbackText, inputEl) {
-    if (!shell) return;
-    const doc = shell.ownerDocument || document;
-    const labelSelectors = 'label, .label, .field-label, .input-label, .modal-label, .aem-label';
-    const applyText = (node) => { if (node) node.textContent = fallbackText; };
-    applyText(shell.querySelector(labelSelectors));
-    if (inputEl?.id) {
-      try { applyText(doc.querySelector(`label[for="${inputEl.id}"]`)); } catch {}
+  
+  function getAdminFormControl(form, name) {
+    if (!form || !name) return null;
+    const control = form.elements?.[name];
+    if (!control) return null;
+    if (typeof control.tagName === 'string') return control;
+    if (typeof control.length === 'number') {
+      for (const node of Array.from(control)) {
+        if (node && typeof node.tagName === 'string') return node;
+      }
     }
-    if (shell.previousElementSibling && shell.previousElementSibling.matches?.('label')) applyText(shell.previousElementSibling);
-  }
-
-  function getUsableAdminOpinionField(form) {
-    if (!form || typeof form.querySelector !== 'function') return null;
-    const visible = form.querySelector('textarea[name="opinion"], input[name="opinion"]:not([type="hidden"])');
-    if (visible) return visible;
-    const fallback = form.elements['opinion'];
-    if (!fallback || typeof fallback !== 'object') return null;
-    const tag = String(fallback.tagName || '').toUpperCase();
-    const type = String(fallback.type || '').toLowerCase();
-    if (tag === 'TEXTAREA' || (tag === 'INPUT' && type !== 'hidden')) return fallback;
     return null;
   }
 
-  function getAdminOpinionValue(form) {
-    const field = getUsableAdminOpinionField(form);
-    if (field) return String(field.value || '').trim();
-    const rawField = form?.elements?.['opinion'];
-    return rawField ? String(rawField.value || '').trim() : '';
+  function findAdminFieldShell(form, fieldName) {
+    const control = getAdminFormControl(form, fieldName);
+    if (!control) return null;
+    return control.closest('[data-aem-field]') || control.closest('.form-field') || control.parentElement || null;
   }
 
-  function setAdminOpinionValue(form, value) {
-    const text = value == null ? '' : String(value);
-    const field = getUsableAdminOpinionField(form);
-    if (field) field.value = text;
-    const rawField = form?.elements?.['opinion'];
-    if (rawField && rawField !== field && typeof rawField.value !== 'undefined') rawField.value = text;
-  }
-
-  function ensureAdminOpinionField(form, attrName) {
-    if (!form) return null;
-    let field = getUsableAdminOpinionField(form);
-    if (field) return field;
-    const rawField = form.elements['opinion'];
-    const previousValue = rawField && typeof rawField.value !== 'undefined' ? String(rawField.value || '') : '';
-    if (rawField && rawField !== field && rawField.name === 'opinion') {
-      rawField.name = '_legacyOpinion';
-      rawField.setAttribute('data-legacy-opinion', 'true');
+  function setAdminFieldLabel(shell, text) {
+    if (!shell) return;
+    const label = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label');
+    if (label) {
+      label.textContent = text;
+      return;
     }
-    const siteShell = findFieldShell(form.elements['siteInspection'], attrName);
-    const host = siteShell?.parentElement || form;
-    const shell = document.createElement('div');
-    shell.className = 'aem-field form-field';
-    shell.setAttribute(attrName, 'opinion');
-    const label = document.createElement('label');
-    label.textContent = '담당자 의견';
-    label.htmlFor = 'aemOpinion';
-    const textarea = document.createElement('textarea');
-    textarea.name = 'opinion';
-    textarea.id = 'aemOpinion';
-    textarea.rows = 3;
-    textarea.placeholder = '담당자 의견을 입력하세요';
-    textarea.value = previousValue;
-    shell.appendChild(label);
-    shell.appendChild(textarea);
-    if (siteShell && siteShell.parentElement) siteShell.insertAdjacentElement('afterend', shell);
-    else host.appendChild(shell);
-    return textarea;
+    const node = document.createElement('label');
+    node.textContent = text;
+    shell.insertBefore(node, shell.firstChild || null);
   }
 
-  function repositionPlainOpinionField(form, attrName, hideForPlain) {
+  function ensureAdminTextareaField(form, fieldName, shell) {
+    if (!form || !shell || !fieldName) return null;
+    let control = getAdminFormControl(form, fieldName);
+    const isUsable = control && String(control.type || '').toLowerCase() !== 'hidden';
+    if (isUsable) {
+      control.hidden = false;
+      control.style.display = '';
+      return control;
+    }
+    if (control && String(control.type || '').toLowerCase() === 'hidden') control.disabled = true;
+    const area = document.createElement('textarea');
+    area.name = fieldName;
+    area.rows = 6;
+    area.className = (control && control.className) ? String(control.className) : 'aem-textarea';
+    shell.appendChild(area);
+    return area;
+  }
+
+  function arrangeAdminOpinionFields(form) {
     if (!form) return;
-    const siteShell = findFieldShell(form.elements['siteInspection'], attrName);
-    const rightsEl = form.elements['rightsAnalysis'];
-    const rightsShell = findFieldShell(rightsEl, attrName);
+    const siteShell = findAdminFieldShell(form, 'siteInspection');
+    const rightsShell = findAdminFieldShell(form, 'rightsAnalysis');
+    const opinionShell = findAdminFieldShell(form, 'opinion');
+    ensureAdminTextareaField(form, 'siteInspection', siteShell);
+    ensureAdminTextareaField(form, 'rightsAnalysis', rightsShell);
+    ensureAdminTextareaField(form, 'opinion', opinionShell);
+    if (siteShell) {
+      siteShell.classList.remove('hidden');
+      siteShell.style.display = '';
+      siteShell.hidden = false;
+      siteShell.style.gridColumn = '';
+      setAdminFieldLabel(siteShell, '현장실사');
+    }
     if (rightsShell) {
-      setFieldLabel(rightsShell, '담당자 의견', rightsEl);
-      rightsShell.classList.toggle('hidden', !!hideForPlain);
+      rightsShell.classList.remove('hidden');
+      rightsShell.style.display = '';
+      rightsShell.hidden = false;
+      rightsShell.style.gridColumn = '';
+      setAdminFieldLabel(rightsShell, '담당자 의견');
     }
-    let opinionEl = getUsableAdminOpinionField(form);
-    if (hideForPlain && !opinionEl) opinionEl = ensureAdminOpinionField(form, attrName);
-    const opinionShell = findFieldShell(opinionEl, attrName);
-    if (opinionShell) setFieldLabel(opinionShell, '담당자 의견', opinionEl);
-    if (!opinionShell) return;
-    opinionShell.classList.toggle('hidden', !hideForPlain);
-    if (!hideForPlain) return;
-    if (siteShell && opinionShell !== siteShell && siteShell.parentElement) {
-      siteShell.insertAdjacentElement('afterend', opinionShell);
-      const parent = siteShell.parentElement;
-      if (parent && parent.style) {
-        if (!parent.style.display) parent.style.display = 'grid';
-        if (!parent.style.gridTemplateColumns) parent.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-        if (!parent.style.gap) parent.style.gap = '12px';
-      }
+    if (opinionShell) {
+      opinionShell.classList.remove('hidden');
+      opinionShell.style.display = '';
+      opinionShell.hidden = false;
+      opinionShell.style.gridColumn = '1 / -1';
+      setAdminFieldLabel(opinionShell, '금일 이슈사항');
+    }
+    const parent = siteShell && rightsShell && opinionShell && siteShell.parentElement === rightsShell.parentElement && rightsShell.parentElement === opinionShell.parentElement
+      ? siteShell.parentElement
+      : null;
+    if (parent) {
+      parent.appendChild(siteShell);
+      parent.appendChild(rightsShell);
+      parent.appendChild(opinionShell);
     }
   }
 
-  function appendTaggedHistoryEntry(history, kind, text, user, options = {}) {
-    const body = String(text || '').trim();
-    if (!body) return Array.isArray(history) ? history : [];
-    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
-    const titleMap = {
-      opinion: '담당자 의견',
-      siteInspection: '현장실사',
-      dailyIssue: '금일이슈사항',
-    };
-    const entry = {
-      kind: String(kind || 'opinion').trim() || 'opinion',
-      title: String(options.title || titleMap[kind] || '담당자 의견').trim(),
-      at,
-      date: String(options.date || (typeof options.formatDate === 'function' ? options.formatDate(at) : String(at).slice(0, 10))).trim() || String(at).slice(0, 10),
-      text: body,
-      author: String(options.author || user?.name || user?.email || '').trim(),
-    };
-    return [...(Array.isArray(history) ? history : []), entry];
-  }
-
-
-  function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
+function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
     const form = els.aemForm;
     if (!form) return;
     const bucket = resolvePropertySourceBucket(utils, item, sourceType, submitterType);
@@ -540,14 +453,11 @@
     const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
     const isGeneral = bucket === 'general' || normalizedSource === 'general';
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="currentPrice"]').forEach((node) => {
+    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="rightsAnalysis"], [data-aem-field="currentPrice"]').forEach((node) => {
       node.classList.toggle('hidden', hideForPlain);
     });
-    const rightsShell = findFieldShell(form.elements['rightsAnalysis'], 'data-aem-field');
-    if (rightsShell) rightsShell.classList.remove('hidden');
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
     form.querySelectorAll('[data-aem-section="owner"]').forEach((node) => node.classList.toggle('hidden', !isGeneral));
-    repositionPlainOpinionField(form, 'data-aem-field', hideForPlain);
     const info = extractPropertyContactInfo(view, item);
     const ownerNameEl = form.elements['ownerNameDisplay'];
     const ownerPhoneEl = form.elements['ownerPhoneDisplay'];
@@ -656,31 +566,21 @@
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
     const { state, els, utils } = ctx();
     const filters = state?.propertyFilters || {};
-    const overviewCounts = state?.propertyOverview?.filterCounts || null;
-    const hasLocalOnlyOverrides = !!(
+    const hasLocalOverrides = !!(
+      String(filters.activeCard || '').trim() ||
+      String(filters.status || '').trim() ||
       String(filters.keyword || '').trim() ||
       String(filters.area || '').trim() ||
       String(filters.priceRange || '').trim() ||
       String(filters.ratio50 || '').trim() ||
-      String(filters.status || '').trim() ||
       String(state?.propertySort?.key || '').trim()
     );
-
-    const hasFullDetailedCounts = Array.isArray(state?.propertiesFullCache) && state.propertiesFullCache.length > 0;
-    if (!hasFullDetailedCounts && overviewCounts && !hasLocalOnlyOverrides) {
-      const sourceCounts = overviewCounts.source && typeof overviewCounts.source === 'object' ? overviewCounts.source : { '': Number(state?.propertyTotalCount || 0) || 0 };
-      const selectedKey = String(filters.activeCard || '').trim();
-      const selectedTotal = Number(sourceCounts[selectedKey || ''] ?? sourceCounts[''] ?? state?.propertyTotalCount ?? 0) || 0;
-      const areaCounts = overviewCounts.area && typeof overviewCounts.area === 'object' ? { ...overviewCounts.area } : { '': selectedTotal };
-      const priceCounts = overviewCounts.price && typeof overviewCounts.price === 'object' ? { ...overviewCounts.price } : { '': selectedTotal };
-      const ratioCounts = overviewCounts.ratio && typeof overviewCounts.ratio === 'object' ? { ...overviewCounts.ratio } : { '': selectedTotal, '50': 0 };
-      areaCounts[''] = selectedTotal;
-      priceCounts[''] = selectedTotal;
-      ratioCounts[''] = selectedTotal;
-      applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, areaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, priceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+    const overviewCounts = state?.propertyOverview?.filterCounts || null;
+    if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
+      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
       if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
       if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
@@ -885,7 +785,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
     : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
   const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
-  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.activeCard);
+  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.sourceType);
 
   renderPropertiesTableHeader(usePlainLayout);
   if (!els.propertiesTableBody) return;
@@ -893,8 +793,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   els.propertiesTableBody.innerHTML = '';
 
   mod.updatePropertyFilterOptionCounts();
-  const warmFilters = utils?.warmPropertyFullCacheForFilters;
-  if (!Array.isArray(state?.propertiesFullCache) && typeof warmFilters === 'function') { Promise.resolve().then(() => warmFilters()).catch(() => {}); }
 
   if (!rows.length) {
     if (els.propertiesEmpty) els.propertiesEmpty.classList.remove('hidden');
@@ -920,23 +818,17 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
     const kindClass = listView?.kindClass || (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general');
     const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
-    const priceMainValue = p.priceMain ?? pickFirstNumberByKeys(p, ['priceMain', 'price_main', '매매가', '매매금액', '거래가', 'price', '감정가', '감정가(매각가)']);
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
-    const rate = utils.formatPercent(priceMainValue, currentPriceValue, p._raw || {});
+    const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
     const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
-    const exclusiveValue = p.exclusivearea ?? pickFirstNumberByKeys(p, ['exclusivearea', 'exclusive_area', 'exclusiveArea', '전용면적', '전용면적(평)']) ?? pickFirstTextByKeys(p, ['전용면적', '전용면적(평)']);
-    const commonValue = p.commonarea ?? pickFirstNumberByKeys(p, ['commonarea', 'common_area', 'commonArea', '공용면적', '공용면적(평)']) ?? pickFirstTextByKeys(p, ['공용면적', '공용면적(평)']);
-    const siteValue = p.sitearea ?? pickFirstNumberByKeys(p, ['sitearea', 'site_area', 'siteArea', '토지면적', '토지면적(평)']) ?? pickFirstTextByKeys(p, ['토지면적', '토지면적(평)']);
-    const exclusiveText = formatAreaDisplay(utils, exclusiveValue);
-    const commonText = formatAreaDisplay(utils, commonValue);
-    const siteText = formatAreaDisplay(utils, siteValue);
-    const useapprovalRaw = pickFirstTextByKeys(p, ['useapproval', 'use_approval', 'useApproval', '사용승인', '사용승인일', '승인일']);
-    const useapprovalText = (utils.formatDate && utils.formatDate(useapprovalRaw)) || useapprovalRaw || '-';
+    const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
+    const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
+    const siteText = p.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.sitearea)) : '-';
+    const useapprovalText = (utils.formatDate && utils.formatDate(p.useapproval)) || '-';
     const scheduleHtml = typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-';
-    const rightsTextSource = String(p.opinion || p.rightsAnalysis || '').trim();
-    const rightsHtml = renderDetailIndicator('rights', rightsTextSource, utils);
+    const rightsHtml = renderDetailIndicator('rights', p.rightsAnalysis, utils);
     const inspectionHtml = renderDetailIndicator('inspection', p.siteInspection, utils);
     const assigneeText = utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정');
     tr.innerHTML = usePlainLayout
@@ -951,7 +843,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${commonText}</td>
       <td>${siteText}</td>
       <td>${utils.escapeHtml(useapprovalText)}</td>
-      <td>${formatMoneyDisplay(utils, priceMainValue)}</td>
+      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
       <td>${assigneeText}</td>
       <td class="indicator-cell">${rightsHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
@@ -965,7 +857,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
       <td>${exclusiveText}</td>
-      <td>${formatMoneyDisplay(utils, priceMainValue)}</td>
+      <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
       <td>${utils.escapeHtml(currentPrice)}</td>
       <td>${utils.escapeHtml(rate)}</td>
       <td class="schedule-cell">${scheduleHtml}</td>
@@ -1054,7 +946,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       ? (utils.PropertyDomain.buildPropertyEditViewModel(workingItem) || workingItem)
       : workingItem;
     const setVal = (name, v) => {
-      const el = name === 'opinion' ? getUsableAdminOpinionField(f) || f.elements[name] : f.elements[name];
+      const el = f.elements[name];
       if (el) el.value = v == null ? '' : String(v);
     };
     setVal('itemNo', view.itemNo);
@@ -1079,14 +971,14 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('realtorcell', view.realtorcell ?? '');
     setVal('rightsAnalysis', view.rightsAnalysis ?? '');
     setVal('siteInspection', view.siteInspection ?? '');
-    setAdminOpinionValue(f, view.opinion ?? '');
+    setVal('opinion', view.opinion ?? '');
     setVal('latitude', view.latitude ?? '');
     setVal('longitude', view.longitude ?? '');
 
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
-    setAdminOpinionValue(f, view.opinion ?? '');
-    const opinionEl = getUsableAdminOpinionField(f) || f.elements['opinion'];
+    arrangeAdminOpinionFields(f);
+    const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
     if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
@@ -1099,7 +991,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const hasText = (v) => v != null && String(v).trim() !== '';
     const hasNum = (v) => v != null && String(v).trim() !== '' && !Number.isNaN(Number(v));
     const lockIfHas = (name, has) => {
-      const el = name === 'opinion' ? getUsableAdminOpinionField(f) || f.elements[name] : f.elements[name];
+      const el = f.elements[name];
       if (el) el.disabled = !isAdmin && has;
     };
     lockIfHas('itemNo', hasText(view.itemNo));
@@ -1178,8 +1070,8 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const fd = new FormData(els.aemForm);
     const readStr = (k) => String(fd.get(k) || '').trim();
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));
-    const newOpinionText = getAdminOpinionValue(f);
-    let opinionHistory = utils.loadOpinionHistory(item);
+    const newOpinionText = readStr('opinion');
+    const opinionHistory = appendOpinionEntryLocal(utils.loadOpinionHistory(item), newOpinionText, state.session?.user);
     const sourceBucketValue = readStr('sourceType') || toEditSourceTypeValue(item, item.sourceType, item.submitterType);
     const submitterDisplayValue = readStr('submitterType') || deriveSubmitterDisplayType(item, item);
     const sourceTypeValue = toStoredSourceType(sourceBucketValue);
@@ -1215,26 +1107,14 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       realtorcell: readStr('realtorcell') || null,
       rightsAnalysis: readStr('rightsAnalysis') || null,
       siteInspection: readStr('siteInspection') || null,
-      opinion: item.opinion || null,
+      opinion: opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null),
       opinionHistory,
       latitude: readNum('latitude'),
       longitude: readNum('longitude'),
     };
-    const prevSiteInspection = String(item?.siteInspection || '').trim();
-    const nextSiteInspection = String(patch.siteInspection || '').trim();
-    if (nextSiteInspection && nextSiteInspection !== prevSiteInspection) {
-      opinionHistory = appendTaggedHistoryEntry(opinionHistory, 'siteInspection', nextSiteInspection, state.session?.user, { formatDate: utils.formatDate });
-    }
-    if (newOpinionText) {
-      opinionHistory = appendTaggedHistoryEntry(opinionHistory, 'opinion', newOpinionText, state.session?.user, { formatDate: utils.formatDate });
-    }
-    patch.opinionHistory = opinionHistory;
-    const latestOpinionEntry = opinionHistory.slice().reverse().find((entry) => !entry?.kind || entry.kind === 'opinion');
-    patch.opinion = latestOpinionEntry ? latestOpinionEntry.text : (item.opinion || null);
     if (hiddenStatusFields) {
       delete patch.status;
       delete patch.dateMain;
-      delete patch.rightsAnalysis;
       delete patch.lowprice;
     }
     if (!isAdmin) {
@@ -1256,52 +1136,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       delete patch.registeredByAdmin;
       delete patch.registeredByAgent;
     }
-
-    const mergedRawBase = utils.mergePropertyRaw(item, patch);
-    const currentAssigneeId = String(item?.assignedAgentId || item?.assigneeId || item?._raw?.assignee_id || item?._raw?.raw?.assignee_id || '').trim();
-    const nextAssigneeId = String(patch.assigneeId || '').trim();
-    const onlyAssigneeChange = isAdmin && nextAssigneeId !== currentAssigneeId && Object.keys(patch)
-      .filter((key) => key !== 'assigneeId' && key !== 'opinion' && key !== 'opinionHistory' && key !== 'raw' && key !== 'id' && key !== 'globalId')
-      .every((key) => {
-        const value = patch[key];
-        return value == null || value === '';
-      });
-    const regContext = typeof utils.buildRegisterLogContext === 'function'
-      ? utils.buildRegisterLogContext(onlyAssigneeChange ? '담당자 배정' : '물건 정보 수정', state.session?.user)
-      : { at: new Date().toISOString(), route: onlyAssigneeChange ? '담당자 배정' : '물건 정보 수정', actor: String(state.session?.user?.name || state.session?.user?.email || '').trim() };
-    if (typeof utils.buildRegistrationDbRowForExisting === 'function') {
-      const incomingRow = {
-        item_no: patch.itemNo,
-        source_type: patch.sourceType,
-        submitter_type: patch.submitterType,
-        address: patch.address,
-        asset_type: patch.assetType,
-        floor: patch.floor,
-        total_floor: patch.totalfloor,
-        common_area: patch.commonarea,
-        exclusive_area: patch.exclusivearea,
-        site_area: patch.sitearea,
-        use_approval: patch.useapproval,
-        status: patch.status,
-        price_main: patch.priceMain,
-        lowprice: patch.lowprice,
-        date_main: patch.dateMain,
-        broker_office_name: patch.realtorname,
-        submitter_phone: patch.realtorcell,
-        memo: patch.opinion,
-        latitude: patch.latitude,
-        longitude: patch.longitude,
-        assignee_id: patch.assigneeId,
-        assignee_name: patch.assigneeId ? (utils.getStaffNameById?.(patch.assigneeId) || '') : '',
-        raw: mergedRawBase,
-      };
-      const mergedReg = utils.buildRegistrationDbRowForExisting(item, incomingRow, regContext, { assignIfEmpty: true });
-      patch.opinionHistory = opinionHistory;
-      patch.raw = { ...(mergedReg?.row?.raw || mergedRawBase), opinionHistory: opinionHistory, opinion: patch.opinion, memo: patch.opinion };
-    } else {
-      patch.raw = { ...mergedRawBase, opinionHistory: opinionHistory, opinion: patch.opinion, memo: patch.opinion };
-    }
-
     const targetId = patch.id || patch.globalId;
     if (!targetId) {
       setAemMsg(els, '저장 실패: 물건 식별자(id)가 없습니다.');
@@ -1326,7 +1160,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    const payload = { ...patch, raw: patch.raw || utils.mergePropertyRaw(item, patch) };
+    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
 
     // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
     // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.
