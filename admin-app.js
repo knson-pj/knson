@@ -178,7 +178,6 @@
     propertyPage: 1,
     propertyPageSize: 30,
     propertyMode: "page",
-    propertyLoadSeq: 0,
     propertyTotalCount: 0,
     propertySummary: null,
     propertyOverview: null,
@@ -274,8 +273,6 @@
         getStaffNameById,
         loadRegistrationLog,
         renderRegistrationLog,
-        buildCombinedPropertyLog,
-        renderCombinedPropertyLog,
         loadOpinionHistory,
         renderOpinionHistory,
         appendOpinionEntry,
@@ -289,6 +286,7 @@
         saveSession,
         goLoginPage,
         setModalOpen,
+        warmPropertyFullCacheForFilters,
       },
     };
     return window.KNSN_ADMIN_RUNTIME;
@@ -909,7 +907,7 @@ function bindEvents() {
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
     "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
-    "memo", "latitude", "longitude", "date_uploaded", "created_at",
+    "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
     "geocode_status", "geocoded_at"
   ].join(",");
 
@@ -1021,29 +1019,6 @@ function bindEvents() {
       } else if (type === 'general') summary.general += 1;
     }
     return summary;
-  }
-
-  function applyPropertyPageSanityFilters(rows, filters = state.propertyFilters) {
-    const list = Array.isArray(rows) ? rows : [];
-    const activeCard = String(filters?.activeCard || '').trim();
-    const status = String(filters?.status || '').trim().toLowerCase();
-    return list.filter((item) => {
-      if (activeCard && activeCard !== 'all') {
-        const matched = PropertyDomain && typeof PropertyDomain.matchesSourceBucket === 'function'
-          ? PropertyDomain.matchesSourceBucket(item, activeCard)
-          : (() => {
-              if (activeCard === 'realtor_naver') return item?.sourceType === 'realtor' && !item?.isDirectSubmission;
-              if (activeCard === 'realtor_direct') return item?.sourceType === 'realtor' && !!item?.isDirectSubmission;
-              return String(item?.sourceType || '').trim() === activeCard;
-            })();
-        if (!matched) return false;
-      }
-      if (status) {
-        const target = String(item?.status || item?._raw?.status || item?._raw?.raw?.status || '').trim().toLowerCase();
-        if (!target.includes(status)) return false;
-      }
-      return true;
-    });
   }
 
   function appendSummaryBucket(summary, item) {
@@ -1473,8 +1448,6 @@ function bindEvents() {
     const refreshSummary = options.refreshSummary !== false;
     const forceFull = !!options.forceFull;
     const forceRefreshFull = !!options.forceRefreshFull;
-    const requestSeq = Number(state.propertyLoadSeq || 0) + 1;
-    state.propertyLoadSeq = requestSeq;
     const loadingText = state.activeTab === "home"
       ? "대시보드 데이터를 불러오는 중입니다."
       : "물건 리스트를 불러오는 중입니다.";
@@ -1527,27 +1500,22 @@ function bindEvents() {
 
       if (needsFull) {
         const data = await ensureFullPropertiesCache(sb, { isAdmin, uid, forceRefresh: forceRefreshFull });
-        if (requestSeq !== state.propertyLoadSeq) return;
         state.properties = Array.isArray(data) ? data.slice() : [];
         state.propertyMode = 'full';
         state.propertyTotalCount = state.properties.length;
       } else {
         let pageData = await fetchPropertiesPageLight(sb, state.propertyPage, state.propertyPageSize, { isAdmin, uid });
-        if (requestSeq !== state.propertyLoadSeq) return;
         const maxPage = Math.max(1, Math.ceil(Number(pageData?.total || 0) / state.propertyPageSize));
         if (state.propertyPage > maxPage) {
           state.propertyPage = maxPage;
           pageData = await fetchPropertiesPageLight(sb, state.propertyPage, state.propertyPageSize, { isAdmin, uid });
-          if (requestSeq !== state.propertyLoadSeq) return;
         }
-        const normalizedPageItems = Array.isArray(pageData?.items) ? pageData.items.map(normalizeProperty) : [];
-        state.properties = applyPropertyPageSanityFilters(normalizedPageItems, state.propertyFilters);
+        state.properties = Array.isArray(pageData?.items) ? pageData.items.map(normalizeProperty) : [];
         state.propertyMode = 'page';
         state.propertyTotalCount = Number(pageData?.total || 0);
       }
 
       const overview = await overviewPromise;
-      if (requestSeq !== state.propertyLoadSeq) return;
       if (overview?.summary) {
         state.propertyOverview = overview;
         state.propertySummary = overview.summary;
@@ -1558,6 +1526,7 @@ function bindEvents() {
       pruneSelectedPropertyIds();
       hydrateAssignedAgentNames();
       renderPropertiesTable();
+      if (isAdmin && state.propertyMode === "page" && !Array.isArray(state.propertiesFullCache)) { Promise.resolve().then(() => warmPropertyFullCacheForFilters()).catch(() => {}); }
       renderSummary();
       if (state.activeTab === 'geocoding') updateGeocodeStatusBar();
       if (state.activeTab === 'home') renderSummary();
@@ -1568,7 +1537,6 @@ function bindEvents() {
     const isAdmin = user?.role === "admin";
     const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
     const res = await api(path, { auth: true });
-    if (requestSeq !== state.propertyLoadSeq) return;
     state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
     state.propertyMode = 'full';
     state.propertyTotalCount = state.properties.length;
@@ -1579,7 +1547,7 @@ function bindEvents() {
     updateGeocodeStatusBar();
     if (state.activeTab === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
     } finally {
-      if (requestSeq === state.propertyLoadSeq) setAdminLoading("properties", false);
+      setAdminLoading("properties", false);
     }
   }
 
@@ -1773,6 +1741,7 @@ function bindEvents() {
     realtorPhone: "유선전화",
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
+    assigneeName: "담당자",
     memo: "메모/의견",
     latitude: "위도",
     longitude: "경도",
@@ -1955,6 +1924,7 @@ function bindEvents() {
       realtorPhone: firstText(item?.realtorphone, raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(item?.realtorcell, raw.realtorCell, raw.realtorcell, item?._raw?.submitter_phone, item?._raw?.submitterPhone, ""),
       submitterName: firstText(raw.registeredByName, item?._raw?.registeredByName, item?._raw?.submitter_name, item?._raw?.submitterName, raw.submitterName, raw.submitter_name, ""),
+      assigneeName: firstText(item?.assignedAgentName, item?.assigneeName, item?._raw?.assignee_name, raw.assigneeName, raw.assignedAgentName, raw.assignee_name, ""),
       memo: firstText(item?.memo, item?.opinion, raw.memo, raw.opinion, ""),
       latitude: item?.latitude ?? raw.latitude ?? null,
       longitude: item?.longitude ?? raw.longitude ?? null,
@@ -1982,6 +1952,7 @@ function bindEvents() {
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, ""),
       realtorCell: firstText(row?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
       submitterName: firstText(raw.registeredByName, row?.submitter_name, raw.submitterName, raw.submitter_name, ""),
+      assigneeName: firstText(row?.assignee_name, row?.assigneeName, raw.assigneeName, raw.assignedAgentName, raw.assignee_name, ""),
       memo: firstText(row?.memo, raw.memo, raw.opinion, ""),
       latitude: row?.latitude ?? raw.latitude ?? null,
       longitude: row?.longitude ?? raw.longitude ?? null,
@@ -2063,13 +2034,23 @@ function bindEvents() {
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
     const changes = buildRegistrationChanges(prevSnapshot, nextSnapshot);
     const nextRow = { ...base };
-    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","source_url","broker_office_name","submitter_name","submitter_phone","memo","latitude","longitude","floor","total_floor"].forEach((key) => {
+    ["address","asset_type","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","source_url","broker_office_name","submitter_name","submitter_phone","memo","latitude","longitude","floor","total_floor","assignee_id","assignee_name"].forEach((key) => {
       if (hasMeaningfulValue(incomingRow?.[key])) nextRow[key] = incomingRow[key];
     });
     if (!hasMeaningfulValue(nextRow.item_no) && hasMeaningfulValue(incomingRow?.item_no)) nextRow.item_no = incomingRow.item_no;
     if (!hasMeaningfulValue(nextRow.source_type) && hasMeaningfulValue(incomingRow?.source_type)) nextRow.source_type = incomingRow.source_type;
-    if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
+    if (hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
+    else if (options.assignIfEmpty && !hasMeaningfulValue(nextRow.assignee_id) && hasMeaningfulValue(incomingRow?.assignee_id)) nextRow.assignee_id = incomingRow.assignee_id;
     const mergedRaw = mergeMeaningfulShallow(base.raw || {}, incomingRow?.raw || {});
+    if (hasMeaningfulValue(incomingRow?.assignee_id)) {
+      mergedRaw.assigneeId = incomingRow.assignee_id;
+      mergedRaw.assignee_id = incomingRow.assignee_id;
+    }
+    if (hasMeaningfulValue(incomingRow?.assignee_name)) {
+      mergedRaw.assigneeName = incomingRow.assignee_name;
+      mergedRaw.assignedAgentName = incomingRow.assignee_name;
+      mergedRaw.assignee_name = incomingRow.assignee_name;
+    }
     nextRow.raw = attachRegistrationIdentity(appendRegistrationChangeLog(mergedRaw, context, changes), nextSnapshot);
     return { row: nextRow, changes };
   }
@@ -2101,131 +2082,107 @@ function bindEvents() {
       return;
     }
     const reversed = list.slice().reverse();
-    container.innerHTML = reversed.map((entry) => {
-      const meta = [formatRegLogAt(entry.at || entry.date || ""), entry.route || "", entry.actor || ""].filter(Boolean).map((v) => `<span>${esc(v)}</span>`).join("");
+    container.innerHTML = `<div class="reglog-list">${reversed.map((entry) => {
+      const atText = formatRegLogAt(entry.at || entry.date || "");
+      const routeText = String(entry.route || '').trim();
+      const actorText = String(entry.actor || '').trim();
+      const meta = `
+        <div class="reglog-meta" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+          ${atText ? `<span class="reglog-chip" style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#f5f6f8;color:#475467;font-size:12px;font-weight:700;">${esc(atText)}</span>` : ''}
+          ${routeText ? `<span class="reglog-chip is-route" style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#fff4e8;color:#b54708;font-size:12px;font-weight:700;">${esc(routeText)}</span>` : ''}
+          ${actorText ? `<span class="reglog-chip is-actor" style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef4ff;color:#175cd3;font-size:12px;font-weight:700;">${esc(actorText)}</span>` : ''}
+        </div>`;
       if (entry.type === "created") {
-        return `<div class="reglog-item">
-          <div class="reglog-meta">${meta}</div>
-          <div class="reglog-badge">최초 등록</div>
+        return `<div class="reglog-item" style="padding:12px 14px;border:1px solid #eaecf0;border-radius:14px;background:#ffffff;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-bottom:10px;">
+          ${meta}
+          <div class="reglog-summary" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="reglog-badge" style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#ecfdf3;color:#027a48;font-size:12px;font-weight:800;">최초 등록</span>
+            <span style="color:#667085;font-size:13px;">물건이 처음 등록되었습니다.</span>
+          </div>
         </div>`;
       }
       const changes = (Array.isArray(entry.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
       const rows = changes.length
-        ? `<div class="reglog-changes">${changes.map((change) => `<div class="reglog-change-row"><span class="reglog-label">${esc(change.label || "")}</span><span class="reglog-arrow">${esc(change.before || "-")}</span><span class="reglog-sep">→</span><span class="reglog-arrow is-next">${esc(change.after || "-")}</span></div>`).join("")}</div>`
-        : `<div class="reglog-badge">변경 없음</div>`;
-      return `<div class="reglog-item">
-        <div class="reglog-meta">${meta}</div>
+        ? `<div class="reglog-changes" style="display:flex;flex-direction:column;gap:8px;">${changes.map((change) => `<div class="reglog-change-row" style="display:grid;grid-template-columns:minmax(84px,120px) minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:start;padding:10px 12px;border-radius:12px;background:#f8fafc;">
+              <span class="reglog-label" style="font-size:12px;font-weight:800;color:#344054;">${esc(change.label || "")}</span>
+              <span class="reglog-before" style="min-width:0;color:#667085;font-size:13px;word-break:break-word;">${esc(change.before || "-")}</span>
+              <span class="reglog-sep" style="color:#98a2b3;font-weight:800;">→</span>
+              <span class="reglog-after" style="min-width:0;color:#101828;font-size:13px;font-weight:700;word-break:break-word;">${esc(change.after || "-")}</span>
+            </div>`).join("")}</div>`
+        : `<div class="reglog-summary" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="reglog-badge" style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#f2f4f7;color:#344054;font-size:12px;font-weight:800;">변경 없음</span>
+            <span style="color:#667085;font-size:13px;">저장되었지만 변경 항목은 없습니다.</span>
+          </div>`;
+      return `<div class="reglog-item" style="padding:12px 14px;border:1px solid #eaecf0;border-radius:14px;background:#ffffff;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-bottom:10px;">
+        ${meta}
         ${rows}
       </div>`;
-    }).join("");
-  }
-
-  function toTimelineTimestamp(value) {
-    const s = String(value || '').trim();
-    if (!s) return Number.POSITIVE_INFINITY;
-    const t = Date.parse(s);
-    if (Number.isFinite(t)) return t;
-    const normalized = s.replace(/\./g, '-').replace(/\s+/g, 'T');
-    const nextTime = Date.parse(normalized);
-    if (Number.isFinite(nextTime)) return nextTime;
-    return Number.POSITIVE_INFINITY;
-  }
-
-  function buildCombinedPropertyLog(opinionHistory, registrationLog) {
-    const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
-    const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
-    const rows = [];
-
-    opinions.forEach((entry, idx) => {
-      const normalized = normalizeOpinionHistoryEntry(entry);
-      const text = String(normalized?.text || '').trim();
-      if (!text) return;
-      const meta = getOpinionHistoryMeta(normalized || entry);
-      const at = String(normalized?.at || normalized?.date || '').trim();
-      rows.push({
-        kind: 'opinion',
-        sortAt: toTimelineTimestamp(at),
-        at,
-        badgeClass: meta.badgeClass || 'is-opinion',
-        badgeLabel: normalized?.title || meta.badgeLabel || '담당자 의견',
-        author: String(normalized?.author || '').trim(),
-        text,
-        order: idx,
-      });
-    });
-
-    regLogs.forEach((entry, idx) => {
-      const at = String(entry?.at || entry?.date || '').trim();
-      const actor = String(entry?.actor || '').trim();
-      const type = String(entry?.type || '').trim();
-      const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== 'submitterPhone' && change?.label !== '등록자 연락처');
-      rows.push({
-        kind: 'registration',
-        sortAt: toTimelineTimestamp(at),
-        at,
-        badgeClass: 'is-registration',
-        badgeLabel: '물건Log',
-        author: actor,
-        title: type === 'created' ? '최초 등록' : (String(entry?.route || '').trim() || '등록 정보 변경'),
-        changes,
-        order: idx,
-      });
-    });
-
-    return rows.sort((a, b) => {
-      if (a.sortAt !== b.sortAt) return a.sortAt - b.sortAt;
-      return a.order - b.order;
-    });
-  }
-
-  function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
-    if (!container) return;
-    const list = buildCombinedPropertyLog(opinionHistory, registrationLog);
-    if (!list.length) {
-      container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
-      return;
-    }
-    container.innerHTML = list.map((entry) => {
-      const headBits = [
-        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || '')}">${esc(entry.badgeLabel || '')}</span>`,
-        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : '',
-        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : '',
-      ].filter(Boolean).join('');
-      if (entry.kind === 'opinion') {
-        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || '')}</div></div></div>`;
-      }
-      const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : '';
-      const changesHtml = entry.changes?.length
-        ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || '')}</span><span class="agent-combined-log-value">${esc(change.before || '-')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || '-')}</span></div>`).join('')}</div>`
-        : '';
-      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml || '<div class="agent-combined-log-text">변경 없음</div>'}</div></div>`;
-    }).join('');
+    }).join("")}</div>`;
   }
 
   // ---------------------------
   // Opinion History 유틸
   // ---------------------------
+  function normalizeOpinionHistoryEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const text = String(entry.text || entry.note || "").trim();
+    if (!text) return null;
+    const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
+    const title = String(entry.title || entry.label || "").trim();
+    const date = String(entry.date || entry.at || "").trim();
+    const author = String(entry.author || entry.actor || "").trim();
+    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author };
+  }
+
+  function buildOpinionHistoryEntry(kind, text, user, options = {}) {
+    const body = String(text || "").trim();
+    if (!body) return null;
+    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
+    const fallbackDate = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    })();
+    const author = String(options.author || user?.name || user?.email || "").trim();
+    const titleMap = {
+      opinion: "담당자 의견",
+      siteInspection: "현장실사",
+      dailyIssue: "금일이슈사항",
+    };
+    return {
+      kind: String(kind || "opinion").trim() || "opinion",
+      title: String(options.title || titleMap[kind] || "담당자 의견").trim(),
+      date: String(options.date || formatDate(at) || fallbackDate).trim() || fallbackDate,
+      at,
+      text: body,
+      author,
+    };
+  }
+
   function loadOpinionHistory(item) {
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
-    if (Array.isArray(hist)) return hist;
-    // 기존 opinion 텍스트가 있으면 히스토리 첫 항목으로 변환
+    if (Array.isArray(hist) && hist.length) {
+      return hist.map((entry) => normalizeOpinionHistoryEntry(entry)).filter(Boolean);
+    }
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
-      return [{ date: formatDate(item?.createdAt) || "unknown", text: legacy, author: "" }];
+      const entry = buildOpinionHistoryEntry("opinion", legacy, { name: "" }, { at: item?.createdAt || raw.firstRegisteredAt || new Date().toISOString() });
+      return entry ? [entry] : [];
     }
     return [];
   }
 
-  function appendOpinionEntry(history, newText, user) {
-    const text = String(newText || "").trim();
-    if (!text) return history; // 빈 텍스트면 추가하지 않음
-    const today = (() => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    })();
-    const author = String(user?.name || user?.email || "").trim();
-    return [...history, { date: today, text, author }];
+  function appendOpinionEntry(history, newText, user, options = {}) {
+    const entry = buildOpinionHistoryEntry(options.kind || "opinion", newText, user, options);
+    if (!entry) return Array.isArray(history) ? history : [];
+    return [...(Array.isArray(history) ? history : []), entry];
+  }
+
+  function getOpinionHistoryMeta(entry) {
+    const kind = String(entry?.kind || "opinion").trim();
+    if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
+    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일이슈사항" };
+    return { badgeClass: "is-opinion", badgeLabel: "담당자 의견", title: "담당자 의견" };
   }
 
   function renderOpinionHistory(container, history, isAdmin) {
@@ -2234,10 +2191,12 @@ function bindEvents() {
       container.innerHTML = '<div class="history-empty">등록된 의견이 없습니다.</div>';
       return;
     }
-    const reversed = [...history].reverse(); // 최신 순
+    const reversed = [...history].reverse();
     container.innerHTML = reversed.map((entry, idx) => {
-      const realIdx = history.length - 1 - idx; // 원본 배열 index
-      const adminControls = isAdmin
+      const realIdx = history.length - 1 - idx;
+      const meta = getOpinionHistoryMeta(entry);
+      const isEditable = (!entry?.kind || entry.kind === 'opinion') && isAdmin;
+      const adminControls = isEditable
         ? `<div class="history-actions">
             <button type="button" class="history-edit-btn" data-idx="${realIdx}" title="수정">✎</button>
             <button type="button" class="history-del-btn" data-idx="${realIdx}" title="삭제">✕</button>
@@ -2245,24 +2204,24 @@ function bindEvents() {
         : "";
       return `<div class="history-item" data-idx="${realIdx}">
         <div class="history-meta">
+          <span class="reglog-badge ${esc(meta.badgeClass)}">${esc(entry.title || meta.badgeLabel)}</span>
           <span class="history-date">${esc(entry.date || "")}</span>
           ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
           ${adminControls}
         </div>
         <div class="history-text" id="historyText_${realIdx}">${esc(entry.text || "")}</div>
-        <div class="history-edit-area hidden" id="historyEdit_${realIdx}">
+        ${isEditable ? `<div class="history-edit-area hidden" id="historyEdit_${realIdx}">
           <textarea class="input history-edit-textarea" rows="3">${esc(entry.text || "")}</textarea>
           <div class="history-edit-btns">
             <button type="button" class="btn btn-primary btn-sm history-save-btn" data-idx="${realIdx}">저장</button>
             <button type="button" class="btn btn-ghost btn-sm history-cancel-btn" data-idx="${realIdx}">취소</button>
           </div>
-        </div>
+        </div>` : ""}
       </div>`;
     }).join("");
 
     if (!isAdmin) return;
 
-    // 편집 버튼 이벤트 (관리자만)
     container.querySelectorAll(".history-edit-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const idx = Number(btn.dataset.idx);
@@ -2288,7 +2247,6 @@ function bindEvents() {
         const hist = loadOpinionHistory(item);
         hist[idx] = { ...hist[idx], text: newText };
         await patchOpinionHistory(item, hist);
-        // 로컬 상태 갱신
         if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
         renderOpinionHistory(container, hist, true);
       });
@@ -2312,7 +2270,8 @@ function bindEvents() {
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (!sb) throw new Error("Supabase 연동 필요");
     const targetId = item.id || item.globalId;
-    const latestOpinion = history.length ? history[history.length - 1].text : null;
+    const latestOpinionEntry = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => !entry?.kind || entry.kind === 'opinion');
+    const latestOpinion = latestOpinionEntry ? latestOpinionEntry.text : null;
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
     const nextRaw = { ...currentRaw, opinionHistory: history, opinion: latestOpinion, memo: latestOpinion };
     if (!DataAccess || typeof DataAccess.updatePropertyMemoRaw !== "function") {
