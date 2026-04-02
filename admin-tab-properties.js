@@ -477,26 +477,31 @@
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
     const { state, els, utils } = ctx();
     const filters = state?.propertyFilters || {};
-    const hasLocalOverrides = !!(
-      String(filters.activeCard || '').trim() ||
-      String(filters.status || '').trim() ||
+    const hasPrefetchedFullDataset = Array.isArray(state?.propertiesFullCache) || Array.isArray(state?.homeSummarySnapshot);
+    const hasKeywordAreaPriceRatioOverride = !!(
       String(filters.keyword || '').trim() ||
       String(filters.area || '').trim() ||
       String(filters.priceRange || '').trim() ||
       String(filters.ratio50 || '').trim() ||
       String(state?.propertySort?.key || '').trim()
     );
+    const hasStatusOverride = !!String(filters.status || '').trim();
     const overviewCounts = state?.propertyOverview?.filterCounts || null;
-    if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
+
+    if (!hasPrefetchedFullDataset && !hasKeywordAreaPriceRatioOverride && !hasStatusOverride && overviewCounts) {
       if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (!String(filters.activeCard || '').trim()) {
+        if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+        if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+        if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      }
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
-      if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
-      if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
-      if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
-      return;
+      if (!String(filters.activeCard || '').trim()) {
+        if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
+        if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
+        if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
+        return;
+      }
     }
 
     const sourceRows = mod.getFilteredProperties({ ignoreKeys: ['activeCard'] });
