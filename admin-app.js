@@ -2712,6 +2712,8 @@ function sortGuUnitsByAdjacency(...args) {
       realtorcell: patch.realtorcell ?? currentRaw.realtorcell ?? null,
       rightsAnalysis: patch.rightsAnalysis ?? currentRaw.rightsAnalysis ?? null,
       siteInspection: patch.siteInspection ?? currentRaw.siteInspection ?? null,
+      dailyIssue: patch.dailyIssue ?? currentRaw.dailyIssue ?? currentRaw.daily_issue ?? null,
+      daily_issue: patch.dailyIssue ?? currentRaw.daily_issue ?? currentRaw.dailyIssue ?? null,
       opinion: patch.opinion ?? currentRaw.opinion ?? null,
       memo: patch.opinion ?? currentRaw.memo ?? null,
       opinionHistory: patch.opinionHistory ?? currentRaw.opinionHistory ?? [],

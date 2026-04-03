@@ -179,7 +179,6 @@
   };
 
   const loadingState = { activeKeys: new Set(), messages: new Map() };
-  let agentFlashNoticeTimer = null;
 
   const els = {};
 
@@ -516,22 +515,6 @@
     if (els.adminLoadingLabel) els.adminLoadingLabel.textContent = currentText;
     els.adminLoadingOverlay.classList.toggle("hidden", !visible);
     els.adminLoadingOverlay.setAttribute("aria-busy", visible ? "true" : "false");
-  }
-
-  function flashAgentNotice(text, duration = 1500) {
-    const msg = String(text || '').trim();
-    if (!msg) return;
-    if (!els.adminLoadingOverlay || typeof setAgentLoading !== 'function') {
-      setGlobalMsg(msg, false);
-      window.clearTimeout(agentFlashNoticeTimer);
-      agentFlashNoticeTimer = window.setTimeout(() => setGlobalMsg(''), duration);
-      return;
-    }
-    window.clearTimeout(agentFlashNoticeTimer);
-    setAgentLoading('flashNotice', true, msg);
-    agentFlashNoticeTimer = window.setTimeout(() => {
-      setAgentLoading('flashNotice', false);
-    }, Number(duration) > 0 ? Number(duration) : 1500);
   }
 
   async function refreshDailyReportSummary(options = {}) {
@@ -1682,7 +1665,7 @@ function renderRow(p) {
   const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(listView?.floorText || getFloorDisplayValue(p) || "-", 7) || "-";
   const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
-  const opinionText = !usePlainLayout && String(p.opinion || '').trim() ? "✓" : "";
+  const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
   const createdAtText = formatDate(listView?.createdAtValue || p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
   const commonText = (listView?.commonAreaValue != null ? fmtArea(listView.commonAreaValue) : (p.commonarea != null ? fmtArea(p.commonarea) : "-"));
   const siteText = (listView?.siteAreaValue != null ? fmtArea(listView.siteAreaValue) : (p.sitearea != null ? fmtArea(p.sitearea) : "-"));
@@ -1720,7 +1703,7 @@ function renderRow(p) {
         "<td>" + esc(useapprovalText) + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + (String(p.opinion || "").trim() ? "✓" : "-") + "</td>" +
+        "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + esc(p.itemNo || "-") + "</td>" +
@@ -1734,7 +1717,7 @@ function renderRow(p) {
         "<td>" + esc(rate) + "</td>" +
         "<td>" + esc(scheduleText) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + esc(opinionText) + "</td>" +
+        "<td>" + esc(rightsText) + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
   );
@@ -1799,6 +1782,7 @@ function renderPagination(totalPages) {
       dateMain: firstText(raw.dateMain, row.date_main, item?.dateMain, ""),
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
+      dailyIssue: firstText(raw.dailyIssue, raw.daily_issue, ""),
       opinion: firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
       realtorName: firstText(raw.realtorName, raw.realtorname, row.broker_office_name, item?._raw?.broker_office_name, ""),
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, item?._raw?.realtor_phone, ""),
@@ -1889,8 +1873,10 @@ function renderPagination(totalPages) {
     setVal(f, "priceMain", view.priceMain != null ? formatMoneyInputValue(view.priceMain) : "");
     setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
     setVal(f, "dateMain", formatDate(view.dateMain) || "");
+    setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);
     setVal(f, "opinion", view.opinion || "");
+    setVal(f, "dailyIssue", view.dailyIssue || getLatestHistoryText(item, "dailyIssue"));
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
@@ -1932,13 +1918,16 @@ function renderPagination(totalPages) {
     const readStr = (name) => String((f.elements[name]?.value) || "").trim();
     const readNum = (name) => parseFlexibleNumber(f.elements[name]?.value);
     const newOpinionText = readStr("opinion");
-    const opinionHistory = appendOpinionEntry(loadOpinionHistory(item), newOpinionText, state.session?.user);
+    const newDailyIssueText = readStr("dailyIssue");
+    let opinionHistory = appendOpinionEntry(loadOpinionHistory(item), newOpinionText, state.session?.user, { kind: "opinion" });
+    opinionHistory = appendOpinionEntry(opinionHistory, newDailyIssueText, state.session?.user, { kind: "dailyIssue" });
 
     const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
     const bucket = getPropertyBucket(item, item?.sourceType || "");
     const hidePlainFields = ["realtor_naver", "realtor_direct", "general"].includes(bucket);
     const prev = getAgentEditableSnapshot(item);
+    let rightsVal = readStr("rightsAnalysis") || null;
     const siteVal = readStr("siteInspection") || null;
     const floorVal = readStr("floor") || null;
     const totalFloorVal = readStr("totalfloor") || null;
@@ -1950,7 +1939,7 @@ function renderPagination(totalPages) {
     const currentPriceVal = readNum("currentPrice");
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
 
-    patch.memo = opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null);
+    patch.memo = [...opinionHistory].reverse().find((entry) => String(entry?.kind || "opinion").trim() === "opinion")?.text || item.opinion || null;
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -2002,8 +1991,10 @@ function renderPagination(totalPages) {
         priceMain: priceMainVal,
         currentPrice: currentPriceVal,
         dateMain: dateMainVal,
+        rightsAnalysis: rightsVal,
         siteInspection: siteVal,
         ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
+        ...(newDailyIssueText ? { dailyIssue: newDailyIssueText, daily_issue: newDailyIssueText } : {}),
         opinionHistory,
       });
 
@@ -2016,13 +2007,17 @@ function renderPagination(totalPages) {
 
       const workCategories = [];
       const changedFields = {};
+      if (rightsVal && rightsVal !== String(prev.rightsAnalysis || "").trim()) {
+        workCategories.push("rightsAnalysis");
+        changedFields.rightsAnalysis = ["rightsAnalysis"];
+      }
       if (siteVal && siteVal !== String(prev.siteInspection || "").trim()) {
         workCategories.push("siteInspection");
         changedFields.siteInspection = ["siteInspection"];
       }
       if (newOpinionText) {
         workCategories.push("dailyIssue");
-        changedFields.dailyIssue = ["opinion"];
+        changedFields.dailyIssue = ["dailyIssue"];
       }
       patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
@@ -2039,26 +2034,28 @@ function renderPagination(totalPages) {
             ...item,
             floor: floorVal || item.floor,
             totalfloor: totalFloorVal || item.totalfloor,
+            rightsAnalysis: rightsVal || item.rightsAnalysis,
             siteInspection: siteVal || item.siteInspection,
             opinion: patch.memo || item.opinion,
+            dailyIssue: newDailyIssueText || item.dailyIssue,
             _raw: { ...(item._raw || {}), raw: newRaw },
           }, {
             propertyId: updatedRow?.id || item.id || item.globalId || targetId,
             identityKey: newRaw.registrationIdentityKey || buildRegistrationMatchKey({ ...item, raw: newRaw, _raw: { ...(item._raw || {}), raw: newRaw } }),
             changedFields,
-            dailyIssueText: newOpinionText,
+            dailyIssueText: newDailyIssueText,
           }));
         } catch (logErr) {
           activityError = logErr?.message || "일일업무일지 기록 실패";
         }
       }
 
-      setAgentEditMsg('', false);
-      setGlobalMsg('');
-      closeEditModal();
-      flashAgentNotice('저장되었습니다.', 1500);
+      setAgentEditMsg('저장되었습니다.', false);
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
-      window.setTimeout(() => refreshAgentPropertiesInBackground({ silent: true }), 80);
+      else setGlobalMsg('저장되었습니다.', false);
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      closeEditModal();
+      window.setTimeout(() => refreshAgentPropertiesInBackground({ silent: true }), 50);
     } catch (err) {
       setAgentEditMsg(toUserErrorMessage(err, '저장 실패'));
     } finally {
@@ -2648,15 +2645,24 @@ function renderPagination(totalPages) {
     return [];
   }
 
-  function appendOpinionEntry(history, newText, user) {
-    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
-    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
+  function appendOpinionEntry(history, newText, user, options = {}) {
+    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user, options);
     const text = String(newText || "").trim();
-    if (!text) return history;
+    if (!text) return Array.isArray(history) ? history : [];
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     const author = String(user?.name || user?.email || "").trim();
-    return [...history, { date: today, text, author }];
+    return [...(Array.isArray(history) ? history : []), { date: today, text, author, kind: String(options.kind || "opinion").trim() || "opinion" }];
+  }
+
+  function getLatestHistoryText(item, kind) {
+    const history = loadOpinionHistory(item);
+    const target = String(kind || '').trim();
+    const latest = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === target);
+    const raw = item?._raw?.raw || {};
+    if (latest && String(latest.text || '').trim()) return String(latest.text || '').trim();
+    if (target === 'dailyIssue') return String(raw.dailyIssue || raw.daily_issue || '').trim();
+    return '';
   }
 
   function renderOpinionHistory(container, history, isAdmin) {

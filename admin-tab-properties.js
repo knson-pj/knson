@@ -372,26 +372,37 @@
     if (PropertyRenderers && typeof PropertyRenderers.findFieldShell === 'function') {
       const siteShell = PropertyRenderers.findFieldShell(form, 'siteInspection', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
       const opinionShell = PropertyRenderers.findFieldShell(form, 'opinion', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
+      const dailyIssueShell = PropertyRenderers.findFieldShell(form, 'dailyIssue', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
       if (siteShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'siteInspection', siteShell, { textareaClass: 'aem-textarea', rows: 8 });
+        PropertyRenderers.ensureTextareaField?.(form, 'siteInspection', siteShell, { textareaClass: 'aem-textarea', rows: 6 });
         PropertyRenderers.setFieldLabel?.(siteShell, '현장실사');
         siteShell.classList.remove('hidden');
         siteShell.hidden = false;
         siteShell.style.display = '';
       }
       if (opinionShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'opinion', opinionShell, { textareaClass: 'aem-textarea', rows: 8 });
+        PropertyRenderers.ensureTextareaField?.(form, 'opinion', opinionShell, { textareaClass: 'aem-textarea', rows: 6 });
         PropertyRenderers.setFieldLabel?.(opinionShell, '담당자 의견');
         opinionShell.classList.remove('hidden');
         opinionShell.hidden = false;
         opinionShell.style.display = '';
       }
-      const parent = siteShell && opinionShell && siteShell.parentElement === opinionShell.parentElement ? siteShell.parentElement : null;
+      if (dailyIssueShell) {
+        PropertyRenderers.ensureTextareaField?.(form, 'dailyIssue', dailyIssueShell, { textareaClass: 'aem-textarea', rows: 6 });
+        PropertyRenderers.setFieldLabel?.(dailyIssueShell, '금일이슈사항');
+        dailyIssueShell.classList.remove('hidden');
+        dailyIssueShell.hidden = false;
+        dailyIssueShell.style.display = '';
+      }
+      const parent = siteShell && opinionShell && dailyIssueShell && siteShell.parentElement === opinionShell.parentElement && opinionShell.parentElement === dailyIssueShell.parentElement ? siteShell.parentElement : null;
       if (parent) {
+        parent.classList.remove('grid2');
+        parent.classList.add('grid3');
         parent.appendChild(siteShell);
         parent.appendChild(opinionShell);
+        parent.appendChild(dailyIssueShell);
       }
-      return { siteShell, opinionShell };
+      return { siteShell, opinionShell, dailyIssueShell };
     }
     return null;
   }
@@ -464,17 +475,28 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       .catch((err) => console.warn('properties refresh failed', err));
   }
 
-  function appendOpinionEntryLocal(history, newText, user) {
+  function appendOpinionEntryLocal(history, newText, user, options = {}) {
     const domain = PropertyDomain || window.KNSN_ADMIN_RUNTIME?.utils?.PropertyDomain || null;
     if (domain && typeof domain.appendOpinionEntry === 'function') {
-      return domain.appendOpinionEntry(history, newText, user);
+      return domain.appendOpinionEntry(history, newText, user, options);
     }
     const text = String(newText || '').trim();
     if (!text) return Array.isArray(history) ? history : [];
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const author = String(user?.name || user?.email || '').trim();
-    return [...(Array.isArray(history) ? history : []), { date: today, text, author }];
+    return [...(Array.isArray(history) ? history : []), { date: today, text, author, kind: String(options.kind || 'opinion').trim() || 'opinion' }];
+  }
+
+  function getLatestHistoryText(item, kind) {
+    const domain = PropertyDomain || window.KNSN_ADMIN_RUNTIME?.utils?.PropertyDomain || null;
+    const history = domain && typeof domain.loadOpinionHistory === 'function' ? domain.loadOpinionHistory(item) : [];
+    const target = String(kind || '').trim();
+    const latest = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === target);
+    const raw = item?._raw?.raw || {};
+    if (latest && String(latest.text || '').trim()) return String(latest.text || '').trim();
+    if (target === 'dailyIssue') return String(raw.dailyIssue || raw.daily_issue || '').trim();
+    return '';
   }
 
   mod.getFilteredProperties = function getFilteredProperties(options = {}) {
@@ -940,6 +962,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('realtorcell', view.realtorcell ?? '');
     setVal('siteInspection', view.siteInspection ?? '');
     setVal('opinion', view.opinion ?? '');
+    setVal('dailyIssue', view.dailyIssue ?? getLatestHistoryText(workingItem, 'dailyIssue'));
     setVal('latitude', view.latitude ?? '');
     setVal('longitude', view.longitude ?? '');
 
@@ -1038,7 +1061,9 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const readStr = (k) => String(fd.get(k) || '').trim();
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));
     const newOpinionText = readStr('opinion');
-    const opinionHistory = appendOpinionEntryLocal(utils.loadOpinionHistory(item), newOpinionText, state.session?.user);
+    const newDailyIssueText = readStr('dailyIssue');
+    let opinionHistory = appendOpinionEntryLocal(utils.loadOpinionHistory(item), newOpinionText, state.session?.user, { kind: 'opinion' });
+    opinionHistory = appendOpinionEntryLocal(opinionHistory, newDailyIssueText, state.session?.user, { kind: 'dailyIssue' });
     const sourceBucketValue = readStr('sourceType') || toEditSourceTypeValue(item, item.sourceType, item.submitterType);
     const submitterDisplayValue = readStr('submitterType') || deriveSubmitterDisplayType(item, item);
     const sourceTypeValue = toStoredSourceType(sourceBucketValue);
@@ -1073,7 +1098,8 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       realtorphone: readStr('realtorphone') || null,
       realtorcell: readStr('realtorcell') || null,
       siteInspection: readStr('siteInspection') || null,
-      opinion: opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null),
+      dailyIssue: newDailyIssueText || getLatestHistoryText(item, 'dailyIssue') || null,
+      opinion: [...opinionHistory].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === 'opinion')?.text || item.opinion || null,
       opinionHistory,
       latitude: readNum('latitude'),
       longitude: readNum('longitude'),
@@ -1091,7 +1117,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
         const ok = (typeof v === 'number') ? isEmptyOldNum : isEmptyOld;
         if (!ok) delete patch[k];
       };
-      ['itemNo','address','assetType','floor','totalfloor','useapproval','status','dateMain','realtorname','realtorphone','realtorcell','siteInspection'].forEach((k) => allowIfEmpty(k, item[k]));
+      ['itemNo','address','assetType','floor','totalfloor','useapproval','status','dateMain','realtorname','realtorphone','realtorcell','siteInspection','dailyIssue'].forEach((k) => allowIfEmpty(k, item[k]));
       ['commonarea','exclusivearea','sitearea','priceMain','lowprice','latitude','longitude'].forEach((k) => allowIfEmpty(k, item[k]));
       delete patch.sourceType;
       delete patch.assigneeId;
