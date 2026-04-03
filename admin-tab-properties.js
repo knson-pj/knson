@@ -3,6 +3,7 @@
   const mod = {};
   const DataAccess = window.KNSN_DATA_ACCESS || null;
   const PropertyRenderers = window.KNSN_PROPERTY_RENDERERS || null;
+  const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
 
   function runtime() {
     return window.KNSN_ADMIN_RUNTIME || {};
@@ -433,15 +434,16 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
   }
 
   function appendOpinionEntryLocal(history, newText, user) {
-    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === 'function') {
-      return PropertyDomain.appendOpinionEntry(history, newText, user);
+    const domain = PropertyDomain || window.KNSN_ADMIN_RUNTIME?.utils?.PropertyDomain || null;
+    if (domain && typeof domain.appendOpinionEntry === 'function') {
+      return domain.appendOpinionEntry(history, newText, user);
     }
     const text = String(newText || '').trim();
-    if (!text) return history;
+    if (!text) return Array.isArray(history) ? history : [];
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const author = String(user?.name || user?.email || '').trim();
-    return [...history, { date: today, text, author }];
+    return [...(Array.isArray(history) ? history : []), { date: today, text, author }];
   }
 
   mod.getFilteredProperties = function getFilteredProperties(options = {}) {
@@ -640,6 +642,32 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     }
   };
 
+
+  async function deletePropertiesWithSupabase(sb, ids) {
+    const list = Array.isArray(ids) ? ids.filter(Boolean).map((v) => String(v).trim()).filter(Boolean) : [];
+    if (!list.length) return true;
+    if (DataAccess && typeof DataAccess.deletePropertiesByIds === 'function') {
+      return DataAccess.deletePropertiesByIds(sb, list);
+    }
+    if (DataAccess && typeof DataAccess.deletePropertyById === 'function') {
+      for (const id of list) {
+        await DataAccess.deletePropertyById(sb, id);
+      }
+      return true;
+    }
+    const pureIds = list.filter((v) => !v.includes(':'));
+    const globalIds = list.filter((v) => v.includes(':'));
+    if (pureIds.length) {
+      const { error } = await sb.from('properties').delete().in('id', pureIds);
+      if (error) throw error;
+    }
+    if (globalIds.length) {
+      const { error } = await sb.from('properties').delete().in('global_id', globalIds);
+      if (error) throw error;
+    }
+    return true;
+  }
+
   mod.deleteSelectedProperties = async function deleteSelectedProperties() {
     const { state, K, api, utils } = ctx();
     const ids = [...state.selectedPropertyIds].filter(Boolean);
@@ -650,17 +678,11 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     if (!window.confirm(`선택한 ${ids.length}건의 물건을 삭제할까요?`)) return;
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (sb) {
-      if (DataAccess && typeof DataAccess.deletePropertiesByIds === 'function') {
-        await DataAccess.deletePropertiesByIds(sb, ids);
-      } else {
-        throw new Error('KNSN_DATA_ACCESS.deletePropertiesByIds 를 찾을 수 없습니다.');
-      }
+      await deletePropertiesWithSupabase(sb, ids);
+    } else if (DataAccess && typeof DataAccess.deletePropertiesViaAdminApi === 'function') {
+      await DataAccess.deletePropertiesViaAdminApi(api, ids, { auth: true });
     } else {
-      if (DataAccess && typeof DataAccess.deletePropertiesViaAdminApi === 'function') {
-        await DataAccess.deletePropertiesViaAdminApi(api, ids, { auth: true });
-      } else {
-        throw new Error('KNSN_DATA_ACCESS.deletePropertiesViaAdminApi 를 찾을 수 없습니다.');
-      }
+      await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
     }
     state.selectedPropertyIds.clear();
     utils.invalidatePropertyCollections();
@@ -679,7 +701,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     if (DataAccess && typeof DataAccess.deleteAllPropertiesViaAdminApi === 'function') {
       await DataAccess.deleteAllPropertiesViaAdminApi(api, { auth: true });
     } else {
-      throw new Error('KNSN_DATA_ACCESS.deleteAllPropertiesViaAdminApi 를 찾을 수 없습니다.');
+      await api('/admin/properties', { method: 'DELETE', auth: true, body: { all: true } });
     }
     state.selectedPropertyIds.clear();
     utils.invalidatePropertyCollections();

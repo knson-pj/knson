@@ -155,63 +155,12 @@ async function fetchSupabaseGeoPendingCount() {
 }
 
 async function buildOverviewFastFromSupabase() {
-  const [total, auction, onbid, general, realtorRows, todayRows, geoPending] = await Promise.all([
-    supabaseHeadCount('/rest/v1/properties?select=id'),
-    supabaseHeadCount('/rest/v1/properties?select=id&source_type=eq.auction'),
-    supabaseHeadCount('/rest/v1/properties?select=id&source_type=eq.onbid'),
-    supabaseHeadCount('/rest/v1/properties?select=id&source_type=eq.general'),
-    fetchSupabaseOverviewRealtorRows(),
-    fetchSupabaseTodayRows().catch(() => []),
+  const [rows, geoPending] = await Promise.all([
+    fetchSupabaseOverviewRows().catch(() => []),
     fetchSupabaseGeoPendingCount(),
   ]);
-
-  const overview = createEmptyOverview();
-  overview.summary.total = total;
-  overview.summary.auction = auction;
-  overview.summary.onbid = onbid;
-  overview.summary.general = general;
-  overview.geoPending = geoPending;
-  overview.filterCounts.source[''] = total;
-  overview.filterCounts.source.auction = auction;
-  overview.filterCounts.source.onbid = onbid;
-  overview.filterCounts.source.general = general;
-
-  for (const row of Array.isArray(realtorRows) ? realtorRows : []) {
-    const normalized = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
-      ? PropertyDomain.buildNormalizedPropertyBase(row)
-      : row;
-    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
-      ? PropertyDomain.getSourceBucket(normalized)
-      : (String(row?.source_url || '').trim() ? 'realtor_naver' : 'realtor_direct');
-    if (bucket === 'realtor_direct') overview.summary.realtor_direct += 1;
-    else overview.summary.realtor_naver += 1;
-  }
-  overview.filterCounts.source.realtor_naver = overview.summary.realtor_naver;
-  overview.filterCounts.source.realtor_direct = overview.summary.realtor_direct;
-
-  const todayKey = getTodayKey();
-  for (const row of Array.isArray(todayRows) ? todayRows : []) {
-    const normalized = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
-      ? PropertyDomain.buildNormalizedPropertyBase(row)
-      : row;
-    const createdAt = normalized?.createdAt || row?.created_at || row?.date_uploaded || '';
-    if (!sameDay(createdAt, todayKey)) continue;
-    overview.today.total += 1;
-    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
-      ? PropertyDomain.getSourceBucket(normalized)
-      : String(normalized?.source_type || normalized?.sourceType || 'general');
-    if (bucket === 'auction') overview.today.auction += 1;
-    else if (bucket === 'onbid') overview.today.onbid += 1;
-    else if (bucket === 'general') overview.today.general += 1;
-    else if (bucket === 'realtor_naver') {
-      overview.today.realtor += 1;
-      overview.today.realtor_naver = Number(overview.today.realtor_naver || 0) + 1;
-    } else if (bucket === 'realtor_direct') {
-      overview.today.realtor += 1;
-      overview.today.realtor_direct = Number(overview.today.realtor_direct || 0) + 1;
-    }
-  }
-
+  const overview = buildOverviewFromRows(Array.isArray(rows) ? rows : []);
+  overview.geoPending = Number(geoPending || 0);
   overview.generatedAt = new Date().toISOString();
   overview.fast = true;
   return overview;
