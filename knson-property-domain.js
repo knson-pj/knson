@@ -739,6 +739,100 @@
     return normalized;
   }
 
+  function sanitizeJsonValue(value, depth = 0, seen) {
+    if (value == null) return value;
+    if (depth > 6) return undefined;
+    const valueType = typeof value;
+    if (valueType === "string" || valueType === "number" || valueType === "boolean") return value;
+    if (valueType !== "object") return undefined;
+    const bag = seen || new WeakSet();
+    if (bag.has(value)) return undefined;
+    bag.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const out = [];
+        for (const item of value.slice(0, 500)) {
+          const next = sanitizeJsonValue(item, depth + 1, bag);
+          if (next !== undefined) out.push(next);
+        }
+        return out;
+      }
+      const out = {};
+      for (const [key, nextValue] of Object.entries(value)) {
+        if (key === "raw") continue;
+        const next = sanitizeJsonValue(nextValue, depth + 1, bag);
+        if (next !== undefined) out[key] = next;
+      }
+      return out;
+    } finally {
+      bag.delete(value);
+    }
+  }
+
+  function sanitizeOpinionHistoryEntries(history) {
+    return (Array.isArray(history) ? history : [])
+      .slice(-200)
+      .map((entry) => ({
+        date: String(entry?.date || "").trim(),
+        text: String(entry?.text || "").trim(),
+        author: String(entry?.author || "").trim(),
+        kind: String(entry?.kind || "").trim(),
+        title: String(entry?.title || "").trim(),
+        at: String(entry?.at || "").trim(),
+      }))
+      .filter((entry) => entry.date || entry.text || entry.author || entry.kind || entry.title || entry.at);
+  }
+
+  function sanitizePropertyRawForSave(raw, overrides = {}) {
+    const base = raw && typeof raw === "object" ? (sanitizeJsonValue(raw, 0) || {}) : {};
+    if (base && typeof base === "object") delete base.raw;
+    const merged = { ...(base || {}), ...(overrides || {}) };
+    if (Array.isArray(merged.opinionHistory)) {
+      merged.opinionHistory = sanitizeOpinionHistoryEntries(merged.opinionHistory);
+    }
+    return merged;
+  }
+
+  function getActorIdentity(user) {
+    return {
+      id: String(user?.id || user?.email || "").trim(),
+      name: String(user?.name || user?.email || "").trim(),
+    };
+  }
+
+  function normalizeStaffMember(item) {
+    const normalizedRole = normalizeRoleValue(item?.role);
+    return {
+      id: item?.id || "",
+      email: item?.email || "",
+      name: item?.name || item?.email || "",
+      position: String(item?.position || item?.jobTitle || item?.job_title || "").trim(),
+      phone: String(item?.phone || item?.mobile || item?.mobile_phone || item?.phone_number || "").trim(),
+      role: normalizedRole,
+      assignedRegions: Array.isArray(item?.assignedRegions)
+        ? item.assignedRegions
+        : (Array.isArray(item?.assigned_regions) ? item.assigned_regions : []),
+      createdAt: item?.createdAt || item?.created_at || "",
+    };
+  }
+
+  function dedupeStaffMembers(items) {
+    const seenIds = new Set();
+    const seenEmails = new Set();
+    const out = [];
+    for (const raw of Array.isArray(items) ? items : []) {
+      const item = normalizeStaffMember(raw);
+      const idKey = String(item.id || "").trim();
+      const emailKey = String(item.email || "").trim().toLowerCase();
+      if (idKey && seenIds.has(idKey)) continue;
+      if (emailKey && seenEmails.has(emailKey)) continue;
+      if (idKey) seenIds.add(idKey);
+      if (emailKey) seenEmails.add(emailKey);
+      out.push(item);
+    }
+    return out;
+  }
+
   function normalizeSourceType(rawValue, options = {}) {
     const fallback = String(options.fallback || "general").trim() || "general";
     const value = String(rawValue || "").trim().toLowerCase();
@@ -1371,6 +1465,12 @@
     detectPropertyDuplicateIndexName,
     isPropertyDuplicateError,
     normalizePropertyDuplicateError,
+    sanitizeJsonValue,
+    sanitizeOpinionHistoryEntries,
+    sanitizePropertyRawForSave,
+    getActorIdentity,
+    normalizeStaffMember,
+    dedupeStaffMembers,
     REGISTRATION_LOG_LABELS_BASE,
     REGISTRATION_LOG_LABELS_ADMIN,
     REGISTRATION_LOG_LABELS_AGENT,

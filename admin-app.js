@@ -1529,6 +1529,9 @@ function bindEvents() {
   }
 
   function normalizeStaff(item) {
+    if (PropertyDomain && typeof PropertyDomain.normalizeStaffMember === "function") {
+      return PropertyDomain.normalizeStaffMember(item);
+    }
     return {
       id: item.id || "",
       email: item.email || "",
@@ -1544,6 +1547,9 @@ function bindEvents() {
   }
 
   function dedupeStaff(items) {
+    if (PropertyDomain && typeof PropertyDomain.dedupeStaffMembers === "function") {
+      return PropertyDomain.dedupeStaffMembers(items);
+    }
     const seenIds = new Set();
     const seenEmails = new Set();
     const out = [];

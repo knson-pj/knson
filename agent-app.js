@@ -357,6 +357,9 @@
   }
 
   function getActorIdentity(user) {
+    if (PropertyDomain && typeof PropertyDomain.getActorIdentity === "function") {
+      return PropertyDomain.getActorIdentity(user);
+    }
     return {
       id: String(user?.id || user?.email || "").trim(),
       name: String(user?.name || user?.email || "").trim(),
@@ -2318,6 +2321,9 @@ function renderPagination(totalPages) {
   }
 
   function sanitizeJsonValue(value, depth = 0, seen) {
+    if (PropertyDomain && typeof PropertyDomain.sanitizeJsonValue === "function") {
+      return PropertyDomain.sanitizeJsonValue(value, depth, seen);
+    }
     if (value == null) return value;
     if (depth > 6) return undefined;
     const t = typeof value;
@@ -2348,6 +2354,9 @@ function renderPagination(totalPages) {
   }
 
   function sanitizePropertyRawForSave(raw, overrides = {}) {
+    if (PropertyDomain && typeof PropertyDomain.sanitizePropertyRawForSave === "function") {
+      return PropertyDomain.sanitizePropertyRawForSave(raw, overrides);
+    }
     const base = raw && typeof raw === "object" ? (sanitizeJsonValue(raw, 0) || {}) : {};
     if (base && typeof base === "object") delete base.raw;
     const merged = { ...(base || {}), ...(overrides || {}) };

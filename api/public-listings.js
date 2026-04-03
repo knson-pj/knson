@@ -128,6 +128,9 @@ function mergeMeaningfulShallow(baseObj, incomingObj) {
 }
 
 function sanitizeJsonValue(value, depth = 0, seen) {
+  if (PropertyDomain && typeof PropertyDomain.sanitizeJsonValue === 'function') {
+    return PropertyDomain.sanitizeJsonValue(value, depth, seen);
+  }
   if (value == null) return value;
   if (depth > 6) return undefined;
   const t = typeof value;
@@ -158,6 +161,9 @@ function sanitizeJsonValue(value, depth = 0, seen) {
 }
 
 function sanitizePropertyRaw(raw) {
+  if (PropertyDomain && typeof PropertyDomain.sanitizePropertyRawForSave === 'function') {
+    return PropertyDomain.sanitizePropertyRawForSave(raw);
+  }
   const base = raw && typeof raw === 'object' ? (sanitizeJsonValue(raw, 0) || {}) : {};
   if (base && typeof base === 'object') delete base.raw;
   if (Array.isArray(base.opinionHistory)) {
