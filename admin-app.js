@@ -8,7 +8,7 @@
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
   const DataAccess = window.KNSN_DATA_ACCESS || null;
-  const Schema = window.KNSN_SCHEMA || null;
+  const PropertyRenderers = window.KNSN_PROPERTY_RENDERERS || null;
   const toNumber = (Shared && typeof Shared.toNumber === "function")
     ? Shared.toNumber
     : ((K && typeof K.toNumber === "function") ? K.toNumber : (v) => {
@@ -903,9 +903,19 @@ function bindEvents() {
       .some((v) => String(v || '').trim() === target);
   }
 
-  const PROPERTY_LIST_SELECT = (Schema && typeof Schema.getPropertySelect === "function")
-    ? (Schema.getPropertySelect("list") || "*")
-    : (DataAccess?.PROPERTY_LIST_SELECT || "*");
+  const PROPERTY_LIST_SELECT = [
+    "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address", "assignee_id",
+    "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
+    "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+    "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
+    "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
+    "geocode_status", "geocoded_at"
+  ].join(",");
+
+  const PROPERTY_HOME_SUMMARY_SELECT = [
+    "id", "source_type", "source_url", "is_general", "submitter_type", "submitter_name",
+    "broker_office_name", "date_uploaded", "created_at", "raw"
+  ].join(",");
 
   function invalidatePropertyCollections() {
     state.propertiesFullCache = null;
@@ -1194,12 +1204,6 @@ function bindEvents() {
     return overview;
   }
 
-  async function fetchSupabaseExactCount(queryBuilder) {
-    const { count, error } = await queryBuilder;
-    if (error) throw error;
-    return Number(count || 0);
-  }
-
   function isOverviewSummaryComplete(summary) {
     if (!summary || typeof summary !== 'object') return false;
     const total = Number(summary.total || 0);
@@ -1207,14 +1211,9 @@ function bindEvents() {
     return total > 0 && subtotal === total;
   }
 
-  async function fetchBrowserOverviewCounts(sb) {
-    if (!sb || !DataAccess || typeof DataAccess.fetchOverviewCounts !== 'function') return null;
-    return DataAccess.fetchOverviewCounts(sb);
-  }
-
   async function fetchBrowserOverviewFallback(sb) {
-    if (!sb || !DataAccess || typeof DataAccess.fetchOverviewCountsFallback !== 'function') return null;
-    return DataAccess.fetchOverviewCountsFallback(sb, { pageSize: 1000 });
+    if (!DataAccess || typeof DataAccess.fetchBrowserOverviewFallback !== "function") return null;
+    return DataAccess.fetchBrowserOverviewFallback(sb);
   }
 
   function normalizeOverviewPayload(res) {
@@ -1275,7 +1274,7 @@ function bindEvents() {
 
     if (sb && !isOverviewSummaryComplete(overview?.summary)) {
       try {
-        const exactOverview = await fetchBrowserOverviewCounts(sb);
+        const exactOverview = await DataAccess.fetchBrowserOverviewCounts(sb);
         if (exactOverview?.summary && Number(exactOverview.summary.total || 0) > 0) {
           overview = {
             ...(overview && typeof overview === 'object' ? overview : {}),
@@ -1291,7 +1290,7 @@ function bindEvents() {
       }
     } else if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0) && sb) {
       try {
-        const browserOverview = await fetchBrowserOverviewFallback(sb);
+        const browserOverview = await DataAccess.fetchBrowserOverviewFallback(sb);
         if (browserOverview?.summary && Number(browserOverview.summary.total || 0) > 0) {
           overview = browserOverview;
         }

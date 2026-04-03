@@ -7,8 +7,8 @@
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
-  const Renderers = window.KNSN_PROPERTY_RENDERERS || null;
   const DataAccess = window.KNSN_DATA_ACCESS || null;
+  const PropertyRenderers = window.KNSN_PROPERTY_RENDERERS || null;
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => [...document.querySelectorAll(sel)];
 
@@ -203,6 +203,13 @@
     { value: '50', label: '50% 이하' },
   ];
 
+  function isPlainSourceFilterSelected(value) {
+    if (PropertyRenderers && typeof PropertyRenderers.isPlainSourceFilterSelected === 'function') {
+      return PropertyRenderers.isPlainSourceFilterSelected(value);
+    }
+    const key = String(value || '').trim();
+    return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
+  }
 
   function renderAgentPropertiesHead(usePlainLayout) {
     const headRow = els.agPropertiesHeadRow || document.getElementById('agPropertiesHeadRow');
@@ -481,7 +488,48 @@
     return String(state.session?.user?.name || state.session?.user?.email || "나").trim() || "나";
   }
 
+  function getPropertyBucket(itemOrRow, fallbackSourceType) {
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") {
+      return PropertyDomain.getSourceBucket(
+        itemOrRow || { sourceType: fallbackSourceType },
+        String(fallbackSourceType || itemOrRow?.sourceType || itemOrRow?.property_source_type || "").trim()
+      );
+    }
+    const source = String(fallbackSourceType || itemOrRow?.sourceType || itemOrRow?.property_source_type || "").trim();
+    return source || "general";
+  }
 
+  function getPropertyKindLabel(sourceType, itemOrRow = null) {
+    const bucket = getPropertyBucket(itemOrRow, sourceType);
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucketLabel === "function") {
+      return PropertyDomain.getSourceBucketLabel(bucket);
+    }
+    const map = {
+      auction: "경매",
+      onbid: "공매",
+      realtor_naver: "네이버중개",
+      realtor_direct: "일반중개",
+      realtor: "중개",
+      general: "일반",
+    };
+    return map[String(bucket || "").trim()] || "일반";
+  }
+
+  function getPropertyKindClass(sourceType, itemOrRow = null) {
+    const bucket = getPropertyBucket(itemOrRow, sourceType);
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucketClass === "function") {
+      return PropertyDomain.getSourceBucketClass(bucket);
+    }
+    const map = {
+      auction: "auction",
+      onbid: "onbid",
+      realtor_naver: "realtor-naver",
+      realtor_direct: "realtor-direct",
+      realtor: "realtor",
+      general: "general",
+    };
+    return map[String(bucket || "").trim()] || "general";
+  }
 
 
   function getSubmitterDisplayLabel(itemOrRow = null) {
@@ -616,8 +664,8 @@
               ${groups.map((group) => {
                 const item = group.item || {};
                 const kindTarget = item && Object.keys(item).length ? item : (group.row || {});
-                const kindLabel = (Renderers && typeof Renderers.getSourceBucketLabel === "function") ? Renderers.getSourceBucketLabel(kindTarget, item?.sourceType || group.row?.property_source_type) : "일반";
-                const kindClass = (Renderers && typeof Renderers.getSourceBucketClass === "function") ? Renderers.getSourceBucketClass(kindTarget, item?.sourceType || group.row?.property_source_type) : "kind-general";
+                const kindLabel = getPropertyKindLabel(item?.sourceType || group.row?.property_source_type, kindTarget);
+                const kindClass = getPropertyKindClass(item?.sourceType || group.row?.property_source_type, kindTarget);
                 const title = buildDailyReportPropertyTitle(group);
                 const actions = [
                   ["rights_analysis", "권리분석"],
@@ -723,9 +771,7 @@
     const min = (parseFloat(minStr) || 0) * 100000000;
     const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
     const isAuctionType = row?.sourceType === 'auction' || row?.sourceType === 'onbid';
-    const price = isAuctionType
-      ? ((Renderers && typeof Renderers.getCurrentPriceValue === 'function') ? Renderers.getCurrentPriceValue(row) : (row?.lowprice ?? row?.priceMain))
-      : row?.priceMain;
+    const price = isAuctionType ? (row?.lowprice ?? row?.priceMain) : row?.priceMain;
     const numericPrice = Number(price || 0) || 0;
     if (!numericPrice || numericPrice <= 0) return false;
     return numericPrice >= min && (max === Infinity || numericPrice < max);
@@ -735,7 +781,7 @@
     if (!value) return true;
     if (row?.sourceType !== 'auction' && row?.sourceType !== 'onbid') return false;
     const base = Number(row?.priceMain || 0) || 0;
-    const current = Number((Renderers && typeof Renderers.getCurrentPriceValue === 'function') ? Renderers.getCurrentPriceValue(row) : (row?.lowprice ?? row?.priceMain ?? 0)) || 0;
+    const current = Number((row?.lowprice ?? row?.priceMain ?? 0)) || 0;
     if (!base || base <= 0 || !current || current <= 0) return false;
     return (current / base) <= 0.5;
   }
@@ -1513,7 +1559,7 @@
 
   function renderTable() {
     if (!els.agTableBody) return;
-    renderAgentPropertiesHead((Renderers && typeof Renderers.isPlainSourceFilterSelected === "function" ? Renderers.isPlainSourceFilterSelected(state.filters?.activeCard) : false));
+    renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.activeCard));
     updateFilterOptionCounts();
     const rows = getFilteredProps();
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
@@ -1539,18 +1585,26 @@
 function renderRow(p) {
   const tr = document.createElement("tr");
   tr.style.cursor = "pointer";
-  const bucket = (Renderers && typeof Renderers.resolveSourceBucket === "function") ? Renderers.resolveSourceBucket(p, p.sourceType) : "general";
-  const kindLabel = (Renderers && typeof Renderers.getSourceBucketLabel === "function") ? Renderers.getSourceBucketLabel(p, p.sourceType) : "일반";
-  const kindClass = (Renderers && typeof Renderers.getSourceBucketClass === "function") ? Renderers.getSourceBucketClass(bucket) : "kind-general";
-  const usePlainLayout = (Renderers && typeof Renderers.isPlainSourceFilterSelected === "function" ? Renderers.isPlainSourceFilterSelected(state.filters?.activeCard) : false);
+  const bucket = getPropertyBucket(p, p.sourceType);
+  const kindLabel = getPropertyKindLabel(p.sourceType, p);
+  const kindClass = (PropertyRenderers && typeof PropertyRenderers.getSourceBucketClass === 'function')
+    ? PropertyRenderers.getSourceBucketClass(bucket)
+    : ({
+        auction: "kind-auction",
+        onbid: "kind-gongmae",
+        realtor_naver: "kind-realtor-naver",
+        realtor_direct: "kind-realtor-direct",
+        general: "kind-general",
+      }[bucket] || "kind-general");
+  const usePlainLayout = isPlainSourceFilterSelected(state.filters?.activeCard);
   const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
   const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
   const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
-  const addressText = (Renderers && typeof Renderers.truncateDisplayText === "function") ? (Renderers.truncateDisplayText(p.address || "-", 40) || "-") : (String(p.address || "-").trim() || "-");
-  const assetTypeText = (Renderers && typeof Renderers.truncateDisplayText === "function") ? (Renderers.truncateDisplayText(p.assetType || "-", 7) || "-") : (String(p.assetType || "-").trim() || "-");
-  const floorText = (Renderers && typeof Renderers.truncateDisplayText === "function") ? (Renderers.truncateDisplayText((Renderers.getFloorDisplayValue ? Renderers.getFloorDisplayValue(p) : "-") || "-", 7) || "-") : "-";
+  const addressText = truncateDisplayText(p.address || "-", 40) || "-";
+  const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
+  const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
   const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
   const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
   const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
@@ -1817,7 +1871,7 @@ function renderPagination(totalPages) {
   function applyAgentEditFormMode(item, view) {
     const form = els.agEditForm;
     if (!form) return;
-    const bucket = (Renderers && typeof Renderers.resolveSourceBucket === "function") ? Renderers.resolveSourceBucket(item, item?.sourceType || view?.sourceType || "") : "general";
+    const bucket = getPropertyBucket(item, item?.sourceType || view?.sourceType || "");
     const isRealtor = bucket === "realtor_naver" || bucket === "realtor_direct" || String(item?.sourceType || "").trim() === "realtor";
     const isGeneral = bucket === "general" || String(item?.sourceType || "").trim() === "general";
     const hideForPlain = isRealtor || isGeneral;
@@ -1839,7 +1893,7 @@ function renderPagination(totalPages) {
     if (!els.agEditForm) return;
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
-    const kindLabel = (Renderers && typeof Renderers.getSourceBucketLabel === "function") ? Renderers.getSourceBucketLabel(item, item.sourceType) : "일반";
+    const kindLabel = getPropertyKindLabel(item.sourceType, item);
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
@@ -1898,7 +1952,7 @@ function renderPagination(totalPages) {
 
     const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
-    const bucket = (Renderers && typeof Renderers.resolveSourceBucket === "function") ? Renderers.resolveSourceBucket(item, item?.sourceType || "") : "general";
+    const bucket = getPropertyBucket(item, item?.sourceType || "");
     const hidePlainFields = ["realtor_naver", "realtor_direct", "general"].includes(bucket);
     const prev = getAgentEditableSnapshot(item);
     let rightsVal = readStr("rightsAnalysis") || null;
@@ -2061,8 +2115,20 @@ function renderPagination(totalPages) {
     }
   }
 
-  // ── Utilities ──
 
+  function truncateDisplayText(value, maxLength) {
+    if (PropertyRenderers && typeof PropertyRenderers.truncateDisplayText === 'function') {
+      return PropertyRenderers.truncateDisplayText(value, maxLength);
+    }
+    return String(value ?? '').trim();
+  }
+
+  function getFloorDisplayValue(item) {
+    if (PropertyRenderers && typeof PropertyRenderers.getFloorDisplayValue === 'function') {
+      return PropertyRenderers.getFloorDisplayValue(item);
+    }
+    return String(item?.floor || item?._raw?.floor || '').trim();
+  }
 
   function firstText(...args) {
     if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...args);
@@ -2701,8 +2767,8 @@ function renderPagination(totalPages) {
           const item = group.item || {};
           const row = group.row || {};
           const kindTarget = item && Object.keys(item).length ? item : row;
-          const bucketLabel = (Renderers && typeof Renderers.getSourceBucketLabel === "function") ? Renderers.getSourceBucketLabel(kindTarget, item?.sourceType || row?.property_source_type) : "일반";
-          const bucketClassRaw = (Renderers && typeof Renderers.getSourceBucketClass === "function") ? Renderers.getSourceBucketClass(kindTarget, item?.sourceType || row?.property_source_type) : "kind-general";
+          const bucketLabel = getPropertyKindLabel(item?.sourceType || row?.property_source_type, kindTarget);
+          const bucketClassRaw = getPropertyKindClass(item?.sourceType || row?.property_source_type, kindTarget);
           const bucketClass = /auction/.test(bucketClassRaw) ? 'is-auction' : /onbid/.test(bucketClassRaw) ? 'is-onbid' : /general/.test(bucketClassRaw) ? 'is-general' : 'is-realtor';
           const title = esc(String(item?.address || row?.property_address || '-').trim());
           const meta = esc(buildDailyReportPropertyMeta(group));

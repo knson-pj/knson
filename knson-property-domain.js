@@ -884,7 +884,6 @@
     if (key === "onbid") return "kind-gongmae";
     if (key === "realtor_naver") return "kind-realtor-naver";
     if (key === "realtor_direct") return "kind-realtor-direct";
-    if (key === "realtor") return "kind-realtor";
     return "kind-general";
   }
 

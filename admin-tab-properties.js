@@ -2,7 +2,7 @@
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
   const DataAccess = window.KNSN_DATA_ACCESS || null;
-  const Renderers = window.KNSN_PROPERTY_RENDERERS || null;
+  const PropertyRenderers = window.KNSN_PROPERTY_RENDERERS || null;
 
   function runtime() {
     return window.KNSN_ADMIN_RUNTIME || {};
@@ -46,9 +46,42 @@
   }
 
 
+  function truncateDisplayText(value, maxLength) {
+    if (PropertyRenderers && typeof PropertyRenderers.truncateDisplayText === 'function') {
+      return PropertyRenderers.truncateDisplayText(value, maxLength);
+    }
+    return String(value ?? '').trim();
+  }
+
+  function getFloorDisplayValue(item) {
+    if (PropertyRenderers && typeof PropertyRenderers.getFloorDisplayValue === 'function') {
+      return PropertyRenderers.getFloorDisplayValue(item);
+    }
+    return String(item?.floor || item?._raw?.floor || '').trim();
+  }
+
+  function getCurrentPriceValue(row) {
+    if (PropertyRenderers && typeof PropertyRenderers.getCurrentPriceValue === 'function') {
+      return PropertyRenderers.getCurrentPriceValue(row);
+    }
+    return Number(row?.lowprice || row?.priceMain || 0) || 0;
+  }
+
+  function getRatioValue(row, utils) {
+    if (PropertyRenderers && typeof PropertyRenderers.getRatioValue === 'function') {
+      return PropertyRenderers.getRatioValue(row, utils);
+    }
+    const base = Number(row?.priceMain || 0);
+    const current = Number(getCurrentPriceValue(row) || 0);
+    return Number.isFinite(base) && Number.isFinite(current) && base > 0 && current > 0 ? current / base : -1;
+  }
 
 
-
+  function formatDateCell(utils, value) {
+    const text = typeof utils?.formatDate === 'function' ? utils.formatDate(value) : String(value || '').trim();
+    const normalized = String(text || '').trim() || '-';
+    return typeof utils?.escapeHtml === 'function' ? utils.escapeHtml(normalized) : normalized;
+  }
 
   const SOURCE_FILTER_OPTIONS = [
     { value: '', label: '전체' },
@@ -85,6 +118,13 @@
     { value: '50', label: '50% 이하' },
   ];
 
+  function isPlainSourceFilterSelected(value) {
+    if (PropertyRenderers && typeof PropertyRenderers.isPlainSourceFilterSelected === 'function') {
+      return PropertyRenderers.isPlainSourceFilterSelected(value);
+    }
+    const key = String(value || '').trim();
+    return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
+  }
 
   function renderPropertiesTableHeader(usePlainLayout) {
     const { els } = ctx();
@@ -144,7 +184,7 @@
     const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
     const sourceType = String(row?.sourceType || '').trim();
     const isAuctionType = sourceType === 'auction' || sourceType === 'onbid';
-    const price = isAuctionType ? (Renderers && typeof Renderers.getCurrentPriceValue === 'function' ? Renderers.getCurrentPriceValue(row) : 0) : (Number(row?.priceMain || 0) || 0);
+    const price = isAuctionType ? getCurrentPriceValue(row) : (Number(row?.priceMain || 0) || 0);
     if (!price || price <= 0) return false;
     return price >= min && (max === Infinity || price < max);
   }
@@ -153,7 +193,7 @@
     if (!value) return true;
     const sourceType = String(row?.sourceType || '').trim();
     if (sourceType !== 'auction' && sourceType !== 'onbid') return false;
-    const ratio = (Renderers && typeof Renderers.getRatioValue === 'function' ? Renderers.getRatioValue(row) : -1);
+    const ratio = getRatioValue(row, {});
     return Number.isFinite(ratio) && ratio >= 0 && ratio <= 0.5;
   }
 
@@ -178,8 +218,8 @@
     const sorted = [...rows];
     const valueFor = (row) => {
       if (sortKey === 'priceMain') return Number(row?.priceMain || 0) || 0;
-      if (sortKey === 'currentPrice') return (Renderers && typeof Renderers.getCurrentPriceValue === 'function' ? Renderers.getCurrentPriceValue(row) : 0);
-      if (sortKey === 'ratio') return (Renderers && typeof Renderers.getRatioValue === 'function' ? Renderers.getRatioValue(row) : -1);
+      if (sortKey === 'currentPrice') return getCurrentPriceValue(row);
+      if (sortKey === 'ratio') return getRatioValue(row, utils);
       return 0;
     };
     sorted.sort((a, b) => {
@@ -762,7 +802,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
     : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
   const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
-  const usePlainLayout = (Renderers && typeof Renderers.isPlainSourceFilterSelected === 'function' ? Renderers.isPlainSourceFilterSelected(state?.propertyFilters?.sourceType) : false);
+  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.sourceType);
 
   renderPropertiesTableHeader(usePlainLayout);
   if (!els.propertiesTableBody) return;
@@ -787,25 +827,19 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const listView = (utils.PropertyDomain && typeof utils.PropertyDomain.buildPropertyListViewModel === 'function')
       ? utils.PropertyDomain.buildPropertyListViewModel(p)
       : null;
-    const bucket = (Renderers && typeof Renderers.resolveSourceBucket === 'function')
-      ? Renderers.resolveSourceBucket(p)
-      : (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function'
-        ? utils.PropertyDomain.getSourceBucket(p)
-        : (p.sourceType === 'realtor' ? (p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : String(p.sourceType || 'general')));
-    const kindLabel = listView?.kindLabel || ((Renderers && typeof Renderers.getSourceBucketLabel === 'function')
-      ? Renderers.getSourceBucketLabel(bucket)
-      : (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function'
-        ? utils.PropertyDomain.getSourceBucketLabel(bucket)
-        : '일반'));
-    const kindClass = listView?.kindClass || ((Renderers && typeof Renderers.getSourceBucketClass === 'function')
-      ? Renderers.getSourceBucketClass(bucket)
-      : 'kind-general');
-    const currentPriceValue = listView?.currentPriceValue ?? ((Renderers && typeof Renderers.getCurrentPriceValue === 'function') ? Renderers.getCurrentPriceValue(p) : 0);
+    const bucket = (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function')
+      ? utils.PropertyDomain.getSourceBucket(p)
+      : (p.sourceType === 'realtor' ? (p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : String(p.sourceType || 'general'));
+    const kindLabel = listView?.kindLabel || ((utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucketLabel === 'function')
+      ? utils.PropertyDomain.getSourceBucketLabel(bucket)
+      : (p.sourceType === 'auction' ? '경매' : p.sourceType === 'onbid' ? '공매' : p.sourceType === 'realtor' ? (p.isDirectSubmission ? '일반중개' : '네이버중개') : '일반'));
+    const kindClass = listView?.kindClass || ((PropertyRenderers && typeof PropertyRenderers.getSourceBucketClass === 'function') ? PropertyRenderers.getSourceBucketClass(bucket) : (bucket === 'auction' ? 'kind-auction' : bucket === 'onbid' ? 'kind-gongmae' : bucket === 'realtor_naver' ? 'kind-realtor-naver' : bucket === 'realtor_direct' ? 'kind-realtor-direct' : 'kind-general'));
+    const currentPriceValue = listView?.currentPriceValue ?? getCurrentPriceValue(p);
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
     const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
-    const floorText = (Renderers && typeof Renderers.truncateDisplayText === 'function' ? Renderers.truncateDisplayText((Renderers.getFloorDisplayValue ? Renderers.getFloorDisplayValue(p) : ''), 7) : '') || '-';
-    const addressText = (Renderers && typeof Renderers.truncateDisplayText === 'function' ? Renderers.truncateDisplayText(listView?.address || p.address || '-', 40) : String(listView?.address || p.address || '-')) || '-';
-    const assetTypeText = (Renderers && typeof Renderers.truncateDisplayText === 'function' ? Renderers.truncateDisplayText(listView?.assetType || p.assetType || '-', 7) : String(listView?.assetType || p.assetType || '-')) || '-';
+    const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
+    const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
+    const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
     const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
     const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
     const siteText = p.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.sitearea)) : '-';
@@ -830,7 +864,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${assigneeText}</td>
       <td class="indicator-cell">${rightsHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
-      <td>${(Renderers && typeof Renderers.formatDateCell === 'function' ? Renderers.formatDateCell(p.createdAt, utils.formatDate, utils.escapeHtml) : '-')}</td>
+      <td>${formatDateCell(utils, p.createdAt)}</td>
     `
       : `
       <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
@@ -847,7 +881,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${assigneeText}</td>
       <td class="indicator-cell">${rightsHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
-      <td>${(Renderers && typeof Renderers.formatDateCell === 'function' ? Renderers.formatDateCell(p.createdAt, utils.formatDate, utils.escapeHtml) : '-')}</td>
+      <td>${formatDateCell(utils, p.createdAt)}</td>
     `;
     const checkbox = tr.querySelector('.prop-row-check');
     if (checkbox) {
