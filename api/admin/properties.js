@@ -51,8 +51,8 @@ async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
 
 
 const OVERVIEW_SELECT = [
-  'source_type', 'source_url', 'is_general', 'submitter_type', 'submitter_name', 'broker_office_name',
-  'address', 'latitude', 'longitude', 'geocode_status', 'exclusive_area', 'date_uploaded', 'created_at'
+  'global_id', 'source_type', 'source_url', 'is_general', 'submitter_type', 'submitter_name', 'broker_office_name',
+  'address', 'latitude', 'longitude', 'geocode_status', 'exclusive_area', 'date_uploaded', 'created_at', 'raw'
 ].join(',');
 
 const MAP_SCAN_SELECT = [
@@ -154,16 +154,41 @@ async function fetchSupabaseGeoPendingCount() {
   }
 }
 
-async function buildOverviewFastFromSupabase() {
-  const [rows, geoPending] = await Promise.all([
-    fetchSupabaseOverviewRows().catch(() => []),
-    fetchSupabaseGeoPendingCount(),
-  ]);
-  const overview = buildOverviewFromRows(Array.isArray(rows) ? rows : []);
-  overview.geoPending = Number(geoPending || 0);
-  overview.generatedAt = new Date().toISOString();
-  overview.fast = true;
-  return overview;
+const OVERVIEW_CACHE_TTL_MS = 15 * 1000;
+let overviewCacheValue = null;
+let overviewCacheAt = 0;
+let overviewCachePromise = null;
+
+async function buildOverviewFastFromSupabase({ forceRefresh = false } = {}) {
+  const now = Date.now();
+  if (!forceRefresh && overviewCacheValue && (now - overviewCacheAt) < OVERVIEW_CACHE_TTL_MS) {
+    return {
+      ...overviewCacheValue,
+      cached: true,
+      cacheAgeMs: now - overviewCacheAt,
+    };
+  }
+  if (!forceRefresh && overviewCachePromise) {
+    return overviewCachePromise;
+  }
+
+  overviewCachePromise = (async () => {
+    const rows = await fetchSupabaseOverviewRows();
+    const overview = buildOverviewFromRows(rows);
+    overview.generatedAt = new Date().toISOString();
+    overview.fast = false;
+    overview.accurate = true;
+    overview.scanCount = Array.isArray(rows) ? rows.length : 0;
+    overviewCacheValue = overview;
+    overviewCacheAt = Date.now();
+    return overview;
+  })();
+
+  try {
+    return await overviewCachePromise;
+  } finally {
+    overviewCachePromise = null;
+  }
 }
 
 
@@ -262,16 +287,22 @@ function appendRowToOverview(overview, row, todayKey) {
   }
 }
 
-async function fetchSupabaseOverviewRows(pageSize = 5000) {
+async function fetchSupabaseOverviewRows(pageSize = 1000) {
+  const safePageSize = Math.max(1, Math.min(1000, Number(pageSize || 1000)));
   const rows = [];
   let from = 0;
+  let total = null;
   let activeSelect = OVERVIEW_SELECT;
   const removed = new Set();
+  try {
+    total = await supabaseHeadCount('/rest/v1/properties?select=id');
+  } catch {
+    total = null;
+  }
   while (true) {
-    const to = from + pageSize - 1;
     let data;
     try {
-      data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(activeSelect)}&offset=${from}&limit=${pageSize}`);
+      data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(activeSelect)}&offset=${from}&limit=${safePageSize}`);
     } catch (err) {
       const missing = extractMissingColumn(err);
       if (missing && !removed.has(missing)) {
@@ -288,8 +319,10 @@ async function fetchSupabaseOverviewRows(pageSize = 5000) {
     }
     const batch = Array.isArray(data) ? data : [];
     rows.push(...batch);
-    if (batch.length < pageSize) break;
-    from += pageSize;
+    if (!batch.length) break;
+    from += batch.length;
+    if (total !== null && rows.length >= total) break;
+    if (batch.length < safePageSize) break;
   }
   return rows;
 }
