@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260331-overview-fast4";
+  const ADMIN_FAST_BUILD = "20260403-adminfix2";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -188,6 +188,8 @@
     propertyTotalCount: 0,
     propertySummary: null,
     propertyOverview: null,
+    propertyOverviewFetchedAt: 0,
+    propertyOverviewPromise: null,
     propertiesFullCache: null,
     propertySort: { key: '', direction: 'desc' },
     geocodeRunning: false,
@@ -1343,48 +1345,69 @@ function bindEvents() {
   }
 
   async function fetchAdminPropertyOverview({ forceRefresh = false, sb = null } = {}) {
-    if (!forceRefresh && state.propertyOverview) return state.propertyOverview;
-
-    const cacheBust = Date.now();
-    let overview = null;
-    try {
-      let res = null;
-      if (DataAccess && typeof DataAccess.fetchPropertyOverviewViaApi === 'function') {
-        res = await DataAccess.fetchPropertyOverviewViaApi(api, { cacheBust, auth: true });
-      } else {
-        res = await api(`/admin/properties?mode=overview&_ts=${cacheBust}`, { auth: true });
-      }
-      overview = normalizeOverviewPayload(res);
-    } catch (err) {
-      console.warn('server overview request failed', err);
+    const now = Date.now();
+    if (!forceRefresh && state.propertyOverview && (now - Number(state.propertyOverviewFetchedAt || 0) < 10000)) {
+      return state.propertyOverview;
     }
+    if (state.propertyOverviewPromise) return state.propertyOverviewPromise;
 
-    if (sb) {
-      const exactOverview = await fetchBrowserOverviewCounts(sb);
-      if (exactOverview?.summary && Number(exactOverview.summary.total || 0) >= 0) {
-        overview = {
-          ...(overview && typeof overview === 'object' ? overview : {}),
-          ...exactOverview,
-          filterCounts: {
-            ...(overview?.filterCounts && typeof overview.filterCounts === 'object' ? overview.filterCounts : {}),
-            ...(exactOverview?.filterCounts && typeof exactOverview.filterCounts === 'object' ? exactOverview.filterCounts : {}),
-          },
-        };
-      } else if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0)) {
-        const browserOverview = await fetchBrowserOverviewFallback(sb);
-        if (browserOverview?.summary && Number(browserOverview.summary.total || 0) > 0) {
-          overview = browserOverview;
+    state.propertyOverviewPromise = (async () => {
+      const cacheBust = Date.now();
+      let overview = null;
+      try {
+        let res = null;
+        if (DataAccess && typeof DataAccess.fetchPropertyOverviewViaApi === 'function') {
+          res = await DataAccess.fetchPropertyOverviewViaApi(api, { cacheBust, auth: true });
+        } else {
+          res = await api(`/admin/properties?mode=overview&_ts=${cacheBust}`, { auth: true });
+        }
+        overview = normalizeOverviewPayload(res);
+      } catch (err) {
+        console.warn('server overview request failed', err);
+      }
+
+      if (sb && !isOverviewSummaryComplete(overview?.summary)) {
+        try {
+          const exactOverview = await fetchBrowserOverviewCounts(sb);
+          if (exactOverview?.summary && Number(exactOverview.summary.total || 0) >= 0) {
+            overview = {
+              ...(overview && typeof overview === 'object' ? overview : {}),
+              ...exactOverview,
+              filterCounts: {
+                ...(overview?.filterCounts && typeof overview.filterCounts === 'object' ? overview.filterCounts : {}),
+                ...(exactOverview?.filterCounts && typeof exactOverview.filterCounts === 'object' ? exactOverview.filterCounts : {}),
+              },
+            };
+          }
+        } catch (err) {
+          console.warn('browser overview exact-count fallback failed', err);
+        }
+      } else if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0) && sb) {
+        try {
+          const browserOverview = await fetchBrowserOverviewFallback(sb);
+          if (browserOverview?.summary && Number(browserOverview.summary.total || 0) > 0) {
+            overview = browserOverview;
+          }
+        } catch (err) {
+          console.warn('browser overview fallback failed', err);
         }
       }
-    }
 
-    if (!overview || !overview.summary) {
-      throw new Error('대시보드 집계 응답 형식이 올바르지 않습니다.');
-    }
+      if (!overview || !overview.summary) {
+        throw new Error('대시보드 집계 응답 형식이 올바르지 않습니다.');
+      }
 
-    state.propertyOverview = overview;
-    state.propertySummary = overview.summary;
-    return overview;
+      state.propertyOverview = overview;
+      state.propertySummary = overview.summary;
+      state.propertyOverviewFetchedAt = Date.now();
+      return overview;
+    })();
+
+    try {
+      return await state.propertyOverviewPromise;
+    } finally {
+      state.propertyOverviewPromise = null;
+    }
   }
 
   async function fetchPropertyDetail(sb, targetId) {

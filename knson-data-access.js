@@ -664,6 +664,7 @@
   }
 
   window.KNSN_DATA_ACCESS = {
+    __build: "20260403-adminfix2",
     PROPERTY_LIST_SELECT,
     PROPERTY_HOME_SUMMARY_SELECT,
     resolvePropertyIdColumn,
