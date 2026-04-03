@@ -219,7 +219,7 @@
 
   function buildNormalizedPropertyBase(item, options) {
     const opts = options && typeof options === "object" ? options : {};
-    const raw = getRawPayload(item);
+    const raw = item && item.raw && typeof item.raw === "object" ? item.raw : {};
     const address = pickFirstText(item && item.address, item && item.location, item && item.addr, raw.address, raw.location, "");
     const itemNo = pickFirstText(item && item.itemNo, item && item.caseNo, item && item.externalId, item && item.listingId, item && item.item_no, raw.itemNo, raw.item_no, "");
     const sourceUrl = pickFirstText(item && item.sourceUrl, item && item.source_url, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], "");
@@ -561,38 +561,126 @@
     return out;
   }
 
+  function normalizeOpinionHistoryEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const text = String(entry.text || entry.note || "").trim();
+    if (!text) return null;
+    const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
+    const title = String(entry.title || entry.label || "").trim();
+    const date = String(entry.date || entry.at || "").trim();
+    const author = String(entry.author || entry.actor || "").trim();
+    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author };
+  }
 
-
-  function getRawPayload(item) {
-    const directRaw = item && item.raw && typeof item.raw === "object" ? item.raw : null;
-    const nestedRaw = item && item._raw && item._raw.raw && typeof item._raw.raw === "object" ? item._raw.raw : null;
-    const outerRaw = item && item._raw && typeof item._raw === "object" ? item._raw : null;
-    if (directRaw && nestedRaw) return { ...nestedRaw, ...directRaw };
-    if (directRaw && outerRaw) return { ...outerRaw, ...directRaw };
-    return directRaw || nestedRaw || outerRaw || {};
+  function buildOpinionHistoryEntry(kind, text, user, options = {}) {
+    const body = String(text || "").trim();
+    if (!body) return null;
+    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
+    const date = String(options.date || (Shared && typeof Shared.formatDate === "function" ? (Shared.formatDate(at) || "") : "")).trim();
+    const fallbackDate = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    })();
+    const author = String(options.author || user?.name || user?.email || "").trim();
+    const titleMap = {
+      opinion: "담당자 의견",
+      siteInspection: "현장실사",
+      dailyIssue: "금일이슈사항",
+    };
+    return {
+      kind: String(kind || "opinion").trim() || "opinion",
+      title: String(options.title || titleMap[kind] || "담당자 의견").trim(),
+      date: date || fallbackDate,
+      at,
+      text: body,
+      author,
+    };
   }
 
   function loadOpinionHistory(item) {
     const raw = item?._raw?.raw || item?.raw || {};
     const hist = raw.opinionHistory;
-    if (Array.isArray(hist)) return hist;
+    if (Array.isArray(hist) && hist.length) {
+      return hist.map((entry) => normalizeOpinionHistoryEntry(entry)).filter(Boolean);
+    }
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
-      const fallbackDate = Shared && typeof Shared.formatDate === "function"
-        ? (Shared.formatDate(item?.createdAt) || "unknown")
-        : "unknown";
-      return [{ date: fallbackDate, text: legacy, author: "" }];
+      const entry = buildOpinionHistoryEntry("opinion", legacy, { name: "" }, { at: item?.createdAt || raw.firstRegisteredAt || new Date().toISOString() });
+      return entry ? [entry] : [];
     }
     return [];
   }
 
-  function appendOpinionEntry(history, newText, user, now = new Date()) {
-    const text = String(newText || "").trim();
-    if (!text) return Array.isArray(history) ? history : [];
-    const date = now instanceof Date ? now : new Date(now);
-    const today = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    const author = String(user?.name || user?.email || "").trim();
-    return [...(Array.isArray(history) ? history : []), { date: today, text, author }];
+  function appendOpinionEntry(history, newText, user, options = {}) {
+    const entry = buildOpinionHistoryEntry(options.kind || "opinion", newText, user, options);
+    if (!entry) return Array.isArray(history) ? history : [];
+    return [...(Array.isArray(history) ? history : []), entry];
+  }
+
+  function getOpinionHistoryMeta(entry) {
+    const kind = String(entry?.kind || "opinion").trim();
+    if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
+    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일이슈사항" };
+    return { badgeClass: "is-opinion", badgeLabel: "담당자 의견", title: "담당자 의견" };
+  }
+
+  function toTimelineTimestamp(value) {
+    const s = String(value || "").trim();
+    if (!s) return Number.POSITIVE_INFINITY;
+    const time = Date.parse(s);
+    if (Number.isFinite(time)) return time;
+    const normalized = s.replace(/\./g, "-").replace(/\s+/g, "T");
+    const nextTime = Date.parse(normalized);
+    if (Number.isFinite(nextTime)) return nextTime;
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function buildCombinedPropertyLog(opinionHistory, registrationLog) {
+    const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
+    const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
+    const rows = [];
+
+    opinions.forEach((entry, idx) => {
+      const normalized = normalizeOpinionHistoryEntry(entry);
+      if (!normalized) return;
+      const meta = getOpinionHistoryMeta(normalized);
+      rows.push({
+        kind: "opinion",
+        sortAt: toTimelineTimestamp(normalized.at || normalized.date),
+        at: normalized.at || normalized.date || "",
+        badgeClass: meta.badgeClass,
+        badgeLabel: meta.badgeLabel,
+        author: normalized.author,
+        text: normalized.text,
+        title: normalized.title || meta.title,
+        order: idx,
+      });
+    });
+
+    regLogs.forEach((entry, idx) => {
+      const at = String(entry?.at || entry?.date || "").trim();
+      const route = String(entry?.route || "").trim();
+      const actor = String(entry?.actor || "").trim();
+      const type = String(entry?.type || "").trim();
+      const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
+      rows.push({
+        kind: "registration",
+        sortAt: toTimelineTimestamp(at),
+        at,
+        badgeClass: "is-registration",
+        badgeLabel: "등록LOG",
+        author: actor,
+        title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
+        route,
+        changes,
+        order: idx,
+      });
+    });
+
+    return rows.sort((a, b) => {
+      if (a.sortAt !== b.sortAt) return a.sortAt - b.sortAt;
+      return a.order - b.order;
+    });
   }
 
   function collectPropertyErrorFragments(error) {
@@ -649,6 +737,100 @@
     normalized.constraint = detectPropertyDuplicateIndexName(error) || undefined;
     normalized.cause = error;
     return normalized;
+  }
+
+  function sanitizeJsonValue(value, depth = 0, seen) {
+    if (value == null) return value;
+    if (depth > 6) return undefined;
+    const valueType = typeof value;
+    if (valueType === "string" || valueType === "number" || valueType === "boolean") return value;
+    if (valueType !== "object") return undefined;
+    const bag = seen || new WeakSet();
+    if (bag.has(value)) return undefined;
+    bag.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const out = [];
+        for (const item of value.slice(0, 500)) {
+          const next = sanitizeJsonValue(item, depth + 1, bag);
+          if (next !== undefined) out.push(next);
+        }
+        return out;
+      }
+      const out = {};
+      for (const [key, nextValue] of Object.entries(value)) {
+        if (key === "raw") continue;
+        const next = sanitizeJsonValue(nextValue, depth + 1, bag);
+        if (next !== undefined) out[key] = next;
+      }
+      return out;
+    } finally {
+      bag.delete(value);
+    }
+  }
+
+  function sanitizeOpinionHistoryEntries(history) {
+    return (Array.isArray(history) ? history : [])
+      .slice(-200)
+      .map((entry) => ({
+        date: String(entry?.date || "").trim(),
+        text: String(entry?.text || "").trim(),
+        author: String(entry?.author || "").trim(),
+        kind: String(entry?.kind || "").trim(),
+        title: String(entry?.title || "").trim(),
+        at: String(entry?.at || "").trim(),
+      }))
+      .filter((entry) => entry.date || entry.text || entry.author || entry.kind || entry.title || entry.at);
+  }
+
+  function sanitizePropertyRawForSave(raw, overrides = {}) {
+    const base = raw && typeof raw === "object" ? (sanitizeJsonValue(raw, 0) || {}) : {};
+    if (base && typeof base === "object") delete base.raw;
+    const merged = { ...(base || {}), ...(overrides || {}) };
+    if (Array.isArray(merged.opinionHistory)) {
+      merged.opinionHistory = sanitizeOpinionHistoryEntries(merged.opinionHistory);
+    }
+    return merged;
+  }
+
+  function getActorIdentity(user) {
+    return {
+      id: String(user?.id || user?.email || "").trim(),
+      name: String(user?.name || user?.email || "").trim(),
+    };
+  }
+
+  function normalizeStaffMember(item) {
+    const normalizedRole = normalizeRoleValue(item?.role);
+    return {
+      id: item?.id || "",
+      email: item?.email || "",
+      name: item?.name || item?.email || "",
+      position: String(item?.position || item?.jobTitle || item?.job_title || "").trim(),
+      phone: String(item?.phone || item?.mobile || item?.mobile_phone || item?.phone_number || "").trim(),
+      role: normalizedRole,
+      assignedRegions: Array.isArray(item?.assignedRegions)
+        ? item.assignedRegions
+        : (Array.isArray(item?.assigned_regions) ? item.assigned_regions : []),
+      createdAt: item?.createdAt || item?.created_at || "",
+    };
+  }
+
+  function dedupeStaffMembers(items) {
+    const seenIds = new Set();
+    const seenEmails = new Set();
+    const out = [];
+    for (const raw of Array.isArray(items) ? items : []) {
+      const item = normalizeStaffMember(raw);
+      const idKey = String(item.id || "").trim();
+      const emailKey = String(item.email || "").trim().toLowerCase();
+      if (idKey && seenIds.has(idKey)) continue;
+      if (emailKey && seenEmails.has(emailKey)) continue;
+      if (idKey) seenIds.add(idKey);
+      if (emailKey) seenEmails.add(emailKey);
+      out.push(item);
+    }
+    return out;
   }
 
   function normalizeSourceType(rawValue, options = {}) {
@@ -749,6 +931,16 @@
     return "";
   }
 
+  function buildRegistrationSubmissionPackage(input = {}, options = {}) {
+    const core = buildRegistrationSubmissionCore(input, options);
+    const validationMessage = validateRegistrationSubmissionCore(core, options);
+    return {
+      core,
+      validationMessage,
+      payload: validationMessage ? null : buildRegistrationSubmissionPayload(core, options),
+    };
+  }
+
   function buildRegistrationSubmissionPayload(input = {}, options = {}) {
     const core = buildRegistrationSubmissionCore(input, options);
     const extraRaw = input.raw && typeof input.raw === "object" ? { ...input.raw } : {};
@@ -820,6 +1012,19 @@
     return normalizeSourceType(sourceType, { fallback: "" }) === "general";
   }
 
+  function getRawPayload(item) {
+    if (!item || typeof item !== 'object') return {};
+    if (item.raw && typeof item.raw === 'object') {
+      if (item.raw.raw && typeof item.raw.raw === 'object') return item.raw.raw;
+      return item.raw;
+    }
+    if (item._raw && typeof item._raw === 'object') {
+      if (item._raw.raw && typeof item._raw.raw === 'object') return item._raw.raw;
+      return item._raw;
+    }
+    return {};
+  }
+
   function isDirectRealtorSubmission(item) {
     const raw = getRawPayload(item);
     const sourceType = inferSourceTypeFromContext({
@@ -836,23 +1041,23 @@
     });
     if (sourceType !== "realtor") return false;
     const submitterType = normalizeSubmitterType(
-      item?.submitterType || item?.submitter_type || item?.raw?.submitterType || item?.raw?.submitter_type || "",
+      item?.submitterType || item?.submitter_type || raw?.submitterType || raw?.submitter_type || "",
       { fallback: "" }
     );
-    const rawSource = String(item?.rawSource || item?.raw_source || item?.sourceType || item?.source_type || item?.raw?.sourceType || item?.raw?.source_type || item?.source || item?.category || "").trim().toLowerCase();
+    const rawSource = String(item?.sourceBucket || item?.source_bucket || item?.rawSource || item?.raw_source || item?.sourceType || item?.source_type || raw?.sourceBucket || raw?.source_bucket || raw?.sourceType || raw?.source_type || item?.source || item?.category || raw?.source || raw?.category || "").trim().toLowerCase();
     if (["realtor_direct"].includes(rawSource)) return true;
     if (["realtor_naver", "naver", "broker"].includes(rawSource)) return false;
-    const sourceUrl = pickFirstText(item?.sourceUrl, item?.source_url, item?.raw?.sourceUrl, item?.raw?.source_url, item?.raw?.url, item?.raw?.["바로가기(엑셀)"], item?.raw?.["매물URL"], "");
+    const sourceUrl = pickFirstText(item?.sourceUrl, item?.source_url, raw?.sourceUrl, raw?.source_url, raw?.url, raw?.["바로가기(엑셀)"], raw?.["매물URL"], "");
     if (sourceUrl) return false;
     if (submitterType === "realtor") return true;
-    const submitterName = pickFirstText(item?.submitterName, item?.submitter_name, item?.raw?.submitterName, item?.raw?.submitter_name, item?.brokerOfficeName, item?.broker_office_name, item?.raw?.brokerOfficeName, item?.raw?.broker_office_name, "");
+    const submitterName = pickFirstText(item?.submitterName, item?.submitter_name, raw?.submitterName, raw?.submitter_type, item?.brokerOfficeName, item?.broker_office_name, raw?.brokerOfficeName, raw?.broker_office_name, "");
     return !!submitterName;
   }
 
   function getSourceBucket(item) {
-    const explicitBucket = String(item?.sourceBucket || item?.source_bucket || item?._raw?.sourceBucket || item?._raw?.source_bucket || "").trim();
+    const explicitBucket = String(item?.sourceBucket || item?.source_bucket || item?._raw?.sourceBucket || item?._raw?.source_bucket || '').trim();
     if (["auction", "onbid", "realtor_naver", "realtor_direct", "general", "realtor"].includes(explicitBucket)) {
-      return explicitBucket === "realtor" ? "realtor_naver" : explicitBucket;
+      return explicitBucket === 'realtor' ? 'realtor_naver' : explicitBucket;
     }
     const raw = getRawPayload(item);
     const sourceType = inferSourceTypeFromContext({
@@ -866,7 +1071,7 @@
       isGeneral: item?.isGeneral || item?.is_general || raw?.isGeneral || raw?.is_general,
       brokerOfficeName: item?.brokerOfficeName || item?.broker_office_name || raw?.brokerOfficeName || raw?.broker_office_name,
       raw,
-      rawSource: item?.rawSource || item?.raw_source || raw?.sourceType || raw?.source_type || raw?.source,
+      rawSource: item?.rawSource || item?.raw_source || raw?.sourceType || raw?.source_type || raw?.source || raw?.category,
     });
     if (sourceType === "realtor") {
       if (typeof item?.isDirectSubmission === "boolean") return item.isDirectSubmission ? "realtor_direct" : "realtor_naver";
@@ -895,6 +1100,15 @@
     return "일반";
   }
 
+  function getSourceBucketClass(bucket) {
+    const key = String(bucket || "").trim();
+    if (key === "auction") return "kind-auction";
+    if (key === "onbid") return "kind-gongmae";
+    if (key === "realtor_naver") return "kind-realtor-naver";
+    if (key === "realtor_direct") return "kind-realtor-direct";
+    return "kind-general";
+  }
+
   function matchesSourceBucket(item, activeCard) {
     const target = String(activeCard || "").trim();
     if (!target || target === "all") return true;
@@ -912,6 +1126,329 @@
     return summary;
   }
 
+  function getCurrentPriceValue(item) {
+    const low = toNullableNumber(
+      item?.lowprice ?? item?.low_price ?? item?.lowPrice ??
+      item?.currentPrice ?? item?.current_price ??
+      item?._raw?.lowprice ?? item?._raw?.low_price ?? item?._raw?.lowPrice ??
+      item?.raw?.lowprice ?? item?.raw?.low_price ?? item?.raw?.lowPrice
+    );
+    if (low != null && low > 0) return low;
+    return toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main) || 0;
+  }
+
+  function getRatioValue(item) {
+    const appraisal = toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main) || 0;
+    const current = getCurrentPriceValue(item);
+    if (appraisal > 0 && current > 0) return current / appraisal;
+    const rawRate = item?.raw?.bidRate ?? item?.raw?.rate ?? item?.raw?.["최저입찰가율(%)"] ?? item?._raw?.bidRate ?? item?._raw?.rate ?? item?._raw?.["최저입찰가율(%)"];
+    const numeric = Number(String(rawRate ?? '').replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(numeric) ? numeric / 100 : -1;
+  }
+
+  function getFloorDisplayValue(item) {
+    const floor = pickFirstText(item?.floor, item?.floorText, item?.raw?.floor, item?.raw?.floorText, item?._raw?.floor, item?._raw?.floorText, '');
+    const total = pickFirstText(item?.totalfloor, item?.total_floor, item?.totalFloor, item?.totalFloorText, item?.raw?.totalfloor, item?.raw?.total_floor, item?.raw?.totalFloor, item?._raw?.totalfloor, item?._raw?.total_floor, item?._raw?.totalFloor, '');
+    if (floor && total) {
+      if (floor.includes('/')) return floor;
+      return `${floor}/${total}`;
+    }
+    return floor || total || '';
+  }
+
+  function buildPropertyListViewModel(item = {}) {
+    const bucket = getSourceBucket(item);
+    return {
+      sourceBucket: bucket,
+      kindLabel: getSourceBucketLabel(bucket),
+      kindClass: getSourceBucketClass(bucket),
+      itemNo: pickFirstText(item?.itemNo, item?.item_no, item?.globalId, item?.global_id, '-'),
+      address: pickFirstText(item?.address, item?.roadAddress, item?.road_address, item?.raw?.address, item?._raw?.address, '-'),
+      assetType: pickFirstText(item?.assetType, item?.asset_type, item?.type, item?.raw?.assetType, item?.raw?.asset_type, item?._raw?.assetType, item?._raw?.asset_type, '-'),
+      floorText: getFloorDisplayValue(item),
+      appraisalPriceValue: toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main),
+      currentPriceValue: getCurrentPriceValue(item),
+      ratioValue: getRatioValue(item),
+      exclusiveAreaValue: toNullableNumber(item?.exclusivearea ?? item?.exclusive_area ?? item?.exclusiveArea ?? item?._raw?.exclusivearea ?? item?._raw?.exclusive_area),
+      commonAreaValue: toNullableNumber(item?.commonarea ?? item?.common_area ?? item?.commonArea ?? item?._raw?.commonarea ?? item?._raw?.common_area),
+      siteAreaValue: toNullableNumber(item?.sitearea ?? item?.site_area ?? item?.siteArea ?? item?._raw?.sitearea ?? item?._raw?.site_area),
+      useApprovalValue: pickFirstText(item?.useapproval, item?.use_approval, item?.useApproval, item?._raw?.useapproval, item?._raw?.use_approval, item?._raw?.useApproval, ''),
+      createdAtValue: pickFirstText(item?.createdAt, item?.created_at, item?.dateUploaded, item?.date_uploaded, item?._raw?.created_at, item?._raw?.date_uploaded, ''),
+    };
+  }
+
+  function matchesSourceSelection(item, selected) {
+    const key = String(selected || '').trim();
+    if (!key || key === 'all') return true;
+    const bucket = getSourceBucket(item);
+    if (key === 'realtor') return bucket === 'realtor_naver' || bucket === 'realtor_direct';
+    return bucket === key;
+  }
+
+  function matchesKeyword(item, keyword, options = {}) {
+    const q = String(keyword || '').trim().toLowerCase();
+    if (!q) return true;
+    const fields = Array.isArray(options.fields) && options.fields.length
+      ? options.fields
+      : ['address', 'assignedAgentName', 'regionGu', 'regionDong', 'type', 'assetType', 'rightsAnalysis', 'siteInspection', 'opinion', 'memo', 'submitterName', 'brokerOfficeName'];
+    const hay = fields
+      .map((field) => {
+        if (typeof field === 'function') {
+          try { return field(item); } catch (_) { return ''; }
+        }
+        return item?.[field];
+      })
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  }
+
+
+  const PROPERTY_SOURCE_FILTER_OPTIONS = [
+    { value: '', label: '전체' },
+    { value: 'auction', label: '경매' },
+    { value: 'onbid', label: '공매' },
+    { value: 'realtor_naver', label: '네이버중개' },
+    { value: 'realtor_direct', label: '일반중개' },
+    { value: 'general', label: '일반' },
+  ];
+
+  const PROPERTY_AREA_FILTER_OPTIONS = [
+    { value: '', label: '전체 면적' },
+    { value: '0-5', label: '5평 미만' },
+    { value: '5-10', label: '5~10평' },
+    { value: '10-20', label: '10~20평' },
+    { value: '20-30', label: '20~30평' },
+    { value: '30-50', label: '30~50평' },
+    { value: '50-100', label: '50평~100평미만' },
+    { value: '100-', label: '100평 이상' },
+  ];
+
+  const PROPERTY_PRICE_FILTER_OPTIONS = [
+    { value: '', label: '전체 가격' },
+    { value: '0-1', label: '1억 미만' },
+    { value: '1-3', label: '1~3억' },
+    { value: '3-5', label: '3~5억' },
+    { value: '5-10', label: '5~10억' },
+    { value: '10-20', label: '10~20억' },
+    { value: '20-', label: '20억 이상' },
+  ];
+
+  const PROPERTY_RATIO_FILTER_OPTIONS = [
+    { value: '', label: '전체 비율' },
+    { value: '50', label: '50% 이하' },
+  ];
+
+  function matchesAreaFilter(value, area) {
+    if (!value) return true;
+    const [minStr, maxStr] = String(value).split('-');
+    const min = parseFloat(minStr) || 0;
+    const max = maxStr ? parseFloat(maxStr) : Infinity;
+    const numericArea = Number(area);
+    if (!Number.isFinite(numericArea) || numericArea <= 0) return false;
+    return numericArea >= min && (max === Infinity || numericArea < max);
+  }
+
+  function getPropertyEffectivePrice(row) {
+    const sourceType = normalizeSourceType(row?.sourceType || row?.source_type || row?._raw?.sourceType || row?._raw?.source_type || '', { fallback: '' });
+    const isAuctionType = sourceType === 'auction' || sourceType === 'onbid';
+    return isAuctionType ? getCurrentPriceValue(row) : (toNullableNumber(row?.priceMain ?? row?.price_main ?? row?.appraisalPrice ?? row?.appraisal_price ?? row?._raw?.priceMain ?? row?._raw?.price_main) || 0);
+  }
+
+  function matchesPriceRangeFilter(value, row) {
+    if (!value) return true;
+    const [minStr, maxStr] = String(value).split('-');
+    const min = (parseFloat(minStr) || 0) * 100000000;
+    const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
+    const price = getPropertyEffectivePrice(row);
+    if (!price || price <= 0) return false;
+    return price >= min && (max === Infinity || price < max);
+  }
+
+  function matchesRatioFilter(value, row) {
+    if (!value) return true;
+    const sourceType = normalizeSourceType(row?.sourceType || row?.source_type || row?._raw?.sourceType || row?._raw?.source_type || '', { fallback: '' });
+    if (sourceType !== 'auction' && sourceType !== 'onbid') return false;
+    const ratio = getRatioValue(row);
+    return Number.isFinite(ratio) && ratio >= 0 && ratio <= 0.5;
+  }
+
+  function matchesTodayBidFilter(enabled, row, todayKey = '') {
+    if (!enabled) return true;
+    const sourceType = normalizeSourceType(row?.sourceType || row?.source_type || row?._raw?.sourceType || row?._raw?.source_type || '', { fallback: '' });
+    if (sourceType !== 'auction' && sourceType !== 'onbid') return false;
+    const text = String(row?.dateMain || row?.date_main || row?._raw?.dateMain || row?._raw?.date_main || '').trim();
+    const key = String(todayKey || '').trim();
+    if (!key) return false;
+    return text.startsWith(key);
+  }
+
+  function applyPropertyFilters(rows, filters = {}, options = {}) {
+    const list = Array.isArray(rows) ? rows : [];
+    const ignoreKeys = new Set(Array.isArray(options?.ignoreKeys) ? options.ignoreKeys : []);
+    const keywordFields = Array.isArray(options?.keywordFields) ? options.keywordFields : undefined;
+    const isFavorite = typeof options?.isFavorite === 'function' ? options.isFavorite : null;
+    const todayKey = String(options?.todayKey || '').trim();
+    return list.filter((row) => {
+      const sourceKey = filters.activeCard ?? filters.source ?? '';
+      if (!ignoreKeys.has('activeCard') && !ignoreKeys.has('source') && sourceKey) {
+        if (!matchesSourceSelection(row, sourceKey)) return false;
+      }
+      if (!ignoreKeys.has('status') && filters.status) {
+        const status = String(row?.status || '').trim();
+        const selected = String(filters.status || '').trim();
+        if (status !== selected && !status.includes(selected)) return false;
+      }
+      if (!ignoreKeys.has('area') && filters.area) {
+        const areaValue = row?.exclusivearea ?? row?.exclusive_area ?? row?.exclusiveArea ?? row?._raw?.exclusivearea ?? row?._raw?.exclusive_area;
+        if (!matchesAreaFilter(filters.area, areaValue)) return false;
+      }
+      if (!ignoreKeys.has('priceRange') && filters.priceRange) {
+        if (!matchesPriceRangeFilter(filters.priceRange, row)) return false;
+      }
+      if (!ignoreKeys.has('ratio50') && filters.ratio50) {
+        if (!matchesRatioFilter(filters.ratio50, row)) return false;
+      }
+      if (!ignoreKeys.has('todayBid') && filters.todayBid) {
+        if (!matchesTodayBidFilter(filters.todayBid, row, todayKey)) return false;
+      }
+      if (!ignoreKeys.has('favOnly') && filters.favOnly && isFavorite && !isFavorite(row)) return false;
+      if (!ignoreKeys.has('keyword') && filters.keyword) {
+        if (!matchesKeyword(row, filters.keyword, { fields: keywordFields })) return false;
+      }
+      return true;
+    });
+  }
+
+
+
+  function normalizeRoleValue(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === '관리자' || v === 'admin') return 'admin';
+    if (v === '기타' || v === 'other') return 'other';
+    return 'staff';
+  }
+
+  function normalizeRegionToken(value) {
+    const s = String(value || '').trim().replace(/\s+/g, ' ');
+    return s || '';
+  }
+
+  function normalizeAssignedRegions(values) {
+    if (!Array.isArray(values)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const value of values) {
+      const token = normalizeRegionToken(value);
+      if (!token || seen.has(token)) continue;
+      seen.add(token);
+      out.push(token);
+    }
+    return out;
+  }
+
+  function extractAddressRegionParts(address) {
+    const text = String(address || '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return { gu: '', dong: '' };
+    const gu = (text.match(/[가-힣]+(?:구|군|시)/) || [])[0] || '';
+    const dong = (text.match(/[가-힣0-9]+(?:동|읍|면|가)/) || [])[0] || '';
+    return { gu, dong };
+  }
+
+  function getPropertyRegionTokens(row = {}) {
+    const tokens = [];
+    const seen = new Set();
+    const add = (v) => {
+      const token = normalizeRegionToken(v);
+      if (!token || seen.has(token)) return;
+      seen.add(token);
+      tokens.push(token);
+    };
+    add(row.regionGu);
+    add(row.regionDong);
+    const addrParts = extractAddressRegionParts(row.address);
+    add(addrParts.gu);
+    add(addrParts.dong);
+    return tokens;
+  }
+
+  function buildStaffAssignmentEntries(staffItems, assignItems) {
+    const map = new Map();
+    const staff = Array.isArray(staffItems) ? staffItems : [];
+    const assignments = Array.isArray(assignItems) ? assignItems : [];
+    const assignById = new Map(assignments.map((row) => [String(row?.id || '').trim(), row]));
+    staff.forEach((row) => {
+      const role = normalizeRoleValue(row?.role);
+      if (role !== 'staff') return;
+      const id = String(row?.id || '').trim();
+      if (!id) return;
+      const assignRow = assignById.get(id);
+      const name = String(row?.name || row?.email || '').trim() || `담당자 ${map.size + 1}`;
+      map.set(id, {
+        id,
+        role: 'staff',
+        email: String(row?.email || '').trim(),
+        name,
+        regions: normalizeAssignedRegions(assignRow?.assignedRegions || assignRow?.regions || row?.assignedRegions || row?.regions || row?.assigned_regions),
+      });
+    });
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  }
+
+  function buildAgentChartEntries(rows, staffAssignments) {
+    const staff = (Array.isArray(staffAssignments) ? staffAssignments : []).filter((row) => normalizeRoleValue(row?.role) === 'staff');
+    const byId = new Map();
+
+    const ensureEntry = (id, name, regions = []) => {
+      const key = String(id || '').trim() || String(name || '').trim();
+      if (!key) return null;
+      if (!byId.has(key)) {
+        byId.set(key, {
+          id: key,
+          name: String(name || key).trim() || '담당자',
+          regions: normalizeAssignedRegions(regions),
+          auction: 0,
+          onbid: 0,
+          realtor: 0,
+          general: 0,
+          total: 0,
+        });
+      }
+      const entry = byId.get(key);
+      if ((!entry.name || entry.name === entry.id) && name) entry.name = String(name).trim() || entry.name;
+      if ((!entry.regions || !entry.regions.length) && Array.isArray(regions) && regions.length) {
+        entry.regions = normalizeAssignedRegions(regions);
+      }
+      return entry;
+    };
+
+    staff.forEach((staffRow) => ensureEntry(staffRow.id, staffRow.name, staffRow.regions || []));
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      let entry = null;
+      const assignedId = String(row?.assignedAgentId || '').trim();
+      const assignedName = String(row?.assignedAgentName || '').trim();
+      if (assignedId && byId.has(assignedId)) {
+        entry = byId.get(assignedId);
+      } else if (assignedName) {
+        const found = [...byId.values()].find((item) => item.name === assignedName);
+        if (found) entry = found;
+      }
+      if (!entry) {
+        const tokens = getPropertyRegionTokens(row);
+        const matched = staff.find((item) => item.regions?.length && item.regions.some((region) => tokens.includes(region)));
+        if (matched) entry = ensureEntry(matched.id, matched.name, matched.regions || []);
+      }
+      if (!entry) return;
+      const src = ['auction', 'onbid', 'realtor', 'general'].includes(row?.source) ? row.source : 'general';
+      entry[src] = (entry[src] || 0) + 1;
+      entry.total += 1;
+    });
+
+    return [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
+  }
 
   function getRegistrationRawObject(input) {
     if (input?._raw?.raw && typeof input._raw.raw === "object") return input._raw.raw;
@@ -1053,14 +1590,23 @@
     appendRegistrationLog,
     loadRegistrationLog,
     mergeMeaningfulShallow,
-    getRawPayload,
+    normalizeOpinionHistoryEntry,
+    buildOpinionHistoryEntry,
     loadOpinionHistory,
     appendOpinionEntry,
+    getOpinionHistoryMeta,
+    buildCombinedPropertyLog,
     PROPERTY_DUPLICATE_INDEX_NAMES,
     collectPropertyErrorFragments,
     detectPropertyDuplicateIndexName,
     isPropertyDuplicateError,
     normalizePropertyDuplicateError,
+    sanitizeJsonValue,
+    sanitizeOpinionHistoryEntries,
+    sanitizePropertyRawForSave,
+    getActorIdentity,
+    normalizeStaffMember,
+    dedupeStaffMembers,
     REGISTRATION_LOG_LABELS_BASE,
     REGISTRATION_LOG_LABELS_ADMIN,
     REGISTRATION_LOG_LABELS_AGENT,
@@ -1071,6 +1617,7 @@
     normalizeRegistrationSubmitterKind,
     buildRegistrationSubmissionCore,
     validateRegistrationSubmissionCore,
+    buildRegistrationSubmissionPackage,
     buildRegistrationSubmissionPayload,
     buildPublicListingPayload,
     isBrokerLikeSource,
@@ -1080,8 +1627,32 @@
     getSourceBucket,
     getSourceTypeLabel,
     getSourceBucketLabel,
+    getSourceBucketClass,
     matchesSourceBucket,
+    matchesSourceSelection,
+    matchesKeyword,
+    PROPERTY_SOURCE_FILTER_OPTIONS,
+    PROPERTY_AREA_FILTER_OPTIONS,
+    PROPERTY_PRICE_FILTER_OPTIONS,
+    PROPERTY_RATIO_FILTER_OPTIONS,
+    matchesAreaFilter,
+    getPropertyEffectivePrice,
+    matchesPriceRangeFilter,
+    matchesRatioFilter,
+    matchesTodayBidFilter,
+    applyPropertyFilters,
     summarizeSourceBuckets,
+    getCurrentPriceValue,
+    getRatioValue,
+    getFloorDisplayValue,
+    buildPropertyListViewModel,
+    normalizeRoleValue,
+    normalizeRegionToken,
+    normalizeAssignedRegions,
+    extractAddressRegionParts,
+    getPropertyRegionTokens,
+    buildStaffAssignmentEntries,
+    buildAgentChartEntries,
     buildRegistrationSnapshot,
     buildRegistrationDbRowForCreate,
     buildRegistrationDbRowForExisting,

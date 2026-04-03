@@ -44,8 +44,9 @@
     const DataAccess = window.KNSN_DATA_ACCESS;
     const { syncSupabaseSessionIfNeeded, dedupeStaff, hydrateAssignedAgentNames, renderSummary, renderPropertiesTable } = utils;
     await syncSupabaseSessionIfNeeded();
-    if (!(DataAccess && typeof DataAccess.fetchAdminStaffViaApi === "function")) throw new Error("KNSN_DATA_ACCESS.fetchAdminStaffViaApi 를 찾을 수 없습니다.");
-    const res = await DataAccess.fetchAdminStaffViaApi(api, { auth: true });
+    const res = (DataAccess && typeof DataAccess.fetchAdminStaffViaApi === "function")
+      ? await DataAccess.fetchAdminStaffViaApi(api, { auth: true })
+      : await api('/admin/staff', { auth: true });
     state.staff = dedupeStaff(res?.items || []);
     mod.renderStaffTable();
     mod.renderAssignmentTable();
@@ -125,8 +126,11 @@
     if (act === 'delete') {
       if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
       try {
-        if (!(DataAccess && typeof DataAccess.deleteAdminStaffViaApi === 'function')) throw new Error('KNSN_DATA_ACCESS.deleteAdminStaffViaApi 를 찾을 수 없습니다.');
-        await DataAccess.deleteAdminStaffViaApi(api, id, { auth: true });
+        if (DataAccess && typeof DataAccess.deleteAdminStaffViaApi === 'function') {
+          await DataAccess.deleteAdminStaffViaApi(api, id, { auth: true });
+        } else {
+          await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: 'DELETE', auth: true, body: { id } });
+        }
         state.staff = state.staff.filter((staff) => String(staff.id) !== String(id));
         mod.resetStaffForm();
         mod.renderStaffTable();
@@ -189,12 +193,14 @@
       setFormBusy(e.currentTarget, true);
       let saved = null;
       if (id) {
-        if (!(DataAccess && typeof DataAccess.updateAdminStaffViaApi === 'function')) throw new Error('KNSN_DATA_ACCESS.updateAdminStaffViaApi 를 찾을 수 없습니다.');
-        const res = await DataAccess.updateAdminStaffViaApi(api, id, { name: payload.name, position: payload.position, phone: payload.phone, role: payload.role }, { auth: true });
+        const res = (DataAccess && typeof DataAccess.updateAdminStaffViaApi === 'function')
+          ? await DataAccess.updateAdminStaffViaApi(api, id, { name: payload.name, position: payload.position, phone: payload.phone, role: payload.role }, { auth: true })
+          : await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: 'PATCH', auth: true, body: { id, name: payload.name, position: payload.position, phone: payload.phone, role: payload.role } });
         saved = res?.item || null;
       } else {
-        if (!(DataAccess && typeof DataAccess.createAdminStaffViaApi === 'function')) throw new Error('KNSN_DATA_ACCESS.createAdminStaffViaApi 를 찾을 수 없습니다.');
-        const res = await DataAccess.createAdminStaffViaApi(api, payload, { auth: true });
+        const res = (DataAccess && typeof DataAccess.createAdminStaffViaApi === 'function')
+          ? await DataAccess.createAdminStaffViaApi(api, payload, { auth: true })
+          : await api('/admin/staff', { method: 'POST', auth: true, body: payload });
         saved = res?.item || null;
       }
       mod.resetStaffForm();

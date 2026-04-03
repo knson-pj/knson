@@ -1233,9 +1233,70 @@ function bindEvents() {
     return total > 0 && subtotal === total;
   }
 
+  async function fetchBrowserOverviewCounts(sb) {
+    if (!sb) return null;
+    try {
+      if (DataAccess && typeof DataAccess.fetchBrowserOverviewCounts === "function") {
+        return await DataAccess.fetchBrowserOverviewCounts(sb);
+      }
+      if (DataAccess && typeof DataAccess.fetchExactHomeSummary === "function") {
+        const summary = await DataAccess.fetchExactHomeSummary(sb, { normalizeRow: normalizeProperty, pageSize: 1000 });
+        if (summary && typeof summary === 'object') {
+          const overview = createEmptyOverview();
+          overview.summary.total = Number(summary.total || 0);
+          overview.summary.auction = Number(summary.auction || 0);
+          overview.summary.onbid = Number(summary.onbid || 0);
+          overview.summary.realtor_naver = Number(summary.realtor_naver || 0);
+          overview.summary.realtor_direct = Number(summary.realtor_direct || 0);
+          overview.summary.general = Number(summary.general || 0);
+          overview.filterCounts.source[''] = overview.summary.total;
+          overview.filterCounts.source.auction = overview.summary.auction;
+          overview.filterCounts.source.onbid = overview.summary.onbid;
+          overview.filterCounts.source.realtor_naver = overview.summary.realtor_naver;
+          overview.filterCounts.source.realtor_direct = overview.summary.realtor_direct;
+          overview.filterCounts.source.general = overview.summary.general;
+          overview.generatedAt = new Date().toISOString();
+          return overview;
+        }
+      }
+      if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
+        const rows = await DataAccess.fetchAllProperties(sb, {
+          isAdmin: true,
+          uid: '',
+          select: '*',
+          pageSize: 1000,
+          filters: null,
+        });
+        const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeProperty).filter(Boolean);
+        if (normalizedRows.length) return buildOverviewFromRows(normalizedRows);
+      }
+    } catch (err) {
+      console.warn('browser overview exact-count fallback failed', err);
+    }
+    return null;
+  }
+
   async function fetchBrowserOverviewFallback(sb) {
-    if (!DataAccess || typeof DataAccess.fetchBrowserOverviewFallback !== "function") return null;
-    return DataAccess.fetchBrowserOverviewFallback(sb);
+    if (!sb) return null;
+    try {
+      if (DataAccess && typeof DataAccess.fetchBrowserOverviewFallback === "function") {
+        return await DataAccess.fetchBrowserOverviewFallback(sb);
+      }
+      if (DataAccess && typeof DataAccess.fetchAllProperties === "function") {
+        const rows = await DataAccess.fetchAllProperties(sb, {
+          isAdmin: true,
+          uid: '',
+          select: '*',
+          pageSize: 1000,
+          filters: null,
+        });
+        const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeProperty).filter(Boolean);
+        if (normalizedRows.length) return buildOverviewFromRows(normalizedRows);
+      }
+    } catch (err) {
+      console.warn('browser overview fallback failed', err);
+    }
+    return null;
   }
 
   function normalizeOverviewPayload(res) {
@@ -1287,36 +1348,33 @@ function bindEvents() {
     const cacheBust = Date.now();
     let overview = null;
     try {
-      const res = await DataAccess.fetchPropertyOverviewViaApi(api, { cacheBust, auth: true });
+      let res = null;
+      if (DataAccess && typeof DataAccess.fetchPropertyOverviewViaApi === 'function') {
+        res = await DataAccess.fetchPropertyOverviewViaApi(api, { cacheBust, auth: true });
+      } else {
+        res = await api(`/admin/properties?mode=overview&_ts=${cacheBust}`, { auth: true });
+      }
       overview = normalizeOverviewPayload(res);
     } catch (err) {
       console.warn('server overview request failed', err);
     }
 
-    if (sb && !isOverviewSummaryComplete(overview?.summary)) {
-      try {
-        const exactOverview = await DataAccess.fetchBrowserOverviewCounts(sb);
-        if (exactOverview?.summary && Number(exactOverview.summary.total || 0) > 0) {
-          overview = {
-            ...(overview && typeof overview === 'object' ? overview : {}),
-            ...exactOverview,
-            filterCounts: {
-              ...(overview?.filterCounts && typeof overview.filterCounts === 'object' ? overview.filterCounts : {}),
-              ...(exactOverview?.filterCounts && typeof exactOverview.filterCounts === 'object' ? exactOverview.filterCounts : {}),
-            },
-          };
-        }
-      } catch (err) {
-        console.warn('browser overview exact-count fallback failed', err);
-      }
-    } else if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0) && sb) {
-      try {
-        const browserOverview = await DataAccess.fetchBrowserOverviewFallback(sb);
+    if (sb) {
+      const exactOverview = await fetchBrowserOverviewCounts(sb);
+      if (exactOverview?.summary && Number(exactOverview.summary.total || 0) >= 0) {
+        overview = {
+          ...(overview && typeof overview === 'object' ? overview : {}),
+          ...exactOverview,
+          filterCounts: {
+            ...(overview?.filterCounts && typeof overview.filterCounts === 'object' ? overview.filterCounts : {}),
+            ...(exactOverview?.filterCounts && typeof exactOverview.filterCounts === 'object' ? exactOverview.filterCounts : {}),
+          },
+        };
+      } else if ((!overview || !overview.summary || Number(overview.summary.total || 0) <= 0)) {
+        const browserOverview = await fetchBrowserOverviewFallback(sb);
         if (browserOverview?.summary && Number(browserOverview.summary.total || 0) > 0) {
           overview = browserOverview;
         }
-      } catch (err) {
-        console.warn('browser overview fallback failed', err);
       }
     }
 

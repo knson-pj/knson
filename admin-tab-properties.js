@@ -840,10 +840,12 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const { state, api, utils } = ctx();
     try {
       await utils.syncSupabaseSessionIfNeeded();
-      if (!(DataAccess && typeof DataAccess.fetchAdminStaffViaApi === 'function')) {
-        throw new Error('KNSN_DATA_ACCESS.fetchAdminStaffViaApi 를 찾을 수 없습니다.');
+      let res = null;
+      if (DataAccess && typeof DataAccess.fetchAdminStaffViaApi === 'function') {
+        res = await DataAccess.fetchAdminStaffViaApi(api, { auth: true });
+      } else {
+        res = await api('/admin/staff', { auth: true });
       }
-      const res = await DataAccess.fetchAdminStaffViaApi(api, { auth: true });
       state.staff = utils.dedupeStaff((res?.items || []));
       utils.renderSummary();
     } catch (err) {
@@ -1134,7 +1136,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     if (DataAccess && typeof DataAccess.updatePropertyViaApi === 'function') {
       await DataAccess.updatePropertyViaApi(api, targetId, payload, { auth: true });
     } else {
-      throw new Error('KNSN_DATA_ACCESS.updatePropertyViaApi 를 찾을 수 없습니다.');
+      await api('/properties', { method: 'PATCH', auth: true, body: { targetId, patch: payload } });
     }
   };
 
