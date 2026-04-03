@@ -120,30 +120,91 @@ async function supabaseHeadCount(path) {
   return m ? Number(m[1] || 0) : 0;
 }
 
-async function fetchSupabaseOverviewRealtorRows(pageSize = 5000) {
-  const rows = [];
-  let from = 0;
-  const select = ['source_type','source_url','is_general','submitter_type','submitter_name','broker_office_name'].join(',');
-  while (true) {
-    const data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(select)}&source_type=eq.realtor&offset=${from}&limit=${pageSize}`);
-    const batch = Array.isArray(data) ? data : [];
-    rows.push(...batch);
-    if (batch.length < pageSize) break;
-    from += pageSize;
-  }
-  return rows;
+function getKstTodayRangeIso() {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((part) => part.type === 'year')?.value || '1970';
+  const month = parts.find((part) => part.type === 'month')?.value || '01';
+  const day = parts.find((part) => part.type === 'day')?.value || '01';
+  const startIso = new Date(`${year}-${month}-${day}T00:00:00+09:00`).toISOString();
+  const endIso = new Date(`${year}-${month}-${day}T24:00:00+09:00`).toISOString();
+  return { startIso, endIso };
 }
 
-async function fetchSupabaseTodayRows(limit = 3000) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  const startIso = start.toISOString();
-  const endIso = end.toISOString();
-  const select = ['source_type','source_url','is_general','submitter_type','submitter_name','broker_office_name','created_at','date_uploaded'].join(',');
-  const orExpr = `(and(created_at.gte.${startIso},created_at.lt.${endIso}),and(date_uploaded.gte.${startIso},date_uploaded.lt.${endIso}))`;
-  return supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(select)}&or=${encodeURIComponent(orExpr)}&limit=${limit}`);
+async function fetchSupabaseOverviewCountsExact() {
+  const countSafe = async (path) => {
+    try {
+      return await supabaseHeadCount(path);
+    } catch {
+      return 0;
+    }
+  };
+
+  const base = '/rest/v1/properties?select=id';
+  const [
+    total,
+    auction,
+    onbid,
+    general,
+    realtorTotal,
+    realtorDirect,
+    geoPending,
+  ] = await Promise.all([
+    countSafe(base),
+    countSafe(`${base}&source_type=eq.auction`),
+    countSafe(`${base}&source_type=eq.onbid`),
+    countSafe(`${base}&source_type=eq.general`),
+    countSafe(`${base}&source_type=eq.realtor`),
+    countSafe(`${base}&source_type=eq.realtor&or=${encodeURIComponent('(source_url.is.null,source_url.eq.)')}`),
+    fetchSupabaseGeoPendingCount(),
+  ]);
+
+  const realtor_naver = Math.max(0, Number(realtorTotal || 0) - Number(realtorDirect || 0));
+  const realtor_direct = Math.max(0, Number(realtorDirect || 0));
+
+  return {
+    summary: {
+      total: Number(total || 0),
+      auction: Number(auction || 0),
+      onbid: Number(onbid || 0),
+      realtor_naver,
+      realtor_direct,
+      general: Number(general || 0),
+    },
+    today: {
+      total: 0,
+      auction: 0,
+      onbid: 0,
+      realtor: 0,
+      realtor_naver: 0,
+      realtor_direct: 0,
+      general: 0,
+    },
+    geoPending: Number(geoPending || 0),
+    filterCounts: {
+      source: {
+        '': Number(total || 0),
+        auction: Number(auction || 0),
+        onbid: Number(onbid || 0),
+        realtor_naver,
+        realtor_direct,
+        general: Number(general || 0),
+      },
+      area: { '': Number(total || 0), '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 },
+      price: { '': Number(total || 0), '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 },
+      ratio: { '': Number(total || 0), '50': 0 },
+    },
+    generatedAt: new Date().toISOString(),
+    fast: true,
+    accurate: true,
+    scanCount: 0,
+    source: 'supabase_exact_head_count',
+  };
 }
 
 async function fetchSupabaseGeoPendingCount() {
@@ -173,12 +234,7 @@ async function buildOverviewFastFromSupabase({ forceRefresh = false } = {}) {
   }
 
   overviewCachePromise = (async () => {
-    const rows = await fetchSupabaseOverviewRows();
-    const overview = buildOverviewFromRows(rows);
-    overview.generatedAt = new Date().toISOString();
-    overview.fast = false;
-    overview.accurate = true;
-    overview.scanCount = Array.isArray(rows) ? rows.length : 0;
+    const overview = await fetchSupabaseOverviewCountsExact();
     overviewCacheValue = overview;
     overviewCacheAt = Date.now();
     return overview;
