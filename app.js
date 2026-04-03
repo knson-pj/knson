@@ -1582,6 +1582,9 @@
   }
 
   function formatMoneyEok(n) {
+    if (window.KNSN_PROPERTY_RENDERERS && typeof window.KNSN_PROPERTY_RENDERERS.formatMoneyEok === 'function') {
+      return window.KNSN_PROPERTY_RENDERERS.formatMoneyEok(n, '-');
+    }
     const num = Number(n || 0);
     if (!Number.isFinite(num) || num <= 0) return "-";
     const eok = num / 100000000;
@@ -1600,6 +1603,9 @@
   }
 
   function formatScheduleHtml(p) {
+    if (window.KNSN_PROPERTY_RENDERERS && typeof window.KNSN_PROPERTY_RENDERERS.formatScheduleHtml === 'function') {
+      return window.KNSN_PROPERTY_RENDERERS.formatScheduleHtml(p, { rawKeys: ['입찰일자', '입찰마감일시'] });
+    }
     const rawValue = p?.bidDate || p?.raw?.["입찰일자"] || p?.raw?.["입찰마감일시"] || "";
     const display = formatShortDate(rawValue) || String(rawValue || "").trim();
     const dday = computeDdayLabel(rawValue);
@@ -1632,6 +1638,10 @@
   }
 
   function formatShortDate(v) {
+    if (window.KNSN_PROPERTY_RENDERERS && typeof window.KNSN_PROPERTY_RENDERERS.formatDateValue === 'function') {
+      const full = window.KNSN_PROPERTY_RENDERERS.formatDateValue(v, '');
+      return full ? full.slice(2) : '';
+    }
     if (!v) return "";
     const d = parseFlexibleDate(v);
     if (!d) return String(v);

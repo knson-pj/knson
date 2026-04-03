@@ -2195,6 +2195,9 @@ function renderPagination(totalPages) {
   }
 
   function formatEok(n) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatMoneyEok === 'function') {
+      return PropertyRenderers.formatMoneyEok(n, '-');
+    }
     if (n == null) return "-";
     const v = Number(n);
     if (!Number.isFinite(v) || v <= 0) return "-";
@@ -2224,6 +2227,7 @@ function renderPagination(totalPages) {
   }
 
   function formatDate(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatDateValue === 'function') return PropertyRenderers.formatDateValue(v, '');
     if (Shared && typeof Shared.formatDate === "function") return Shared.formatDate(v);
     const s = String(v || "").trim();
     if (!s) return "";
@@ -2262,6 +2266,9 @@ function renderPagination(totalPages) {
   }
 
   function formatScheduleCountdown(value) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatScheduleCountdown === 'function') {
+      return PropertyRenderers.formatScheduleCountdown(value, '-');
+    }
     const dateText = formatDate(value);
     if (!dateText) return '-';
     const dday = computeDdayLabel(value);

@@ -64,6 +64,81 @@
     return "일반";
   }
 
+  function parseFlexibleDate(value) {
+    if (Shared && typeof Shared.parseFlexibleDate === "function") return Shared.parseFlexibleDate(value);
+    if (!value) return null;
+    const direct = new Date(String(value).trim());
+    return Number.isNaN(direct.getTime()) ? null : direct;
+  }
+
+  function formatDateValue(value, fallback = "") {
+    const text = Shared && typeof Shared.formatDate === "function" ? Shared.formatDate(value) : String(value || "").trim();
+    return text || fallback;
+  }
+
+  function computeDdayLabel(value) {
+    const target = parseFlexibleDate(value);
+    if (!target) return "";
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const normalizedTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+    const diffDays = Math.round((normalizedTarget.getTime() - startToday.getTime()) / 86400000);
+    if (diffDays == 0) return "D-Day";
+    return diffDays > 0 ? `D-${diffDays}` : `D+${Math.abs(diffDays)}`;
+  }
+
+  function formatScheduleCountdown(value, fallback = "-") {
+    const dateText = formatDateValue(value, "");
+    if (!dateText) return fallback;
+    const dday = computeDdayLabel(value);
+    return dday ? `${dateText} (${dday})` : dateText;
+  }
+
+  function escapeHtml(value) {
+    if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(value);
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function formatScheduleHtml(item, options = {}) {
+    const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || item?.raw || {});
+    const keys = Array.isArray(options.rawKeys) && options.rawKeys.length ? options.rawKeys : ["입찰일자", "입찰마감일시"];
+    let rawValue = item?.dateMain || item?.bidDate || item?.date_main || "";
+    if (!rawValue) {
+      for (const key of keys) {
+        if (raw && raw[key]) { rawValue = raw[key]; break; }
+      }
+    }
+    const dateText = formatDateValue(rawValue, "-");
+    const dday = computeDdayLabel(rawValue);
+    return `<span class="schedule-stack"><span class="schedule-date">${escapeHtml(dateText)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : `<span class="schedule-dday schedule-dday-empty"></span>`}</span>`;
+  }
+
+  function formatMoneyEok(value, fallback = "-") {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return fallback;
+    const eok = num / 100000000;
+    const fixed = eok.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+    return `${fixed} 억원`;
+  }
+
+  function formatMoneyKRW(value, fallback = "-") {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return fallback;
+    return `${num.toLocaleString("ko-KR")}원`;
+  }
+
+  function formatAreaPyeong(value, fallback = "-") {
+    if (value == null || value === "") return fallback;
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return fallback;
+    return Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+
   function getSourceBucketClass(bucket) {
     if (PropertyDomain && typeof PropertyDomain.getSourceBucketClass === "function") return PropertyDomain.getSourceBucketClass(bucket);
     const key = String(bucket || "").trim();
@@ -83,5 +158,14 @@
     getSourceBucket,
     getSourceBucketLabel,
     getSourceBucketClass,
+    parseFlexibleDate,
+    formatDateValue,
+    computeDdayLabel,
+    formatScheduleCountdown,
+    formatScheduleHtml,
+    formatMoneyEok,
+    formatMoneyKRW,
+    formatAreaPyeong,
+    escapeHtml,
   };
 })();

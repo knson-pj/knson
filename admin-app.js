@@ -2521,6 +2521,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function formatMoneyKRW(n) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatMoneyKRW === 'function') return PropertyRenderers.formatMoneyKRW(n, '-');
     const num = Number(n || 0);
     if (!Number.isFinite(num)) return "-";
     return `${num.toLocaleString("ko-KR")}원`;
@@ -2536,6 +2537,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function formatAreaPyeong(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatAreaPyeong === 'function') return PropertyRenderers.formatAreaPyeong(v, '-');
     if (v == null || v === "") return "-";
     const n = Number(v);
     if (!Number.isFinite(n) || n <= 0) return "-";
@@ -2635,6 +2637,9 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function formatScheduleHtml(p) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatScheduleHtml === 'function') {
+      return PropertyRenderers.formatScheduleHtml(p, { rawKeys: ['입찰일자', '입찰마감일시'] });
+    }
     const rawObj = p?._raw?.raw && typeof p._raw.raw === 'object' ? p._raw.raw : (p?._raw || {});
     const rawValue = p?.dateMain || rawObj["입찰일자"] || rawObj["입찰마감일시"] || "";
     const display = formatDate(rawValue);
@@ -2644,6 +2649,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function formatDate(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatDateValue === 'function') return PropertyRenderers.formatDateValue(v, '-');
     if (!v) return "-";
     const d = parseFlexibleDate(v);
     if (!d) return String(v || "-");
