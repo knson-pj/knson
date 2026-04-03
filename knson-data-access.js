@@ -4,21 +4,26 @@
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+  const Schema = window.KNSN_SCHEMA || null;
 
-  const PROPERTY_LIST_SELECT = [
-    "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address", "assignee_id",
-    "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
-    "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
-    "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
-    "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
-    "geocode_status", "geocoded_at"
-  ].join(",");
+  const PROPERTY_LIST_SELECT = (Schema && typeof Schema.getPropertySelect === "function")
+    ? (Schema.getPropertySelect("list") || "*")
+    : [
+        "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address", "assignee_id",
+        "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
+        "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+        "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
+        "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
+        "geocode_status", "geocoded_at"
+      ].join(",");
 
-  const PROPERTY_HOME_SUMMARY_SELECT = [
-    "id", "source_type", "source_url", "is_general", "submitter_type", "submitter_name",
-    "broker_office_name", "address", "latitude", "longitude", "geocode_status",
-    "exclusive_area", "date_uploaded", "created_at"
-  ].join(",");
+  const PROPERTY_HOME_SUMMARY_SELECT = (Schema && typeof Schema.getPropertySelect === "function")
+    ? (Schema.getPropertySelect("homeSummary") || "*")
+    : [
+        "id", "source_type", "source_url", "is_general", "submitter_type", "submitter_name",
+        "broker_office_name", "address", "latitude", "longitude", "geocode_status",
+        "exclusive_area", "date_uploaded", "created_at", "raw"
+      ].join(",");
 
   const EFFECTIVE_SELECT_CACHE = new Map();
   const EFFECTIVE_ORDER_CACHE = new Map();
@@ -187,6 +192,31 @@
 
   function escapeLikeValue(value) {
     return String(value || '').replace(/[%,]/g, ' ').trim();
+  }
+
+  function createEmptyOverview() {
+    return {
+      summary: { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
+      today: { total: 0, auction: 0, onbid: 0, realtor: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
+      geoPending: 0,
+      filterCounts: { source: { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 } },
+      generatedAt: new Date().toISOString(),
+      source: 'browser_exact_count',
+    };
+  }
+
+  function getLocalDayRange() {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    return { startIso: todayStart.toISOString(), endIso: tomorrowStart.toISOString() };
+  }
+
+  async function fetchExactCount(queryBuilder) {
+    const { count, error } = await queryBuilder;
+    if (error) throw error;
+    return Number(count || 0);
   }
 
   function applyServerBackedPropertyFilters(query, filters = {}) {
@@ -523,6 +553,121 @@
     return null;
   }
 
+  async function fetchOverviewCounts(sb, { startIso = '', endIso = '' } = {}) {
+    if (!sb) return null;
+    const range = startIso && endIso ? { startIso: String(startIso), endIso: String(endIso) } : getLocalDayRange();
+
+    const totalQ = sb.from('properties').select('id', { count: 'exact', head: true });
+    const srcQ = (sourceType) => sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', sourceType);
+    const srcTodayQ = (sourceType) => sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', sourceType).gte('created_at', range.startIso).lt('created_at', range.endIso);
+    const realtorNaverQ = sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'realtor').not('source_url', 'is', null).neq('source_url', '');
+    const realtorNaverTodayQ = sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'realtor').gte('created_at', range.startIso).lt('created_at', range.endIso).not('source_url', 'is', null).neq('source_url', '');
+
+    const [total, auction, onbid, general, realtorTotal, realtorNaver, todayTotal, todayAuction, todayOnbid, todayGeneral, todayRealtorTotal, todayRealtorNaver] = await Promise.all([
+      fetchExactCount(totalQ),
+      fetchExactCount(srcQ('auction')),
+      fetchExactCount(srcQ('onbid')),
+      fetchExactCount(srcQ('general')),
+      fetchExactCount(srcQ('realtor')),
+      fetchExactCount(realtorNaverQ),
+      fetchExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).gte('created_at', range.startIso).lt('created_at', range.endIso)),
+      fetchExactCount(srcTodayQ('auction')),
+      fetchExactCount(srcTodayQ('onbid')),
+      fetchExactCount(srcTodayQ('general')),
+      fetchExactCount(srcTodayQ('realtor')),
+      fetchExactCount(realtorNaverTodayQ),
+    ]);
+
+    const realtorDirect = Math.max(0, realtorTotal - realtorNaver);
+    const todayRealtorDirect = Math.max(0, todayRealtorTotal - todayRealtorNaver);
+
+    const overview = createEmptyOverview();
+    overview.summary.total = total;
+    overview.summary.auction = auction;
+    overview.summary.onbid = onbid;
+    overview.summary.realtor_naver = realtorNaver;
+    overview.summary.realtor_direct = realtorDirect;
+    overview.summary.general = general;
+    overview.today.total = todayTotal;
+    overview.today.auction = todayAuction;
+    overview.today.onbid = todayOnbid;
+    overview.today.realtor = todayRealtorNaver + todayRealtorDirect;
+    overview.today.realtor_naver = todayRealtorNaver;
+    overview.today.realtor_direct = todayRealtorDirect;
+    overview.today.general = todayGeneral;
+    overview.filterCounts.source[''] = total;
+    overview.filterCounts.source.auction = auction;
+    overview.filterCounts.source.onbid = onbid;
+    overview.filterCounts.source.realtor_naver = realtorNaver;
+    overview.filterCounts.source.realtor_direct = realtorDirect;
+    overview.filterCounts.source.general = general;
+    overview.generatedAt = new Date().toISOString();
+    overview.source = 'browser_exact_count';
+    return overview;
+  }
+
+  async function fetchOverviewCountsFallback(sb, { pageSize = 1000 } = {}) {
+    if (!sb) return null;
+
+    const total = await fetchExactCount(sb.from('properties').select('id', { count: 'exact', head: true }));
+    if (total <= 0) return null;
+
+    const [auction, onbid, general] = await Promise.all([
+      fetchExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'auction')),
+      fetchExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'onbid')),
+      fetchExactCount(sb.from('properties').select('id', { count: 'exact', head: true }).eq('source_type', 'general')),
+    ]);
+
+    let realtorNaver = 0;
+    let realtorDirect = 0;
+    const realtorSelect = (Schema && typeof Schema.getPropertySelect === 'function')
+      ? (Schema.getPropertySelect('overviewRealtor') || 'source_type,source_url,submitter_type,submitter_name,broker_office_name,is_general')
+      : 'source_type,source_url,submitter_type,submitter_name,broker_office_name,is_general';
+    try {
+      let from = 0;
+      const safePageSize = Math.max(1, Number(pageSize || 1000));
+      const realtorRows = [];
+      while (true) {
+        const { data, error } = await sb
+          .from('properties')
+          .select(realtorSelect)
+          .eq('source_type', 'realtor')
+          .range(from, from + safePageSize - 1);
+        if (error) throw error;
+        const batch = Array.isArray(data) ? data : [];
+        realtorRows.push(...batch);
+        if (batch.length < safePageSize) break;
+        from += safePageSize;
+      }
+      for (const row of realtorRows) {
+        const bucket = (PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function')
+          ? PropertyDomain.getSourceBucket(row)
+          : (String(row?.source_url || '').trim() ? 'realtor_naver' : 'realtor_direct');
+        if (bucket === 'realtor_direct') realtorDirect += 1;
+        else realtorNaver += 1;
+      }
+    } catch (error) {
+      throw error;
+    }
+
+    const overview = createEmptyOverview();
+    overview.summary.total = total;
+    overview.summary.auction = auction;
+    overview.summary.onbid = onbid;
+    overview.summary.realtor_naver = realtorNaver;
+    overview.summary.realtor_direct = realtorDirect;
+    overview.summary.general = general;
+    overview.filterCounts.source[''] = total;
+    overview.filterCounts.source.auction = auction;
+    overview.filterCounts.source.onbid = onbid;
+    overview.filterCounts.source.realtor_naver = realtorNaver;
+    overview.filterCounts.source.realtor_direct = realtorDirect;
+    overview.filterCounts.source.general = general;
+    overview.generatedAt = new Date().toISOString();
+    overview.source = 'browser_fallback';
+    return overview;
+  }
+
   window.KNSN_DATA_ACCESS = {
     PROPERTY_LIST_SELECT,
     PROPERTY_HOME_SUMMARY_SELECT,
@@ -544,5 +689,8 @@
     saveGeocodeResult,
     fetchGeocodeQueue,
     findExistingPropertyForRegistration,
+    fetchExactCount,
+    fetchOverviewCounts,
+    fetchOverviewCountsFallback,
   };
 })();
