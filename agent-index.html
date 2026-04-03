@@ -65,6 +65,16 @@
   </header>
   <div id="globalMsg" class="global-msg hidden"></div>
 
+  <div id="adminLoadingOverlay" class="admin-loading-overlay hidden" aria-live="polite" aria-busy="false">
+    <div class="admin-loading-box">
+      <span class="admin-loading-spinner" aria-hidden="true"></span>
+      <div class="admin-loading-copy">
+        <strong>로딩중</strong>
+        <p id="adminLoadingLabel">데이터를 불러오는 중입니다.</p>
+      </div>
+    </div>
+  </div>
+
   <div class="admin-shell"><main class="admin-main">
 
     <!-- ── 홈 대시보드 ── -->
@@ -229,16 +239,11 @@
 <div id="passwordChangeModal" class="modal hidden"><div class="modal-backdrop" data-close="true"></div><div class="modal-card modal-card-sm"><div class="modal-header"><h3>비밀번호 변경</h3><button id="pwdModalClose" class="icon-btn">✕</button></div><form id="passwordChangeForm" class="modal-body"><label class="field"><span>새 비밀번호</span><input name="newPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><label class="field"><span>새 비밀번호 확인</span><input name="confirmPassword" class="input" type="password" minlength="8" autocomplete="new-password" required /></label><div class="modal-actions"><button id="pwdSave" class="btn btn-primary" type="submit">변경</button><button id="pwdCancel" class="btn btn-ghost" type="button">취소</button></div><div id="pwdMsg" class="note"></div></form></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-
-
-  <script src="./knson-core.js?v=20260403-arch3"></script>
-  <script src="./knson-shared.js?v=20260403-arch3"></script>
-  <script src="./knson-schema.js?v=20260403-arch3"></script>
-  <script src="./knson-property-domain.js?v=20260403-arch3"></script>
-  <script src="./knson-property-renderers.js?v=20260403-arch3"></script>
-  <script src="./knson-data-access.js?v=20260403-arch3"></script>
-<script src="./agent-app.js?v=20260330-agentwork2"></script>
+<script src="./knson-core.js?v=20260320-agent"></script>
+<script src="./knson-shared.js?v=20260325-shared1"></script>
+<script src="./knson-property-domain.js?v=20260330-agentwork2"></script>
+<script src="./knson-data-access.js?v=20260330-agentwork2"></script>
+<script src="./agent-app.js?v=20260403-agentfix3"></script>
 
 <script>
 (function(){

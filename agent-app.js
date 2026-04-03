@@ -178,6 +178,8 @@
     },
   };
 
+  const loadingState = { activeKeys: new Set(), messages: new Map() };
+
   const els = {};
 
   const SOURCE_FILTER_OPTIONS = (PropertyDomain && Array.isArray(PropertyDomain.PROPERTY_SOURCE_FILTER_OPTIONS) ? PropertyDomain.PROPERTY_SOURCE_FILTER_OPTIONS : [
@@ -257,6 +259,8 @@
     els.btnChangeMyPassword = $("#btnChangeMyPassword");
     els.btnDailyReport = $("#btnDailyReport");
     els.globalMsg = $("#globalMsg");
+    els.adminLoadingOverlay = $("#adminLoadingOverlay");
+    els.adminLoadingLabel = $("#adminLoadingLabel");
 
     els.dailyReportModal = $("#dailyReportModal");
     els.dailyReportClose = $("#dailyReportClose");
@@ -493,11 +497,33 @@
     }
   }
 
+  function setAgentLoading(key, active, text = "데이터를 불러오는 중입니다.") {
+    const targetKey = String(key || "global").trim() || "global";
+    if (!els.adminLoadingOverlay) return;
+    if (active) {
+      loadingState.activeKeys.add(targetKey);
+      loadingState.messages.set(targetKey, String(text || "데이터를 불러오는 중입니다."));
+    } else {
+      loadingState.activeKeys.delete(targetKey);
+      loadingState.messages.delete(targetKey);
+    }
+    const visible = loadingState.activeKeys.size > 0;
+    const keys = Array.from(loadingState.activeKeys);
+    const currentText = visible
+      ? String(loadingState.messages.get(keys[keys.length - 1]) || text || "데이터를 불러오는 중입니다.")
+      : "데이터를 불러오는 중입니다.";
+    if (els.adminLoadingLabel) els.adminLoadingLabel.textContent = currentText;
+    els.adminLoadingOverlay.classList.toggle("hidden", !visible);
+    els.adminLoadingOverlay.setAttribute("aria-busy", visible ? "true" : "false");
+  }
+
   async function refreshDailyReportSummary(options = {}) {
     const dateKey = String(options.dateKey || getTodayDateKey()).trim();
     if (!dateKey) return state.dailyReport.counts || emptyDailyReportCounts();
     if (state.dailyReport.loading && !options.force) return state.dailyReport.counts || emptyDailyReportCounts();
     state.dailyReport.loading = true;
+    const showLoading = options.silent !== true;
+    if (showLoading) setAgentLoading("daily-report", true, "일일업무일지를 불러오는 중입니다.");
     try {
       const data = await DataAccess.fetchDailyReportViaApi(api, { dateKey, auth: true });
       const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
@@ -514,6 +540,8 @@
       state.dailyReport.loading = false;
       if (!options.silent) throw err;
       return state.dailyReport.counts || emptyDailyReportCounts();
+    } finally {
+      if (showLoading) setAgentLoading("daily-report", false);
     }
   }
 
@@ -766,7 +794,7 @@
     const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.actionType);
     if (!safeEntries.length) return;
     if (DataAccess && typeof DataAccess.recordDailyReportEntriesViaApi === 'function') {
-      await DataAccess.recordDailyReportEntriesViaApi(apiJson, safeEntries, { auth: true });
+      await DataAccess.recordDailyReportEntriesViaApi(api, safeEntries, { auth: true });
     } else {
       throw new Error('KNSN_DATA_ACCESS.recordDailyReportEntriesViaApi 를 찾을 수 없습니다.');
     }
@@ -1007,6 +1035,7 @@
   }
 
   async function loadProperties() {
+    setAgentLoading("properties", state.view === "home" ? true : true, state.view === "home" ? "담당자 홈 데이터를 불러오는 중입니다." : "담당 물건을 불러오는 중입니다.");
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       if (!sb) { state.properties = []; renderAll(); return; }
@@ -1022,6 +1051,8 @@
       console.error("loadProperties error:", err);
       state.properties = [];
       renderAll();
+    } finally {
+      setAgentLoading("properties", false);
     }
   }
 
