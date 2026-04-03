@@ -225,6 +225,14 @@
     return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
   }
 
+  function truncateAddressText(value, maxLength = 15) {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    const limit = Number(maxLength || 0);
+    if (!text) return '';
+    if (!Number.isFinite(limit) || limit <= 0 || text.length <= limit) return text;
+    return `${text.slice(0, limit)}...`;
+  }
+
   function renderAgentPropertiesHead(usePlainLayout) {
     const headRow = els.agPropertiesHeadRow || document.getElementById('agPropertiesHeadRow');
     if (!headRow) return;
@@ -515,6 +523,17 @@
     if (els.adminLoadingLabel) els.adminLoadingLabel.textContent = currentText;
     els.adminLoadingOverlay.classList.toggle("hidden", !visible);
     els.adminLoadingOverlay.setAttribute("aria-busy", visible ? "true" : "false");
+  }
+
+  let agentSaveFlashTimer = null;
+  function flashAgentSaveNotice(text, duration = 1500) {
+    const msg = String(text || '').trim();
+    if (!msg) return;
+    window.clearTimeout(agentSaveFlashTimer);
+    setAgentLoading('flashSaveNotice', true, msg);
+    agentSaveFlashTimer = window.setTimeout(() => {
+      setAgentLoading('flashSaveNotice', false);
+    }, Number(duration) > 0 ? Number(duration) : 1500);
   }
 
   async function refreshDailyReportSummary(options = {}) {
@@ -1661,11 +1680,11 @@ function renderRow(p) {
   const rate = !usePlainLayout ? (ratioValue >= 0 ? `${Math.round(ratioValue * 100)}%` : calcRate(p.priceMain, p.lowprice)) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
-  const addressText = truncateDisplayText(listView?.address || p.address || "-", 40) || "-";
+  const addressText = truncateAddressText(listView?.address || p.address || '-', 15) || '-';
   const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(listView?.floorText || getFloorDisplayValue(p) || "-", 7) || "-";
-  const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
-  const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
+  const scheduleHtml = !usePlainLayout && PropertyRenderers && typeof PropertyRenderers.formatScheduleHtml === 'function' ? PropertyRenderers.formatScheduleHtml(p) : '';
+  const opinionText = !usePlainLayout && p.opinion ? '✓' : '';
   const createdAtText = formatDate(listView?.createdAtValue || p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
   const commonText = (listView?.commonAreaValue != null ? fmtArea(listView.commonAreaValue) : (p.commonarea != null ? fmtArea(p.commonarea) : "-"));
   const siteText = (listView?.siteAreaValue != null ? fmtArea(listView.siteAreaValue) : (p.sitearea != null ? fmtArea(p.sitearea) : "-"));
@@ -1715,9 +1734,9 @@ function renderRow(p) {
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(current) + "</td>" +
         "<td>" + esc(rate) + "</td>" +
-        "<td>" + esc(scheduleText) + "</td>" +
+        '<td class="schedule-cell">' + (scheduleHtml || '-') + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + esc(rightsText) + "</td>" +
+        "<td>" + esc(opinionText) + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
   );
@@ -2050,11 +2069,11 @@ function renderPagination(totalPages) {
         }
       }
 
-      setAgentEditMsg('저장되었습니다.', false);
-      if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
-      else setGlobalMsg('저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      setAgentEditMsg('', false);
       closeEditModal();
+      flashAgentSaveNotice('저장되었습니다.', 1500);
+      if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
+      else setGlobalMsg('', false);
       window.setTimeout(() => refreshAgentPropertiesInBackground({ silent: true }), 50);
     } catch (err) {
       setAgentEditMsg(toUserErrorMessage(err, '저장 실패'));

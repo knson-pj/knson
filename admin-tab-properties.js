@@ -140,6 +140,14 @@
     return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
   }
 
+  function truncateAddressText(value, maxLength = 15) {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    const limit = Number(maxLength || 0);
+    if (!text) return '';
+    if (!Number.isFinite(limit) || limit <= 0 || text.length <= limit) return text;
+    return `${text.slice(0, limit)}...`;
+  }
+
   function renderPropertiesTableHeader(usePlainLayout) {
     const { els } = ctx();
     const headRow = els.propertiesTableHeadRow || document.getElementById('propertiesTableHeadRow');
@@ -807,7 +815,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
     const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
-    const addressText = truncateDisplayText(listView?.address || p.address || '-', 40) || '-';
+    const addressText = truncateAddressText(listView?.address || p.address || '-', 15) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
     const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
     const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
