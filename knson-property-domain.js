@@ -561,27 +561,126 @@
     return out;
   }
 
+  function normalizeOpinionHistoryEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const text = String(entry.text || entry.note || "").trim();
+    if (!text) return null;
+    const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
+    const title = String(entry.title || entry.label || "").trim();
+    const date = String(entry.date || entry.at || "").trim();
+    const author = String(entry.author || entry.actor || "").trim();
+    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author };
+  }
+
+  function buildOpinionHistoryEntry(kind, text, user, options = {}) {
+    const body = String(text || "").trim();
+    if (!body) return null;
+    const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
+    const date = String(options.date || (Shared && typeof Shared.formatDate === "function" ? (Shared.formatDate(at) || "") : "")).trim();
+    const fallbackDate = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    })();
+    const author = String(options.author || user?.name || user?.email || "").trim();
+    const titleMap = {
+      opinion: "담당자 의견",
+      siteInspection: "현장실사",
+      dailyIssue: "금일이슈사항",
+    };
+    return {
+      kind: String(kind || "opinion").trim() || "opinion",
+      title: String(options.title || titleMap[kind] || "담당자 의견").trim(),
+      date: date || fallbackDate,
+      at,
+      text: body,
+      author,
+    };
+  }
+
   function loadOpinionHistory(item) {
     const raw = item?._raw?.raw || item?.raw || {};
     const hist = raw.opinionHistory;
-    if (Array.isArray(hist)) return hist;
+    if (Array.isArray(hist) && hist.length) {
+      return hist.map((entry) => normalizeOpinionHistoryEntry(entry)).filter(Boolean);
+    }
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
-      const fallbackDate = Shared && typeof Shared.formatDate === "function"
-        ? (Shared.formatDate(item?.createdAt) || "unknown")
-        : "unknown";
-      return [{ date: fallbackDate, text: legacy, author: "" }];
+      const entry = buildOpinionHistoryEntry("opinion", legacy, { name: "" }, { at: item?.createdAt || raw.firstRegisteredAt || new Date().toISOString() });
+      return entry ? [entry] : [];
     }
     return [];
   }
 
-  function appendOpinionEntry(history, newText, user, now = new Date()) {
-    const text = String(newText || "").trim();
-    if (!text) return Array.isArray(history) ? history : [];
-    const date = now instanceof Date ? now : new Date(now);
-    const today = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    const author = String(user?.name || user?.email || "").trim();
-    return [...(Array.isArray(history) ? history : []), { date: today, text, author }];
+  function appendOpinionEntry(history, newText, user, options = {}) {
+    const entry = buildOpinionHistoryEntry(options.kind || "opinion", newText, user, options);
+    if (!entry) return Array.isArray(history) ? history : [];
+    return [...(Array.isArray(history) ? history : []), entry];
+  }
+
+  function getOpinionHistoryMeta(entry) {
+    const kind = String(entry?.kind || "opinion").trim();
+    if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
+    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일이슈사항" };
+    return { badgeClass: "is-opinion", badgeLabel: "담당자 의견", title: "담당자 의견" };
+  }
+
+  function toTimelineTimestamp(value) {
+    const s = String(value || "").trim();
+    if (!s) return Number.POSITIVE_INFINITY;
+    const time = Date.parse(s);
+    if (Number.isFinite(time)) return time;
+    const normalized = s.replace(/\./g, "-").replace(/\s+/g, "T");
+    const nextTime = Date.parse(normalized);
+    if (Number.isFinite(nextTime)) return nextTime;
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function buildCombinedPropertyLog(opinionHistory, registrationLog) {
+    const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
+    const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
+    const rows = [];
+
+    opinions.forEach((entry, idx) => {
+      const normalized = normalizeOpinionHistoryEntry(entry);
+      if (!normalized) return;
+      const meta = getOpinionHistoryMeta(normalized);
+      rows.push({
+        kind: "opinion",
+        sortAt: toTimelineTimestamp(normalized.at || normalized.date),
+        at: normalized.at || normalized.date || "",
+        badgeClass: meta.badgeClass,
+        badgeLabel: meta.badgeLabel,
+        author: normalized.author,
+        text: normalized.text,
+        title: normalized.title || meta.title,
+        order: idx,
+      });
+    });
+
+    regLogs.forEach((entry, idx) => {
+      const at = String(entry?.at || entry?.date || "").trim();
+      const route = String(entry?.route || "").trim();
+      const actor = String(entry?.actor || "").trim();
+      const type = String(entry?.type || "").trim();
+      const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
+      rows.push({
+        kind: "registration",
+        sortAt: toTimelineTimestamp(at),
+        at,
+        badgeClass: "is-registration",
+        badgeLabel: "등록LOG",
+        author: actor,
+        title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
+        route,
+        changes,
+        order: idx,
+      });
+    });
+
+    return rows.sort((a, b) => {
+      if (a.sortAt !== b.sortAt) return a.sortAt - b.sortAt;
+      return a.order - b.order;
+    });
   }
 
   function collectPropertyErrorFragments(error) {
@@ -1261,8 +1360,12 @@
     appendRegistrationLog,
     loadRegistrationLog,
     mergeMeaningfulShallow,
+    normalizeOpinionHistoryEntry,
+    buildOpinionHistoryEntry,
     loadOpinionHistory,
     appendOpinionEntry,
+    getOpinionHistoryMeta,
+    buildCombinedPropertyLog,
     PROPERTY_DUPLICATE_INDEX_NAMES,
     collectPropertyErrorFragments,
     detectPropertyDuplicateIndexName,

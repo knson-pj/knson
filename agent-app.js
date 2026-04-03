@@ -1160,6 +1160,7 @@
     return nextRaw;
   }
   function buildRegistrationSnapshotFromItem(item) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationSnapshot === "function") return PropertyDomain.buildRegistrationSnapshot(item);
     const raw = item?._raw?.raw || {};
     return {
       itemNo: firstText(item?.itemNo, raw.itemNo, ""),
@@ -1184,6 +1185,7 @@
   }
 
   function buildRegistrationSnapshotFromDbRow(row) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationSnapshot === "function") return PropertyDomain.buildRegistrationSnapshot(row);
     const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
     return {
       itemNo: firstText(row?.item_no, raw.itemNo, ""),
@@ -1215,6 +1217,12 @@
         numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
       });
     }
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationChanges === "function") {
+      return PropertyDomain.buildRegistrationChanges(prevSnapshot, nextSnapshot, REG_LOG_LABELS, {
+        amountFields: ["priceMain"],
+        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
+      });
+    }
     const changes = [];
     Object.keys(REG_LOG_LABELS).forEach((field) => {
       const nextValue = nextSnapshot?.[field];
@@ -1234,6 +1242,7 @@
 
   function appendRegistrationCreateLog(raw, context) {
     if (PropertyDomain && typeof PropertyDomain.ensureRegistrationCreatedLog === "function") return PropertyDomain.ensureRegistrationCreatedLog(raw, context);
+    if (PropertyDomain && typeof PropertyDomain.ensureRegistrationCreatedLog === "function") return PropertyDomain.ensureRegistrationCreatedLog(raw, context);
     const nextRaw = { ...(raw || {}) };
     const firstAt = firstText(nextRaw.firstRegisteredAt, context?.at, new Date().toISOString());
     const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
@@ -1244,6 +1253,7 @@
   }
 
   function appendRegistrationChangeLog(raw, context, changes) {
+    if (PropertyDomain && typeof PropertyDomain.appendRegistrationLog === "function") return PropertyDomain.appendRegistrationLog(raw, context, changes);
     if (PropertyDomain && typeof PropertyDomain.appendRegistrationLog === "function") return PropertyDomain.appendRegistrationLog(raw, context, changes);
     const nextRaw = appendRegistrationCreateLog(raw, context);
     if (Array.isArray(changes) && changes.length) {
@@ -1268,6 +1278,15 @@
   }
 
   function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === "function") {
+      return PropertyDomain.buildRegistrationDbRowForExisting(existingItem, incomingRow, context, {
+        labels: REG_LOG_LABELS,
+        amountFields: ["priceMain"],
+        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
+        copyFields: ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo"],
+        assignIfEmpty: !!options.assignIfEmpty,
+      });
+    }
     const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
     const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
@@ -1319,6 +1338,7 @@
   }
 
   function buildRegistrationDbRowForCreate(row, context) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForCreate === "function") return PropertyDomain.buildRegistrationDbRowForCreate(row, context);
     return { ...(row || {}), raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row) };
   }
 
@@ -2504,6 +2524,7 @@ function renderPagination(totalPages) {
   }
 
   function loadRegistrationLog(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadRegistrationLog === "function") return PropertyDomain.loadRegistrationLog(item, { defaultRoute: "최초 등록" });
     const raw = item?._raw?.raw || {};
     if (Array.isArray(raw.registrationLog) && raw.registrationLog.length) return raw.registrationLog;
     const createdAt = firstText(raw.firstRegisteredAt, item?.createdAt, item?._raw?.created_at, item?._raw?.createdAt, "");
@@ -2536,6 +2557,9 @@ function renderPagination(totalPages) {
   }
 
   function buildCombinedPropertyLog(opinionHistory, registrationLog) {
+    if (PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLog === "function") {
+      return PropertyDomain.buildCombinedPropertyLog(opinionHistory, registrationLog);
+    }
     const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
     const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
     const rows = [];
@@ -2635,6 +2659,7 @@ function renderPagination(totalPages) {
   // ── Opinion History 유틸 ──
   function loadOpinionHistory(item) {
     if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
+    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
     if (Array.isArray(hist)) return hist;
@@ -2646,6 +2671,7 @@ function renderPagination(totalPages) {
   }
 
   function appendOpinionEntry(history, newText, user) {
+    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
     if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") return PropertyDomain.appendOpinionEntry(history, newText, user);
     const text = String(newText || "").trim();
     if (!text) return history;

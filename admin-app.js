@@ -1784,6 +1784,9 @@ function bindEvents() {
     return nextRaw;
   }
   function buildRegistrationSnapshotFromItem(item) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationSnapshot === "function") {
+      return PropertyDomain.buildRegistrationSnapshot(item);
+    }
     const raw = item?._raw?.raw || {};
     return {
       itemNo: firstText(item?.itemNo, raw.itemNo, ""),
@@ -1812,6 +1815,9 @@ function bindEvents() {
   }
 
   function buildRegistrationSnapshotFromDbRow(row) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationSnapshot === "function") {
+      return PropertyDomain.buildRegistrationSnapshot(row);
+    }
     const raw = row?.raw && typeof row.raw === "object" ? row.raw : {};
     return {
       itemNo: firstText(row?.item_no, row?.itemNo, raw.itemNo, ""),
@@ -1866,6 +1872,9 @@ function bindEvents() {
   }
 
   function loadRegistrationLog(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadRegistrationLog === "function") {
+      return PropertyDomain.loadRegistrationLog(item, { defaultRoute: "최초 등록" });
+    }
     const raw = item?._raw?.raw || {};
     if (Array.isArray(raw.registrationLog) && raw.registrationLog.length) return raw.registrationLog;
     const createdAt = firstText(raw.firstRegisteredAt, item?.createdAt, item?._raw?.created_at, item?._raw?.createdAt, "");
@@ -1874,6 +1883,9 @@ function bindEvents() {
   }
 
   function appendRegistrationCreateLog(raw, context) {
+    if (PropertyDomain && typeof PropertyDomain.ensureRegistrationCreatedLog === "function") {
+      return PropertyDomain.ensureRegistrationCreatedLog(raw, context);
+    }
     const nextRaw = { ...(raw || {}) };
     const firstAt = firstText(nextRaw.firstRegisteredAt, context?.at, new Date().toISOString());
     const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
@@ -1886,6 +1898,9 @@ function bindEvents() {
   }
 
   function appendRegistrationChangeLog(raw, context, changes) {
+    if (PropertyDomain && typeof PropertyDomain.appendRegistrationLog === "function") {
+      return PropertyDomain.appendRegistrationLog(raw, context, changes);
+    }
     const nextRaw = appendRegistrationCreateLog(raw, context);
     if (Array.isArray(changes) && changes.length) {
       nextRaw.registrationLog = [...nextRaw.registrationLog, {
@@ -1909,6 +1924,15 @@ function bindEvents() {
   }
 
   function buildRegistrationDbRowForExisting(existingItem, incomingRow, context, options = {}) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === "function") {
+      return PropertyDomain.buildRegistrationDbRowForExisting(existingItem, incomingRow, context, {
+        labels: REG_LOG_LABELS,
+        amountFields: ["priceMain", "lowprice"],
+        numericFields: ["priceMain", "lowprice", "commonArea", "exclusiveArea", "siteArea", "latitude", "longitude"],
+        copyFields: ["address","asset_type","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","source_url","broker_office_name","submitter_name","submitter_phone","memo","latitude","longitude","floor","total_floor","assignee_id","assignee_name"],
+        assignIfEmpty: !!options.assignIfEmpty,
+      });
+    }
     const base = existingItem?._raw ? { ...existingItem._raw, raw: { ...(existingItem._raw.raw || {}) } } : { ...(incomingRow || {}), raw: { ...(incomingRow?.raw || {}) } };
     const prevSnapshot = existingItem?._raw ? buildRegistrationSnapshotFromItem(existingItem) : buildRegistrationSnapshotFromDbRow(base);
     const nextSnapshot = buildRegistrationSnapshotFromDbRow(incomingRow);
@@ -1936,6 +1960,9 @@ function bindEvents() {
   }
 
   function buildRegistrationDbRowForCreate(row, context) {
+    if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForCreate === "function") {
+      return PropertyDomain.buildRegistrationDbRowForCreate(row, context);
+    }
     return {
       ...(row || {}),
       raw: attachRegistrationIdentity(appendRegistrationCreateLog(row?.raw || {}, context), row),
@@ -2004,6 +2031,9 @@ function bindEvents() {
   // Opinion History 유틸
   // ---------------------------
   function normalizeOpinionHistoryEntry(entry) {
+    if (PropertyDomain && typeof PropertyDomain.normalizeOpinionHistoryEntry === "function") {
+      return PropertyDomain.normalizeOpinionHistoryEntry(entry);
+    }
     if (!entry || typeof entry !== "object") return null;
     const text = String(entry.text || entry.note || "").trim();
     if (!text) return null;
@@ -2015,6 +2045,9 @@ function bindEvents() {
   }
 
   function buildOpinionHistoryEntry(kind, text, user, options = {}) {
+    if (PropertyDomain && typeof PropertyDomain.buildOpinionHistoryEntry === "function") {
+      return PropertyDomain.buildOpinionHistoryEntry(kind, text, user, options);
+    }
     const body = String(text || "").trim();
     if (!body) return null;
     const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
@@ -2039,6 +2072,9 @@ function bindEvents() {
   }
 
   function loadOpinionHistory(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") {
+      return PropertyDomain.loadOpinionHistory(item);
+    }
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
     if (Array.isArray(hist) && hist.length) {
@@ -2053,12 +2089,18 @@ function bindEvents() {
   }
 
   function appendOpinionEntry(history, newText, user, options = {}) {
+    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === "function") {
+      return PropertyDomain.appendOpinionEntry(history, newText, user, options);
+    }
     const entry = buildOpinionHistoryEntry(options.kind || "opinion", newText, user, options);
     if (!entry) return Array.isArray(history) ? history : [];
     return [...(Array.isArray(history) ? history : []), entry];
   }
 
   function getOpinionHistoryMeta(entry) {
+    if (PropertyDomain && typeof PropertyDomain.getOpinionHistoryMeta === "function") {
+      return PropertyDomain.getOpinionHistoryMeta(entry);
+    }
     const kind = String(entry?.kind || "opinion").trim();
     if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
     if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일이슈사항" };

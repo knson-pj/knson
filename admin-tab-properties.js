@@ -529,6 +529,9 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
   }
 
   function appendOpinionEntryLocal(history, newText, user) {
+    if (PropertyDomain && typeof PropertyDomain.appendOpinionEntry === 'function') {
+      return PropertyDomain.appendOpinionEntry(history, newText, user);
+    }
     const text = String(newText || '').trim();
     if (!text) return history;
     const d = new Date();
