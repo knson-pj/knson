@@ -3,6 +3,7 @@
   const mod = {};
   const DataAccess = window.KNSN_DATA_ACCESS || null;
   const PropertyRenderers = window.KNSN_PROPERTY_RENDERERS || null;
+  let adminSaveFlashTimer = null;
   const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
 
   function runtime() {
@@ -422,6 +423,19 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       return;
     }
     els.aemMsg.innerHTML = '';
+  }
+
+
+  function flashAdminSaveNotice(utils, text, duration = 1500) {
+    const msg = String(text || '').trim();
+    if (!msg) return;
+    const setLoading = utils && typeof utils.setAdminLoading === 'function' ? utils.setAdminLoading : null;
+    if (!setLoading) return;
+    window.clearTimeout(adminSaveFlashTimer);
+    setLoading('flashSaveNotice', true, msg);
+    adminSaveFlashTimer = window.setTimeout(() => {
+      setLoading('flashSaveNotice', false);
+    }, Number(duration) > 0 ? Number(duration) : 1500);
   }
 
 
@@ -1083,10 +1097,10 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       if (els.aemSave) els.aemSave.disabled = true;
       setAemMsg(els, '');
       await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
-      setAemMsg(els, '저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 2200));
+      setAemMsg(els, '');
       mod.closePropertyEditModal();
-      window.setTimeout(() => refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' }), 2400);
+      flashAdminSaveNotice(utils, '저장되었습니다.', 1500);
+      window.setTimeout(() => refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' }), 100);
     } catch (err) {
       console.error(err);
       setAemMsg(els, err?.message || '저장 실패');

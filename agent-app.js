@@ -179,6 +179,7 @@
   };
 
   const loadingState = { activeKeys: new Set(), messages: new Map() };
+  let agentFlashNoticeTimer = null;
 
   const els = {};
 
@@ -515,6 +516,22 @@
     if (els.adminLoadingLabel) els.adminLoadingLabel.textContent = currentText;
     els.adminLoadingOverlay.classList.toggle("hidden", !visible);
     els.adminLoadingOverlay.setAttribute("aria-busy", visible ? "true" : "false");
+  }
+
+  function flashAgentNotice(text, duration = 1500) {
+    const msg = String(text || '').trim();
+    if (!msg) return;
+    if (!els.adminLoadingOverlay || typeof setAgentLoading !== 'function') {
+      setGlobalMsg(msg, false);
+      window.clearTimeout(agentFlashNoticeTimer);
+      agentFlashNoticeTimer = window.setTimeout(() => setGlobalMsg(''), duration);
+      return;
+    }
+    window.clearTimeout(agentFlashNoticeTimer);
+    setAgentLoading('flashNotice', true, msg);
+    agentFlashNoticeTimer = window.setTimeout(() => {
+      setAgentLoading('flashNotice', false);
+    }, Number(duration) > 0 ? Number(duration) : 1500);
   }
 
   async function refreshDailyReportSummary(options = {}) {
@@ -1665,7 +1682,7 @@ function renderRow(p) {
   const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(listView?.floorText || getFloorDisplayValue(p) || "-", 7) || "-";
   const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
-  const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
+  const opinionText = !usePlainLayout && String(p.opinion || '').trim() ? "✓" : "";
   const createdAtText = formatDate(listView?.createdAtValue || p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
   const commonText = (listView?.commonAreaValue != null ? fmtArea(listView.commonAreaValue) : (p.commonarea != null ? fmtArea(p.commonarea) : "-"));
   const siteText = (listView?.siteAreaValue != null ? fmtArea(listView.siteAreaValue) : (p.sitearea != null ? fmtArea(p.sitearea) : "-"));
@@ -1703,7 +1720,7 @@ function renderRow(p) {
         "<td>" + esc(useapprovalText) + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
+        "<td>" + (String(p.opinion || "").trim() ? "✓" : "-") + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + esc(p.itemNo || "-") + "</td>" +
@@ -1717,7 +1734,7 @@ function renderRow(p) {
         "<td>" + esc(rate) + "</td>" +
         "<td>" + esc(scheduleText) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + esc(rightsText) + "</td>" +
+        "<td>" + esc(opinionText) + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
   );
@@ -1872,7 +1889,6 @@ function renderPagination(totalPages) {
     setVal(f, "priceMain", view.priceMain != null ? formatMoneyInputValue(view.priceMain) : "");
     setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
     setVal(f, "dateMain", formatDate(view.dateMain) || "");
-    setVal(f, "rightsAnalysis", view.rightsAnalysis);
     setVal(f, "siteInspection", view.siteInspection);
     setVal(f, "opinion", view.opinion || "");
 
@@ -1923,7 +1939,6 @@ function renderPagination(totalPages) {
     const bucket = getPropertyBucket(item, item?.sourceType || "");
     const hidePlainFields = ["realtor_naver", "realtor_direct", "general"].includes(bucket);
     const prev = getAgentEditableSnapshot(item);
-    let rightsVal = readStr("rightsAnalysis") || null;
     const siteVal = readStr("siteInspection") || null;
     const floorVal = readStr("floor") || null;
     const totalFloorVal = readStr("totalfloor") || null;
@@ -1987,7 +2002,6 @@ function renderPagination(totalPages) {
         priceMain: priceMainVal,
         currentPrice: currentPriceVal,
         dateMain: dateMainVal,
-        rightsAnalysis: rightsVal,
         siteInspection: siteVal,
         ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
         opinionHistory,
@@ -2002,10 +2016,6 @@ function renderPagination(totalPages) {
 
       const workCategories = [];
       const changedFields = {};
-      if (rightsVal && rightsVal !== String(prev.rightsAnalysis || "").trim()) {
-        workCategories.push("rightsAnalysis");
-        changedFields.rightsAnalysis = ["rightsAnalysis"];
-      }
       if (siteVal && siteVal !== String(prev.siteInspection || "").trim()) {
         workCategories.push("siteInspection");
         changedFields.siteInspection = ["siteInspection"];
@@ -2029,7 +2039,6 @@ function renderPagination(totalPages) {
             ...item,
             floor: floorVal || item.floor,
             totalfloor: totalFloorVal || item.totalfloor,
-            rightsAnalysis: rightsVal || item.rightsAnalysis,
             siteInspection: siteVal || item.siteInspection,
             opinion: patch.memo || item.opinion,
             _raw: { ...(item._raw || {}), raw: newRaw },
@@ -2044,12 +2053,12 @@ function renderPagination(totalPages) {
         }
       }
 
-      setAgentEditMsg('저장되었습니다.', false);
-      if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
-      else setGlobalMsg('저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      setAgentEditMsg('', false);
+      setGlobalMsg('');
       closeEditModal();
-      window.setTimeout(() => refreshAgentPropertiesInBackground({ silent: true }), 50);
+      flashAgentNotice('저장되었습니다.', 1500);
+      if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
+      window.setTimeout(() => refreshAgentPropertiesInBackground({ silent: true }), 80);
     } catch (err) {
       setAgentEditMsg(toUserErrorMessage(err, '저장 실패'));
     } finally {
