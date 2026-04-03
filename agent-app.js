@@ -455,6 +455,15 @@
     return data;
   }
 
+  async function api(path, options = {}) {
+    return apiJson(path, {
+      method: options.method || (options.body !== undefined || options.json !== undefined ? "POST" : "GET"),
+      headers: options.headers || {},
+      auth: options.auth !== false,
+      json: options.body !== undefined ? options.body : options.json,
+    });
+  }
+
   function setGlobalMsg(text, isError = true) {
     if (!els.globalMsg) return;
     if (PropertyRenderers && typeof PropertyRenderers.setTextMessage === 'function') {
