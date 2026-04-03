@@ -225,7 +225,7 @@
     return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
   }
 
-  function truncateAddressText(value, maxLength = 15) {
+  function truncateAddressText(value, maxLength = 20) {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
     const limit = Number(maxLength || 0);
     if (!text) return '';
@@ -1680,10 +1680,14 @@ function renderRow(p) {
   const rate = !usePlainLayout ? (ratioValue >= 0 ? `${Math.round(ratioValue * 100)}%` : calcRate(p.priceMain, p.lowprice)) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
-  const addressText = truncateAddressText(listView?.address || p.address || '-', 15) || '-';
+  const addressText = truncateAddressText(listView?.address || p.address || '-', 20) || '-';
   const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(listView?.floorText || getFloorDisplayValue(p) || "-", 7) || "-";
-  const scheduleHtml = !usePlainLayout && PropertyRenderers && typeof PropertyRenderers.formatScheduleHtml === 'function' ? PropertyRenderers.formatScheduleHtml(p) : '';
+  const scheduleHtml = !usePlainLayout
+    ? ((PropertyRenderers && typeof PropertyRenderers.formatScheduleHtml === 'function'
+        ? PropertyRenderers.formatScheduleHtml(p)
+        : '') || formatScheduleHtmlLocal(p))
+    : '';
   const opinionText = !usePlainLayout && p.opinion ? '✓' : '';
   const createdAtText = formatDate(listView?.createdAtValue || p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
   const commonText = (listView?.commonAreaValue != null ? fmtArea(listView.commonAreaValue) : (p.commonarea != null ? fmtArea(p.commonarea) : "-"));
@@ -2238,6 +2242,26 @@ function renderPagination(totalPages) {
     if (diffDays === 0) return 'D-Day';
     if (diffDays > 0) return `D-${diffDays}`;
     return `D+${Math.abs(diffDays)}`;
+  }
+
+
+  function formatScheduleHtmlLocal(item) {
+    const raw = item?._raw?.raw && typeof item._raw.raw === 'object'
+      ? item._raw.raw
+      : (item?._raw && typeof item._raw === 'object' ? item._raw : (item?.raw && typeof item.raw === 'object' ? item.raw : {}));
+    const rawValue = item?.dateMain
+      || item?.date_main
+      || item?.bidDate
+      || raw['입찰일자']
+      || raw['입찰마감일시']
+      || raw.dateMain
+      || raw.date_main
+      || raw.bidDate
+      || '';
+    const dateText = formatDate(rawValue);
+    if (!dateText) return '-';
+    const dday = computeDdayLabel(rawValue);
+    return `<span class="schedule-stack"><span class="schedule-date">${esc(dateText)}</span>${dday ? `<span class="schedule-dday">${esc(dday)}</span>` : '<span class="schedule-dday schedule-dday-empty"></span>'}</span>`;
   }
 
   function formatScheduleCountdown(value) {

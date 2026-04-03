@@ -140,7 +140,7 @@
     return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
   }
 
-  function truncateAddressText(value, maxLength = 15) {
+  function truncateAddressText(value, maxLength = 20) {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
     const limit = Number(maxLength || 0);
     if (!text) return '';
@@ -815,7 +815,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
     const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
-    const addressText = truncateAddressText(listView?.address || p.address || '-', 15) || '-';
+    const addressText = truncateAddressText(listView?.address || p.address || '-', 20) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
     const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
     const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';
