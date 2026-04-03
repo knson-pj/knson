@@ -1,0 +1,134 @@
+{
+  "stage": 18,
+  "sharedLayers": {
+    "schema": "knson-schema.js",
+    "domain": "knson-property-domain.js",
+    "renderers": "knson-property-renderers.js",
+    "dataAccess": "knson-data-access.js"
+  },
+  "sharedAssetOrder": [
+    "knson-core.js",
+    "knson-shared.js",
+    "knson-schema.js",
+    "knson-property-domain.js",
+    "knson-property-renderers.js",
+    "knson-data-access.js"
+  ],
+  "htmlFiles": [
+    "index.html",
+    "admin-index.html",
+    "agent-index.html",
+    "general-register.html"
+  ],
+  "pageFiles": [
+    "admin-app.js",
+    "admin-tab-properties.js",
+    "admin-tab-new-property.js",
+    "admin-tab-staff-regions.js",
+    "agent-app.js",
+    "app.js",
+    "general-register.js"
+  ],
+  "syntaxCheckFiles": [
+    "knson-schema.js",
+    "knson-property-domain.js",
+    "knson-property-renderers.js",
+    "knson-data-access.js",
+    "admin-app.js",
+    "admin-tab-properties.js",
+    "admin-tab-new-property.js",
+    "admin-tab-staff-regions.js",
+    "agent-app.js",
+    "app.js",
+    "general-register.js",
+    "public-listings.js",
+    "api/properties.js",
+    "api/public-listings.js",
+    "scripts/check-architecture.js",
+    "scripts/check-html-assets.js",
+    "scripts/check-final-boundary.js"
+  ],
+  "bannedPatterns": [
+    {
+      "label": "page-level direct properties query",
+      "pattern": "sb\\.from\\(['\\\"]properties['\\\"]\\)"
+    },
+    {
+      "label": "page-level direct /admin/properties endpoint",
+      "pattern": "[`'\\\"]\\/admin\\/properties[`'\\\"]"
+    },
+    {
+      "label": "page-level direct /properties endpoint",
+      "pattern": "[`'\\\"]\\/properties(?:\\?|[`'\\\"])"
+    },
+    {
+      "label": "page-level direct /public-listings endpoint",
+      "pattern": "[`'\\\"]\\/public-listings[`'\\\"]"
+    },
+    {
+      "label": "page-level direct /admin/staff endpoint",
+      "pattern": "[`'\\\"]\\/admin\\/staff[`'\\\"]"
+    },
+    {
+      "label": "page-level direct /admin/region-assignments endpoint",
+      "pattern": "[`'\\\"]\\/admin\\/region-assignments[`'\\\"]"
+    }
+  ],
+  "helperRules": [
+    {
+      "file": "agent-app.js",
+      "label": "agent local area filter helper",
+      "pattern": "function\\s+getAreaFilterMatch\\("
+    },
+    {
+      "file": "agent-app.js",
+      "label": "agent local price filter helper",
+      "pattern": "function\\s+getPriceFilterMatch\\("
+    },
+    {
+      "file": "agent-app.js",
+      "label": "agent local ratio filter helper",
+      "pattern": "function\\s+getRatioFilterMatch\\("
+    },
+    {
+      "file": "agent-app.js",
+      "label": "agent local feedback helper",
+      "pattern": "function\\s+buildFormFeedbackHtml\\("
+    },
+    {
+      "file": "admin-tab-properties.js",
+      "label": "admin local area filter helper",
+      "pattern": "function\\s+getAreaFilterMatch\\("
+    },
+    {
+      "file": "admin-tab-properties.js",
+      "label": "admin local price filter helper",
+      "pattern": "function\\s+getPriceFilterMatch\\("
+    },
+    {
+      "file": "admin-tab-properties.js",
+      "label": "admin local ratio filter helper",
+      "pattern": "function\\s+getRatioFilterMatch\\("
+    },
+    {
+      "file": "admin-tab-properties.js",
+      "label": "admin local feedback helper",
+      "pattern": "function\\s+buildFormFeedbackHtml\\("
+    },
+    {
+      "file": "agent-app.js",
+      "label": "agent local field shell helper",
+      "pattern": "function\\s+findAgentFieldShell\\("
+    },
+    {
+      "file": "admin-tab-properties.js",
+      "label": "admin local field shell helper",
+      "pattern": "function\\s+findAdminFieldShell\\("
+    }
+  ],
+  "pageSizeWarnings": {
+    "admin-app.js": 140000,
+    "agent-app.js": 150000,
+    "app.js": 90000
+  }
+}

@@ -2,57 +2,38 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const pageFiles = [
-  'admin-app.js',
-  'admin-tab-properties.js',
-  'admin-tab-new-property.js',
-  'admin-tab-staff-regions.js',
-  'agent-app.js',
-  'app.js',
-  'general-register.js',
-];
-
-const bannedPatterns = [
-  { re: /sb\.from\(['"]properties['"]\)/g, label: 'page-level direct properties query' },
-  { re: /['"]\/admin\/properties['"]/g, label: 'page-level direct /admin/properties endpoint' },
-  { re: /['"]\/properties['"]/g, label: 'page-level direct /properties endpoint' },
-  { re: /['"]\/public-listings['"]/g, label: 'page-level direct /public-listings endpoint' },
-  { re: /['"]\/admin\/staff['"]/g, label: 'page-level direct /admin/staff endpoint' },
-  { re: /['"]\/admin\/region-assignments['"]/g, label: 'page-level direct /admin/region-assignments endpoint' },
-];
-
-const helperRules = [
-  { file: 'agent-app.js', re: /function getAreaFilterMatch\(/g, label: 'agent local area filter helper' },
-  { file: 'agent-app.js', re: /function getPriceFilterMatch\(/g, label: 'agent local price filter helper' },
-  { file: 'agent-app.js', re: /function getRatioFilterMatch\(/g, label: 'agent local ratio filter helper' },
-  { file: 'admin-tab-properties.js', re: /function getAreaFilterMatch\(/g, label: 'admin local area filter helper' },
-  { file: 'admin-tab-properties.js', re: /function getPriceFilterMatch\(/g, label: 'admin local price filter helper' },
-  { file: 'admin-tab-properties.js', re: /function getRatioFilterMatch\(/g, label: 'admin local ratio filter helper' },
-];
-
+const baselinePath = path.join(__dirname, 'architecture-baseline.json');
+const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
 
 let failed = false;
-for (const file of pageFiles) {
+
+for (const file of baseline.pageFiles) {
   const full = path.join(root, file);
-  if (!fs.existsSync(full)) continue;
+  if (!fs.existsSync(full)) {
+    console.error(`[architecture-check] missing page file: ${file}`);
+    failed = true;
+    continue;
+  }
   const text = fs.readFileSync(full, 'utf8');
-  for (const rule of bannedPatterns) {
-    rule.re.lastIndex = 0;
-    if (rule.re.test(text)) {
+  for (const rule of baseline.bannedPatterns) {
+    const re = new RegExp(rule.pattern, 'g');
+    if (re.test(text)) {
       console.error(`[architecture-check] ${rule.label} detected in ${file}`);
       failed = true;
     }
   }
 }
-for (const rule of helperRules) {
+
+for (const rule of baseline.helperRules) {
   const full = path.join(root, rule.file);
   if (!fs.existsSync(full)) continue;
   const text = fs.readFileSync(full, 'utf8');
-  rule.re.lastIndex = 0;
-  if (rule.re.test(text)) {
+  const re = new RegExp(rule.pattern, 'g');
+  if (re.test(text)) {
     console.error(`[architecture-check] ${rule.label} detected in ${rule.file}`);
     failed = true;
   }
 }
+
 if (failed) process.exit(1);
-console.log('[architecture-check] ok');
+console.log(`[architecture-check] ok (stage ${baseline.stage})`);

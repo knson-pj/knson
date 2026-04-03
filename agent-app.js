@@ -773,7 +773,7 @@
     }
   }
 
-  const getAreaFilterMatch = (value, area) => {
+  const matchesAreaFilterValue = (value, area) => {
     if (PropertyDomain && typeof PropertyDomain.matchesAreaFilter === 'function') {
       return PropertyDomain.matchesAreaFilter(value, area);
     }
@@ -786,7 +786,7 @@
     return numericArea >= min && (max === Infinity || numericArea < max);
   }
 
-  const getPriceFilterMatch = (value, row) => {
+  const matchesPriceRangeValue = (value, row) => {
     if (PropertyDomain && typeof PropertyDomain.matchesPriceRangeFilter === 'function') {
       return PropertyDomain.matchesPriceRangeFilter(value, row);
     }
@@ -801,7 +801,7 @@
     return numericPrice >= min && (max === Infinity || numericPrice < max);
   }
 
-  const getRatioFilterMatch = (value, row) => {
+  const matchesRatioFilterValue = (value, row) => {
     if (PropertyDomain && typeof PropertyDomain.matchesRatioFilter === 'function') {
       return PropertyDomain.matchesRatioFilter(value, row);
     }
@@ -1510,9 +1510,9 @@
         return true;
       });
     }
-    if (!ignoreKeys.has('area') && f.area) rows = rows.filter((r) => getAreaFilterMatch(f.area, r.exclusivearea));
-    if (!ignoreKeys.has('priceRange') && f.priceRange) rows = rows.filter((r) => getPriceFilterMatch(f.priceRange, r));
-    if (!ignoreKeys.has('ratio50') && f.ratio50) rows = rows.filter((r) => getRatioFilterMatch(f.ratio50, r));
+    if (!ignoreKeys.has('area') && f.area) rows = rows.filter((r) => matchesAreaFilterValue(f.area, r.exclusivearea));
+    if (!ignoreKeys.has('priceRange') && f.priceRange) rows = rows.filter((r) => matchesPriceRangeValue(f.priceRange, r));
+    if (!ignoreKeys.has('ratio50') && f.ratio50) rows = rows.filter((r) => matchesRatioFilterValue(f.ratio50, r));
     if (!ignoreKeys.has('todayBid') && f.todayBid) rows = rows.filter((r) => String(r.dateMain || '').trim().startsWith(getTodayDateKey()));
     if (!ignoreKeys.has('favOnly') && f.favOnly) rows = rows.filter((r) => state.favorites.has(r.id));
     if (!ignoreKeys.has('keyword') && f.keyword) rows = rows.filter((r) => PropertyDomain && typeof PropertyDomain.matchesKeyword === 'function' ? PropertyDomain.matchesKeyword(r, f.keyword, { fields: keywordFields }) : true);
@@ -1535,20 +1535,20 @@
     const areaCounts = { '': areaRows.length, '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 };
     areaRows.forEach((row) => {
       AREA_FILTER_OPTIONS.slice(1).forEach((optionDef) => {
-        if (getAreaFilterMatch(optionDef.value, row?.exclusivearea)) areaCounts[optionDef.value] += 1;
+        if (matchesAreaFilterValue(optionDef.value, row?.exclusivearea)) areaCounts[optionDef.value] += 1;
       });
     });
 
     const priceCounts = { '': priceRows.length, '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 };
     priceRows.forEach((row) => {
       PRICE_FILTER_OPTIONS.slice(1).forEach((optionDef) => {
-        if (getPriceFilterMatch(optionDef.value, row)) priceCounts[optionDef.value] += 1;
+        if (matchesPriceRangeValue(optionDef.value, row)) priceCounts[optionDef.value] += 1;
       });
     });
 
     const ratioCounts = { '': ratioRows.length, '50': 0 };
     ratioRows.forEach((row) => {
-      if (getRatioFilterMatch('50', row)) ratioCounts['50'] += 1;
+      if (matchesRatioFilterValue('50', row)) ratioCounts['50'] += 1;
     });
 
     applySelectOptionCounts(els.agSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts);
