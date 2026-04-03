@@ -158,6 +158,16 @@ function kstDateKey(input) {
   }
 }
 
+function getKstDateRangeIso(dateKey) {
+  const key = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '').trim()) ? String(dateKey).trim() : kstDateKey();
+  if (!key) return null;
+  const start = new Date(`${key}T00:00:00+09:00`);
+  const end = new Date(`${key}T00:00:00+09:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { startIso: start.toISOString(), endIso: end.toISOString(), dateKey: key };
+}
+
 function normalizeActionType(value) {
   const s = String(value || '').trim().toLowerCase();
   if (!s) return '';
@@ -268,51 +278,6 @@ async function insertActivityEntries(entries, ctx) {
 }
 
 
-
-
-function buildKstDayRange(dateKey) {
-  const safe = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '').trim()) ? String(dateKey).trim() : kstDateKey();
-  const [y, m, d] = safe.split('-').map((v) => Number(v));
-  const startUtc = new Date(Date.UTC(y, m - 1, d, -9, 0, 0));
-  const endUtc = new Date(Date.UTC(y, m - 1, d + 1, -9, 0, 0));
-  return { startIso: startUtc.toISOString(), endIso: endUtc.toISOString() };
-}
-
-function mergeActivityRows(...groups) {
-  const out = [];
-  const seen = new Set();
-  for (const list of groups) {
-    for (const row of Array.isArray(list) ? list : []) {
-      if (!row || typeof row !== 'object') continue;
-      const key = String(row.id || `${row.actor_id || ''}|${row.property_id || ''}|${row.property_identity_key || ''}|${row.property_item_no || ''}|${row.property_address || ''}|${row.action_type || ''}|${row.created_at || ''}`).trim();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      out.push(row);
-    }
-  }
-  out.sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
-  return out;
-}
-
-async function fetchRowsByCreatedAtRange(baseSelect, date, { actorId = '', actorNames = [], adminView = false } = {}) {
-  const { startIso, endIso } = buildKstDayRange(date);
-  const rangeQuery = `created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}`;
-  if (adminView) {
-    const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&${rangeQuery}&order=actor_name.asc.nullslast,created_at.desc`);
-    return Array.isArray(rows) ? rows : [];
-  }
-  const rowsById = actorId
-    ? await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&${rangeQuery}&order=created_at.desc`)
-    : [];
-  const rowsByName = [];
-  const names = Array.isArray(actorNames) ? actorNames.filter(Boolean) : [];
-  for (const name of names) {
-    const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(name)}&${rangeQuery}&order=created_at.desc`);
-    rowsByName.push(...(Array.isArray(rows) ? rows : []));
-  }
-  return mergeActivityRows(rowsById, rowsByName);
-}
-
 function mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId) {
   const idRows = Array.isArray(rowsById) ? rowsById : [];
   const nameRows = Array.isArray(rowsByName) ? rowsByName : [];
@@ -372,6 +337,33 @@ async function fetchRowsByActorNames(baseSelect, date, actorNames) {
   return merged;
 }
 
+async function fetchRowsByCreatedAtRange(baseSelect, { startIso, endIso, actorId = '', actorNames = [], propertyIds = [] } = {}) {
+  if (!startIso || !endIso) return [];
+  const merged = [];
+  const seen = new Set();
+  const addRows = (rows) => {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = String(row?.id || `${row?.actor_id || ''}|${row?.property_id || ''}|${row?.created_at || ''}`).trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(row);
+    }
+  };
+  if (actorId) {
+    addRows(await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}&order=created_at.desc`));
+  }
+  for (const name of Array.isArray(actorNames) ? actorNames.filter(Boolean) : []) {
+    addRows(await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(name)}&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}&order=created_at.desc`));
+  }
+  if (Array.isArray(propertyIds) && propertyIds.length) {
+    const uniq = [...new Set(propertyIds.filter(Boolean).map((v) => String(v).trim()).filter(Boolean))];
+    for (const propertyId of uniq.slice(0, 200)) {
+      addRows(await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&property_id=eq.${encodeURIComponent(propertyId)}&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}&order=created_at.desc`));
+    }
+  }
+  return merged;
+}
+
 async function fetchRowsByAssignedProperties(baseSelect, date, actorId) {
   const userId = cleanText(actorId, 120);
   if (!userId) return [];
@@ -395,13 +387,24 @@ async function fetchRowsByAssignedProperties(baseSelect, date, actorId) {
   }
   if (!idSet.size && !itemNoSet.size && !addressSet.size) return [];
 
+  const range = getKstDateRangeIso(date);
   const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`);
-  return (Array.isArray(rows) ? rows : []).filter((row) => {
-    const propertyId = cleanText(row?.property_id, 120);
-    const itemNo = cleanText(row?.property_item_no, 120);
-    const address = cleanText(row?.property_address, 500);
-    return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
-  });
+  const createdRows = range ? await fetchRowsByCreatedAtRange(baseSelect, { startIso: range.startIso, endIso: range.endIso, propertyIds: [...idSet] }) : [];
+  return mergeActivityRowsByIdAndName(
+    (Array.isArray(rows) ? rows : []).filter((row) => {
+      const propertyId = cleanText(row?.property_id, 120);
+      const itemNo = cleanText(row?.property_item_no, 120);
+      const address = cleanText(row?.property_address, 500);
+      return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
+    }),
+    (Array.isArray(createdRows) ? createdRows : []).filter((row) => {
+      const propertyId = cleanText(row?.property_id, 120);
+      const itemNo = cleanText(row?.property_item_no, 120);
+      const address = cleanText(row?.property_address, 500);
+      return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
+    }),
+    actorId
+  );
 }
 
 async function handleActivityLog(req, res) {
@@ -433,22 +436,32 @@ async function handleActivityLog(req, res) {
       const actorName = cleanText(ctx.name || ctx.email || '', 120);
       const baseSelect = 'id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at';
       let rows = [];
+      const range = getKstDateRangeIso(date);
       if (adminViewRequested) {
         let query = `/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}`;
         if (requestedActorId) {
           query += `&actor_id=eq.${encodeURIComponent(requestedActorId)}`;
         }
         query += '&order=actor_name.asc.nullslast,created_at.desc';
-        const rowsByActionDate = await supabaseRest(query);
-        const rowsByCreatedAt = await fetchRowsByCreatedAtRange(baseSelect, date, { adminView: true });
-        rows = mergeActivityRows(rowsByActionDate, rowsByCreatedAt);
+        const actionDateRows = await supabaseRest(query);
+        const createdRows = range
+          ? await fetchRowsByCreatedAtRange(baseSelect, { startIso: range.startIso, endIso: range.endIso, actorId: requestedActorId || '' })
+          : [];
+        rows = mergeActivityRowsByIdAndName(actionDateRows, createdRows, requestedActorId || actorId);
+        rows.sort((a, b) => {
+          const actorCmp = String(a?.actor_name || '').localeCompare(String(b?.actor_name || ''));
+          if (actorCmp !== 0) return actorCmp;
+          return String(b?.created_at || '').localeCompare(String(a?.created_at || ''));
+        });
       } else {
         const actorNames = collectActorNameCandidates(ctx);
         const byActorId = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
         const rowsById = await supabaseRest(byActorId);
         const rowsByName = await fetchRowsByActorNames(baseSelect, date, actorNames);
-        const rowsByCreatedAt = await fetchRowsByCreatedAtRange(baseSelect, date, { actorId, actorNames, adminView: false });
-        rows = mergeActivityRows(mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId), rowsByCreatedAt);
+        const createdRows = range
+          ? await fetchRowsByCreatedAtRange(baseSelect, { startIso: range.startIso, endIso: range.endIso, actorId, actorNames })
+          : [];
+        rows = mergeActivityRowsByIdAndName(mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId), createdRows, actorId);
         if (!rows.length) {
           rows = await fetchRowsByAssignedProperties(baseSelect, date, actorId);
         }

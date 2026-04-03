@@ -312,6 +312,146 @@
     return summary;
   }
 
+
+  function createEmptyOverview() {
+    return {
+      summary: { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
+      today: { total: 0, auction: 0, onbid: 0, realtor: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
+      geoPending: 0,
+      filterCounts: { source: { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 } },
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  function encodeQueryParams(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      search.set(key, String(value));
+    });
+    return search.toString();
+  }
+
+  async function fetchScopedPropertiesViaApi(api, { scope = 'mine', auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/properties?${encodeQueryParams({ scope })}`, { auth });
+  }
+
+  async function fetchDailyReportViaApi(api, { dateKey, actorId = '', adminView = false, auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/properties?${encodeQueryParams({ daily_report: 1, date: dateKey, actor_id: actorId, admin_view: adminView ? 1 : '' })}`, { auth });
+  }
+
+  async function createPropertyViaApi(api, row, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/properties', { method: 'POST', auth, body: { row } });
+  }
+
+  async function updatePropertyViaApi(api, targetId, patch, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/properties', { method: 'PATCH', auth, body: { targetId, patch } });
+  }
+
+  async function recordDailyReportEntriesViaApi(api, entries, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && (entry.actionType || entry.action_type));
+    if (!safeEntries.length) return { ok: true, items: [] };
+    return api('/properties', { method: 'POST', auth, body: { action: 'daily_report_log', entries: safeEntries } });
+  }
+
+  async function deletePropertiesViaAdminApi(api, ids, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/properties', { method: 'DELETE', auth, body: { ids: Array.isArray(ids) ? ids.filter(Boolean) : [] } });
+  }
+
+  async function deleteAllPropertiesViaAdminApi(api, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/properties', { method: 'DELETE', auth, body: { all: true } });
+  }
+
+  async function deletePropertyViaAdminApi(api, targetId, { auth = true } = {}) {
+    return deletePropertiesViaAdminApi(api, [targetId], { auth });
+  }
+
+  async function fetchAdminMapDataViaApi(api, params = {}, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    const query = encodeQueryParams(params);
+    return api(`/admin/properties?${query}`, { auth });
+  }
+
+  async function fetchPropertyOverviewViaApi(api, { cacheBust = '', auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/admin/properties?${encodeQueryParams({ mode: 'overview', _ts: cacheBust || Date.now() })}`, { auth });
+  }
+
+  async function fetchBrowserOverviewViaApi(sb, { normalizeRow = null, pageSize = 1000 } = {}) {
+    if (!sb || typeof sb.from !== 'function') return null;
+    const rows = await fetchAllProperties(sb, {
+      isAdmin: true,
+      uid: '',
+      select: PROPERTY_HOME_SUMMARY_SELECT,
+      pageSize,
+      filters: null,
+    });
+    const list = (Array.isArray(rows) ? rows : []).map((row) => (typeof normalizeRow === 'function' ? normalizeRow(row) : row)).filter(Boolean);
+    const summary = buildPropertySummaryFromRows(list, null);
+    const overview = createEmptyOverview();
+    overview.summary.total = Number(summary.total || 0);
+    overview.summary.auction = Number(summary.auction || 0);
+    overview.summary.onbid = Number(summary.onbid || 0);
+    overview.summary.realtor_naver = Number(summary.realtor_naver || 0);
+    overview.summary.realtor_direct = Number(summary.realtor_direct || 0);
+    overview.summary.general = Number(summary.general || 0);
+    overview.filterCounts.source[''] = overview.summary.total;
+    overview.filterCounts.source.auction = overview.summary.auction;
+    overview.filterCounts.source.onbid = overview.summary.onbid;
+    overview.filterCounts.source.realtor_naver = overview.summary.realtor_naver;
+    overview.filterCounts.source.realtor_direct = overview.summary.realtor_direct;
+    overview.filterCounts.source.general = overview.summary.general;
+    overview.source = 'browser_rows';
+    return overview;
+  }
+
+  async function fetchAdminPropertyDetailViaApi(api, targetId, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/admin/properties?${encodeQueryParams({ mode: 'detail', id: targetId })}`, { auth });
+  }
+
+  async function submitPublicListingViaApi(api, payload) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/public-listings', { method: 'POST', body: payload });
+  }
+
+  async function fetchAdminStaffViaApi(api, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/staff', { auth });
+  }
+
+  async function fetchRegionAssignmentsViaApi(api, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/region-assignments', { auth });
+  }
+
+  async function createAdminStaffViaApi(api, payload, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/staff', { method: 'POST', auth, body: payload || {} });
+  }
+
+  async function updateAdminStaffViaApi(api, targetId, payload, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/admin/staff?${encodeQueryParams({ id: targetId })}`, { method: 'PATCH', auth, body: { id: targetId, ...(payload || {}) } });
+  }
+
+  async function deleteAdminStaffViaApi(api, targetId, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/admin/staff?${encodeQueryParams({ id: targetId })}`, { method: 'DELETE', auth, body: { id: targetId } });
+  }
+
+  async function saveRegionAssignmentsViaApi(api, assignments, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/region-assignments', { method: 'POST', auth, body: { assignments: Array.isArray(assignments) ? assignments : [] } });
+  }
+
   async function fetchPropertySummary(sb, { cachedRows = null, normalizeRow = null } = {}) {
     if (Array.isArray(cachedRows) && cachedRows.length) return buildPropertySummaryFromRows(cachedRows, normalizeRow);
     return fetchExactHomeSummary(sb, { normalizeRow, pageSize: 1000 });
@@ -416,23 +556,6 @@
     const { error } = await sb.from("properties").delete().eq(col, targetId);
     if (error) throw error;
     return true;
-  }
-
-
-
-  async function deletePropertiesViaAdminApi(api, ids, { auth = true } = {}) {
-    if (typeof api !== "function") throw new Error("API 호출 함수를 찾을 수 없습니다.");
-    const safeIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
-    return api("/admin/properties", { method: "DELETE", auth, body: { ids: safeIds } });
-  }
-
-  async function deleteAllPropertiesViaAdminApi(api, { auth = true } = {}) {
-    if (typeof api !== "function") throw new Error("API 호출 함수를 찾을 수 없습니다.");
-    return api("/admin/properties", { method: "DELETE", auth, body: { all: true } });
-  }
-
-  async function deletePropertyViaAdminApi(api, targetId, { auth = true } = {}) {
-    return deletePropertiesViaAdminApi(api, [targetId], { auth });
   }
 
   async function upsertPropertiesResilient(sb, rows, { chunkSize = 200, onConflict = "global_id" } = {}) {
@@ -557,12 +680,28 @@
     updatePropertyMemoRaw,
     deletePropertiesByIds,
     deletePropertyById,
-    deletePropertiesViaAdminApi,
-    deleteAllPropertiesViaAdminApi,
-    deletePropertyViaAdminApi,
     upsertPropertiesResilient,
     saveGeocodeResult,
     fetchGeocodeQueue,
     findExistingPropertyForRegistration,
+    fetchScopedPropertiesViaApi,
+    fetchDailyReportViaApi,
+    createPropertyViaApi,
+    updatePropertyViaApi,
+    recordDailyReportEntriesViaApi,
+    deletePropertiesViaAdminApi,
+    deleteAllPropertiesViaAdminApi,
+    deletePropertyViaAdminApi,
+    fetchAdminMapDataViaApi,
+    fetchPropertyOverviewViaApi,
+    fetchBrowserOverviewViaApi,
+    fetchAdminPropertyDetailViaApi,
+    submitPublicListingViaApi,
+    fetchAdminStaffViaApi,
+    fetchRegionAssignmentsViaApi,
+    createAdminStaffViaApi,
+    updateAdminStaffViaApi,
+    deleteAdminStaffViaApi,
+    saveRegionAssignmentsViaApi,
   };
 })();
