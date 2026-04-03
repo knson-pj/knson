@@ -432,6 +432,7 @@ async function handleActivityLog(req, res) {
         : kstDateKey();
       const requestedActorId = cleanText(url.searchParams.get('actor_id'), 120);
       const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
+      const includeAssignedFallback = ['1', 'true', 'yes'].includes(String(url.searchParams.get('include_assigned') || '').trim().toLowerCase());
       const actorId = ctx.role === 'admin' && requestedActorId ? requestedActorId : ctx.userId;
       const actorName = cleanText(ctx.name || ctx.email || '', 120);
       const baseSelect = 'id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at';
@@ -462,7 +463,7 @@ async function handleActivityLog(req, res) {
           ? await fetchRowsByCreatedAtRange(baseSelect, { startIso: range.startIso, endIso: range.endIso, actorId, actorNames })
           : [];
         rows = mergeActivityRowsByIdAndName(mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId), createdRows, actorId);
-        if (!rows.length) {
+        if (!rows.length && includeAssignedFallback) {
           rows = await fetchRowsByAssignedProperties(baseSelect, date, actorId);
         }
       }
@@ -478,7 +479,7 @@ async function handleActivityLog(req, res) {
           queryMode: adminViewRequested ? 'admin_view' : 'self_view',
           actorIdRows: Array.isArray(rows) ? rows.filter((row) => String(row?.actor_id || '').trim() === String(actorId || '').trim()).length : 0,
           actorNameCandidates: adminViewRequested ? [] : collectActorNameCandidates(ctx),
-          fallbackMode: adminViewRequested ? null : (Array.isArray(rows) && rows.length ? 'actor_or_name_or_assigned_property' : 'empty'),
+          fallbackMode: adminViewRequested ? null : (Array.isArray(rows) && rows.length ? (includeAssignedFallback ? 'actor_or_name_or_assigned_property' : 'actor_or_name') : 'empty'),
         },
       });
     } catch (err) {

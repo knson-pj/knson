@@ -337,9 +337,9 @@
     return api(`/properties?${encodeQueryParams({ scope })}`, { auth });
   }
 
-  async function fetchDailyReportViaApi(api, { dateKey, actorId = '', adminView = false, auth = true } = {}) {
+  async function fetchDailyReportViaApi(api, { dateKey, actorId = '', adminView = false, auth = true, includeAssignedFallback = false } = {}) {
     if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
-    return api(`/properties?${encodeQueryParams({ daily_report: 1, date: dateKey, actor_id: actorId, admin_view: adminView ? 1 : '' })}`, { auth });
+    return api(`/properties?${encodeQueryParams({ daily_report: 1, date: dateKey, actor_id: actorId, admin_view: adminView ? 1 : '', include_assigned: includeAssignedFallback ? 1 : '' })}`, { auth });
   }
 
   async function createPropertyViaApi(api, row, { auth = true } = {}) {

@@ -521,13 +521,18 @@
     const dateKey = String(options.dateKey || getTodayDateKey()).trim();
     if (!dateKey) return state.dailyReport.counts || emptyDailyReportCounts();
     if (state.dailyReport.loading && !options.force) return state.dailyReport.counts || emptyDailyReportCounts();
+    if (!options.force && state.dailyReport?.dateKey === dateKey && Array.isArray(state.dailyReport?.items)) {
+      return state.dailyReport.counts || emptyDailyReportCounts();
+    }
     state.dailyReport.loading = true;
     const showLoading = options.silent !== true;
     if (showLoading) setAgentLoading("daily-report", true, "일일업무일지를 불러오는 중입니다.");
     try {
-      const data = await DataAccess.fetchDailyReportViaApi(api, { dateKey, auth: true });
+      const includeAssignedFallback = options.includeAssignedFallback === true;
+      const data = await DataAccess.fetchDailyReportViaApi(api, { dateKey, auth: true, includeAssignedFallback });
       const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
       state.dailyReport = {
+        ...state.dailyReport,
         dateKey,
         counts: nextCounts,
         items: Array.isArray(data?.items) ? data.items : [],
@@ -613,9 +618,9 @@
     els.agEditMsg.innerHTML = '';
   }
 
-  function refreshAgentPropertiesInBackground() {
+  function refreshAgentPropertiesInBackground(options = {}) {
     Promise.resolve()
-      .then(() => loadProperties())
+      .then(() => loadProperties({ silent: options.silent !== false }))
       .catch((err) => console.warn('agent properties refresh failed', err));
   }
 
@@ -752,7 +757,8 @@
     els.dailyReportModal.classList.remove("hidden");
     els.dailyReportModal.setAttribute("aria-hidden", "false");
     try {
-      await refreshDailyReportSummary({ force: true });
+      const todayKey = getTodayDateKey();
+      await refreshDailyReportSummary({ force: state.dailyReport?.dateKey !== todayKey, dateKey: todayKey, includeAssignedFallback: false });
       setGlobalMsg("");
     } catch (err) {
       setGlobalMsg(toUserErrorMessage(err, "일일업무일지 조회 실패"));
@@ -1034,8 +1040,11 @@
     throw new Error("KNSN_DATA_ACCESS.fetchAllProperties 를 찾을 수 없습니다.");
   }
 
-  async function loadProperties() {
-    setAgentLoading("properties", state.view === "home" ? true : true, state.view === "home" ? "담당자 홈 데이터를 불러오는 중입니다." : "담당 물건을 불러오는 중입니다.");
+  async function loadProperties(options = {}) {
+    const showLoading = options.silent !== true;
+    if (showLoading) {
+      setAgentLoading("properties", true, state.view === "home" ? "담당자 홈 데이터를 불러오는 중입니다." : "담당 물건을 불러오는 중입니다.");
+    }
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       if (!sb) { state.properties = []; renderAll(); return; }
@@ -1052,7 +1061,7 @@
       state.properties = [];
       renderAll();
     } finally {
-      setAgentLoading("properties", false);
+      if (showLoading) setAgentLoading("properties", false);
     }
   }
 
@@ -2036,11 +2045,11 @@ function renderPagination(totalPages) {
       }
 
       setAgentEditMsg('저장되었습니다.', false);
-      await new Promise((resolve) => setTimeout(resolve, 2200));
-      closeEditModal();
-      window.setTimeout(() => refreshAgentPropertiesInBackground(), 2400);
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
-      else setGlobalMsg("");
+      else setGlobalMsg('저장되었습니다.', false);
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      closeEditModal();
+      window.setTimeout(() => refreshAgentPropertiesInBackground({ silent: true }), 50);
     } catch (err) {
       setAgentEditMsg(toUserErrorMessage(err, '저장 실패'));
     } finally {
@@ -2824,7 +2833,7 @@ function renderPagination(totalPages) {
     const dateKey = String(options.dateKey || dateInput?.value || getTodayDateKey()).trim() || getTodayDateKey();
     if (dateInput) dateInput.value = dateKey;
     try {
-      await refreshDailyReportSummary({ force: options.force !== false, dateKey });
+      await refreshDailyReportSummary({ force: options.force !== false, dateKey, includeAssignedFallback: options.includeAssignedFallback === true });
       setGlobalMsg('');
     } catch (err) {
       setGlobalMsg(toUserErrorMessage(err, '일일업무일지 조회 실패'));
