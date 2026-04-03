@@ -640,151 +640,37 @@
   async function loadStaffAssignments() {
     if (!isAdminUser(state.session?.user)) return [];
     try {
+      if (!(DataAccess && typeof DataAccess.fetchAdminStaffViaApi === 'function' && typeof DataAccess.fetchRegionAssignmentsViaApi === 'function')) {
+        throw new Error('KNSN_DATA_ACCESS staff/region assignments 래퍼를 찾을 수 없습니다.');
+      }
       const [staffSettled, assignSettled] = await Promise.allSettled([
-        api('/admin/staff', { auth: true }),
-        api('/admin/region-assignments', { auth: true }),
+        DataAccess.fetchAdminStaffViaApi(api, { auth: true }),
+        DataAccess.fetchRegionAssignmentsViaApi(api, { auth: true }),
       ]);
 
-      const map = new Map();
       const staffItems = staffSettled.status === 'fulfilled' && Array.isArray(staffSettled.value?.items)
         ? staffSettled.value.items
         : [];
       const assignItems = assignSettled.status === 'fulfilled' && Array.isArray(assignSettled.value?.items)
         ? assignSettled.value.items
         : [];
-      const assignById = new Map(assignItems.map((row) => [String(row?.id || '').trim(), row]));
 
-      staffItems.forEach((row) => {
-        const role = normalizeRole(row?.role);
-        if (role !== 'staff') return;
-        const id = String(row?.id || '').trim();
-        if (!id) return;
-        const assignRow = assignById.get(id);
-        const name = String(row?.name || row?.email || '').trim() || `담당자 ${map.size + 1}`;
-        map.set(id, {
-          id,
-          role: 'staff',
-          email: String(row?.email || '').trim(),
-          name,
-          regions: normalizeAssignedRegions(assignRow?.assignedRegions || assignRow?.regions || row?.assignedRegions || row?.regions || row?.assigned_regions),
-        });
-      });
-
-      return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      if (PropertyDomain && typeof PropertyDomain.buildStaffAssignmentEntries === 'function') {
+        return PropertyDomain.buildStaffAssignmentEntries(staffItems, assignItems);
+      }
+      return [];
     } catch (err) {
       console.warn('loadStaffAssignments failed', err);
       return [];
     }
   }
 
-  function normalizeRole(value) {
-    if (Shared && typeof Shared.normalizeRole === 'function') return Shared.normalizeRole(value);
-    const v = String(value || '').trim().toLowerCase();
-    if (v === '관리자' || v === 'admin') return 'admin';
-    if (v === '기타' || v === 'other') return 'other';
-    return 'staff';
-  }
-
-  function normalizeAssignedRegions(values) {
-    if (!Array.isArray(values)) return [];
-    const out = [];
-    const seen = new Set();
-    for (const value of values) {
-      const token = normalizeRegionToken(value);
-      if (!token || seen.has(token)) continue;
-      seen.add(token);
-      out.push(token);
-    }
-    return out;
-  }
-
-  function normalizeRegionToken(value) {
-    const s = String(value || '').trim().replace(/\s+/g, ' ');
-    return s || '';
-  }
-
-  function extractAddressRegionParts(address) {
-    const text = String(address || '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!text) return { gu: '', dong: '' };
-    const gu = (text.match(/[가-힣]+(?:구|군|시)/) || [])[0] || '';
-    const dong = (text.match(/[가-힣0-9]+(?:동|읍|면|가)/) || [])[0] || '';
-    return { gu, dong };
-  }
-
-  function getPropertyRegionTokens(row) {
-    const tokens = [];
-    const seen = new Set();
-    const add = (v) => {
-      const token = normalizeRegionToken(v);
-      if (!token || seen.has(token)) return;
-      seen.add(token);
-      tokens.push(token);
-    };
-    add(row.regionGu);
-    add(row.regionDong);
-    const addrParts = extractAddressRegionParts(row.address);
-    add(addrParts.gu);
-    add(addrParts.dong);
-    return tokens;
-  }
-
-  function buildAgentChartEntries(rows) {
-    const staff = (Array.isArray(state.staffAssignments) ? state.staffAssignments : []).filter((row) => normalizeRole(row?.role) === 'staff');
-    const byId = new Map();
-
-    const ensureEntry = (id, name, regions = []) => {
-      const key = String(id || '').trim() || String(name || '').trim();
-      if (!key) return null;
-      if (!byId.has(key)) {
-        byId.set(key, {
-          id: key,
-          name: String(name || key).trim() || '담당자',
-          regions: normalizeAssignedRegions(regions),
-          auction: 0,
-          onbid: 0,
-          realtor: 0,
-          general: 0,
-          total: 0,
-        });
-      }
-      const entry = byId.get(key);
-      if ((!entry.name || entry.name === entry.id) && name) entry.name = String(name).trim() || entry.name;
-      if ((!entry.regions || !entry.regions.length) && Array.isArray(regions) && regions.length) {
-        entry.regions = normalizeAssignedRegions(regions);
-      }
-      return entry;
-    };
-
-    staff.forEach((staffRow) => ensureEntry(staffRow.id, staffRow.name, staffRow.regions || []));
-
-    rows.forEach((row) => {
-      let entry = null;
-      const assignedId = String(row.assignedAgentId || '').trim();
-      const assignedName = String(row.assignedAgentName || '').trim();
-      if (assignedId && byId.has(assignedId)) {
-        entry = byId.get(assignedId);
-      } else if (assignedName) {
-        const found = [...byId.values()].find((item) => item.name === assignedName);
-        if (found) entry = found;
-      }
-      if (!entry) {
-        const tokens = getPropertyRegionTokens(row);
-        const matched = staff.find((item) => item.regions?.length && item.regions.some((region) => tokens.includes(region)));
-        if (matched) entry = ensureEntry(matched.id, matched.name, matched.regions || []);
-      }
-      if (!entry) return;
-      const src = ['auction', 'onbid', 'realtor', 'general'].includes(row.source) ? row.source : 'general';
-      entry[src] = (entry[src] || 0) + 1;
-      entry.total += 1;
-    });
-
-    return [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
-  }
-
   function renderAgentChart() {
     if (!els.agentChart || !els.agentChartEmpty) return;
     const rows = Array.isArray(state.items) ? state.items.slice() : [];
-    const entries = buildAgentChartEntries(rows);
+    const entries = (PropertyDomain && typeof PropertyDomain.buildAgentChartEntries === 'function')
+      ? PropertyDomain.buildAgentChartEntries(rows, state.staffAssignments)
+      : [];
     els.agentChart.innerHTML = '';
     if (els.agentChartMeta) els.agentChartMeta.textContent = `${entries.length}명`;
     if (!entries.length) {

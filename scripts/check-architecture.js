@@ -2,12 +2,14 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const files = ['admin-app.js', 'admin-tab-properties.js', 'admin-tab-new-property.js', 'agent-app.js', 'app.js', 'general-register.js'];
+const files = ['admin-app.js', 'admin-tab-properties.js', 'admin-tab-new-property.js', 'admin-tab-staff-regions.js', 'agent-app.js', 'app.js', 'general-register.js'];
 const bannedPatterns = [
   { re: /sb\.from\(['"]properties['"]\)/g, label: 'page-level direct properties query' },
   { re: /['"]\/admin\/properties['"]/g, label: 'page-level direct /admin/properties endpoint' },
   { re: /['"]\/properties['"]/g, label: 'page-level direct /properties endpoint' },
   { re: /['"]\/public-listings['"]/g, label: 'page-level direct /public-listings endpoint' },
+  { re: /['"]\/admin\/staff['"]/g, label: 'page-level direct /admin/staff endpoint' },
+  { re: /['"]\/admin\/region-assignments['"]/g, label: 'page-level direct /admin/region-assignments endpoint' },
 ];
 
 let failed = false;

@@ -944,7 +944,10 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const { state, api, utils } = ctx();
     try {
       await utils.syncSupabaseSessionIfNeeded();
-      const res = await api('/admin/staff', { auth: true });
+      if (!(DataAccess && typeof DataAccess.fetchAdminStaffViaApi === 'function')) {
+        throw new Error('KNSN_DATA_ACCESS.fetchAdminStaffViaApi 를 찾을 수 없습니다.');
+      }
+      const res = await DataAccess.fetchAdminStaffViaApi(api, { auth: true });
       state.staff = utils.dedupeStaff((res?.items || []));
       utils.renderSummary();
     } catch (err) {

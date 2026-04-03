@@ -984,6 +984,133 @@
   }
 
 
+
+  function normalizeRoleValue(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === '관리자' || v === 'admin') return 'admin';
+    if (v === '기타' || v === 'other') return 'other';
+    return 'staff';
+  }
+
+  function normalizeRegionToken(value) {
+    const s = String(value || '').trim().replace(/\s+/g, ' ');
+    return s || '';
+  }
+
+  function normalizeAssignedRegions(values) {
+    if (!Array.isArray(values)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const value of values) {
+      const token = normalizeRegionToken(value);
+      if (!token || seen.has(token)) continue;
+      seen.add(token);
+      out.push(token);
+    }
+    return out;
+  }
+
+  function extractAddressRegionParts(address) {
+    const text = String(address || '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return { gu: '', dong: '' };
+    const gu = (text.match(/[가-힣]+(?:구|군|시)/) || [])[0] || '';
+    const dong = (text.match(/[가-힣0-9]+(?:동|읍|면|가)/) || [])[0] || '';
+    return { gu, dong };
+  }
+
+  function getPropertyRegionTokens(row = {}) {
+    const tokens = [];
+    const seen = new Set();
+    const add = (v) => {
+      const token = normalizeRegionToken(v);
+      if (!token || seen.has(token)) return;
+      seen.add(token);
+      tokens.push(token);
+    };
+    add(row.regionGu);
+    add(row.regionDong);
+    const addrParts = extractAddressRegionParts(row.address);
+    add(addrParts.gu);
+    add(addrParts.dong);
+    return tokens;
+  }
+
+  function buildStaffAssignmentEntries(staffItems, assignItems) {
+    const map = new Map();
+    const staff = Array.isArray(staffItems) ? staffItems : [];
+    const assignments = Array.isArray(assignItems) ? assignItems : [];
+    const assignById = new Map(assignments.map((row) => [String(row?.id || '').trim(), row]));
+    staff.forEach((row) => {
+      const role = normalizeRoleValue(row?.role);
+      if (role !== 'staff') return;
+      const id = String(row?.id || '').trim();
+      if (!id) return;
+      const assignRow = assignById.get(id);
+      const name = String(row?.name || row?.email || '').trim() || `담당자 ${map.size + 1}`;
+      map.set(id, {
+        id,
+        role: 'staff',
+        email: String(row?.email || '').trim(),
+        name,
+        regions: normalizeAssignedRegions(assignRow?.assignedRegions || assignRow?.regions || row?.assignedRegions || row?.regions || row?.assigned_regions),
+      });
+    });
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  }
+
+  function buildAgentChartEntries(rows, staffAssignments) {
+    const staff = (Array.isArray(staffAssignments) ? staffAssignments : []).filter((row) => normalizeRoleValue(row?.role) === 'staff');
+    const byId = new Map();
+
+    const ensureEntry = (id, name, regions = []) => {
+      const key = String(id || '').trim() || String(name || '').trim();
+      if (!key) return null;
+      if (!byId.has(key)) {
+        byId.set(key, {
+          id: key,
+          name: String(name || key).trim() || '담당자',
+          regions: normalizeAssignedRegions(regions),
+          auction: 0,
+          onbid: 0,
+          realtor: 0,
+          general: 0,
+          total: 0,
+        });
+      }
+      const entry = byId.get(key);
+      if ((!entry.name || entry.name === entry.id) && name) entry.name = String(name).trim() || entry.name;
+      if ((!entry.regions || !entry.regions.length) && Array.isArray(regions) && regions.length) {
+        entry.regions = normalizeAssignedRegions(regions);
+      }
+      return entry;
+    };
+
+    staff.forEach((staffRow) => ensureEntry(staffRow.id, staffRow.name, staffRow.regions || []));
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      let entry = null;
+      const assignedId = String(row?.assignedAgentId || '').trim();
+      const assignedName = String(row?.assignedAgentName || '').trim();
+      if (assignedId && byId.has(assignedId)) {
+        entry = byId.get(assignedId);
+      } else if (assignedName) {
+        const found = [...byId.values()].find((item) => item.name === assignedName);
+        if (found) entry = found;
+      }
+      if (!entry) {
+        const tokens = getPropertyRegionTokens(row);
+        const matched = staff.find((item) => item.regions?.length && item.regions.some((region) => tokens.includes(region)));
+        if (matched) entry = ensureEntry(matched.id, matched.name, matched.regions || []);
+      }
+      if (!entry) return;
+      const src = ['auction', 'onbid', 'realtor', 'general'].includes(row?.source) ? row.source : 'general';
+      entry[src] = (entry[src] || 0) + 1;
+      entry.total += 1;
+    });
+
+    return [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ko'));
+  }
+
   function getRegistrationRawObject(input) {
     if (input?._raw?.raw && typeof input._raw.raw === "object") return input._raw.raw;
     if (input?.raw && typeof input.raw === "object") return input.raw;
@@ -1159,6 +1286,13 @@
     getRatioValue,
     getFloorDisplayValue,
     buildPropertyListViewModel,
+    normalizeRoleValue,
+    normalizeRegionToken,
+    normalizeAssignedRegions,
+    extractAddressRegionParts,
+    getPropertyRegionTokens,
+    buildStaffAssignmentEntries,
+    buildAgentChartEntries,
     buildRegistrationSnapshot,
     buildRegistrationDbRowForCreate,
     buildRegistrationDbRowForExisting,

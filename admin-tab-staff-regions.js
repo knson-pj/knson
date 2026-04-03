@@ -41,9 +41,11 @@
 
   mod.loadStaff = async function loadStaff() {
     const { state, api, utils } = ctx();
+    const DataAccess = window.KNSN_DATA_ACCESS;
     const { syncSupabaseSessionIfNeeded, dedupeStaff, hydrateAssignedAgentNames, renderSummary, renderPropertiesTable } = utils;
     await syncSupabaseSessionIfNeeded();
-    const res = await api("/admin/staff", { auth: true });
+    if (!(DataAccess && typeof DataAccess.fetchAdminStaffViaApi === "function")) throw new Error("KNSN_DATA_ACCESS.fetchAdminStaffViaApi 를 찾을 수 없습니다.");
+    const res = await DataAccess.fetchAdminStaffViaApi(api, { auth: true });
     state.staff = dedupeStaff(res?.items || []);
     mod.renderStaffTable();
     mod.renderAssignmentTable();
@@ -105,6 +107,7 @@
 
   async function handleStaffRowAction(act, id) {
     const { state, api, utils } = ctx();
+    const DataAccess = window.KNSN_DATA_ACCESS;
     const { renderSummary, hydrateAssignedAgentNames, renderPropertiesTable, setActiveTab } = utils;
     const row = (Array.isArray(state.staff) ? state.staff : []).find((staff) => String(staff.id) === String(id || ''));
     if (!row) return;
@@ -122,7 +125,8 @@
     if (act === 'delete') {
       if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
       try {
-        await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: 'DELETE', auth: true, body: { id } });
+        if (!(DataAccess && typeof DataAccess.deleteAdminStaffViaApi === 'function')) throw new Error('KNSN_DATA_ACCESS.deleteAdminStaffViaApi 를 찾을 수 없습니다.');
+        await DataAccess.deleteAdminStaffViaApi(api, id, { auth: true });
         state.staff = state.staff.filter((staff) => String(staff.id) !== String(id));
         mod.resetStaffForm();
         mod.renderStaffTable();
@@ -163,6 +167,7 @@
 
   mod.handleSaveStaff = async function handleSaveStaff(e) {
     const { state, api, utils } = ctx();
+    const DataAccess = window.KNSN_DATA_ACCESS;
     const { normalizeStaff, setFormBusy, renderSummary } = utils;
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -184,18 +189,12 @@
       setFormBusy(e.currentTarget, true);
       let saved = null;
       if (id) {
-        const res = await api(`/admin/staff?id=${encodeURIComponent(id)}`, {
-          method: "PATCH",
-          auth: true,
-          body: { id, name: payload.name, position: payload.position, phone: payload.phone, role: payload.role },
-        });
+        if (!(DataAccess && typeof DataAccess.updateAdminStaffViaApi === 'function')) throw new Error('KNSN_DATA_ACCESS.updateAdminStaffViaApi 를 찾을 수 없습니다.');
+        const res = await DataAccess.updateAdminStaffViaApi(api, id, { name: payload.name, position: payload.position, phone: payload.phone, role: payload.role }, { auth: true });
         saved = res?.item || null;
       } else {
-        const res = await api("/admin/staff", {
-          method: "POST",
-          auth: true,
-          body: payload,
-        });
+        if (!(DataAccess && typeof DataAccess.createAdminStaffViaApi === 'function')) throw new Error('KNSN_DATA_ACCESS.createAdminStaffViaApi 를 찾을 수 없습니다.');
+        const res = await DataAccess.createAdminStaffViaApi(api, payload, { auth: true });
         saved = res?.item || null;
       }
       mod.resetStaffForm();
@@ -369,6 +368,7 @@
 
   mod.handleSaveAssignments = async function handleSaveAssignments() {
     const { state, els, api, utils } = ctx();
+    const DataAccess = window.KNSN_DATA_ACCESS;
     const { normalizeRole } = utils;
     const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
     if (!agents.length) return alert("담당자 계정이 없습니다.");
@@ -379,7 +379,8 @@
     }));
 
     try {
-      await api("/admin/region-assignments", { method: "POST", auth: true, body: { assignments: rows } });
+      if (!(DataAccess && typeof DataAccess.saveRegionAssignmentsViaApi === "function")) throw new Error("KNSN_DATA_ACCESS.saveRegionAssignmentsViaApi 를 찾을 수 없습니다.");
+      await DataAccess.saveRegionAssignmentsViaApi(api, rows, { auth: true });
       await mod.loadStaff();
       alert("담당자 지역 배정이 저장되었습니다.");
     } catch (err) {

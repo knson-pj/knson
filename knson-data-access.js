@@ -741,6 +741,36 @@
     return api('/public-listings', { method: 'POST', body: payload });
   }
 
+  async function fetchAdminStaffViaApi(api, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/staff', { auth });
+  }
+
+  async function fetchRegionAssignmentsViaApi(api, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/region-assignments', { auth });
+  }
+
+  async function createAdminStaffViaApi(api, payload, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/staff', { method: 'POST', auth, body: payload || {} });
+  }
+
+  async function updateAdminStaffViaApi(api, targetId, payload, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/admin/staff?${encodeQueryParams({ id: targetId })}`, { method: 'PATCH', auth, body: { id: targetId, ...(payload || {}) } });
+  }
+
+  async function deleteAdminStaffViaApi(api, targetId, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api(`/admin/staff?${encodeQueryParams({ id: targetId })}`, { method: 'DELETE', auth, body: { id: targetId } });
+  }
+
+  async function saveRegionAssignmentsViaApi(api, assignments, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    return api('/admin/region-assignments', { method: 'POST', auth, body: { assignments: Array.isArray(assignments) ? assignments : [] } });
+  }
+
   window.KNSN_DATA_ACCESS = {
     PROPERTY_LIST_SELECT,
     PROPERTY_HOME_SUMMARY_SELECT,
@@ -777,5 +807,11 @@
     fetchPropertyOverviewViaApi,
     fetchAdminPropertyDetailViaApi,
     submitPublicListingViaApi,
+    fetchAdminStaffViaApi,
+    fetchRegionAssignmentsViaApi,
+    createAdminStaffViaApi,
+    updateAdminStaffViaApi,
+    deleteAdminStaffViaApi,
+    saveRegionAssignmentsViaApi,
   };
 })();
