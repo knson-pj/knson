@@ -738,6 +738,16 @@
     return "";
   }
 
+  function buildRegistrationSubmissionPackage(input = {}, options = {}) {
+    const core = buildRegistrationSubmissionCore(input, options);
+    const validationMessage = validateRegistrationSubmissionCore(core, options);
+    return {
+      core,
+      validationMessage,
+      payload: validationMessage ? null : buildRegistrationSubmissionPayload(core, options),
+    };
+  }
+
   function buildRegistrationSubmissionPayload(input = {}, options = {}) {
     const core = buildRegistrationSubmissionCore(input, options);
     const extraRaw = input.raw && typeof input.raw === "object" ? { ...input.raw } : {};
@@ -1268,6 +1278,7 @@
     normalizeRegistrationSubmitterKind,
     buildRegistrationSubmissionCore,
     validateRegistrationSubmissionCore,
+    buildRegistrationSubmissionPackage,
     buildRegistrationSubmissionPayload,
     buildPublicListingPayload,
     isBrokerLikeSource,

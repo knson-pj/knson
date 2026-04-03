@@ -143,7 +143,7 @@
       submitterPhone = readStr('submitterPhone');
     }
 
-    const submissionCore = PropertyDomain?.buildRegistrationSubmissionCore?.({
+    const submissionPackage = PropertyDomain?.buildRegistrationSubmissionPackage?.({
       submitterKind,
       address: readStr('address'),
       assetType: readStr('assetType'),
@@ -160,18 +160,18 @@
       submitterName,
       submitterPhone,
       opinion: readStr('opinion') || null,
-    }, { actorName }) || null;
-    const validationMessage = PropertyDomain?.validateRegistrationSubmissionCore?.(submissionCore, {
+    }, {
+      actorName,
+      registrationKind: 'admin',
       requiredMessage: '주소, 세부유형, 매매가는 필수입니다.',
       realtorMessage: '중개사무소명과 휴대폰번호를 입력해 주세요.',
       ownerMessage: '이름과 연락처를 입력해 주세요.',
-    }) || '';
+    }) || null;
+    const validationMessage = String(submissionPackage?.validationMessage || '').trim();
     if (validationMessage) throw new Error(validationMessage);
 
-    const payload = PropertyDomain?.buildRegistrationSubmissionPayload?.(submissionCore, {
-      actorName,
-      registrationKind: 'admin',
-    }) || null;
+    const submissionCore = submissionPackage?.core || null;
+    const payload = submissionPackage?.payload || null;
     if (!payload) throw new Error('등록 데이터를 준비하지 못했습니다.');
 
     if (els.npmSave) els.npmSave.disabled = true;

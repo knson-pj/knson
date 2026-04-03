@@ -1262,11 +1262,10 @@ function bindEvents() {
   async function fetchAdminPropertyOverview({ forceRefresh = false, sb = null } = {}) {
     if (!forceRefresh && state.propertyOverview) return state.propertyOverview;
 
-    const cacheBust = `_ts=${Date.now()}`;
-    const path = `/admin/properties?mode=overview&${cacheBust}`;
+    const cacheBust = Date.now();
     let overview = null;
     try {
-      const res = await api(path, { auth: true });
+      const res = await DataAccess.fetchPropertyOverviewViaApi(api, { cacheBust, auth: true });
       overview = normalizeOverviewPayload(res);
     } catch (err) {
       console.warn('server overview request failed', err);
@@ -1416,8 +1415,8 @@ function bindEvents() {
 
     const user = state.session?.user || null;
     const isAdmin = user?.role === "admin";
-    const path = isAdmin ? "/properties?scope=all" : "/properties?scope=mine";
-    const res = await api(path, { auth: true });
+    const scope = isAdmin ? "all" : "mine";
+    const res = await DataAccess.fetchScopedPropertiesViaApi(api, { scope, auth: true });
     state.properties = Array.isArray(res?.items) ? res.items.map(normalizeProperty) : [];
     state.propertyMode = 'full';
     state.propertyTotalCount = state.properties.length;

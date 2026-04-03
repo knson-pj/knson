@@ -410,7 +410,7 @@
     }
 
     const requestToken = ++state.mapRequestToken;
-    const res = await api(`/admin/properties?${queryKey}`, { auth: true });
+    const res = await DataAccess.fetchAdminMapDataViaApi(api, mapParams, { auth: true });
     if (requestToken !== state.mapRequestToken) return;
     state.lastMapQueryKey = queryKey;
     state.mapQueryCache.set(queryKey, res || {});
@@ -480,7 +480,7 @@
           }
         } else {
           const scope = isAdmin ? "all" : "mine";
-          const res = await api(`/properties?scope=${encodeURIComponent(scope)}`, { auth: true });
+          const res = await DataAccess.fetchScopedPropertiesViaApi(api, { scope, auth: true });
           state.items = Array.isArray(res?.items) ? res.items.map(normalizeItem) : [];
         }
       }
@@ -1389,7 +1389,7 @@
     const targetId = String(item?.globalId || item?.id || '').trim();
     if (!targetId) return item;
     if (state.mapDetailCache.has(targetId)) return state.mapDetailCache.get(targetId);
-    const detail = await api(`/admin/properties?mode=detail&id=${encodeURIComponent(targetId)}`, { auth: true });
+    const detail = await DataAccess.fetchAdminPropertyDetailViaApi(api, targetId, { auth: true });
     const normalized = detail?.item && typeof detail.item === 'object' ? detail.item : item;
     state.mapDetailCache.set(targetId, normalized);
     return normalized;

@@ -466,7 +466,7 @@
     if (state.dailyReport.loading && !options.force) return state.dailyReport.counts || emptyDailyReportCounts();
     state.dailyReport.loading = true;
     try {
-      const data = await apiJson(`/properties?daily_report=1&date=${encodeURIComponent(dateKey)}`);
+      const data = await DataAccess.fetchDailyReportViaApi(api, { dateKey, auth: true });
       const nextCounts = { ...emptyDailyReportCounts(), ...(data?.counts || {}) };
       state.dailyReport = {
         dateKey,
@@ -2396,12 +2396,18 @@ function renderPagination(totalPages) {
   }
 
   async function insertPropertyRowResilient(_sb, row) {
-    const saveRes = await apiJson(`/properties`, { method: "POST", json: { row } });
+    if (!DataAccess || typeof DataAccess.createPropertyViaApi !== "function") {
+      throw new Error("KNSN_DATA_ACCESS.createPropertyViaApi 를 찾을 수 없습니다.");
+    }
+    const saveRes = await DataAccess.createPropertyViaApi(api, row, { auth: true });
     return saveRes?.item || null;
   }
 
   async function updatePropertyRowResilient(_sb, targetId, patch) {
-    const saveRes = await apiJson(`/properties`, { method: "PATCH", json: { targetId, patch } });
+    if (!DataAccess || typeof DataAccess.updatePropertyViaApi !== "function") {
+      throw new Error("KNSN_DATA_ACCESS.updatePropertyViaApi 를 찾을 수 없습니다.");
+    }
+    const saveRes = await DataAccess.updatePropertyViaApi(api, targetId, patch, { auth: true });
     return saveRes?.item || { id: targetId };
   }
 
@@ -2411,15 +2417,8 @@ function renderPagination(totalPages) {
     const readStr = (k) => String(fd.get(k) || "").trim();
     const readNum = (k) => parseFlexibleNumber(fd.get(k));
 
-    const submitterKind = readStr("submitterKind") || "realtor";
-    const sourceType = submitterKind === "realtor" ? "realtor" : "general";
-    const address = readStr("address");
-    const assetType = readStr("assetType");
-    const priceMain = readNum("priceMain");
-
-    if (!address || !assetType || !priceMain) throw new Error("주소, 세부유형, 매매가는 필수입니다.");
-
     const actorName = String(state.session?.user?.name || state.session?.user?.email || "").trim();
+    const submitterKind = readStr("submitterKind") || "realtor";
     let submitterName = "", submitterPhone = "", realtorName = null, realtorPhone = null, realtorCell = null;
     if (submitterKind === "realtor") {
       realtorName = readStr("realtorname");
@@ -2427,52 +2426,41 @@ function renderPagination(totalPages) {
       realtorCell = readStr("realtorcell");
       submitterName = actorName || readStr("submitterName") || null;
       submitterPhone = realtorCell;
-      if (!realtorName || !realtorCell) throw new Error("중개사무소명과 휴대폰번호를 입력해 주세요.");
     } else {
       submitterName = readStr("submitterName") || actorName || "";
       submitterPhone = readStr("submitterPhone");
-      if (!submitterName || !submitterPhone) throw new Error("이름과 연락처를 입력해 주세요.");
     }
 
     const currentUserId = String(state.session?.user?.id || "").trim() || null;
-    const submitterType = submitterKind === "realtor" ? "realtor" : "owner";
-    const payload = {
-      source_type: sourceType,
-      is_general: true,
-      submitter_type: submitterType,
-      address,
-      asset_type: assetType,
-      price_main: priceMain,
-      use_approval: readStr("useapproval") || null,
-      common_area: readNum("commonarea"),
-      exclusive_area: readNum("exclusivearea"),
-      site_area: readNum("sitearea"),
-      assignee_id: currentUserId,
-      broker_office_name: realtorName,
-      submitter_name: submitterName || null,
-      submitter_phone: submitterPhone,
-      memo: readStr("opinion") || null,
-      raw: {
-        sourceType,
-        source_type: sourceType,
-        submitterType,
-        submitter_type: submitterType,
-        address, assetType, priceMain,
-        floor: readStr("floor") || null,
-        totalfloor: readStr("totalfloor") || null,
-        useapproval: readStr("useapproval") || null,
-        commonArea: readNum("commonarea"),
-        exclusiveArea: readNum("exclusivearea"),
-        siteArea: readNum("sitearea"),
-        realtorName, realtorPhone, realtorCell,
-        submitterName, submitterPhone,
-        opinion: readStr("opinion") || null,
-        assigneeId: currentUserId,
-        assignedAgentId: currentUserId,
-        registeredByAgent: true,
-        registeredByName: actorName || null,
-      },
-    };
+    const submissionPackage = PropertyDomain?.buildRegistrationSubmissionPackage?.({
+      submitterKind,
+      address: readStr("address"),
+      assetType: readStr("assetType"),
+      priceMain: readNum("priceMain"),
+      floor: readStr("floor") || null,
+      totalFloor: readStr("totalfloor") || null,
+      useApproval: readStr("useapproval") || null,
+      commonArea: readNum("commonarea"),
+      exclusiveArea: readNum("exclusivearea"),
+      siteArea: readNum("sitearea"),
+      realtorName,
+      realtorPhone,
+      realtorCell,
+      submitterName,
+      submitterPhone,
+      opinion: readStr("opinion") || null,
+      assigneeId: currentUserId,
+    }, {
+      actorName,
+      registrationKind: "agent",
+      requiredMessage: "주소, 세부유형, 매매가는 필수입니다.",
+      realtorMessage: "중개사무소명과 휴대폰번호를 입력해 주세요.",
+      ownerMessage: "이름과 연락처를 입력해 주세요.",
+    }) || null;
+    const validationMessage = String(submissionPackage?.validationMessage || "").trim();
+    if (validationMessage) throw new Error(validationMessage);
+    const payload = submissionPackage?.payload || null;
+    if (!payload) throw new Error("등록 데이터를 준비하지 못했습니다.");
 
     if (els.npmSave) els.npmSave.disabled = true;
     setNpmMsg("");
@@ -2487,21 +2475,13 @@ function renderPagination(totalPages) {
       let activityError = "";
       if (existing) {
         const merged = buildRegistrationDbRowForExisting(existing, payload, regContext, { assignIfEmpty: true });
-        const saveRes = await apiJson(`/properties`, {
-          method: "PATCH",
-          json: { targetId: existing.id || existing.globalId, patch: merged.row },
-        });
-        const updated = saveRes?.item || null;
+        const updated = await updatePropertyRowResilient(sb, existing.id || existing.globalId, merged.row);
         savedPropertyId = updated?.id || existing.id || existing.globalId || null;
         savedIdentityKey = merged.row?.raw?.registrationIdentityKey || existing?._raw?.raw?.registrationIdentityKey || buildRegistrationMatchKey(merged.row) || "";
         setNpmMsg(merged.changes.length ? "기존 물건을 갱신하고 등록 LOG를 추가했습니다." : "동일 물건이 있어 기존 물건에 반영했습니다.", false);
       } else {
         const createRow = buildRegistrationDbRowForCreate(payload, regContext);
-        const saveRes = await apiJson(`/properties`, {
-          method: "POST",
-          json: { row: createRow },
-        });
-        const inserted = saveRes?.item || null;
+        const inserted = await insertPropertyRowResilient(sb, createRow);
         savedPropertyId = inserted?.id || null;
         savedIdentityKey = createRow?.raw?.registrationIdentityKey || buildRegistrationMatchKey(createRow) || "";
         setNpmMsg("등록되었습니다.", false);
