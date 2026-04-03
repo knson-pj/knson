@@ -506,6 +506,61 @@
     return "kind-general";
   }
 
+
+  function formatPhotoSize(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return '';
+    if (num >= 1024 * 1024) return `${(num / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')}MB`;
+    if (num >= 1024) return `${Math.round(num / 1024)}KB`;
+    return `${num}B`;
+  }
+
+  function renderPropertyPhotoCard(photo) {
+    const item = photo && typeof photo === 'object' ? photo : {};
+    const title = item.isPrimary ? '대표사진' : '대표 지정';
+    const badge = item.isPrimary ? '<span class="property-photo-badge">대표</span>' : '';
+    const meta = [item.width && item.height ? `${item.width}×${item.height}` : '', formatPhotoSize(item.sizeBytes)].filter(Boolean).join(' · ');
+    return `
+      <article class="property-photo-card${item.isPrimary ? ' is-primary' : ''}" data-photo-id="${escapeAttr(item.id || '')}">
+        <button type="button" class="property-photo-thumb-btn" data-photo-action="view" data-photo-id="${escapeAttr(item.id || '')}" aria-label="사진 보기">
+          ${item.thumbUrl ? `<img src="${escapeAttr(item.thumbUrl)}" alt="매물 사진" class="property-photo-thumb" loading="lazy" />` : '<div class="property-photo-thumb placeholder">사진</div>'}
+        </button>
+        <div class="property-photo-card-meta">${badge}<span class="property-photo-card-size">${escapeHtml(meta || '사진')}</span></div>
+        <div class="property-photo-card-actions">
+          <button type="button" class="btn btn-ghost btn-xs" data-photo-action="move-left" data-photo-id="${escapeAttr(item.id || '')}">◀</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-photo-action="move-right" data-photo-id="${escapeAttr(item.id || '')}">▶</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-photo-action="primary" data-photo-id="${escapeAttr(item.id || '')}">${escapeHtml(title)}</button>
+          <button type="button" class="btn btn-danger btn-xs" data-photo-action="delete" data-photo-id="${escapeAttr(item.id || '')}">삭제</button>
+        </div>
+      </article>`;
+  }
+
+  function renderPropertyPhotoGrid(items) {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) return '<div class="property-photo-empty">등록된 사진이 없습니다.</div>';
+    return rows.map((row) => renderPropertyPhotoCard(row)).join('');
+  }
+
+  function setPhotoSectionLoading(root, isLoading, text = '사진을 불러오는 중입니다.') {
+    if (!root) return;
+    root.classList.toggle('is-loading', !!isLoading);
+    const loadingEl = root.querySelector('[data-photo-role="loading"]');
+    if (loadingEl) {
+      loadingEl.textContent = String(text || '');
+      loadingEl.classList.toggle('hidden', !isLoading);
+    }
+  }
+
+  function setPhotoSectionMessage(root, text, kind = 'info') {
+    if (!root) return;
+    const msgEl = root.querySelector('[data-photo-role="message"]');
+    if (!msgEl) return;
+    const raw = String(text || '').trim();
+    msgEl.className = `property-photo-message${raw ? '' : ' hidden'} is-${escapeAttr(kind)}`;
+    msgEl.textContent = raw;
+  }
+
+
   window.KNSN_PROPERTY_RENDERERS = {
     truncateDisplayText,
     getFloorDisplayValue,
@@ -551,6 +606,10 @@
     ensureTextareaField,
     setFormValue,
     arrangeOpinionFields,
+    renderPropertyPhotoCard,
+    renderPropertyPhotoGrid,
+    setPhotoSectionLoading,
+    setPhotoSectionMessage,
     escapeHtml,
     escapeAttr,
   };

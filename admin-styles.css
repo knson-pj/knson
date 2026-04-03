@@ -1639,3 +1639,32 @@ textarea.form-textarea-tall{
   .toolbar.toolbar-agent-properties .toolbar-keyword,
   .toolbar.toolbar-agent-properties #agKeyword{min-width:220px;}
 }
+
+
+/* property photos */
+.property-photo-section{margin-top:18px;padding:14px;border:1px solid rgba(15,23,42,.08);border-radius:16px;background:#fff}
+.property-photo-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.property-photo-title{margin:0;font-size:15px;font-weight:800;color:#0f172a}
+.property-photo-desc{margin:4px 0 0;color:#64748b;font-size:12px}
+.property-photo-head-actions{display:flex;gap:8px;align-items:center}
+.property-photo-message{margin:0 0 10px;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.45}
+.property-photo-message.is-success{background:#ecfdf5;color:#166534}
+.property-photo-message.is-error{background:#fef2f2;color:#b91c1c}
+.property-photo-message.is-info{background:#eff6ff;color:#1d4ed8}
+.property-photo-loading{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#f8fafc;color:#334155;font-size:13px}
+.property-photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
+.property-photo-empty{padding:18px 12px;border:1px dashed #cbd5e1;border-radius:14px;color:#64748b;font-size:13px;text-align:center}
+.property-photo-card{border:1px solid rgba(15,23,42,.08);border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 8px 20px rgba(15,23,42,.04)}
+.property-photo-card.is-primary{border-color:#16a34a;box-shadow:0 10px 20px rgba(22,163,74,.12)}
+.property-photo-thumb-btn{display:block;width:100%;border:0;background:transparent;padding:0;cursor:pointer}
+.property-photo-thumb{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#e2e8f0}
+.property-photo-thumb.placeholder{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:12px}
+.property-photo-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px 0}
+.property-photo-badge{display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:999px;background:#16a34a;color:#fff;font-size:11px;font-weight:700}
+.property-photo-card-size{font-size:11px;color:#64748b}
+.property-photo-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:10px}
+.btn-xs{padding:7px 8px;font-size:12px;border-radius:10px}
+@media (max-width: 768px){
+  .property-photo-section{padding:12px}
+  .property-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

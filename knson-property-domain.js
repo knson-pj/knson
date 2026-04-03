@@ -1569,6 +1569,50 @@
     return { row: nextRow, changes };
   }
 
+
+  function normalizePropertyPhoto(row) {
+    const item = row && typeof row === 'object' ? row : {};
+    return {
+      id: String(item.id || '').trim(),
+      propertyId: Number(item.propertyId ?? item.property_id ?? 0) || null,
+      propertyGlobalId: String(item.propertyGlobalId || item.property_global_id || '').trim() || null,
+      thumbUrl: String(item.thumbUrl || item.thumb_url || '').trim(),
+      originalUrl: String(item.originalUrl || item.original_url || '').trim(),
+      thumbPath: String(item.thumbPath || item.thumb_path || '').trim(),
+      storagePath: String(item.storagePath || item.storage_path || '').trim(),
+      mimeType: String(item.mimeType || item.mime_type || 'image/webp').trim(),
+      width: Number(item.width || 0) || null,
+      height: Number(item.height || 0) || null,
+      sizeBytes: Number(item.sizeBytes || item.size_bytes || 0) || null,
+      sortOrder: Number(item.sortOrder ?? item.sort_order ?? 0) || 0,
+      isPrimary: !!(item.isPrimary ?? item.is_primary),
+      createdAt: item.createdAt || item.created_at || '',
+      updatedAt: item.updatedAt || item.updated_at || '',
+    };
+  }
+
+  function normalizePropertyPhotoList(rows) {
+    return (Array.isArray(rows) ? rows : []).map(normalizePropertyPhoto).filter((row) => row.id).sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+    });
+  }
+
+  function buildPropertyPhotoCommitPayload(prepared, optimized) {
+    return {
+      photoId: String(prepared?.photoId || '').trim(),
+      storagePath: String(prepared?.storagePath || '').trim(),
+      thumbPath: String(prepared?.thumbPath || '').trim(),
+      mimeType: String(optimized?.mimeType || 'image/webp').trim(),
+      width: Number(optimized?.width || 0) || null,
+      height: Number(optimized?.height || 0) || null,
+      sizeBytes: Number(optimized?.sizeBytes || 0) || null,
+      originalDataUrl: String(optimized?.originalDataUrl || '').trim(),
+      thumbDataUrl: String(optimized?.thumbDataUrl || '').trim(),
+    };
+  }
+
+
   return {
     pickFirstText,
     compactAddressText,
@@ -1656,5 +1700,8 @@
     buildRegistrationSnapshot,
     buildRegistrationDbRowForCreate,
     buildRegistrationDbRowForExisting,
+    normalizePropertyPhoto,
+    normalizePropertyPhotoList,
+    buildPropertyPhotoCommitPayload,
   };
 });

@@ -1920,6 +1920,13 @@ function renderPagination(totalPages) {
       els.agEditModal.classList.remove("hidden");
       els.agEditModal.setAttribute("aria-hidden", "false");
     }
+    const PhotoManager = window.KNSN_PROPERTY_PHOTOS || null;
+    const propertyId = String(item?._raw?.id || item?.id || '').trim();
+    if (PhotoManager && propertyId && typeof PhotoManager.mountSection === 'function') {
+      PhotoManager.mountSection({ form: f, propertyId, api }).catch((err) => {
+        console.warn('agent photo section mount failed', err);
+      });
+    }
   }
 
   function closeEditModal() {

@@ -1020,6 +1020,13 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     else document.body.classList.toggle('modal-open', true);
     els.propertyEditModalAdmin.classList.remove('hidden');
     els.propertyEditModalAdmin.setAttribute('aria-hidden', 'false');
+    const PhotoManager = window.KNSN_PROPERTY_PHOTOS || null;
+    const propertyId = String(workingItem?.id || workingItem?._raw?.id || '').trim();
+    if (PhotoManager && propertyId && typeof PhotoManager.mountSection === 'function') {
+      PhotoManager.mountSection({ form: f, propertyId, api }).catch((err) => {
+        console.warn('admin photo section mount failed', err);
+      });
+    }
   };
 
   mod.populateAssigneeSelect = function populateAssigneeSelect(selectedId) {
