@@ -265,6 +265,71 @@
     [...form.querySelectorAll(selector)].forEach((el) => { el.disabled = !!busy; });
   }
 
+
+
+  function parseFlexibleNumber(value) {
+    if (Shared && typeof Shared.parseFlexibleNumber === "function") return Shared.parseFlexibleNumber(value);
+    if (value === null || value === undefined) return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.replace(/,/g, "");
+    const num = Number(normalized);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function formatMoneyInputValue(value) {
+    if (Shared && typeof Shared.formatMoneyInputValue === "function") return Shared.formatMoneyInputValue(value);
+    if (value === null || value === undefined) return "";
+    const raw = String(value).trim();
+    if (!raw) return "";
+    const digits = raw.replace(/[^\d-]/g, "");
+    if (!digits || digits === "-") return "";
+    const sign = digits.startsWith("-") ? "-" : "";
+    const body = digits.replace(/-/g, "");
+    if (!body) return sign;
+    return sign + body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function bindAmountInputMask(input) {
+    if (Shared && typeof Shared.bindAmountInputMask === "function") return Shared.bindAmountInputMask(input);
+    if (!input || input.dataset.amountMaskBound === "true") return;
+    input.dataset.amountMaskBound = "true";
+    input.addEventListener("input", () => {
+      const formatted = formatMoneyInputValue(input.value);
+      if (input.value !== formatted) input.value = formatted;
+    });
+    input.addEventListener("blur", () => {
+      input.value = formatMoneyInputValue(input.value);
+    });
+  }
+
+  function configureFreeDecimalInput(input) {
+    if (Shared && typeof Shared.configureFreeDecimalInput === "function") return Shared.configureFreeDecimalInput(input);
+    if (!input) return;
+    input.setAttribute("type", "text");
+    input.setAttribute("inputmode", "decimal");
+    input.removeAttribute("step");
+  }
+
+  function configureAmountInput(input) {
+    if (Shared && typeof Shared.configureAmountInput === "function") return Shared.configureAmountInput(input);
+    if (!input) return;
+    input.setAttribute("type", "text");
+    input.setAttribute("inputmode", "numeric");
+    input.removeAttribute("step");
+    bindAmountInputMask(input);
+  }
+
+  function configureFormNumericUx(form, options = {}) {
+    if (Shared && typeof Shared.configureFormNumericUx === "function") return Shared.configureFormNumericUx(form, options);
+    if (!form?.elements) return;
+    const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
+    const amountNames = Array.isArray(options.amountNames) ? options.amountNames : [];
+    decimalNames.forEach((name) => configureFreeDecimalInput(form.elements[name]));
+    amountNames.forEach((name) => configureAmountInput(form.elements[name]));
+  }
+
   function getNamedFormControl(form, name) {
     if (!form || !name) return null;
     const control = form.elements?.[name];
@@ -473,6 +538,12 @@
     setResultBoxState,
     setModalVisibility,
     setFormBusyState,
+    parseFlexibleNumber,
+    formatMoneyInputValue,
+    bindAmountInputMask,
+    configureFreeDecimalInput,
+    configureAmountInput,
+    configureFormNumericUx,
     getNamedFormControl,
     findFieldShell,
     findFieldLabelElement,

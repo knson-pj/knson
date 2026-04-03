@@ -44,7 +44,9 @@
       })
     : null;
 
-  const parseFlexibleNumber = (Shared && typeof Shared.parseFlexibleNumber === "function")
+  const parseFlexibleNumber = (PropertyRenderers && typeof PropertyRenderers.parseFlexibleNumber === "function")
+    ? PropertyRenderers.parseFlexibleNumber
+    : (Shared && typeof Shared.parseFlexibleNumber === "function")
     ? Shared.parseFlexibleNumber
     : function parseFlexibleNumber(value) {
         if (value === null || value === undefined) return null;
@@ -55,7 +57,9 @@
         return Number.isFinite(n) ? n : null;
       };
 
-  const formatMoneyInputValue = (Shared && typeof Shared.formatMoneyInputValue === "function")
+  const formatMoneyInputValue = (PropertyRenderers && typeof PropertyRenderers.formatMoneyInputValue === "function")
+    ? PropertyRenderers.formatMoneyInputValue
+    : (Shared && typeof Shared.formatMoneyInputValue === "function")
     ? Shared.formatMoneyInputValue
     : function formatMoneyInputValue(value) {
         if (value === null || value === undefined) return "";
@@ -69,7 +73,9 @@
         return sign + body.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
       };
 
-  const bindAmountInputMask = (Shared && typeof Shared.bindAmountInputMask === "function")
+  const bindAmountInputMask = (PropertyRenderers && typeof PropertyRenderers.bindAmountInputMask === "function")
+    ? PropertyRenderers.bindAmountInputMask
+    : (Shared && typeof Shared.bindAmountInputMask === "function")
     ? Shared.bindAmountInputMask
     : function bindAmountInputMask(input) {
         if (!input || input.dataset.amountMaskBound === "true") return;
@@ -83,7 +89,9 @@
         });
       };
 
-  const configureFreeDecimalInput = (Shared && typeof Shared.configureFreeDecimalInput === "function")
+  const configureFreeDecimalInput = (PropertyRenderers && typeof PropertyRenderers.configureFreeDecimalInput === "function")
+    ? PropertyRenderers.configureFreeDecimalInput
+    : (Shared && typeof Shared.configureFreeDecimalInput === "function")
     ? Shared.configureFreeDecimalInput
     : function configureFreeDecimalInput(input) {
         if (!input) return;
@@ -92,7 +100,9 @@
         input.removeAttribute("step");
       };
 
-  const configureAmountInput = (Shared && typeof Shared.configureAmountInput === "function")
+  const configureAmountInput = (PropertyRenderers && typeof PropertyRenderers.configureAmountInput === "function")
+    ? PropertyRenderers.configureAmountInput
+    : (Shared && typeof Shared.configureAmountInput === "function")
     ? Shared.configureAmountInput
     : function configureAmountInput(input) {
         if (!input) return;
@@ -102,7 +112,9 @@
         bindAmountInputMask(input);
       };
 
-  const configureFormNumericUx = (Shared && typeof Shared.configureFormNumericUx === "function")
+  const configureFormNumericUx = (PropertyRenderers && typeof PropertyRenderers.configureFormNumericUx === "function")
+    ? PropertyRenderers.configureFormNumericUx
+    : (Shared && typeof Shared.configureFormNumericUx === "function")
     ? Shared.configureFormNumericUx
     : function configureFormNumericUx(form, options = {}) {
         if (!form?.elements) return;

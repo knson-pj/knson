@@ -33,6 +33,7 @@
   }
 
   function parseFlexibleNumber(value) {
+    if (PropertyRenderers && typeof PropertyRenderers.parseFlexibleNumber === "function") return PropertyRenderers.parseFlexibleNumber(value);
     if (Shared && typeof Shared.parseFlexibleNumber === "function") return Shared.parseFlexibleNumber(value);
     if (value === null || value === undefined) return null;
     if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -43,6 +44,7 @@
   }
 
   function formatMoneyInputValue(value) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatMoneyInputValue === "function") return PropertyRenderers.formatMoneyInputValue(value);
     if (Shared && typeof Shared.formatMoneyInputValue === "function") return Shared.formatMoneyInputValue(value);
     if (value === null || value === undefined) return "";
     const raw = String(value).trim();
@@ -56,6 +58,7 @@
   }
 
   function bindAmountInputMask(input) {
+    if (PropertyRenderers && typeof PropertyRenderers.bindAmountInputMask === "function") return PropertyRenderers.bindAmountInputMask(input);
     if (Shared && typeof Shared.bindAmountInputMask === "function") return Shared.bindAmountInputMask(input);
     if (!input || input.dataset.amountMaskBound === "true") return;
     input.dataset.amountMaskBound = "true";
@@ -69,6 +72,7 @@
   }
 
   function configureFreeDecimalInput(input) {
+    if (PropertyRenderers && typeof PropertyRenderers.configureFreeDecimalInput === "function") return PropertyRenderers.configureFreeDecimalInput(input);
     if (Shared && typeof Shared.configureFreeDecimalInput === "function") return Shared.configureFreeDecimalInput(input);
     if (!input) return;
     input.setAttribute("type", "text");
@@ -77,6 +81,7 @@
   }
 
   function configureAmountInput(input) {
+    if (PropertyRenderers && typeof PropertyRenderers.configureAmountInput === "function") return PropertyRenderers.configureAmountInput(input);
     if (Shared && typeof Shared.configureAmountInput === "function") return Shared.configureAmountInput(input);
     if (!input) return;
     input.setAttribute("type", "text");
@@ -86,6 +91,7 @@
   }
 
   function configureFormNumericUx(form, options = {}) {
+    if (PropertyRenderers && typeof PropertyRenderers.configureFormNumericUx === "function") return PropertyRenderers.configureFormNumericUx(form, options);
     if (Shared && typeof Shared.configureFormNumericUx === "function") return Shared.configureFormNumericUx(form, options);
     if (!form?.elements) return;
     const decimalNames = Array.isArray(options.decimalNames) ? options.decimalNames : [];
