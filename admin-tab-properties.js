@@ -54,6 +54,10 @@
   }
 
   function getFloorDisplayValue(item) {
+    const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+    if (PropertyDomain && typeof PropertyDomain.getFloorDisplayValue === 'function') {
+      return PropertyDomain.getFloorDisplayValue(item);
+    }
     if (PropertyRenderers && typeof PropertyRenderers.getFloorDisplayValue === 'function') {
       return PropertyRenderers.getFloorDisplayValue(item);
     }
@@ -61,6 +65,10 @@
   }
 
   function getCurrentPriceValue(row) {
+    const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+    if (PropertyDomain && typeof PropertyDomain.getCurrentPriceValue === 'function') {
+      return PropertyDomain.getCurrentPriceValue(row);
+    }
     if (PropertyRenderers && typeof PropertyRenderers.getCurrentPriceValue === 'function') {
       return PropertyRenderers.getCurrentPriceValue(row);
     }
@@ -68,6 +76,10 @@
   }
 
   function getRatioValue(row, utils) {
+    const PropertyDomain = window.KNSN_PROPERTY_DOMAIN || null;
+    if (PropertyDomain && typeof PropertyDomain.getRatioValue === 'function') {
+      return PropertyDomain.getRatioValue(row, utils);
+    }
     if (PropertyRenderers && typeof PropertyRenderers.getRatioValue === 'function') {
       return PropertyRenderers.getRatioValue(row, utils);
     }

@@ -1453,6 +1453,9 @@
     // 카드 클릭 / 구분 필터
     if (!ignoreKeys.has('activeCard') && f.activeCard && f.activeCard !== 'all') {
       rows = rows.filter((r) => {
+        if (PropertyDomain && typeof PropertyDomain.matchesSourceSelection === 'function') {
+          return PropertyDomain.matchesSourceSelection(r, f.activeCard);
+        }
         if (PropertyDomain && typeof PropertyDomain.matchesSourceBucket === 'function') {
           return PropertyDomain.matchesSourceBucket(r, f.activeCard);
         }
@@ -1505,12 +1508,16 @@
 
     // 키워드 필터
     if (!ignoreKeys.has('keyword') && f.keyword) {
-      const kw = String(f.keyword || '').toLowerCase();
-      rows = rows.filter((r) =>
-        (r.address || '').toLowerCase().includes(kw) ||
-        (r.itemNo || '').toLowerCase().includes(kw) ||
-        (r.opinion || '').toLowerCase().includes(kw)
-      );
+      if (PropertyDomain && typeof PropertyDomain.matchesKeyword === 'function') {
+        rows = rows.filter((r) => PropertyDomain.matchesKeyword(r, f.keyword, { fields: ['address', 'itemNo', 'opinion'] }));
+      } else {
+        const kw = String(f.keyword || '').toLowerCase();
+        rows = rows.filter((r) =>
+          (r.address || '').toLowerCase().includes(kw) ||
+          (r.itemNo || '').toLowerCase().includes(kw) ||
+          (r.opinion || '').toLowerCase().includes(kw)
+        );
+      }
     }
 
     return rows;
@@ -1586,9 +1593,12 @@
 function renderRow(p) {
   const tr = document.createElement("tr");
   tr.style.cursor = "pointer";
-  const bucket = getPropertyBucket(p, p.sourceType);
-  const kindLabel = getPropertyKindLabel(p.sourceType, p);
-  const kindClass = (PropertyRenderers && typeof PropertyRenderers.getSourceBucketClass === 'function')
+  const listView = (PropertyDomain && typeof PropertyDomain.buildPropertyListViewModel === 'function')
+    ? PropertyDomain.buildPropertyListViewModel(p)
+    : null;
+  const bucket = listView?.sourceBucket || getPropertyBucket(p, p.sourceType);
+  const kindLabel = listView?.kindLabel || getPropertyKindLabel(p.sourceType, p);
+  const kindClass = listView?.kindClass || ((PropertyRenderers && typeof PropertyRenderers.getSourceBucketClass === 'function')
     ? PropertyRenderers.getSourceBucketClass(bucket)
     : ({
         auction: "kind-auction",
@@ -1596,22 +1606,25 @@ function renderRow(p) {
         realtor_naver: "kind-realtor-naver",
         realtor_direct: "kind-realtor-direct",
         general: "kind-general",
-      }[bucket] || "kind-general");
+      }[bucket] || "kind-general"));
   const usePlainLayout = isPlainSourceFilterSelected(state.filters?.activeCard);
-  const appraisal = p.priceMain != null ? formatEok(p.priceMain) : "-";
-  const current = !usePlainLayout && p.lowprice != null ? formatEok(p.lowprice) : "";
-  const rate = !usePlainLayout ? calcRate(p.priceMain, p.lowprice) : "";
+  const appraisalValue = listView?.appraisalPriceValue ?? p.priceMain;
+  const currentValue = listView?.currentPriceValue ?? p.lowprice;
+  const ratioValue = listView?.ratioValue ?? -1;
+  const appraisal = appraisalValue != null ? formatEok(appraisalValue) : "-";
+  const current = !usePlainLayout && currentValue != null ? formatEok(currentValue) : "";
+  const rate = !usePlainLayout ? (ratioValue >= 0 ? `${Math.round(ratioValue * 100)}%` : calcRate(p.priceMain, p.lowprice)) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
-  const addressText = truncateDisplayText(p.address || "-", 40) || "-";
-  const assetTypeText = truncateDisplayText(p.assetType || "-", 7) || "-";
-  const floorText = truncateDisplayText(getFloorDisplayValue(p) || "-", 7) || "-";
+  const addressText = truncateDisplayText(listView?.address || p.address || "-", 40) || "-";
+  const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
+  const floorText = truncateDisplayText(listView?.floorText || getFloorDisplayValue(p) || "-", 7) || "-";
   const scheduleText = !usePlainLayout ? formatScheduleCountdown(p.dateMain) : "";
   const rightsText = !usePlainLayout && p.rightsAnalysis ? "✓" : "";
-  const createdAtText = formatDate(p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
-  const commonText = p.commonarea != null ? fmtArea(p.commonarea) : "-";
-  const siteText = p.sitearea != null ? fmtArea(p.sitearea) : "-";
-  const useapprovalText = formatDate(p.useapproval || p._raw?.useapproval || p._raw?.use_approval || p._raw?.useApproval || "") || "-";
+  const createdAtText = formatDate(listView?.createdAtValue || p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
+  const commonText = (listView?.commonAreaValue != null ? fmtArea(listView.commonAreaValue) : (p.commonarea != null ? fmtArea(p.commonarea) : "-"));
+  const siteText = (listView?.siteAreaValue != null ? fmtArea(listView.siteAreaValue) : (p.sitearea != null ? fmtArea(p.sitearea) : "-"));
+  const useapprovalText = formatDate(listView?.useApprovalValue || p.useapproval || p._raw?.useapproval || p._raw?.use_approval || p._raw?.useApproval || "") || "-";
 
   const favTd = document.createElement("td");
   favTd.className = "fav-col";

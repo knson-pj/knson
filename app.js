@@ -565,6 +565,9 @@
   }
 
   function matchesSourceFilter(item) {
+    if (PropertyDomain && typeof PropertyDomain.matchesSourceSelection === "function") {
+      return PropertyDomain.matchesSourceSelection(item, state.source);
+    }
     const bucket = String(item?.sourceBucket || item?.source || "general").trim() || "general";
     if (state.source === "all") return true;
     if (state.source === "realtor") return bucket === "realtor_naver" || bucket === "realtor_direct";
@@ -577,6 +580,11 @@
   }
 
   function matchesKeywordFilter(item) {
+    if (PropertyDomain && typeof PropertyDomain.matchesKeyword === "function") {
+      return PropertyDomain.matchesKeyword(item, state.keyword, {
+        fields: ["address", "assignedAgentName", "regionGu", "regionDong", "type", "rightsAnalysis", "siteInspection", "opinion"],
+      });
+    }
     if (!state.keyword) return true;
     const q = state.keyword.toLowerCase();
     const hay = [item?.address, item?.assignedAgentName, item?.regionGu, item?.regionDong, item?.type, item?.rightsAnalysis, item?.siteInspection, item?.opinion]
@@ -601,11 +609,14 @@
     const summary = shouldUseServerMap() && state.mapSummary ? state.mapSummary : null;
     const all = state.items;
 
-    const totalCount = summary ? Number(summary.total || 0) : all.length;
-    const auctionCount = summary ? Number(summary.auction || 0) : all.filter((p) => (p.sourceBucket || p.source) === "auction").length;
-    const onbidCount = summary ? Number(summary.onbid || 0) : all.filter((p) => (p.sourceBucket || p.source) === "onbid").length;
-    const realtorCount = summary ? Number(summary.realtor_naver || 0) + Number(summary.realtor_direct || 0) : all.filter((p) => ["realtor_naver", "realtor_direct", "realtor"].includes(String(p.sourceBucket || p.source || ""))).length;
-    const generalCount = summary ? Number(summary.general || 0) : all.filter((p) => (p.sourceBucket || p.source) === "general").length;
+    const localSummary = (!summary && PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function")
+      ? PropertyDomain.summarizeSourceBuckets(all)
+      : null;
+    const totalCount = summary ? Number(summary.total || 0) : Number(localSummary?.total || all.length || 0);
+    const auctionCount = summary ? Number(summary.auction || 0) : Number(localSummary?.auction || 0);
+    const onbidCount = summary ? Number(summary.onbid || 0) : Number(localSummary?.onbid || 0);
+    const realtorCount = summary ? Number(summary.realtor_naver || 0) + Number(summary.realtor_direct || 0) : Number(localSummary?.realtor_naver || 0) + Number(localSummary?.realtor_direct || 0);
+    const generalCount = summary ? Number(summary.general || 0) : Number(localSummary?.general || 0);
 
     if (els.statTotal) els.statTotal.textContent = String(totalCount);
     if (els.statAuction) els.statAuction.textContent = String(auctionCount);
@@ -1474,11 +1485,9 @@
       return;
     }
     const rows = Array.isArray(state.items) ? state.items : [];
-    const counts = { auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-    rows.forEach((row) => {
-      const bucket = String(row.sourceBucket || row.source || "general").trim() || "general";
-      if (bucket in counts) counts[bucket] += 1;
-    });
+    const counts = (PropertyDomain && typeof PropertyDomain.summarizeSourceBuckets === "function")
+      ? PropertyDomain.summarizeSourceBuckets(rows)
+      : { total: rows.length, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     els.mvSummary.innerHTML = [
       buildLink('전체', total, 'all', 'mv-summary-all'),
       buildLink('경매', counts.auction, 'auction', 'mv-summary-auction'),

@@ -904,6 +904,85 @@
     return summary;
   }
 
+  function getCurrentPriceValue(item) {
+    const low = toNullableNumber(
+      item?.lowprice ?? item?.low_price ?? item?.lowPrice ??
+      item?.currentPrice ?? item?.current_price ??
+      item?._raw?.lowprice ?? item?._raw?.low_price ?? item?._raw?.lowPrice ??
+      item?.raw?.lowprice ?? item?.raw?.low_price ?? item?.raw?.lowPrice
+    );
+    if (low != null && low > 0) return low;
+    return toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main) || 0;
+  }
+
+  function getRatioValue(item) {
+    const appraisal = toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main) || 0;
+    const current = getCurrentPriceValue(item);
+    if (appraisal > 0 && current > 0) return current / appraisal;
+    const rawRate = item?.raw?.bidRate ?? item?.raw?.rate ?? item?.raw?.["최저입찰가율(%)"] ?? item?._raw?.bidRate ?? item?._raw?.rate ?? item?._raw?.["최저입찰가율(%)"];
+    const numeric = Number(String(rawRate ?? '').replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(numeric) ? numeric / 100 : -1;
+  }
+
+  function getFloorDisplayValue(item) {
+    const floor = pickFirstText(item?.floor, item?.floorText, item?.raw?.floor, item?.raw?.floorText, item?._raw?.floor, item?._raw?.floorText, '');
+    const total = pickFirstText(item?.totalfloor, item?.total_floor, item?.totalFloor, item?.totalFloorText, item?.raw?.totalfloor, item?.raw?.total_floor, item?.raw?.totalFloor, item?._raw?.totalfloor, item?._raw?.total_floor, item?._raw?.totalFloor, '');
+    if (floor && total) {
+      if (floor.includes('/')) return floor;
+      return `${floor}/${total}`;
+    }
+    return floor || total || '';
+  }
+
+  function buildPropertyListViewModel(item = {}) {
+    const bucket = getSourceBucket(item);
+    return {
+      sourceBucket: bucket,
+      kindLabel: getSourceBucketLabel(bucket),
+      kindClass: getSourceBucketClass(bucket),
+      itemNo: pickFirstText(item?.itemNo, item?.item_no, item?.globalId, item?.global_id, '-'),
+      address: pickFirstText(item?.address, item?.roadAddress, item?.road_address, item?.raw?.address, item?._raw?.address, '-'),
+      assetType: pickFirstText(item?.assetType, item?.asset_type, item?.type, item?.raw?.assetType, item?.raw?.asset_type, item?._raw?.assetType, item?._raw?.asset_type, '-'),
+      floorText: getFloorDisplayValue(item),
+      appraisalPriceValue: toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main),
+      currentPriceValue: getCurrentPriceValue(item),
+      ratioValue: getRatioValue(item),
+      exclusiveAreaValue: toNullableNumber(item?.exclusivearea ?? item?.exclusive_area ?? item?.exclusiveArea ?? item?._raw?.exclusivearea ?? item?._raw?.exclusive_area),
+      commonAreaValue: toNullableNumber(item?.commonarea ?? item?.common_area ?? item?.commonArea ?? item?._raw?.commonarea ?? item?._raw?.common_area),
+      siteAreaValue: toNullableNumber(item?.sitearea ?? item?.site_area ?? item?.siteArea ?? item?._raw?.sitearea ?? item?._raw?.site_area),
+      useApprovalValue: pickFirstText(item?.useapproval, item?.use_approval, item?.useApproval, item?._raw?.useapproval, item?._raw?.use_approval, item?._raw?.useApproval, ''),
+      createdAtValue: pickFirstText(item?.createdAt, item?.created_at, item?.dateUploaded, item?.date_uploaded, item?._raw?.created_at, item?._raw?.date_uploaded, ''),
+    };
+  }
+
+  function matchesSourceSelection(item, selected) {
+    const key = String(selected || '').trim();
+    if (!key || key === 'all') return true;
+    const bucket = getSourceBucket(item);
+    if (key === 'realtor') return bucket === 'realtor_naver' || bucket === 'realtor_direct';
+    return bucket === key;
+  }
+
+  function matchesKeyword(item, keyword, options = {}) {
+    const q = String(keyword || '').trim().toLowerCase();
+    if (!q) return true;
+    const fields = Array.isArray(options.fields) && options.fields.length
+      ? options.fields
+      : ['address', 'assignedAgentName', 'regionGu', 'regionDong', 'type', 'assetType', 'rightsAnalysis', 'siteInspection', 'opinion', 'memo', 'submitterName', 'brokerOfficeName'];
+    const hay = fields
+      .map((field) => {
+        if (typeof field === 'function') {
+          try { return field(item); } catch (_) { return ''; }
+        }
+        return item?.[field];
+      })
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  }
+
 
   function getRegistrationRawObject(input) {
     if (input?._raw?.raw && typeof input._raw.raw === "object") return input._raw.raw;
@@ -1073,7 +1152,13 @@
     getSourceBucketLabel,
     getSourceBucketClass,
     matchesSourceBucket,
+    matchesSourceSelection,
+    matchesKeyword,
     summarizeSourceBuckets,
+    getCurrentPriceValue,
+    getRatioValue,
+    getFloorDisplayValue,
+    buildPropertyListViewModel,
     buildRegistrationSnapshot,
     buildRegistrationDbRowForCreate,
     buildRegistrationDbRowForExisting,
