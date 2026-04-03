@@ -1796,113 +1796,14 @@ function renderPagination(totalPages) {
   }
 
 
-  function getNamedFormControl(form, name) {
-    if (!form || !name) return null;
-    const control = form.elements?.[name];
-    if (!control) return null;
-    if (typeof control.tagName === 'string') return control;
-    if (typeof control.length === 'number') {
-      for (const node of Array.from(control)) {
-        if (node && typeof node.tagName === 'string') return node;
-      }
+  function arrangeAgentOpinionFields(form) {
+    if (PropertyRenderers && typeof PropertyRenderers.arrangeOpinionFields === 'function') {
+      return PropertyRenderers.arrangeOpinionFields(form, {
+        shellSelectors: ['[data-ag-field]', '.form-field'],
+        textareaClass: 'ag-textarea',
+      });
     }
     return null;
-  }
-
-  function findAgentFieldShell(form, fieldName) {
-    const control = getNamedFormControl(form, fieldName);
-    if (!control) return null;
-    return control.closest('[data-ag-field]') || control.closest('.form-field') || control.parentElement || null;
-  }
-
-  function findAgentFieldLabelElement(shell) {
-    if (!shell) return null;
-    const explicit = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label, .ag-label, [class*="label"], [class*="title"]');
-    if (explicit) return explicit;
-    const directChildren = Array.from(shell.children || []);
-    return directChildren.find((node) => {
-      if (!node || node.dataset?.generatedFieldTitle === 'true') return false;
-      const tag = String(node.tagName || '').toLowerCase();
-      if (!tag || ['input', 'textarea', 'select', 'option', 'button'].includes(tag)) return false;
-      if (node.querySelector('input, textarea, select, button')) return false;
-      const textValue = String(node.textContent || '').trim();
-      return !!textValue && textValue.length <= 40;
-    }) || null;
-  }
-
-  function setAgentFieldLabel(shell, text) {
-    if (!shell) return;
-    const generatedLabels = Array.from(shell.querySelectorAll('[data-generated-field-title="true"]'));
-    const explicit = findAgentFieldLabelElement(shell);
-    if (explicit) {
-      explicit.textContent = text;
-      generatedLabels.forEach((node) => {
-        if (node !== explicit) node.remove();
-      });
-      return;
-    }
-    const generated = generatedLabels[0] || document.createElement('label');
-    generated.dataset.generatedFieldTitle = 'true';
-    generated.textContent = text;
-    if (!generated.parentElement) shell.insertBefore(generated, shell.firstChild || null);
-    generatedLabels.slice(1).forEach((node) => node.remove());
-  }
-
-  function ensureAgentTextareaField(form, fieldName, shell) {
-    if (!form || !shell || !fieldName) return null;
-    let control = getNamedFormControl(form, fieldName);
-    const isUsable = control && String(control.type || '').toLowerCase() !== 'hidden';
-    if (isUsable) {
-      control.hidden = false;
-      control.style.display = '';
-      return control;
-    }
-    if (control && String(control.type || '').toLowerCase() === 'hidden') control.disabled = true;
-    const area = document.createElement('textarea');
-    area.name = fieldName;
-    area.rows = 6;
-    area.className = (control && control.className) ? String(control.className) : 'ag-textarea';
-    shell.appendChild(area);
-    return area;
-  }
-
-  function arrangeAgentOpinionFields(form) {
-    if (!form) return;
-    const siteShell = findAgentFieldShell(form, 'siteInspection');
-    const rightsShell = findAgentFieldShell(form, 'rightsAnalysis');
-    const opinionShell = findAgentFieldShell(form, 'opinion');
-    ensureAgentTextareaField(form, 'siteInspection', siteShell);
-    ensureAgentTextareaField(form, 'rightsAnalysis', rightsShell);
-    ensureAgentTextareaField(form, 'opinion', opinionShell);
-    if (siteShell) {
-      siteShell.classList.remove('hidden');
-      siteShell.style.display = '';
-      siteShell.hidden = false;
-      siteShell.style.gridColumn = '';
-      setAgentFieldLabel(siteShell, '현장실사');
-    }
-    if (rightsShell) {
-      rightsShell.classList.remove('hidden');
-      rightsShell.style.display = '';
-      rightsShell.hidden = false;
-      rightsShell.style.gridColumn = '';
-      setAgentFieldLabel(rightsShell, '담당자 의견');
-    }
-    if (opinionShell) {
-      opinionShell.classList.remove('hidden');
-      opinionShell.style.display = '';
-      opinionShell.hidden = false;
-      opinionShell.style.gridColumn = '1 / -1';
-      setAgentFieldLabel(opinionShell, '금일 이슈사항');
-    }
-    const parent = siteShell && rightsShell && opinionShell && siteShell.parentElement === rightsShell.parentElement && rightsShell.parentElement === opinionShell.parentElement
-      ? siteShell.parentElement
-      : null;
-    if (parent) {
-      parent.appendChild(siteShell);
-      parent.appendChild(rightsShell);
-      parent.appendChild(opinionShell);
-    }
   }
 
   function applyAgentEditFormMode(item, view) {
@@ -2283,6 +2184,10 @@ function renderPagination(totalPages) {
   }
 
   function setVal(form, name, value) {
+    if (PropertyRenderers && typeof PropertyRenderers.setFormValue === 'function') {
+      PropertyRenderers.setFormValue(form, name, value, { emptyValue: '' });
+      return;
+    }
     const el = form.elements[name];
     if (!el) return;
     el.value = value || "";

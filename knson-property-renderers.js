@@ -173,6 +173,139 @@
     return numeric;
   }
 
+
+
+  function getNamedFormControl(form, name) {
+    if (!form || !name) return null;
+    const control = form.elements?.[name];
+    if (!control) return null;
+    if (typeof control.tagName === "string") return control;
+    if (typeof control.length === "number") {
+      for (const node of Array.from(control)) {
+        if (node && typeof node.tagName === "string") return node;
+      }
+    }
+    return null;
+  }
+
+  function findFieldShell(form, fieldName, options = {}) {
+    const control = getNamedFormControl(form, fieldName);
+    if (!control) return null;
+    const selectors = Array.isArray(options.shellSelectors) && options.shellSelectors.length
+      ? options.shellSelectors
+      : ['.form-field'];
+    for (const selector of selectors) {
+      if (!selector) continue;
+      const shell = control.closest(selector);
+      if (shell) return shell;
+    }
+    return control.parentElement || null;
+  }
+
+  function findFieldLabelElement(shell) {
+    if (!shell) return null;
+    const explicit = shell.querySelector('label, .field-label, .form-label, .input-label, .textarea-label, .section-label, .modal-field-label, .aem-label, .ag-label, [class*="label"], [class*="title"]');
+    if (explicit) return explicit;
+    const directChildren = Array.from(shell.children || []);
+    return directChildren.find((node) => {
+      if (!node || node.dataset?.generatedFieldTitle === 'true') return false;
+      const tag = String(node.tagName || '').toLowerCase();
+      if (!tag || ['input', 'textarea', 'select', 'option', 'button'].includes(tag)) return false;
+      if (node.querySelector('input, textarea, select, button')) return false;
+      const textValue = String(node.textContent || '').trim();
+      return !!textValue && textValue.length <= 40;
+    }) || null;
+  }
+
+  function setFieldLabel(shell, text) {
+    if (!shell) return;
+    const generatedLabels = Array.from(shell.querySelectorAll('[data-generated-field-title="true"]'));
+    const explicit = findFieldLabelElement(shell);
+    if (explicit) {
+      explicit.textContent = text;
+      generatedLabels.forEach((node) => {
+        if (node !== explicit) node.remove();
+      });
+      return;
+    }
+    const generated = generatedLabels[0] || document.createElement('label');
+    generated.dataset.generatedFieldTitle = 'true';
+    generated.textContent = text;
+    if (!generated.parentElement) shell.insertBefore(generated, shell.firstChild || null);
+    generatedLabels.slice(1).forEach((node) => node.remove());
+  }
+
+  function ensureTextareaField(form, fieldName, shell, options = {}) {
+    if (!form || !shell || !fieldName) return null;
+    let control = getNamedFormControl(form, fieldName);
+    const isUsable = control && String(control.type || '').toLowerCase() !== 'hidden';
+    if (isUsable) {
+      control.hidden = false;
+      control.style.display = '';
+      return control;
+    }
+    if (control && String(control.type || '').toLowerCase() === 'hidden') control.disabled = true;
+    const area = document.createElement('textarea');
+    area.name = fieldName;
+    area.rows = Number(options.rows || 6) || 6;
+    area.className = (control && control.className)
+      ? String(control.className)
+      : String(options.textareaClass || '');
+    shell.appendChild(area);
+    return area;
+  }
+
+  function setFormValue(form, name, value, options = {}) {
+    const control = getNamedFormControl(form, name);
+    if (!control) return null;
+    const nextValue = value == null ? (options.emptyValue ?? '') : (options.stringify === false ? value : String(value));
+    control.value = nextValue;
+    return control;
+  }
+
+  function arrangeOpinionFields(form, options = {}) {
+    if (!form) return null;
+    const fieldNames = {
+      site: options.siteFieldName || 'siteInspection',
+      rights: options.rightsFieldName || 'rightsAnalysis',
+      opinion: options.opinionFieldName || 'opinion',
+    };
+    const labels = {
+      site: options.siteLabel || '현장실사',
+      rights: options.rightsLabel || '담당자 의견',
+      opinion: options.opinionLabel || '금일 이슈사항',
+    };
+    const shellSelectors = Array.isArray(options.shellSelectors) && options.shellSelectors.length
+      ? options.shellSelectors
+      : ['.form-field'];
+    const siteShell = findFieldShell(form, fieldNames.site, { shellSelectors });
+    const rightsShell = findFieldShell(form, fieldNames.rights, { shellSelectors });
+    const opinionShell = findFieldShell(form, fieldNames.opinion, { shellSelectors });
+    ensureTextareaField(form, fieldNames.site, siteShell, { textareaClass: options.textareaClass, rows: options.rows });
+    ensureTextareaField(form, fieldNames.rights, rightsShell, { textareaClass: options.textareaClass, rows: options.rows });
+    ensureTextareaField(form, fieldNames.opinion, opinionShell, { textareaClass: options.textareaClass, rows: options.rows });
+    const activateShell = (shell, label, gridColumn = '') => {
+      if (!shell) return;
+      shell.classList.remove('hidden');
+      shell.style.display = '';
+      shell.hidden = false;
+      shell.style.gridColumn = gridColumn;
+      setFieldLabel(shell, label);
+    };
+    activateShell(siteShell, labels.site, options.siteGridColumn || '');
+    activateShell(rightsShell, labels.rights, options.rightsGridColumn || '');
+    activateShell(opinionShell, labels.opinion, options.opinionGridColumn || '1 / -1');
+    const parent = siteShell && rightsShell && opinionShell && siteShell.parentElement === rightsShell.parentElement && rightsShell.parentElement === opinionShell.parentElement
+      ? siteShell.parentElement
+      : null;
+    if (parent) {
+      parent.appendChild(siteShell);
+      parent.appendChild(rightsShell);
+      parent.appendChild(opinionShell);
+    }
+    return { siteShell, rightsShell, opinionShell };
+  }
+
   function formatScheduleHtml(item, options = {}) {
     const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || item?.raw || {});
     const keys = Array.isArray(options.rawKeys) && options.rawKeys.length ? options.rawKeys : ["입찰일자", "입찰마감일시"];
@@ -243,6 +376,13 @@
     buildKakaoMapLink,
     normalizePhone,
     formatPhoneDisplay,
+    getNamedFormControl,
+    findFieldShell,
+    findFieldLabelElement,
+    setFieldLabel,
+    ensureTextareaField,
+    setFormValue,
+    arrangeOpinionFields,
     escapeHtml,
     escapeAttr,
   };
