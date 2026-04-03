@@ -1076,6 +1076,9 @@
   }
 
   function calcRate(appraisal, current, raw = null) {
+    if (KNSN_PROPERTY_RENDERERS && typeof KNSN_PROPERTY_RENDERERS.formatPercent === 'function') {
+      return KNSN_PROPERTY_RENDERERS.formatPercent(appraisal, current, raw, '-');
+    }
     const a = Number(appraisal || 0);
     const c = Number(current || 0);
     if (Number.isFinite(a) && Number.isFinite(c) && a > 0 && c > 0) return `${((c / a) * 100).toFixed(1)}%`;
@@ -1085,6 +1088,7 @@
   }
 
   function statusLabel(v) {
+    if (KNSN_PROPERTY_RENDERERS && typeof KNSN_PROPERTY_RENDERERS.statusLabel === 'function') return KNSN_PROPERTY_RENDERERS.statusLabel(v, '-');
     const s = String(v || "").trim().toLowerCase();
     if (!s) return "-";
     if (["active", "진행", "진행중", "진행중인"].includes(s)) return "진행중";
@@ -1095,6 +1099,7 @@
   }
 
   function firstText(...values) {
+    if (KNSN_PROPERTY_RENDERERS && typeof KNSN_PROPERTY_RENDERERS.firstText === 'function') return KNSN_PROPERTY_RENDERERS.firstText(...values);
     for (const value of values) {
       if (value == null) continue;
       const s = String(value).trim();
@@ -1104,6 +1109,7 @@
   }
 
   function toNullableNumber(v) {
+    if (KNSN_PROPERTY_RENDERERS && typeof KNSN_PROPERTY_RENDERERS.toNullableNumber === 'function') return KNSN_PROPERTY_RENDERERS.toNullableNumber(v);
     if (v == null || v === "") return null;
     const n = Number(String(v).replace(/[^0-9.-]/g, ""));
     return Number.isFinite(n) ? n : null;
@@ -1116,6 +1122,7 @@
   }
 
   function buildKakaoMapLink(p) {
+    if (KNSN_PROPERTY_RENDERERS && typeof KNSN_PROPERTY_RENDERERS.buildKakaoMapLink === 'function') return KNSN_PROPERTY_RENDERERS.buildKakaoMapLink(p, { fallbackLabel: '매물 위치' });
     if (p.latitude == null || p.longitude == null) return "";
     const label = encodeURIComponent(p.address || p.type || "매물 위치");
     return `https://map.kakao.com/link/map/${label},${p.latitude},${p.longitude}`;
@@ -1652,6 +1659,7 @@
   }
 
   function escapeHtml(v) {
+    if (KNSN_PROPERTY_RENDERERS && typeof KNSN_PROPERTY_RENDERERS.escapeHtml === 'function') return KNSN_PROPERTY_RENDERERS.escapeHtml(v);
     if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
     return String(v ?? "")
       .replaceAll("&", "&amp;")
@@ -1662,6 +1670,7 @@
   }
 
   function escapeAttr(v) {
+    if (KNSN_PROPERTY_RENDERERS && typeof KNSN_PROPERTY_RENDERERS.escapeAttr === 'function') return KNSN_PROPERTY_RENDERERS.escapeAttr(v);
     if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
     return escapeHtml(v);
   }

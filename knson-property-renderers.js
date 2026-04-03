@@ -104,6 +104,75 @@
       .replaceAll("'", "&#39;");
   }
 
+
+  function escapeAttr(value) {
+    if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(value);
+    return escapeHtml(value).replaceAll("`", "&#96;");
+  }
+
+  function sourceLabel(value, fallback = "일반") {
+    const key = String(value || "").trim().toLowerCase();
+    if (key === "auction") return "경매";
+    if (key === "gongmae" || key === "onbid") return "공매";
+    if (key === "realtor" || key === "realtor_naver" || key === "realtor_direct") return key === "realtor_naver" ? "네이버중개" : key === "realtor_direct" ? "일반중개" : "중개";
+    if (key === "general") return "일반";
+    return fallback;
+  }
+
+  function statusLabel(value, fallback = "-") {
+    const key = String(value || "").trim().toLowerCase();
+    if (!key) return fallback;
+    if (["active", "진행", "진행중", "진행중인"].includes(key)) return "진행중";
+    if (["hold", "보류"].includes(key)) return "보류";
+    if (["closed", "종결", "완료"].includes(key)) return "종결";
+    if (["review", "검토", "검토중"].includes(key)) return "검토중";
+    return String(value || fallback);
+  }
+
+  function formatPercent(base, current, raw = null, fallback = "-") {
+    const b = Number(base || 0);
+    const c = Number(current || 0);
+    if (Number.isFinite(b) && Number.isFinite(c) && b > 0 && c > 0) return `${((c / b) * 100).toFixed(1)}%`;
+    const rawRate = raw && (raw["최저입찰가율(%)"] || raw.bidRate || raw.rate);
+    if (rawRate != null && String(rawRate).trim() !== "") return String(rawRate).trim();
+    return fallback;
+  }
+
+  function toNullableNumber(value) {
+    if (Shared && typeof Shared.toNullableNumber === "function") return Shared.toNullableNumber(value);
+    if (value == null || value === "") return null;
+    const num = Number(String(value).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function firstText(...values) {
+    if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...values);
+    for (const value of values) {
+      if (value == null) continue;
+      const text = String(value).trim();
+      if (text) return text;
+    }
+    return "";
+  }
+
+  function buildKakaoMapLink(item, options = {}) {
+    if (item?.latitude == null || item?.longitude == null) return "";
+    const fallbackLabel = options.fallbackLabel || "매물 위치";
+    const label = encodeURIComponent(firstText(item?.address, item?.assetType, item?.type, fallbackLabel));
+    return `https://map.kakao.com/link/map/${label},${item.latitude},${item.longitude}`;
+  }
+
+  function normalizePhone(value) {
+    return String(value || "").replace(/[^\d]/g, "");
+  }
+
+  function formatPhoneDisplay(value) {
+    const numeric = normalizePhone(value);
+    if (numeric.length === 11) return `${numeric.slice(0,3)}-${numeric.slice(3,7)}-${numeric.slice(7)}`;
+    if (numeric.length === 10) return `${numeric.slice(0,3)}-${numeric.slice(3,6)}-${numeric.slice(6)}`;
+    return numeric;
+  }
+
   function formatScheduleHtml(item, options = {}) {
     const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || item?.raw || {});
     const keys = Array.isArray(options.rawKeys) && options.rawKeys.length ? options.rawKeys : ["입찰일자", "입찰마감일시"];
@@ -166,6 +235,15 @@
     formatMoneyEok,
     formatMoneyKRW,
     formatAreaPyeong,
+    sourceLabel,
+    statusLabel,
+    formatPercent,
+    toNullableNumber,
+    firstText,
+    buildKakaoMapLink,
+    normalizePhone,
+    formatPhoneDisplay,
     escapeHtml,
+    escapeAttr,
   };
 })();

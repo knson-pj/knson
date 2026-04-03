@@ -2506,6 +2506,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function sourceLabel(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.sourceLabel === 'function') return PropertyRenderers.sourceLabel(v, '일반');
     if (v === "auction") return "경매";
     if (v === "gongmae" || v === "onbid") return "공매";
     if (v === "realtor") return "중개";
@@ -2513,6 +2514,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function statusLabel(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.statusLabel === 'function') return PropertyRenderers.statusLabel(v, '-');
     if (v === "active") return "진행중";
     if (v === "hold") return "보류";
     if (v === "closed") return "종결";
@@ -2528,6 +2530,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function formatPercent(base, current, raw = null) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatPercent === 'function') return PropertyRenderers.formatPercent(base, current, raw, '-');
     const b = Number(base || 0);
     const c = Number(current || 0);
     if (Number.isFinite(b) && Number.isFinite(c) && b > 0 && c > 0) return `${((c / b) * 100).toFixed(1)}%`;
@@ -2545,6 +2548,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function toNullableNumber(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.toNullableNumber === 'function') return PropertyRenderers.toNullableNumber(v);
     if (Shared && typeof Shared.toNullableNumber === "function") return Shared.toNullableNumber(v);
     if (v == null || v === "") return null;
     const n = Number(String(v).replace(/[^0-9.-]/g, ""));
@@ -2552,6 +2556,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function firstText(...values) {
+    if (PropertyRenderers && typeof PropertyRenderers.firstText === 'function') return PropertyRenderers.firstText(...values);
     if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...values);
     for (const value of values) {
       if (value == null) continue;
@@ -2562,6 +2567,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function buildKakaoMapLink(p) {
+    if (PropertyRenderers && typeof PropertyRenderers.buildKakaoMapLink === 'function') return PropertyRenderers.buildKakaoMapLink(p, { fallbackLabel: '매물 위치' });
     if (p.latitude == null || p.longitude == null) return "";
     const label = encodeURIComponent(p.address || p.assetType || "매물 위치");
     return `https://map.kakao.com/link/map/${label},${p.latitude},${p.longitude}`;
@@ -2657,10 +2663,12 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function normalizePhone(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.normalizePhone === 'function') return PropertyRenderers.normalizePhone(v);
     return String(v || "").replace(/[^\d]/g, "");
   }
 
   function formatPhoneDisplay(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatPhoneDisplay === 'function') return PropertyRenderers.formatPhoneDisplay(v);
     const n = normalizePhone(v);
     if (n.length === 11) return `${n.slice(0,3)}-${n.slice(3,7)}-${n.slice(7)}`;
     if (n.length === 10) return `${n.slice(0,3)}-${n.slice(3,6)}-${n.slice(6)}`;
@@ -2692,6 +2700,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function escapeHtml(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.escapeHtml === 'function') return PropertyRenderers.escapeHtml(v);
     if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
     return String(v ?? "")
       .replaceAll("&", "&amp;")
@@ -2702,6 +2711,7 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function escapeAttr(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.escapeAttr === 'function') return PropertyRenderers.escapeAttr(v);
     if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
     return escapeHtml(v).replaceAll("`", "&#96;");
   }

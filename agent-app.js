@@ -2168,6 +2168,7 @@ function renderPagination(totalPages) {
   }
 
   function firstText(...args) {
+    if (PropertyRenderers && typeof PropertyRenderers.firstText === 'function') return PropertyRenderers.firstText(...args);
     if (PropertyDomain && typeof PropertyDomain.pickFirstText === "function") return PropertyDomain.pickFirstText(...args);
     for (const v of args) {
       if (v == null) continue;
@@ -2178,6 +2179,7 @@ function renderPagination(totalPages) {
   }
 
   function toNum(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.toNullableNumber === 'function') return PropertyRenderers.toNullableNumber(v);
     if (Shared && typeof Shared.toNullableNumber === "function") return Shared.toNullableNumber(v);
     if (v == null || v === "") return null;
     const n = Number(String(v).replace(/[^0-9.-]/g, ""));
@@ -2185,11 +2187,13 @@ function renderPagination(totalPages) {
   }
 
   function esc(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.escapeHtml === 'function') return PropertyRenderers.escapeHtml(v);
     if (Shared && typeof Shared.escapeHtml === "function") return Shared.escapeHtml(v);
     return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   function escAttr(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.escapeAttr === 'function') return PropertyRenderers.escapeAttr(v);
     if (Shared && typeof Shared.escapeAttr === "function") return Shared.escapeAttr(v);
     return esc(v).replace(/'/g, "&#39;");
   }
@@ -2207,12 +2211,14 @@ function renderPagination(totalPages) {
   }
 
   function fmtArea(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatAreaPyeong === 'function') return PropertyRenderers.formatAreaPyeong(v, '-');
     const n = toNum(v);
     if (n == null || n <= 0) return "-";
     return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
   }
 
   function calcRate(appraisal, current) {
+    if (PropertyRenderers && typeof PropertyRenderers.formatPercent === 'function') return PropertyRenderers.formatPercent(appraisal, current, null, '-');
     const a = Number(appraisal || 0);
     const c = Number(current || 0);
     if (!a || !c || a <= 0) return "-";
@@ -2220,6 +2226,7 @@ function renderPagination(totalPages) {
   }
 
   function normalizeStatus(v) {
+    if (PropertyRenderers && typeof PropertyRenderers.statusLabel === 'function') return PropertyRenderers.statusLabel(v, '-');
     const s = String(v || "").trim().toLowerCase();
     if (!s) return "-";
     const map = { active: "진행중", hold: "보류", closed: "종결", review: "검토중" };
