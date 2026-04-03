@@ -739,10 +739,11 @@
   async function recordDailyReportEntries(entries) {
     const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && entry.actionType);
     if (!safeEntries.length) return;
-    await apiJson('/properties', {
-      method: 'POST',
-      json: { action: 'daily_report_log', entries: safeEntries },
-    });
+    if (DataAccess && typeof DataAccess.recordDailyReportEntriesViaApi === 'function') {
+      await DataAccess.recordDailyReportEntriesViaApi(apiJson, safeEntries, { auth: true });
+    } else {
+      throw new Error('KNSN_DATA_ACCESS.recordDailyReportEntriesViaApi 를 찾을 수 없습니다.');
+    }
     if (els.dailyReportModal && !els.dailyReportModal.classList.contains('hidden')) {
       await refreshDailyReportSummary({ force: true, silent: true });
     }

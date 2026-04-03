@@ -1,6 +1,7 @@
 (() => {
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
+  const DataAccess = window.KNSN_DATA_ACCESS || null;
 
   function runtime() {
     return window.KNSN_ADMIN_RUNTIME || {};
@@ -198,7 +199,11 @@
           setNpmMsgLocal(els, '등록되었습니다.', false);
         }
       } else {
-        await api('/public-listings', { method: 'POST', body: payload });
+        if (DataAccess && typeof DataAccess.submitPublicListingViaApi === 'function') {
+          await DataAccess.submitPublicListingViaApi(api, payload);
+        } else {
+          throw new Error('KNSN_DATA_ACCESS.submitPublicListingViaApi 를 찾을 수 없습니다.');
+        }
         setNpmMsgLocal(els, '등록되었습니다.', false);
       }
 

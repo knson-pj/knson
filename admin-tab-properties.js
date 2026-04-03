@@ -770,7 +770,11 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
         throw new Error('KNSN_DATA_ACCESS.deletePropertiesByIds 를 찾을 수 없습니다.');
       }
     } else {
-      await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
+      if (DataAccess && typeof DataAccess.deletePropertiesViaAdminApi === 'function') {
+        await DataAccess.deletePropertiesViaAdminApi(api, ids, { auth: true });
+      } else {
+        throw new Error('KNSN_DATA_ACCESS.deletePropertiesViaAdminApi 를 찾을 수 없습니다.');
+      }
     }
     state.selectedPropertyIds.clear();
     utils.invalidatePropertyCollections();
@@ -786,7 +790,11 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     }
     if (!window.confirm(`현재 등록된 물건 ${total.toLocaleString('ko-KR')}건을 전체삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
     if (!window.confirm('정말로 전체삭제를 진행할까요?')) return;
-    await api('/admin/properties', { method: 'DELETE', auth: true, body: { all: true } });
+    if (DataAccess && typeof DataAccess.deleteAllPropertiesViaAdminApi === 'function') {
+      await DataAccess.deleteAllPropertiesViaAdminApi(api, { auth: true });
+    } else {
+      throw new Error('KNSN_DATA_ACCESS.deleteAllPropertiesViaAdminApi 를 찾을 수 없습니다.');
+    }
     state.selectedPropertyIds.clear();
     utils.invalidatePropertyCollections();
     await utils.loadProperties();
@@ -1212,11 +1220,11 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     }
 
     // 실제 서버 구현은 /api/properties 한 곳에서 PATCH { targetId, patch }를 받는다.
-    await api('/properties', {
-      method: 'PATCH',
-      auth: true,
-      body: { targetId, patch: payload },
-    });
+    if (DataAccess && typeof DataAccess.updatePropertyViaApi === 'function') {
+      await DataAccess.updatePropertyViaApi(api, targetId, payload, { auth: true });
+    } else {
+      throw new Error('KNSN_DATA_ACCESS.updatePropertyViaApi 를 찾을 수 없습니다.');
+    }
   };
 
   mod.handleDeleteProperty = async function handleDeleteProperty() {
@@ -1241,7 +1249,11 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
           throw new Error('KNSN_DATA_ACCESS.deletePropertyById 를 찾을 수 없습니다.');
         }
       } else {
-        await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids: [targetId] } });
+        if (DataAccess && typeof DataAccess.deletePropertyViaAdminApi === 'function') {
+          await DataAccess.deletePropertyViaAdminApi(api, targetId, { auth: true });
+        } else {
+          throw new Error('KNSN_DATA_ACCESS.deletePropertyViaAdminApi 를 찾을 수 없습니다.');
+        }
       }
       state.selectedPropertyIds.delete(targetId);
       mod.closePropertyEditModal();

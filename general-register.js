@@ -117,10 +117,10 @@
       setBusy(true);
       setMsg('');
 
-      const res = await api('/public-listings', {
-        method: 'POST',
-        body: payload,
-      });
+      if (!(DataAccess && typeof DataAccess.submitPublicListingViaApi === 'function')) {
+        throw new Error('KNSN_DATA_ACCESS.submitPublicListingViaApi 를 찾을 수 없습니다.');
+      }
+      const res = await DataAccess.submitPublicListingViaApi(api, payload);
       if (!res?.ok) throw new Error(res?.message || '등록에 실패했습니다.');
       done();
     } catch (err) {
