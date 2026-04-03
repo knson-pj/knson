@@ -4,7 +4,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const htmlFiles = ['index.html', 'admin-index.html', 'agent-index.html', 'general-register.html'];
-const requiredOrder = ['knson-core.js', 'knson-shared.js', 'knson-schema.js', 'knson-data-access.js'];
+const requiredOrder = ['knson-core.js', 'knson-shared.js', 'knson-property-domain.js', 'knson-schema.js', 'knson-property-renderers.js', 'knson-data-access.js'];
 const errors = [];
 
 for (const file of htmlFiles) {

@@ -878,6 +878,16 @@
     return "일반";
   }
 
+  function getSourceBucketClass(bucket) {
+    const key = String(bucket || "").trim();
+    if (key === "auction") return "kind-auction";
+    if (key === "onbid") return "kind-gongmae";
+    if (key === "realtor_naver") return "kind-realtor-naver";
+    if (key === "realtor_direct") return "kind-realtor-direct";
+    if (key === "realtor") return "kind-realtor";
+    return "kind-general";
+  }
+
   function matchesSourceBucket(item, activeCard) {
     const target = String(activeCard || "").trim();
     if (!target || target === "all") return true;
@@ -1062,6 +1072,7 @@
     getSourceBucket,
     getSourceTypeLabel,
     getSourceBucketLabel,
+    getSourceBucketClass,
     matchesSourceBucket,
     summarizeSourceBuckets,
     buildRegistrationSnapshot,
