@@ -21,7 +21,14 @@ const bannedPatterns = [
   { re: /['"]\/admin\/region-assignments['"]/g, label: 'page-level direct /admin/region-assignments endpoint' },
 ];
 
-const helperRules = [];
+const helperRules = [
+  { file: 'agent-app.js', re: /function getAreaFilterMatch\(/g, label: 'agent local area filter helper' },
+  { file: 'agent-app.js', re: /function getPriceFilterMatch\(/g, label: 'agent local price filter helper' },
+  { file: 'agent-app.js', re: /function getRatioFilterMatch\(/g, label: 'agent local ratio filter helper' },
+  { file: 'admin-tab-properties.js', re: /function getAreaFilterMatch\(/g, label: 'admin local area filter helper' },
+  { file: 'admin-tab-properties.js', re: /function getPriceFilterMatch\(/g, label: 'admin local price filter helper' },
+  { file: 'admin-tab-properties.js', re: /function getRatioFilterMatch\(/g, label: 'admin local ratio filter helper' },
+];
 
 
 let failed = false;

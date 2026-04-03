@@ -594,15 +594,22 @@
   }
 
   function getFilteredRows() {
-    let list = state.items.slice();
-    list = list.filter((p) => matchesSourceFilter(p) && matchesStatusFilter(p) && matchesKeywordFilter(p));
-    return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    const list = state.items.slice();
+    const filtered = (PropertyDomain && typeof PropertyDomain.applyPropertyFilters === 'function')
+      ? PropertyDomain.applyPropertyFilters(list, { activeCard: state.source, status: state.status, keyword: state.keyword }, {
+          keywordFields: ["address", "assignedAgentName", "regionGu", "regionDong", "type", "rightsAnalysis", "siteInspection", "opinion"],
+        })
+      : list.filter((p) => matchesSourceFilter(p) && matchesStatusFilter(p) && matchesKeywordFilter(p));
+    return filtered.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   }
 
   function getFilteredMapMarkers() {
-    let list = Array.isArray(state.mapMarkers) ? state.mapMarkers.slice() : [];
-    list = list.filter((p) => matchesSourceFilter(p) && matchesStatusFilter(p) && matchesKeywordFilter(p));
-    return list;
+    const list = Array.isArray(state.mapMarkers) ? state.mapMarkers.slice() : [];
+    return (PropertyDomain && typeof PropertyDomain.applyPropertyFilters === 'function')
+      ? PropertyDomain.applyPropertyFilters(list, { activeCard: state.source, status: state.status, keyword: state.keyword }, {
+          keywordFields: ["address", "assignedAgentName", "regionGu", "regionDong", "type", "rightsAnalysis", "siteInspection", "opinion"],
+        })
+      : list.filter((p) => matchesSourceFilter(p) && matchesStatusFilter(p) && matchesKeywordFilter(p));
   }
 
   function renderKPIs() {

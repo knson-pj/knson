@@ -95,16 +95,16 @@
     return typeof utils?.escapeHtml === 'function' ? utils.escapeHtml(normalized) : normalized;
   }
 
-  const SOURCE_FILTER_OPTIONS = [
+  const SOURCE_FILTER_OPTIONS = (window.KNSN_PROPERTY_DOMAIN && Array.isArray(window.KNSN_PROPERTY_DOMAIN.PROPERTY_SOURCE_FILTER_OPTIONS) ? window.KNSN_PROPERTY_DOMAIN.PROPERTY_SOURCE_FILTER_OPTIONS : [
     { value: '', label: '전체' },
     { value: 'auction', label: '경매' },
     { value: 'onbid', label: '공매' },
     { value: 'realtor_naver', label: '네이버중개' },
     { value: 'realtor_direct', label: '일반중개' },
     { value: 'general', label: '일반' },
-  ];
+  ]);
 
-  const AREA_FILTER_OPTIONS = [
+  const AREA_FILTER_OPTIONS = (window.KNSN_PROPERTY_DOMAIN && Array.isArray(window.KNSN_PROPERTY_DOMAIN.PROPERTY_AREA_FILTER_OPTIONS) ? window.KNSN_PROPERTY_DOMAIN.PROPERTY_AREA_FILTER_OPTIONS : [
     { value: '', label: '전체 면적' },
     { value: '0-5', label: '5평 미만' },
     { value: '5-10', label: '5~10평' },
@@ -113,9 +113,9 @@
     { value: '30-50', label: '30~50평' },
     { value: '50-100', label: '50평~100평미만' },
     { value: '100-', label: '100평 이상' },
-  ];
+  ]);
 
-  const PRICE_FILTER_OPTIONS = [
+  const PRICE_FILTER_OPTIONS = (window.KNSN_PROPERTY_DOMAIN && Array.isArray(window.KNSN_PROPERTY_DOMAIN.PROPERTY_PRICE_FILTER_OPTIONS) ? window.KNSN_PROPERTY_DOMAIN.PROPERTY_PRICE_FILTER_OPTIONS : [
     { value: '', label: '전체 가격' },
     { value: '0-1', label: '1억 미만' },
     { value: '1-3', label: '1~3억' },
@@ -123,12 +123,12 @@
     { value: '5-10', label: '5~10억' },
     { value: '10-20', label: '10~20억' },
     { value: '20-', label: '20억 이상' },
-  ];
+  ]);
 
-  const RATIO_FILTER_OPTIONS = [
+  const RATIO_FILTER_OPTIONS = (window.KNSN_PROPERTY_DOMAIN && Array.isArray(window.KNSN_PROPERTY_DOMAIN.PROPERTY_RATIO_FILTER_OPTIONS) ? window.KNSN_PROPERTY_DOMAIN.PROPERTY_RATIO_FILTER_OPTIONS : [
     { value: '', label: '전체 비율' },
     { value: '50', label: '50% 이하' },
-  ];
+  ]);
 
   function isPlainSourceFilterSelected(value) {
     if (PropertyRenderers && typeof PropertyRenderers.isPlainSourceFilterSelected === 'function') {
@@ -179,7 +179,10 @@
     return Array.isArray(state?.properties) ? state.properties : [];
   }
 
-  function getAreaFilterMatch(value, area) {
+  const getAreaFilterMatch = (value, area) => {
+    if (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.matchesAreaFilter === 'function') {
+      return window.KNSN_PROPERTY_DOMAIN.matchesAreaFilter(value, area);
+    }
     if (!value) return true;
     const [minStr, maxStr] = String(value).split('-');
     const min = parseFloat(minStr) || 0;
@@ -189,7 +192,10 @@
     return numericArea >= min && (max === Infinity || numericArea < max);
   }
 
-  function getPriceFilterMatch(value, row) {
+  const getPriceFilterMatch = (value, row) => {
+    if (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.matchesPriceRangeFilter === 'function') {
+      return window.KNSN_PROPERTY_DOMAIN.matchesPriceRangeFilter(value, row);
+    }
     if (!value) return true;
     const [minStr, maxStr] = String(value).split('-');
     const min = (parseFloat(minStr) || 0) * 100000000;
@@ -201,7 +207,10 @@
     return price >= min && (max === Infinity || price < max);
   }
 
-  function getRatioFilterMatch(value, row) {
+  const getRatioFilterMatch = (value, row) => {
+    if (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.matchesRatioFilter === 'function') {
+      return window.KNSN_PROPERTY_DOMAIN.matchesRatioFilter(value, row);
+    }
     if (!value) return true;
     const sourceType = String(row?.sourceType || '').trim();
     if (sourceType !== 'auction' && sourceType !== 'onbid') return false;
@@ -534,58 +543,25 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
   }
 
   mod.getFilteredProperties = function getFilteredProperties(options = {}) {
-    const { state, utils } = ctx();
-    const ignoreKeys = new Set(Array.isArray(options?.ignoreKeys) ? options.ignoreKeys : []);
-    const f = state.propertyFilters || {};
-    const kw = String(f.keyword || '').toLowerCase().trim();
+    const { state } = ctx();
+    const ignoreKeys = Array.isArray(options?.ignoreKeys) ? options.ignoreKeys : [];
+    const filters = state.propertyFilters || {};
     const sortKey = String(state?.propertySort?.key || '').trim();
     const auctionOnlyForSort = sortKey === 'currentPrice' || sortKey === 'ratio';
     const sourceRows = getPropertyFilterSourceRows(state);
-    const filtered = sourceRows.filter((p) => {
-      if (auctionOnlyForSort && p.sourceType !== 'auction' && p.sourceType !== 'onbid') return false;
-      if (!ignoreKeys.has('activeCard') && f.activeCard && f.activeCard !== 'all') {
-        if (utils.PropertyDomain && typeof utils.PropertyDomain.matchesSourceBucket === 'function') {
-          if (!utils.PropertyDomain.matchesSourceBucket(p, f.activeCard)) return false;
-        } else if (f.activeCard === 'realtor_naver') {
-          if (p.sourceType !== 'realtor' || p.isDirectSubmission) return false;
-        } else if (f.activeCard === 'realtor_direct') {
-          if (p.sourceType !== 'realtor' || !p.isDirectSubmission) return false;
-        } else if (['auction', 'onbid', 'general'].includes(f.activeCard)) {
-          if (p.sourceType !== f.activeCard) return false;
-        }
-      }
-      if (!ignoreKeys.has('status') && f.status) {
-        if ((p.status || '') !== f.status && !(p.status || '').includes(f.status)) return false;
-      }
-      if (!ignoreKeys.has('area') && f.area) {
-        if (!getAreaFilterMatch(f.area, p.exclusivearea)) return false;
-      }
-      if (!ignoreKeys.has('priceRange') && f.priceRange) {
-        const [minStr, maxStr] = String(f.priceRange).split('-');
-        const min = (parseFloat(minStr) || 0) * 100000000;
-        const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
-        const isAuctionType = p.sourceType === 'auction' || p.sourceType === 'onbid';
-        const price = isAuctionType ? (p.lowprice ?? p.priceMain) : p.priceMain;
-        if (!price || price <= 0) return false;
-        if (price < min || (max !== Infinity && price >= max)) return false;
-      }
-      if (!ignoreKeys.has('ratio50') && f.ratio50) {
-        if (p.sourceType !== 'auction' && p.sourceType !== 'onbid') return false;
-        if (!p.priceMain || !p.lowprice || p.priceMain <= 0) return false;
-        if ((p.lowprice / p.priceMain) > 0.5) return false;
-      }
-      if (!ignoreKeys.has('keyword') && kw) {
-        const hay = [
-          p.itemNo, p.address, p.assetType, p.floor, p.totalfloor,
-          p.rightsAnalysis, p.siteInspection, p.opinion,
-          (p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)),
-          p.regionGu, p.regionDong, p.status,
-        ].filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(kw)) return false;
-      }
-      return true;
-    });
-    return applyPropertySort(filtered, state, utils);
+    const baseRows = auctionOnlyForSort
+      ? sourceRows.filter((p) => p.sourceType === 'auction' || p.sourceType === 'onbid')
+      : sourceRows;
+    const filtered = (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.applyPropertyFilters === 'function')
+      ? window.KNSN_PROPERTY_DOMAIN.applyPropertyFilters(baseRows, filters, {
+          ignoreKeys,
+          keywordFields: [
+            'itemNo', 'address', 'assetType', 'floor', 'totalfloor', 'rightsAnalysis', 'siteInspection', 'opinion', 'regionGu', 'regionDong', 'status',
+            (item) => item.assignedAgentName || getStaffNameByIdLocal(state, item.assignedAgentId),
+          ],
+        })
+      : baseRows;
+    return applyPropertySort(filtered, state, ctx().utils);
   };
 
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {

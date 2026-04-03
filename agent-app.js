@@ -180,16 +180,16 @@
 
   const els = {};
 
-  const SOURCE_FILTER_OPTIONS = [
+  const SOURCE_FILTER_OPTIONS = (PropertyDomain && Array.isArray(PropertyDomain.PROPERTY_SOURCE_FILTER_OPTIONS) ? PropertyDomain.PROPERTY_SOURCE_FILTER_OPTIONS : [
     { value: '', label: '전체' },
     { value: 'auction', label: '경매' },
     { value: 'onbid', label: '공매' },
     { value: 'realtor_naver', label: '네이버중개' },
     { value: 'realtor_direct', label: '일반중개' },
     { value: 'general', label: '일반' },
-  ];
+  ]);
 
-  const AREA_FILTER_OPTIONS = [
+  const AREA_FILTER_OPTIONS = (PropertyDomain && Array.isArray(PropertyDomain.PROPERTY_AREA_FILTER_OPTIONS) ? PropertyDomain.PROPERTY_AREA_FILTER_OPTIONS : [
     { value: '', label: '전체 면적' },
     { value: '0-5', label: '5평 미만' },
     { value: '5-10', label: '5~10평' },
@@ -198,9 +198,9 @@
     { value: '30-50', label: '30~50평' },
     { value: '50-100', label: '50평~100평미만' },
     { value: '100-', label: '100평 이상' },
-  ];
+  ]);
 
-  const PRICE_FILTER_OPTIONS = [
+  const PRICE_FILTER_OPTIONS = (PropertyDomain && Array.isArray(PropertyDomain.PROPERTY_PRICE_FILTER_OPTIONS) ? PropertyDomain.PROPERTY_PRICE_FILTER_OPTIONS : [
     { value: '', label: '전체 가격' },
     { value: '0-1', label: '1억 미만' },
     { value: '1-3', label: '1~3억' },
@@ -208,12 +208,12 @@
     { value: '5-10', label: '5~10억' },
     { value: '10-20', label: '10~20억' },
     { value: '20-', label: '20억 이상' },
-  ];
+  ]);
 
-  const RATIO_FILTER_OPTIONS = [
+  const RATIO_FILTER_OPTIONS = (PropertyDomain && Array.isArray(PropertyDomain.PROPERTY_RATIO_FILTER_OPTIONS) ? PropertyDomain.PROPERTY_RATIO_FILTER_OPTIONS : [
     { value: '', label: '전체 비율' },
     { value: '50', label: '50% 이하' },
-  ];
+  ]);
 
   function isPlainSourceFilterSelected(value) {
     if (PropertyRenderers && typeof PropertyRenderers.isPlainSourceFilterSelected === 'function') {
@@ -773,7 +773,10 @@
     }
   }
 
-  function getAreaFilterMatch(value, area) {
+  const getAreaFilterMatch = (value, area) => {
+    if (PropertyDomain && typeof PropertyDomain.matchesAreaFilter === 'function') {
+      return PropertyDomain.matchesAreaFilter(value, area);
+    }
     if (!value) return true;
     const [minStr, maxStr] = String(value).split('-');
     const min = parseFloat(minStr) || 0;
@@ -783,7 +786,10 @@
     return numericArea >= min && (max === Infinity || numericArea < max);
   }
 
-  function getPriceFilterMatch(value, row) {
+  const getPriceFilterMatch = (value, row) => {
+    if (PropertyDomain && typeof PropertyDomain.matchesPriceRangeFilter === 'function') {
+      return PropertyDomain.matchesPriceRangeFilter(value, row);
+    }
     if (!value) return true;
     const [minStr, maxStr] = String(value).split('-');
     const min = (parseFloat(minStr) || 0) * 100000000;
@@ -795,7 +801,10 @@
     return numericPrice >= min && (max === Infinity || numericPrice < max);
   }
 
-  function getRatioFilterMatch(value, row) {
+  const getRatioFilterMatch = (value, row) => {
+    if (PropertyDomain && typeof PropertyDomain.matchesRatioFilter === 'function') {
+      return PropertyDomain.matchesRatioFilter(value, row);
+    }
     if (!value) return true;
     if (row?.sourceType !== 'auction' && row?.sourceType !== 'onbid') return false;
     const base = Number(row?.priceMain || 0) || 0;
@@ -1483,80 +1492,30 @@
   }
 
   function getFilteredProps(options = {}) {
+    const keywordFields = ['address', 'itemNo', 'opinion'];
+    if (PropertyDomain && typeof PropertyDomain.applyPropertyFilters === 'function') {
+      return PropertyDomain.applyPropertyFilters(state.properties, state.filters, {
+        ignoreKeys: options?.ignoreKeys,
+        keywordFields,
+        todayKey: getTodayDateKey(),
+        isFavorite: (row) => state.favorites.has(row?.id),
+      });
+    }
     let rows = state.properties;
     const f = state.filters;
     const ignoreKeys = new Set(Array.isArray(options?.ignoreKeys) ? options.ignoreKeys : []);
-
-    // 카드 클릭 / 구분 필터
     if (!ignoreKeys.has('activeCard') && f.activeCard && f.activeCard !== 'all') {
       rows = rows.filter((r) => {
-        if (PropertyDomain && typeof PropertyDomain.matchesSourceSelection === 'function') {
-          return PropertyDomain.matchesSourceSelection(r, f.activeCard);
-        }
-        if (PropertyDomain && typeof PropertyDomain.matchesSourceBucket === 'function') {
-          return PropertyDomain.matchesSourceBucket(r, f.activeCard);
-        }
-        if (f.activeCard === 'realtor_naver') return r.sourceType === 'realtor' && !r.isDirectSubmission;
-        if (f.activeCard === 'realtor_direct') return r.sourceType === 'realtor' && r.isDirectSubmission;
-        return r.sourceType === f.activeCard;
+        if (PropertyDomain && typeof PropertyDomain.matchesSourceSelection === 'function') return PropertyDomain.matchesSourceSelection(r, f.activeCard);
+        return true;
       });
     }
-
-    // 면적 필터
-    if (!ignoreKeys.has('area') && f.area) {
-      rows = rows.filter((r) => getAreaFilterMatch(f.area, r.exclusivearea));
-    }
-
-    // 가격대 필터
-    if (!ignoreKeys.has('priceRange') && f.priceRange) {
-      const [minStr, maxStr] = f.priceRange.split('-');
-      const min = (parseFloat(minStr) || 0) * 100000000;
-      const max = maxStr ? parseFloat(maxStr) * 100000000 : Infinity;
-      rows = rows.filter((r) => {
-        const isAuctionType = r.sourceType === 'auction' || r.sourceType === 'onbid';
-        const price = isAuctionType ? (r.lowprice ?? r.priceMain) : r.priceMain;
-        return price && price > 0 && price >= min && (max === Infinity || price < max);
-      });
-    }
-
-    // 50% 이하 비율 필터
-    if (!ignoreKeys.has('ratio50') && f.ratio50) {
-      rows = rows.filter((r) => {
-        if (r.sourceType !== 'auction' && r.sourceType !== 'onbid') return false;
-        if (!r.priceMain || !r.lowprice || r.priceMain <= 0) return false;
-        return (r.lowprice / r.priceMain) <= 0.5;
-      });
-    }
-
-    // 당일 입찰기일 필터 (경매/공매만)
-    if (!ignoreKeys.has('todayBid') && f.todayBid) {
-      const d = new Date();
-      const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      rows = rows.filter((r) => {
-        if (r.sourceType !== 'auction' && r.sourceType !== 'onbid') return false;
-        return String(r.dateMain || '').trim().startsWith(todayStr);
-      });
-    }
-
-    // 관심물건 필터
-    if (!ignoreKeys.has('favOnly') && f.favOnly) {
-      rows = rows.filter((r) => state.favorites.has(r.id));
-    }
-
-    // 키워드 필터
-    if (!ignoreKeys.has('keyword') && f.keyword) {
-      if (PropertyDomain && typeof PropertyDomain.matchesKeyword === 'function') {
-        rows = rows.filter((r) => PropertyDomain.matchesKeyword(r, f.keyword, { fields: ['address', 'itemNo', 'opinion'] }));
-      } else {
-        const kw = String(f.keyword || '').toLowerCase();
-        rows = rows.filter((r) =>
-          (r.address || '').toLowerCase().includes(kw) ||
-          (r.itemNo || '').toLowerCase().includes(kw) ||
-          (r.opinion || '').toLowerCase().includes(kw)
-        );
-      }
-    }
-
+    if (!ignoreKeys.has('area') && f.area) rows = rows.filter((r) => getAreaFilterMatch(f.area, r.exclusivearea));
+    if (!ignoreKeys.has('priceRange') && f.priceRange) rows = rows.filter((r) => getPriceFilterMatch(f.priceRange, r));
+    if (!ignoreKeys.has('ratio50') && f.ratio50) rows = rows.filter((r) => getRatioFilterMatch(f.ratio50, r));
+    if (!ignoreKeys.has('todayBid') && f.todayBid) rows = rows.filter((r) => String(r.dateMain || '').trim().startsWith(getTodayDateKey()));
+    if (!ignoreKeys.has('favOnly') && f.favOnly) rows = rows.filter((r) => state.favorites.has(r.id));
+    if (!ignoreKeys.has('keyword') && f.keyword) rows = rows.filter((r) => PropertyDomain && typeof PropertyDomain.matchesKeyword === 'function' ? PropertyDomain.matchesKeyword(r, f.keyword, { fields: keywordFields }) : true);
     return rows;
   }
 
