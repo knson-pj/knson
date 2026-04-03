@@ -207,6 +207,64 @@
 
 
 
+
+  function setTextMessage(target, text, options = {}) {
+    if (!target) return;
+    const message = String(text || "").trim();
+    const hiddenClass = options.hiddenClass || 'hidden';
+    const errorColor = options.errorColor || '#ff8b8b';
+    const successColor = options.successColor || '#9ff0b6';
+    if (!message) {
+      if (hiddenClass) target.classList.add(hiddenClass);
+      target.textContent = '';
+      if (options.resetStyle !== false) {
+        target.style.color = '';
+        target.style.borderColor = '';
+        target.style.background = '';
+      }
+      return;
+    }
+    target.textContent = message;
+    if (hiddenClass) target.classList.remove(hiddenClass);
+    const isError = options.isError !== false && options.kind !== 'success';
+    if (options.applyColor !== false) {
+      target.style.color = isError ? errorColor : successColor;
+    }
+  }
+
+  function setResultBoxState(target, text, options = {}) {
+    if (!target) return;
+    const message = String(text || '').trim();
+    const hiddenClass = options.hiddenClass || 'hidden';
+    if (!message) {
+      target.textContent = '';
+      if (hiddenClass) target.classList.add(hiddenClass);
+      target.classList.remove(options.errorClass || 'is-error', options.successClass || 'is-success');
+      return;
+    }
+    if (hiddenClass) target.classList.remove(hiddenClass);
+    const isError = options.isError === true || options.kind === 'error';
+    target.classList.toggle(options.errorClass || 'is-error', !!isError);
+    target.classList.toggle(options.successClass || 'is-success', !isError);
+    target.textContent = message;
+  }
+
+  function setModalVisibility(target, open, options = {}) {
+    if (!target) return;
+    const visible = !!open;
+    const hiddenClass = options.hiddenClass || 'hidden';
+    if (hiddenClass) target.classList.toggle(hiddenClass, !visible);
+    target.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    const bodyClass = options.bodyClass || '';
+    if (bodyClass) document.body.classList.toggle(bodyClass, visible);
+  }
+
+  function setFormBusyState(form, busy, options = {}) {
+    if (!form || typeof form.querySelectorAll !== 'function') return;
+    const selector = options.selector || 'button, input, select, textarea';
+    [...form.querySelectorAll(selector)].forEach((el) => { el.disabled = !!busy; });
+  }
+
   function getNamedFormControl(form, name) {
     if (!form || !name) return null;
     const control = form.elements?.[name];
@@ -411,6 +469,10 @@
     feedbackKindLabel,
     buildFormFeedbackHtml,
     setFeedbackBoxMessage,
+    setTextMessage,
+    setResultBoxState,
+    setModalVisibility,
+    setFormBusyState,
     getNamedFormControl,
     findFieldShell,
     findFieldLabelElement,

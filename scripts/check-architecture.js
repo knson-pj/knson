@@ -24,8 +24,6 @@ const bannedPatterns = [
 const helperRules = [];
 
 
-
-
 let failed = false;
 for (const file of pageFiles) {
   const full = path.join(root, file);

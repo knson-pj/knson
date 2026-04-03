@@ -530,6 +530,10 @@
     }
     if (els.passwordChangeForm) els.passwordChangeForm.reset();
     setPwdMsg("");
+    if (PropertyRenderers && typeof PropertyRenderers.setModalVisibility === 'function') {
+      PropertyRenderers.setModalVisibility(els.passwordChangeModal, true, { bodyClass: 'modal-open' });
+      return;
+    }
     setModalOpen(true);
     els.passwordChangeModal.classList.remove("hidden");
     els.passwordChangeModal.setAttribute("aria-hidden", "false");
@@ -537,14 +541,22 @@
 
   function closePasswordChangeModal() {
     if (!els.passwordChangeModal) return;
-    els.passwordChangeModal.classList.add("hidden");
-    els.passwordChangeModal.setAttribute("aria-hidden", "true");
-    setModalOpen(false);
+    if (PropertyRenderers && typeof PropertyRenderers.setModalVisibility === 'function') {
+      PropertyRenderers.setModalVisibility(els.passwordChangeModal, false, { bodyClass: 'modal-open' });
+    } else {
+      els.passwordChangeModal.classList.add("hidden");
+      els.passwordChangeModal.setAttribute("aria-hidden", "true");
+      setModalOpen(false);
+    }
     setPwdMsg("");
   }
 
   function setPwdMsg(text, isError = true) {
     if (!els.pwdMsg) return;
+    if (PropertyRenderers && typeof PropertyRenderers.setTextMessage === 'function') {
+      PropertyRenderers.setTextMessage(els.pwdMsg, text, { isError, hiddenClass: '', resetStyle: true });
+      return;
+    }
     els.pwdMsg.style.color = isError ? "#ff8b8b" : "#9ff0b6";
     els.pwdMsg.textContent = text || "";
   }
@@ -583,6 +595,10 @@
 
   function setGlobalMsg(msg = "") {
     if (!els.globalMsg) return;
+    if (PropertyRenderers && typeof PropertyRenderers.setTextMessage === 'function') {
+      PropertyRenderers.setTextMessage(els.globalMsg, msg, { isError: true, applyColor: false });
+      return;
+    }
     const m = String(msg || "").trim();
     els.globalMsg.textContent = m;
     els.globalMsg.classList.toggle("hidden", !m);
@@ -2677,6 +2693,10 @@ function sortGuUnitsByAdjacency(...args) {
 
   function showResultBox(el, text, isError = false) {
     if (!el) return;
+    if (PropertyRenderers && typeof PropertyRenderers.setResultBoxState === 'function') {
+      PropertyRenderers.setResultBoxState(el, text, { isError });
+      return;
+    }
     el.classList.remove("hidden");
     el.classList.toggle("is-error", !!isError);
     el.classList.toggle("is-success", !isError);
@@ -2684,6 +2704,10 @@ function sortGuUnitsByAdjacency(...args) {
   }
 
   function setFormBusy(form, busy) {
+    if (PropertyRenderers && typeof PropertyRenderers.setFormBusyState === 'function') {
+      PropertyRenderers.setFormBusyState(form, busy);
+      return;
+    }
     if (!form || typeof form.querySelectorAll !== "function") return;
     [...form.querySelectorAll("button, input, select, textarea")].forEach((el) => {
       el.disabled = !!busy;

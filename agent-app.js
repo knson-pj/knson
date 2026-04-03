@@ -445,6 +445,15 @@
 
   function setGlobalMsg(text, isError = true) {
     if (!els.globalMsg) return;
+    if (PropertyRenderers && typeof PropertyRenderers.setTextMessage === 'function') {
+      PropertyRenderers.setTextMessage(els.globalMsg, text, {
+        isError,
+        applyColor: false,
+        resetStyle: true,
+      });
+      if (!isError && String(text || '').trim()) els.globalMsg.style.color = 'var(--text)';
+      return;
+    }
     const msg = String(text || "").trim();
     if (!msg) {
       els.globalMsg.classList.add("hidden");
@@ -1860,15 +1869,23 @@ function renderPagination(totalPages) {
     applyAgentEditFormMode(item, view);
     arrangeAgentOpinionFields(f);
     setAgentEditSection("basic");
-    els.agEditModal.classList.remove("hidden");
-    els.agEditModal.setAttribute("aria-hidden", "false");
+    if (PropertyRenderers && typeof PropertyRenderers.setModalVisibility === 'function') {
+      PropertyRenderers.setModalVisibility(els.agEditModal, true);
+    } else {
+      els.agEditModal.classList.remove("hidden");
+      els.agEditModal.setAttribute("aria-hidden", "false");
+    }
   }
 
   function closeEditModal() {
     state.editingProperty = null;
     if (els.agEditModal) {
-      els.agEditModal.classList.add("hidden");
-      els.agEditModal.setAttribute("aria-hidden", "true");
+      if (PropertyRenderers && typeof PropertyRenderers.setModalVisibility === 'function') {
+        PropertyRenderers.setModalVisibility(els.agEditModal, false);
+      } else {
+        els.agEditModal.classList.add("hidden");
+        els.agEditModal.setAttribute("aria-hidden", "true");
+      }
     }
   }
 
@@ -2022,11 +2039,23 @@ function renderPagination(totalPages) {
 
   // ── Password Change ──
   function openPwdModal() {
-    if (els.pwdModal) { els.pwdModal.classList.remove("hidden"); els.pwdModal.setAttribute("aria-hidden", "false"); }
+    if (els.pwdModal) {
+      if (PropertyRenderers && typeof PropertyRenderers.setModalVisibility === 'function') {
+        PropertyRenderers.setModalVisibility(els.pwdModal, true);
+      } else {
+        els.pwdModal.classList.remove("hidden"); els.pwdModal.setAttribute("aria-hidden", "false");
+      }
+    }
     if (els.pwdMsg) els.pwdMsg.textContent = "";
   }
   function closePwdModal() {
-    if (els.pwdModal) { els.pwdModal.classList.add("hidden"); els.pwdModal.setAttribute("aria-hidden", "true"); }
+    if (els.pwdModal) {
+      if (PropertyRenderers && typeof PropertyRenderers.setModalVisibility === 'function') {
+        PropertyRenderers.setModalVisibility(els.pwdModal, false);
+      } else {
+        els.pwdModal.classList.add("hidden"); els.pwdModal.setAttribute("aria-hidden", "true");
+      }
+    }
   }
   async function changePassword() {
     const f = els.pwdForm;
