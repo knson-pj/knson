@@ -4,6 +4,7 @@ const { send, getJsonBody, normalizeAddress, extractGuDong, normalizePhone, norm
 const { getSession } = require('./_lib/auth');
 const { hasSupabaseAdminEnv, resolveCurrentUserContext, getEnv } = require('./_lib/supabase-admin');
 const PropertyDomain = require('../knson-property-domain.js');
+const PropertyPhotos = require('./_lib/property-photos');
 
 function omitUndefined(obj) {
   return Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v !== undefined));
@@ -156,16 +157,6 @@ function kstDateKey(input) {
   } catch {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
-}
-
-function getKstDateRangeIso(dateKey) {
-  const key = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '').trim()) ? String(dateKey).trim() : kstDateKey();
-  if (!key) return null;
-  const start = new Date(`${key}T00:00:00+09:00`);
-  const end = new Date(`${key}T00:00:00+09:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-  end.setUTCDate(end.getUTCDate() + 1);
-  return { startIso: start.toISOString(), endIso: end.toISOString(), dateKey: key };
 }
 
 function normalizeActionType(value) {
@@ -337,33 +328,6 @@ async function fetchRowsByActorNames(baseSelect, date, actorNames) {
   return merged;
 }
 
-async function fetchRowsByCreatedAtRange(baseSelect, { startIso, endIso, actorId = '', actorNames = [], propertyIds = [] } = {}) {
-  if (!startIso || !endIso) return [];
-  const merged = [];
-  const seen = new Set();
-  const addRows = (rows) => {
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const key = String(row?.id || `${row?.actor_id || ''}|${row?.property_id || ''}|${row?.created_at || ''}`).trim();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      merged.push(row);
-    }
-  };
-  if (actorId) {
-    addRows(await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}&order=created_at.desc`));
-  }
-  for (const name of Array.isArray(actorNames) ? actorNames.filter(Boolean) : []) {
-    addRows(await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(name)}&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}&order=created_at.desc`));
-  }
-  if (Array.isArray(propertyIds) && propertyIds.length) {
-    const uniq = [...new Set(propertyIds.filter(Boolean).map((v) => String(v).trim()).filter(Boolean))];
-    for (const propertyId of uniq.slice(0, 200)) {
-      addRows(await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&property_id=eq.${encodeURIComponent(propertyId)}&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}&order=created_at.desc`));
-    }
-  }
-  return merged;
-}
-
 async function fetchRowsByAssignedProperties(baseSelect, date, actorId) {
   const userId = cleanText(actorId, 120);
   if (!userId) return [];
@@ -387,24 +351,13 @@ async function fetchRowsByAssignedProperties(baseSelect, date, actorId) {
   }
   if (!idSet.size && !itemNoSet.size && !addressSet.size) return [];
 
-  const range = getKstDateRangeIso(date);
   const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`);
-  const createdRows = range ? await fetchRowsByCreatedAtRange(baseSelect, { startIso: range.startIso, endIso: range.endIso, propertyIds: [...idSet] }) : [];
-  return mergeActivityRowsByIdAndName(
-    (Array.isArray(rows) ? rows : []).filter((row) => {
-      const propertyId = cleanText(row?.property_id, 120);
-      const itemNo = cleanText(row?.property_item_no, 120);
-      const address = cleanText(row?.property_address, 500);
-      return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
-    }),
-    (Array.isArray(createdRows) ? createdRows : []).filter((row) => {
-      const propertyId = cleanText(row?.property_id, 120);
-      const itemNo = cleanText(row?.property_item_no, 120);
-      const address = cleanText(row?.property_address, 500);
-      return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
-    }),
-    actorId
-  );
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const propertyId = cleanText(row?.property_id, 120);
+    const itemNo = cleanText(row?.property_item_no, 120);
+    const address = cleanText(row?.property_address, 500);
+    return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
+  });
 }
 
 async function handleActivityLog(req, res) {
@@ -432,38 +385,24 @@ async function handleActivityLog(req, res) {
         : kstDateKey();
       const requestedActorId = cleanText(url.searchParams.get('actor_id'), 120);
       const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
-      const includeAssignedFallback = ['1', 'true', 'yes'].includes(String(url.searchParams.get('include_assigned') || '').trim().toLowerCase());
       const actorId = ctx.role === 'admin' && requestedActorId ? requestedActorId : ctx.userId;
       const actorName = cleanText(ctx.name || ctx.email || '', 120);
       const baseSelect = 'id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at';
       let rows = [];
-      const range = getKstDateRangeIso(date);
       if (adminViewRequested) {
         let query = `/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}`;
         if (requestedActorId) {
           query += `&actor_id=eq.${encodeURIComponent(requestedActorId)}`;
         }
         query += '&order=actor_name.asc.nullslast,created_at.desc';
-        const actionDateRows = await supabaseRest(query);
-        const createdRows = range
-          ? await fetchRowsByCreatedAtRange(baseSelect, { startIso: range.startIso, endIso: range.endIso, actorId: requestedActorId || '' })
-          : [];
-        rows = mergeActivityRowsByIdAndName(actionDateRows, createdRows, requestedActorId || actorId);
-        rows.sort((a, b) => {
-          const actorCmp = String(a?.actor_name || '').localeCompare(String(b?.actor_name || ''));
-          if (actorCmp !== 0) return actorCmp;
-          return String(b?.created_at || '').localeCompare(String(a?.created_at || ''));
-        });
+        rows = await supabaseRest(query);
       } else {
         const actorNames = collectActorNameCandidates(ctx);
         const byActorId = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
         const rowsById = await supabaseRest(byActorId);
         const rowsByName = await fetchRowsByActorNames(baseSelect, date, actorNames);
-        const createdRows = range
-          ? await fetchRowsByCreatedAtRange(baseSelect, { startIso: range.startIso, endIso: range.endIso, actorId, actorNames })
-          : [];
-        rows = mergeActivityRowsByIdAndName(mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId), createdRows, actorId);
-        if (!rows.length && includeAssignedFallback) {
+        rows = mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId);
+        if (!rows.length) {
           rows = await fetchRowsByAssignedProperties(baseSelect, date, actorId);
         }
       }
@@ -479,7 +418,7 @@ async function handleActivityLog(req, res) {
           queryMode: adminViewRequested ? 'admin_view' : 'self_view',
           actorIdRows: Array.isArray(rows) ? rows.filter((row) => String(row?.actor_id || '').trim() === String(actorId || '').trim()).length : 0,
           actorNameCandidates: adminViewRequested ? [] : collectActorNameCandidates(ctx),
-          fallbackMode: adminViewRequested ? null : (Array.isArray(rows) && rows.length ? (includeAssignedFallback ? 'actor_or_name_or_assigned_property' : 'actor_or_name') : 'empty'),
+          fallbackMode: adminViewRequested ? null : (Array.isArray(rows) && rows.length ? 'actor_or_name_or_assigned_property' : 'empty'),
         },
       });
     } catch (err) {
@@ -767,6 +706,124 @@ function handleLegacyWrite(req, res) {
   return send(res, 405, { ok: false, message: 'Method Not Allowed' });
 }
 
+
+
+async function handlePhotoAction(req, res, action) {
+  if (!hasSupabaseAdminEnv()) {
+    return send(res, 501, { ok: false, message: '사진 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
+  }
+  const body = req.__jsonBody || getJsonBody(req);
+  const propertyId = req.__photoPropertyId || body?.propertyId;
+  const photoId = String(body?.photoId || '').trim();
+  const access = await PropertyPhotos.requirePropertyAccess(req, res, propertyId);
+  if (!access) return;
+  try {
+    if (action === 'list') {
+      const rows = await PropertyPhotos.listPhotoRows(access.propertyId);
+      const items = await Promise.all(rows.map(async (row) => ({
+        id: row.id,
+        propertyId: row.property_id,
+        propertyGlobalId: row.property_global_id,
+        thumbUrl: await PropertyPhotos.createSignedUrl(row.thumb_path).catch(() => ''),
+        originalUrl: await PropertyPhotos.createSignedUrl(row.storage_path).catch(() => ''),
+        thumbPath: row.thumb_path,
+        storagePath: row.storage_path,
+        mimeType: row.mime_type,
+        width: row.width,
+        height: row.height,
+        sizeBytes: row.size_bytes,
+        sortOrder: row.sort_order,
+        isPrimary: !!row.is_primary,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })));
+      return send(res, 200, { ok: true, items });
+    }
+
+    if (action === 'prepare') {
+      const count = Math.max(1, Math.min(10, Number(body?.count || 1)));
+      const existingCount = await PropertyPhotos.getActivePhotoCount(access.propertyId);
+      if (existingCount + count > PropertyPhotos.MAX_PHOTOS_PER_PROPERTY) {
+        return send(res, 400, { ok: false, message: `사진은 매물당 최대 ${PropertyPhotos.MAX_PHOTOS_PER_PROPERTY}장까지 등록할 수 있습니다.` });
+      }
+      const uploads = [];
+      for (let i = 0; i < count; i += 1) {
+        uploads.push(PropertyPhotos.buildPhotoPaths(access.propertyId, PropertyPhotos.makeId()));
+      }
+      return send(res, 200, { ok: true, uploads, existingCount, maxPhotos: PropertyPhotos.MAX_PHOTOS_PER_PROPERTY });
+    }
+
+    if (action === 'commit') {
+      const photos = Array.isArray(body?.photos) ? body.photos : [];
+      if (!photos.length) return send(res, 400, { ok: false, message: '저장할 사진이 없습니다.' });
+      const existing = await PropertyPhotos.listPhotoRows(access.propertyId);
+      let nextSort = existing.reduce((max, row) => Math.max(max, Number(row?.sort_order || 0)), -1) + 1;
+      const hasPrimary = existing.some((row) => !!row.is_primary);
+      const items = [];
+      for (let i = 0; i < photos.length; i += 1) {
+        const entry = photos[i] || {};
+        if (!entry.photoId || !entry.storagePath || !entry.thumbPath || !entry.originalDataUrl || !entry.thumbDataUrl) throw new Error('사진 업로드 데이터가 올바르지 않습니다.');
+        const originalMeta = await PropertyPhotos.uploadObject(entry.storagePath, entry.originalDataUrl, entry.mimeType || 'image/webp');
+        await PropertyPhotos.uploadObject(entry.thumbPath, entry.thumbDataUrl, 'image/webp');
+        const inserted = await PropertyPhotos.insertPhotoRow({
+          id: entry.photoId,
+          property_id: access.propertyId,
+          property_global_id: access.property?.global_id || null,
+          storage_path: entry.storagePath,
+          thumb_path: entry.thumbPath,
+          mime_type: entry.mimeType || originalMeta.mimeType || 'image/webp',
+          width: Number(entry.width || 0) || null,
+          height: Number(entry.height || 0) || null,
+          size_bytes: Number(entry.sizeBytes || originalMeta.sizeBytes || 0) || null,
+          sort_order: nextSort,
+          is_primary: !hasPrimary && i === 0,
+          uploaded_by: access.ctx?.userId || null,
+        });
+        items.push(inserted);
+        nextSort += 1;
+      }
+      return send(res, 200, { ok: true, items });
+    }
+
+    if (action === 'set_primary') {
+      if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
+      const photo = await PropertyPhotos.getPhotoRow(photoId);
+      if (!photo || Number(photo.property_id) !== Number(access.propertyId) || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      await PropertyPhotos.patchPhotoRows(`property_id=eq.${encodeURIComponent(access.propertyId)}&deleted_at=is.null`, { is_primary: false, updated_at: new Date().toISOString() });
+      const updated = await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { is_primary: true, updated_at: new Date().toISOString() });
+      return send(res, 200, { ok: true, item: Array.isArray(updated) ? (updated[0] || null) : updated });
+    }
+
+    if (action === 'reorder') {
+      const orderedPhotoIds = Array.isArray(body?.orderedPhotoIds) ? body.orderedPhotoIds.map((v) => String(v || '').trim()).filter(Boolean) : [];
+      const rows = await PropertyPhotos.listPhotoRows(access.propertyId);
+      const rowIds = new Set(rows.map((row) => String(row.id || '').trim()));
+      const finalOrder = orderedPhotoIds.filter((id) => rowIds.has(id));
+      rows.forEach((row) => { const id = String(row.id || '').trim(); if (!finalOrder.includes(id)) finalOrder.push(id); });
+      await Promise.all(finalOrder.map((pid, index) => PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(pid)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { sort_order: index, updated_at: new Date().toISOString() })));
+      return send(res, 200, { ok: true, orderedPhotoIds: finalOrder });
+    }
+
+    if (action === 'delete') {
+      if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
+      const photo = await PropertyPhotos.getPhotoRow(photoId);
+      if (!photo || Number(photo.property_id) !== Number(access.propertyId) || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { deleted_at: new Date().toISOString(), is_primary: false, updated_at: new Date().toISOString() });
+      await PropertyPhotos.removeObjects([photo.storage_path, photo.thumb_path]).catch(() => null);
+      if (photo.is_primary) {
+        const remaining = await PropertyPhotos.listPhotoRows(access.propertyId);
+        const next = remaining.find((row) => String(row.id || '') !== photoId);
+        if (next) await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(next.id)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { is_primary: true, updated_at: new Date().toISOString() });
+      }
+      return send(res, 200, { ok: true, removedId: photoId });
+    }
+
+    return send(res, 400, { ok: false, message: '지원하지 않는 photo_action 입니다.' });
+  } catch (err) {
+    return send(res, err?.status || 500, { ok: false, message: err?.message || '사진 처리 중 오류가 발생했습니다.', details: err?.data || null });
+  }
+}
+
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
 
@@ -780,6 +837,12 @@ module.exports = async function handler(req, res) {
 
   if ((req.method === 'GET' && dailyReportRequested) || dailyReportPost) {
     return handleActivityLog(req, res);
+  }
+
+  const photoAction = String((req.method === 'GET' ? url.searchParams.get('photo_action') : req.__jsonBody?.photo_action) || '').trim().toLowerCase();
+  if (photoAction) {
+    req.__photoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || '';
+    return handlePhotoAction(req, res, photoAction);
   }
 
   if (req.method === 'GET') {

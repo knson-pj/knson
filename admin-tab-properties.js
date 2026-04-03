@@ -1022,8 +1022,9 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     els.propertyEditModalAdmin.setAttribute('aria-hidden', 'false');
     const PhotoManager = window.KNSN_PROPERTY_PHOTOS || null;
     const propertyId = String(workingItem?.id || workingItem?._raw?.id || '').trim();
-    if (PhotoManager && propertyId && typeof PhotoManager.mountSection === 'function') {
-      PhotoManager.mountSection({ form: f, propertyId, api }).catch((err) => {
+    const adminApi = ctx().api;
+    if (PhotoManager && propertyId && typeof PhotoManager.mountSection === 'function' && typeof adminApi === 'function') {
+      PhotoManager.mountSection({ form: f, propertyId, api: adminApi }).catch((err) => {
         console.warn('admin photo section mount failed', err);
       });
     }

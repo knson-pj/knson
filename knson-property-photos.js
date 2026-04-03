@@ -35,9 +35,9 @@
     root.innerHTML = SECTION_HTML;
     const section = root.firstElementChild;
     const fieldNodes = [
-      form.querySelector('textarea[name="dailyIssue"]'),
-      form.querySelector('textarea[name="opinion"]'),
       form.querySelector('textarea[name="siteInspection"]'),
+      form.querySelector('textarea[name="opinion"]'),
+      form.querySelector('textarea[name="dailyIssue"]'),
     ].filter(Boolean);
     const anchor = fieldNodes[fieldNodes.length - 1]?.closest('.field, .grid2, .grid3, section, div');
     if (anchor && anchor.parentElement) anchor.after(section);

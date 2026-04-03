@@ -424,33 +424,27 @@
 
 
   async function listPropertyPhotosViaApi(api, { propertyId, auth = true } = {}) {
-    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
-    return api(`/property-photos/list?${encodeQueryParams({ propertyId })}`, { auth });
+    return api(`/properties?photo_action=list&${encodeQueryParams({ propertyId })}`, { auth });
   }
 
   async function preparePropertyPhotosViaApi(api, { propertyId, count = 1, auth = true } = {}) {
-    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
-    return api('/property-photos/prepare', { method: 'POST', auth, body: { propertyId, count } });
+    return api('/properties', { method: 'POST', auth, body: { photo_action: 'prepare', propertyId, count } });
   }
 
   async function commitPropertyPhotosViaApi(api, { propertyId, photos, auth = true } = {}) {
-    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
-    return api('/property-photos/commit', { method: 'POST', auth, body: { propertyId, photos: Array.isArray(photos) ? photos : [] } });
+    return api('/properties', { method: 'POST', auth, body: { photo_action: 'commit', propertyId, photos: Array.isArray(photos) ? photos : [] } });
   }
 
   async function setPrimaryPropertyPhotoViaApi(api, { propertyId, photoId, auth = true } = {}) {
-    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
-    return api('/property-photos/set-primary', { method: 'POST', auth, body: { propertyId, photoId } });
+    return api('/properties', { method: 'POST', auth, body: { photo_action: 'set_primary', propertyId, photoId } });
   }
 
   async function reorderPropertyPhotosViaApi(api, { propertyId, orderedPhotoIds, auth = true } = {}) {
-    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
-    return api('/property-photos/reorder', { method: 'POST', auth, body: { propertyId, orderedPhotoIds: Array.isArray(orderedPhotoIds) ? orderedPhotoIds : [] } });
+    return api('/properties', { method: 'POST', auth, body: { photo_action: 'reorder', propertyId, orderedPhotoIds: Array.isArray(orderedPhotoIds) ? orderedPhotoIds : [] } });
   }
 
   async function deletePropertyPhotoViaApi(api, { propertyId, photoId, auth = true } = {}) {
-    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
-    return api('/property-photos/delete', { method: 'POST', auth, body: { propertyId, photoId } });
+    return api('/properties', { method: 'POST', auth, body: { photo_action: 'delete', propertyId, photoId } });
   }
 
   async function fetchAdminStaffViaApi(api, { auth = true } = {}) {
