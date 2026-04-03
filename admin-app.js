@@ -1431,11 +1431,12 @@ function bindEvents() {
     const refreshSummary = options.refreshSummary !== false;
     const forceFull = !!options.forceFull;
     const forceRefreshFull = !!options.forceRefreshFull;
+    const silent = !!options.silent;
     const loadingText = state.activeTab === "home"
       ? "대시보드 데이터를 불러오는 중입니다."
       : "물건 리스트를 불러오는 중입니다.";
 
-    setAdminLoading("properties", true, loadingText);
+    if (!silent) setAdminLoading("properties", true, loadingText);
     try {
       // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
@@ -1530,7 +1531,7 @@ function bindEvents() {
     updateGeocodeStatusBar();
     if (state.activeTab === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
     } finally {
-      setAdminLoading("properties", false);
+      if (!silent) setAdminLoading("properties", false);
     }
   }
 

@@ -36,7 +36,7 @@
   function renderDetailIndicator(kind, text, utils) {
     const raw = String(text || '').trim();
     if (!raw) return '-';
-    const label = kind === 'rights' ? '권리분석' : '현장실사';
+    const label = kind === 'opinion' ? '담당자 의견' : '현장실사';
     const content = nl2brEscaped(utils, raw);
     return `
       <div class="detail-indicator" data-detail-kind="${utils.escapeAttr(kind)}">
@@ -368,13 +368,30 @@
 
 
   function arrangeAdminOpinionFields(form) {
-    if (window.KNSN_PROPERTY_RENDERERS && typeof window.KNSN_PROPERTY_RENDERERS.arrangeOpinionFields === 'function') {
-      return window.KNSN_PROPERTY_RENDERERS.arrangeOpinionFields(form, {
-        shellSelectors: ['[data-aem-field]', '.form-field'],
-        fieldNames: { site: 'siteInspection', rights: 'rightsAnalysis', opinion: 'opinion' },
-        labels: { site: '현장실사', rights: '담당자 의견', opinion: '금일 이슈사항' },
-        textareaClass: 'aem-textarea',
-      });
+    if (!form) return null;
+    if (PropertyRenderers && typeof PropertyRenderers.findFieldShell === 'function') {
+      const siteShell = PropertyRenderers.findFieldShell(form, 'siteInspection', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
+      const opinionShell = PropertyRenderers.findFieldShell(form, 'opinion', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
+      if (siteShell) {
+        PropertyRenderers.ensureTextareaField?.(form, 'siteInspection', siteShell, { textareaClass: 'aem-textarea', rows: 8 });
+        PropertyRenderers.setFieldLabel?.(siteShell, '현장실사');
+        siteShell.classList.remove('hidden');
+        siteShell.hidden = false;
+        siteShell.style.display = '';
+      }
+      if (opinionShell) {
+        PropertyRenderers.ensureTextareaField?.(form, 'opinion', opinionShell, { textareaClass: 'aem-textarea', rows: 8 });
+        PropertyRenderers.setFieldLabel?.(opinionShell, '담당자 의견');
+        opinionShell.classList.remove('hidden');
+        opinionShell.hidden = false;
+        opinionShell.style.display = '';
+      }
+      const parent = siteShell && opinionShell && siteShell.parentElement === opinionShell.parentElement ? siteShell.parentElement : null;
+      if (parent) {
+        parent.appendChild(siteShell);
+        parent.appendChild(opinionShell);
+      }
+      return { siteShell, opinionShell };
     }
     return null;
   }
@@ -389,7 +406,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
     const isGeneral = bucket === 'general' || normalizedSource === 'general';
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="rightsAnalysis"], [data-aem-field="currentPrice"]').forEach((node) => {
+    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="currentPrice"]').forEach((node) => {
       node.classList.toggle('hidden', hideForPlain);
     });
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
@@ -443,7 +460,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const refreshSummary = !!options.refreshSummary;
     try { utils.invalidatePropertyCollections?.(); } catch {}
     Promise.resolve()
-      .then(() => utils.loadProperties?.({ refreshSummary }))
+.then(() => utils.loadProperties?.({ refreshSummary, silent: true }))
       .catch((err) => console.warn('properties refresh failed', err));
   }
 
@@ -474,7 +491,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       ? window.KNSN_PROPERTY_DOMAIN.applyPropertyFilters(baseRows, filters, {
           ignoreKeys,
           keywordFields: [
-            'itemNo', 'address', 'assetType', 'floor', 'totalfloor', 'rightsAnalysis', 'siteInspection', 'opinion', 'regionGu', 'regionDong', 'status',
+            'itemNo', 'address', 'assetType', 'floor', 'totalfloor', 'siteInspection', 'opinion', 'regionGu', 'regionDong', 'status',
             (item) => item.assignedAgentName || getStaffNameByIdLocal(state, item.assignedAgentId),
           ],
         })
@@ -775,7 +792,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const siteText = p.sitearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.sitearea)) : '-';
     const useapprovalText = (utils.formatDate && utils.formatDate(p.useapproval)) || '-';
     const scheduleHtml = typeof utils.formatScheduleHtml === 'function' ? utils.formatScheduleHtml(p) : '-';
-    const rightsHtml = renderDetailIndicator('rights', p.rightsAnalysis, utils);
+    const opinionHtml = renderDetailIndicator('opinion', p.opinion, utils);
     const inspectionHtml = renderDetailIndicator('inspection', p.siteInspection, utils);
     const assigneeText = utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정');
     tr.innerHTML = usePlainLayout
@@ -792,7 +809,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(useapprovalText)}</td>
       <td>${p.priceMain != null ? utils.formatMoneyKRW(p.priceMain) : '-'}</td>
       <td>${assigneeText}</td>
-      <td class="indicator-cell">${rightsHtml}</td>
+      <td class="indicator-cell">${opinionHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
       <td>${formatDateCell(utils, p.createdAt)}</td>
     `
@@ -809,7 +826,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td>${utils.escapeHtml(rate)}</td>
       <td class="schedule-cell">${scheduleHtml}</td>
       <td>${assigneeText}</td>
-      <td class="indicator-cell">${rightsHtml}</td>
+      <td class="indicator-cell">${opinionHtml}</td>
       <td class="indicator-cell">${inspectionHtml}</td>
       <td>${formatDateCell(utils, p.createdAt)}</td>
     `;
@@ -921,7 +938,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('realtorname', view.realtorname ?? '');
     setVal('realtorphone', view.realtorphone ?? '');
     setVal('realtorcell', view.realtorcell ?? '');
-    setVal('rightsAnalysis', view.rightsAnalysis ?? '');
     setVal('siteInspection', view.siteInspection ?? '');
     setVal('opinion', view.opinion ?? '');
     setVal('latitude', view.latitude ?? '');
@@ -962,7 +978,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     lockIfHas('realtorname', hasText(view.realtorname));
     lockIfHas('realtorphone', hasText(view.realtorphone));
     lockIfHas('realtorcell', hasText(view.realtorcell));
-    lockIfHas('rightsAnalysis', hasText(view.rightsAnalysis));
     lockIfHas('siteInspection', hasText(view.siteInspection));
     if (f.elements['sourceType']) f.elements['sourceType'].disabled = !isAdmin;
     if (f.elements['assigneeId']) f.elements['assigneeId'].disabled = !isAdmin;
@@ -1057,7 +1072,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       realtorname: readStr('realtorname') || null,
       realtorphone: readStr('realtorphone') || null,
       realtorcell: readStr('realtorcell') || null,
-      rightsAnalysis: readStr('rightsAnalysis') || null,
       siteInspection: readStr('siteInspection') || null,
       opinion: opinionHistory.length ? opinionHistory[opinionHistory.length - 1].text : (item.opinion || null),
       opinionHistory,
@@ -1077,7 +1091,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
         const ok = (typeof v === 'number') ? isEmptyOldNum : isEmptyOld;
         if (!ok) delete patch[k];
       };
-      ['itemNo','address','assetType','floor','totalfloor','useapproval','status','dateMain','realtorname','realtorphone','realtorcell','rightsAnalysis','siteInspection'].forEach((k) => allowIfEmpty(k, item[k]));
+      ['itemNo','address','assetType','floor','totalfloor','useapproval','status','dateMain','realtorname','realtorphone','realtorcell','siteInspection'].forEach((k) => allowIfEmpty(k, item[k]));
       ['commonarea','exclusivearea','sitearea','priceMain','lowprice','latitude','longitude'].forEach((k) => allowIfEmpty(k, item[k]));
       delete patch.sourceType;
       delete patch.assigneeId;
