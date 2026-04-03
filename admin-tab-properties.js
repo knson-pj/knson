@@ -317,12 +317,6 @@
     return '';
   }
 
-  function buildFormFeedbackHtml(text, kind = 'info') {
-    const message = String(text || '').trim();
-    if (!message) return '';
-    const strongText = kind === 'error' ? '오류' : kind === 'success' ? '완료' : '안내';
-    return `<div class="form-feedback-shell is-${kind}"><div class="admin-loading-box"><span class="admin-loading-spinner" aria-hidden="true"></span><div class="admin-loading-copy"><strong>${strongText}</strong><p>${message}</p></div></div></div>`;
-  }
 
   function toEditSourceTypeValue(item, sourceType, submitterType) {
     const bucket = resolvePropertySourceBucket({ PropertyDomain: window.KNSN_PROPERTY_DOMAIN }, item, sourceType, submitterType);
@@ -511,12 +505,11 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
 
   function setAemMsg(els, text, isError = true) {
     if (!els.aemMsg) return;
-    els.aemMsg.innerHTML = buildFormFeedbackHtml(text, isError ? 'error' : 'success');
-    if (String(text || '').trim()) {
-      window.requestAnimationFrame(() => {
-        try { els.aemMsg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
-      });
+    if (PropertyRenderers && typeof PropertyRenderers.setFeedbackBoxMessage === 'function') {
+      PropertyRenderers.setFeedbackBoxMessage(els.aemMsg, text, { kind: isError ? 'error' : 'success' });
+      return;
     }
+    els.aemMsg.innerHTML = '';
   }
 
 

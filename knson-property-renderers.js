@@ -174,6 +174,38 @@
   }
 
 
+  function feedbackKindLabel(kind) {
+    const key = String(kind || "info").trim().toLowerCase();
+    if (key === "error" || key === "danger") return "오류";
+    if (key === "success" || key === "ok" || key === "done") return "완료";
+    if (key === "warning" || key === "warn") return "주의";
+    return "안내";
+  }
+
+  function buildFormFeedbackHtml(text, kind = "info", options = {}) {
+    const message = String(text || "").trim();
+    if (!message) return "";
+    const strongText = String(options.strongText || feedbackKindLabel(kind));
+    const escapedMessage = options.escape === false ? message : escapeHtml(message);
+    const escapedStrongText = options.escape === false ? strongText : escapeHtml(strongText);
+    const showSpinner = options.spinner !== false;
+    const spinnerHtml = showSpinner ? '<span class="admin-loading-spinner" aria-hidden="true"></span>' : '';
+    return `<div class="form-feedback-shell is-${escapeAttr(kind)}"><div class="admin-loading-box">${spinnerHtml}<div class="admin-loading-copy"><strong>${escapedStrongText}</strong><p>${escapedMessage}</p></div></div></div>`;
+  }
+
+  function setFeedbackBoxMessage(target, text, options = {}) {
+    if (!target) return;
+    const message = String(text || "").trim();
+    const kind = options.kind || (options.isError === false ? "success" : "error");
+    target.innerHTML = buildFormFeedbackHtml(message, kind, options);
+    if (message && options.scroll !== false) {
+      window.requestAnimationFrame(() => {
+        try { target.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+      });
+    }
+  }
+
+
 
   function getNamedFormControl(form, name) {
     if (!form || !name) return null;
@@ -376,6 +408,9 @@
     buildKakaoMapLink,
     normalizePhone,
     formatPhoneDisplay,
+    feedbackKindLabel,
+    buildFormFeedbackHtml,
+    setFeedbackBoxMessage,
     getNamedFormControl,
     findFieldShell,
     findFieldLabelElement,
