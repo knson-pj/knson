@@ -518,14 +518,13 @@
   function renderPropertyPhotoCard(photo) {
     const item = photo && typeof photo === 'object' ? photo : {};
     const title = item.isPrimary ? '대표사진' : '대표 지정';
-    const badge = item.isPrimary ? '<span class="property-photo-badge">대표</span>' : '';
-    const metaHtml = badge ? `<div class="property-photo-card-meta">${badge}</div>` : '';
-    return `
+    const badge = item.isPrimary ? '<span class="property-photo-badge is-corner">대표</span>' : '';
+        return `
       <article class="property-photo-card${item.isPrimary ? ' is-primary' : ''}" data-photo-id="${escapeAttr(item.id || '')}">
         <button type="button" class="property-photo-thumb-btn" data-photo-action="view" data-photo-id="${escapeAttr(item.id || '')}" aria-label="사진 보기">
+          ${badge}
           ${item.thumbUrl ? `<img src="${escapeAttr(item.thumbUrl)}" alt="매물 사진" class="property-photo-thumb" loading="lazy" />` : '<div class="property-photo-thumb placeholder">사진</div>'}
         </button>
-        ${metaHtml}
         <div class="property-photo-card-actions">
           <button type="button" class="btn btn-ghost btn-xs" data-photo-action="move-left" data-photo-id="${escapeAttr(item.id || '')}">◀</button>
           <button type="button" class="btn btn-ghost btn-xs" data-photo-action="move-right" data-photo-id="${escapeAttr(item.id || '')}">▶</button>
