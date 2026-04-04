@@ -424,13 +424,14 @@
 
 
   async function listPropertyPhotosViaApi(api, { propertyId, auth = true } = {}) {
-    return api(`/properties?${encodeQueryParams({ photo_action: 'list', propertyId })}`, { auth });
+    return api(`/properties?${encodeQueryParams({ photo_action: 'list', propertyId })}`, { auth, headers: { 'X-KNSN-Photo-Action': 'list', 'X-KNSN-Property-Id': String(propertyId || '') } });
   }
 
   async function preparePropertyPhotosViaApi(api, { propertyId, count = 1, auth = true } = {}) {
     return api(`/properties?${encodeQueryParams({ photo_action: 'prepare', propertyId })}`, {
       method: 'POST',
       auth,
+      headers: { 'X-KNSN-Photo-Action': 'prepare', 'X-KNSN-Property-Id': String(propertyId || '') },
       body: { photo_action: 'prepare', propertyId, count },
     });
   }
@@ -439,6 +440,7 @@
     return api(`/properties?${encodeQueryParams({ photo_action: 'commit', propertyId })}`, {
       method: 'POST',
       auth,
+      headers: { 'X-KNSN-Photo-Action': 'commit', 'X-KNSN-Property-Id': String(propertyId || '') },
       body: { photo_action: 'commit', propertyId, photos: Array.isArray(photos) ? photos : [] },
     });
   }
@@ -447,6 +449,7 @@
     return api(`/properties?${encodeQueryParams({ photo_action: 'set_primary', propertyId, photoId })}`, {
       method: 'POST',
       auth,
+      headers: { 'X-KNSN-Photo-Action': 'set_primary', 'X-KNSN-Property-Id': String(propertyId || ''), 'X-KNSN-Photo-Id': String(photoId || '') },
       body: { photo_action: 'set_primary', propertyId, photoId },
     });
   }
@@ -455,6 +458,7 @@
     return api(`/properties?${encodeQueryParams({ photo_action: 'reorder', propertyId })}`, {
       method: 'POST',
       auth,
+      headers: { 'X-KNSN-Photo-Action': 'reorder', 'X-KNSN-Property-Id': String(propertyId || '') },
       body: { photo_action: 'reorder', propertyId, orderedPhotoIds: Array.isArray(orderedPhotoIds) ? orderedPhotoIds : [] },
     });
   }
@@ -463,6 +467,7 @@
     return api(`/properties?${encodeQueryParams({ photo_action: 'delete', propertyId, photoId })}`, {
       method: 'POST',
       auth,
+      headers: { 'X-KNSN-Photo-Action': 'delete', 'X-KNSN-Property-Id': String(propertyId || ''), 'X-KNSN-Photo-Id': String(photoId || '') },
       body: { photo_action: 'delete', propertyId, photoId },
     });
   }

@@ -1,0 +1,8 @@
+Delete these files from your repo to stay within Vercel Hobby's 12-function limit:
+
+api/property-photos/list.js
+api/property-photos/prepare.js
+api/property-photos/commit.js
+api/property-photos/set-primary.js
+api/property-photos/reorder.js
+api/property-photos/delete.js

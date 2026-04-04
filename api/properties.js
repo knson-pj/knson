@@ -714,7 +714,7 @@ async function handlePhotoAction(req, res, action) {
   }
   const body = req.__jsonBody || getJsonBody(req);
   const propertyId = req.__photoPropertyId || body?.propertyId;
-  const photoId = String(body?.photoId || '').trim();
+  const photoId = String(req.__photoId || body?.photoId || '').trim();
   const access = await PropertyPhotos.requirePropertyAccess(req, res, propertyId);
   if (!access) return;
   try {
@@ -839,9 +839,22 @@ module.exports = async function handler(req, res) {
     return handleActivityLog(req, res);
   }
 
-  const photoAction = String(url.searchParams.get('photo_action') || req.__jsonBody?.photo_action || req.body?.photo_action || '').trim().toLowerCase();
+  const photoHeaderAction = String(req.headers['x-knsn-photo-action'] || req.headers['X-KNSN-Photo-Action'] || '').trim().toLowerCase();
+  const inferredPhotoAction = (() => {
+    if (photoHeaderAction) return photoHeaderAction;
+    const body = req.__jsonBody || req.body || {};
+    if (!body || typeof body !== 'object') return '';
+    if (body.photo_action) return String(body.photo_action || '').trim().toLowerCase();
+    if (Array.isArray(body.photos) && body.photos.length) return 'commit';
+    if (Array.isArray(body.orderedPhotoIds) && body.orderedPhotoIds.length) return 'reorder';
+    if (body.photoId && body.propertyId) return 'set_primary';
+    if (body.propertyId && Number(body.count || 0) > 0) return 'prepare';
+    return '';
+  })();
+  const photoAction = String(url.searchParams.get('photo_action') || inferredPhotoAction || '').trim().toLowerCase();
   if (photoAction) {
-    req.__photoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || req.body?.propertyId || '';
+    req.__photoPropertyId = url.searchParams.get('propertyId') || req.headers['x-knsn-property-id'] || req.__jsonBody?.propertyId || req.body?.propertyId || '';
+    req.__photoId = url.searchParams.get('photoId') || req.headers['x-knsn-photo-id'] || req.__jsonBody?.photoId || req.body?.photoId || '';
     return handlePhotoAction(req, res, photoAction);
   }
 
