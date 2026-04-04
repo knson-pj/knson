@@ -415,6 +415,36 @@
     return null;
   }
 
+  function setAdminPropertyEditSection(els, sectionKey) {
+    const form = els?.aemForm;
+    if (!form) return;
+    const activeKey = String(sectionKey || 'basic').trim() || 'basic';
+    form.querySelectorAll('[data-aem-tab]').forEach((button) => {
+      const isActive = button.dataset.aemTab === activeKey;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      if (isActive) button.setAttribute('tabindex', '0');
+      else button.setAttribute('tabindex', '-1');
+    });
+    form.querySelectorAll('[data-aem-edit-section]').forEach((section) => {
+      const isActive = section.dataset.aemEditSection === activeKey;
+      section.classList.toggle('is-active', isActive);
+      section.hidden = !isActive;
+      section.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    });
+  }
+
+  function bindAdminPropertyEditTabs(els) {
+    const form = els?.aemForm;
+    if (!form || form.dataset.aemTabsBound === 'true') return;
+    form.dataset.aemTabsBound = 'true';
+    form.querySelectorAll('[data-aem-tab]').forEach((button) => {
+      button.addEventListener('click', () => {
+        setAdminPropertyEditSection(els, button.dataset.aemTab || 'basic');
+      });
+    });
+  }
+
 function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
     const form = els.aemForm;
     if (!form) return;
@@ -975,8 +1005,10 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('longitude', view.longitude ?? '');
 
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
+    bindAdminPropertyEditTabs(els);
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
     arrangeAdminOpinionFields(f);
+    setAdminPropertyEditSection(els, 'basic');
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
