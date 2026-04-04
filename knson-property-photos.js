@@ -23,6 +23,21 @@
       <div class="property-photo-grid" data-photo-role="grid"></div>
     </section>`;
 
+  const VIEWER_HTML = `
+    <div class="property-photo-viewer hidden" data-photo-viewer aria-hidden="true">
+      <div class="property-photo-viewer-backdrop" data-viewer-action="close"></div>
+      <div class="property-photo-viewer-dialog" role="dialog" aria-modal="true" aria-label="사진 크게 보기">
+        <button type="button" class="property-photo-viewer-close" data-viewer-action="close" aria-label="닫기">×</button>
+        <button type="button" class="property-photo-viewer-nav is-prev" data-viewer-action="prev" aria-label="이전 사진">‹</button>
+        <div class="property-photo-viewer-stage">
+          <img class="property-photo-viewer-image" data-viewer-role="image" alt="매물 사진" />
+          <div class="property-photo-viewer-empty hidden" data-viewer-role="empty">이미지를 불러올 수 없습니다.</div>
+          <div class="property-photo-viewer-counter" data-viewer-role="counter"></div>
+        </div>
+        <button type="button" class="property-photo-viewer-nav is-next" data-viewer-action="next" aria-label="다음 사진">›</button>
+      </div>
+    </div>`;
+
   function safeEscape(text) {
     if (Renderers && typeof Renderers.escapeHtml === 'function') return Renderers.escapeHtml(text);
     return String(text || '').replace(/[&<>"']/g, (ch) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'": '&#39;' }[ch] || ch));
@@ -35,9 +50,9 @@
     root.innerHTML = SECTION_HTML;
     const section = root.firstElementChild;
     const fieldNodes = [
-      form.querySelector('textarea[name="siteInspection"]'),
-      form.querySelector('textarea[name="opinion"]'),
       form.querySelector('textarea[name="dailyIssue"]'),
+      form.querySelector('textarea[name="opinion"]'),
+      form.querySelector('textarea[name="siteInspection"]'),
     ].filter(Boolean);
     const anchor = fieldNodes[fieldNodes.length - 1]?.closest('.field, .grid2, .grid3, section, div');
     if (anchor && anchor.parentElement) anchor.after(section);
@@ -133,6 +148,97 @@
     return Array.isArray(items) ? items : [];
   }
 
+  function ensureViewer() {
+    let viewer = document.querySelector('[data-photo-viewer]');
+    if (viewer) return viewer;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = VIEWER_HTML;
+    viewer = wrap.firstElementChild;
+    document.body.appendChild(viewer);
+    viewer.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-viewer-action]');
+      if (!button) return;
+      const action = button.getAttribute('data-viewer-action');
+      const state = viewer.__viewerState || null;
+      if (!state) return;
+      if (action === 'close') {
+        closeViewer(viewer);
+        return;
+      }
+      if (action === 'prev') {
+        showViewerIndex(viewer, state.index - 1);
+        return;
+      }
+      if (action === 'next') {
+        showViewerIndex(viewer, state.index + 1);
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (viewer.classList.contains('hidden')) return;
+      if (event.key === 'Escape') {
+        closeViewer(viewer);
+      } else if (event.key === 'ArrowLeft') {
+        const state = viewer.__viewerState || null;
+        if (state) showViewerIndex(viewer, state.index - 1);
+      } else if (event.key === 'ArrowRight') {
+        const state = viewer.__viewerState || null;
+        if (state) showViewerIndex(viewer, state.index + 1);
+      }
+    });
+    return viewer;
+  }
+
+  function closeViewer(viewer) {
+    if (!viewer) return;
+    viewer.classList.add('hidden');
+    viewer.setAttribute('aria-hidden', 'true');
+    viewer.__viewerState = null;
+    const img = viewer.querySelector('[data-viewer-role="image"]');
+    const empty = viewer.querySelector('[data-viewer-role="empty"]');
+    if (img) { img.src = ''; img.classList.remove('hidden'); }
+    if (empty) empty.classList.add('hidden');
+  }
+
+  function showViewerIndex(viewer, index) {
+    const state = viewer && viewer.__viewerState;
+    const items = Array.isArray(state?.items) ? state.items : [];
+    if (!viewer || !items.length) return;
+    const nextIndex = (index + items.length) % items.length;
+    const item = items[nextIndex] || {};
+    state.index = nextIndex;
+    const img = viewer.querySelector('[data-viewer-role="image"]');
+    const empty = viewer.querySelector('[data-viewer-role="empty"]');
+    const counter = viewer.querySelector('[data-viewer-role="counter"]');
+    const src = String(item.originalUrl || item.thumbUrl || '').trim();
+    if (counter) counter.textContent = `${nextIndex + 1} / ${items.length}`;
+    const prevBtn = viewer.querySelector('[data-viewer-action="prev"]');
+    const nextBtn = viewer.querySelector('[data-viewer-action="next"]');
+    if (prevBtn) prevBtn.disabled = items.length <= 1;
+    if (nextBtn) nextBtn.disabled = items.length <= 1;
+    if (!src) {
+      if (img) { img.src = ''; img.classList.add('hidden'); }
+      if (empty) empty.classList.remove('hidden');
+      return;
+    }
+    if (empty) empty.classList.add('hidden');
+    if (img) {
+      img.classList.remove('hidden');
+      img.src = src;
+      img.alt = `매물 사진 ${nextIndex + 1}`;
+    }
+  }
+
+  function openViewer(items, photoId) {
+    const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!rows.length) return;
+    const viewer = ensureViewer();
+    const idx = Math.max(0, rows.findIndex((row) => String(row.id || '') === String(photoId || '')));
+    viewer.__viewerState = { items: rows, index: idx >= 0 ? idx : 0 };
+    viewer.classList.remove('hidden');
+    viewer.setAttribute('aria-hidden', 'false');
+    showViewerIndex(viewer, idx >= 0 ? idx : 0);
+  }
+
   function renderGrid(root, items) {
     const grid = root.querySelector('[data-photo-role="grid"]');
     if (!grid) return;
@@ -211,7 +317,7 @@
     if (!current) return;
     try {
       if (action === 'view') {
-        if (current.originalUrl) window.open(current.originalUrl, '_blank', 'noopener');
+        openViewer(items, photoId);
         return;
       }
       setLoading(true, '사진 정보를 저장하는 중입니다.');
