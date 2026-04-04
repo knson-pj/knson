@@ -519,7 +519,7 @@
     const item = photo && typeof photo === 'object' ? photo : {};
     const title = item.isPrimary ? '대표사진' : '대표 지정';
     const badge = item.isPrimary ? '<span class="property-photo-badge is-corner">대표</span>' : '';
-        return `
+    return `
       <article class="property-photo-card${item.isPrimary ? ' is-primary' : ''}" data-photo-id="${escapeAttr(item.id || '')}">
         <button type="button" class="property-photo-thumb-btn" data-photo-action="view" data-photo-id="${escapeAttr(item.id || '')}" aria-label="사진 보기">
           ${badge}

@@ -1656,11 +1656,12 @@ textarea.form-textarea-tall{
 .property-photo-empty{padding:18px 12px;border:1px dashed #cbd5e1;border-radius:14px;color:#64748b;font-size:13px;text-align:center}
 .property-photo-card{border:1px solid rgba(15,23,42,.08);border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 8px 20px rgba(15,23,42,.04)}
 .property-photo-card.is-primary{border-color:#16a34a;box-shadow:0 10px 20px rgba(22,163,74,.12)}
-.property-photo-thumb-btn{display:block;width:100%;border:0;background:transparent;padding:0;cursor:pointer}
+.property-photo-thumb-btn{position:relative;display:block;width:100%;border:0;background:transparent;padding:0;cursor:pointer}
 .property-photo-thumb{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#e2e8f0}
 .property-photo-thumb.placeholder{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:12px}
-.property-photo-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px 0}
-.property-photo-badge{display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:999px;background:#16a34a;color:#fff;font-size:11px;font-weight:700}
+.property-photo-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0}
+.property-photo-badge{display:inline-flex;align-items:center;justify-content:center;padding:3px 10px;border-radius:999px;background:#16a34a;color:#fff;font-size:11px;font-weight:700;line-height:1;box-shadow:0 6px 14px rgba(22,163,74,.24)}
+.property-photo-badge.is-corner{position:absolute;left:10px;top:10px;z-index:2;pointer-events:none}
 .property-photo-card-size{font-size:11px;color:#64748b}
 .property-photo-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:10px}
 .btn-xs{padding:7px 8px;font-size:12px;border-radius:10px}
@@ -1669,7 +1670,7 @@ textarea.form-textarea-tall{
   .property-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
-.property-photo-card-meta{min-height:0;padding:8px 10px 0}
+.property-photo-card-meta{min-height:0;padding:0}
 .property-photo-card-meta:empty{display:none}
 .property-photo-viewer{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center}
 .property-photo-viewer.hidden{display:none !important}
