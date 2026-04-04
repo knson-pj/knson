@@ -306,7 +306,6 @@
 
     // Filters
     els.agSourceFilter = $("#agSourceFilter");
-    els.agAssigneeFilter = $("#agAssigneeFilter");
     els.agAreaFilter = $("#agAreaFilter");
     els.agPriceFilter = $("#agPriceFilter");
     els.agRatioFilter = $("#agRatioFilter");
@@ -1000,7 +999,7 @@
 
     // Filters
     if (els.agSourceFilter) els.agSourceFilter.addEventListener("change", (e) => { state.filters.activeCard = String(e.target.value || ''); syncSourceFilterUi(); state.page = 1; renderTable(); });
-    if (els.agAssigneeFilter) els.agAssigneeFilter.addEventListener("change", (e) => { state.filters.assignee = String(e.target.value || ''); state.page = 1; renderTable(); });
+    state.filters.assignee = '';
     if (els.agAreaFilter) els.agAreaFilter.addEventListener("change", (e) => { state.filters.area = e.target.value; state.page = 1; renderTable(); });
     if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
     if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
@@ -1646,10 +1645,7 @@
         todayKey: getTodayDateKey(),
         isFavorite: (row) => state.favorites.has(row?.id),
       });
-      const ignoreKeys = new Set(Array.isArray(options?.ignoreKeys) ? options.ignoreKeys : []);
-      return (!ignoreKeys.has('assignee') && String(state.filters?.assignee || '').trim())
-        ? filtered.filter((row) => matchesAssigneeFilterValue(row, state.filters.assignee))
-        : filtered;
+      return filtered;
     }
     let rows = state.properties;
     const f = state.filters;
@@ -1660,7 +1656,6 @@
         return true;
       });
     }
-    if (!ignoreKeys.has('assignee') && f.assignee) rows = rows.filter((r) => matchesAssigneeFilterValue(r, f.assignee));
     if (!ignoreKeys.has('area') && f.area) rows = rows.filter((r) => matchesAreaFilterValue(f.area, r.exclusivearea));
     if (!ignoreKeys.has('priceRange') && f.priceRange) rows = rows.filter((r) => matchesPriceRangeValue(f.priceRange, r));
     if (!ignoreKeys.has('ratio50') && f.ratio50) rows = rows.filter((r) => matchesRatioFilterValue(f.ratio50, r));
@@ -1672,7 +1667,6 @@
 
   function updateFilterOptionCounts() {
     const sourceRows = getFilteredProps({ ignoreKeys: ['activeCard'] });
-    const assigneeRows = getFilteredProps({ ignoreKeys: ['assignee'] });
     const areaRows = getFilteredProps({ ignoreKeys: ['area'] });
     const priceRows = getFilteredProps({ ignoreKeys: ['priceRange'] });
     const ratioRows = getFilteredProps({ ignoreKeys: ['ratio50'] });
@@ -1704,12 +1698,10 @@
     });
 
     applySelectOptionCounts(els.agSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts);
-    renderAssigneeFilterOptions(els.agAssigneeFilter, assigneeRows, state.filters?.assignee);
     applySelectOptionCounts(els.agAreaFilter, AREA_FILTER_OPTIONS, areaCounts);
     applySelectOptionCounts(els.agPriceFilter, PRICE_FILTER_OPTIONS, priceCounts);
     applySelectOptionCounts(els.agRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts);
     if (els.agSourceFilter) els.agSourceFilter.value = String(state.filters?.activeCard || '');
-    if (els.agAssigneeFilter) els.agAssigneeFilter.value = String(state.filters?.assignee || '');
     if (els.agAreaFilter) els.agAreaFilter.value = String(state.filters?.area || '');
     if (els.agPriceFilter) els.agPriceFilter.value = String(state.filters?.priceRange || '');
     if (els.agRatioFilter) els.agRatioFilter.value = String(state.filters?.ratio50 || '');

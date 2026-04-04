@@ -966,6 +966,7 @@ function bindEvents() {
     return !!(
       String(f.activeCard || '').trim() ||
       String(f.status || '').trim() ||
+      String(f.assignee || '').trim() ||
       String(f.keyword || '').trim() ||
       String(f.area || '').trim() ||
       String(f.priceRange || '').trim() ||
@@ -976,6 +977,7 @@ function bindEvents() {
   function hasLocalOnlyPropertyFilters() {
     const f = state.propertyFilters || {};
     return !!(
+      String(f.assignee || '').trim() ||
       String(f.keyword || '').trim() ||
       String(f.area || '').trim() ||
       String(f.priceRange || '').trim() ||
