@@ -1844,33 +1844,26 @@ function renderPagination(totalPages) {
 
   function arrangeAgentOpinionFields(form) {
     if (!form || !PropertyRenderers || typeof PropertyRenderers.findFieldShell !== 'function') return null;
-    const shellSelectors = ['[data-ag-field]', '.form-field', '.field'];
-    const siteShell = PropertyRenderers.findFieldShell(form, 'siteInspection', { shellSelectors });
-    const opinionShell = PropertyRenderers.findFieldShell(form, 'opinion', { shellSelectors });
-    const dailyIssueShell = PropertyRenderers.findFieldShell(form, 'dailyIssue', { shellSelectors });
-    const applyFieldState = (shell, name, label, className) => {
-      if (!shell) return;
-      PropertyRenderers.ensureTextareaField?.(form, name, shell, { textareaClass: 'ag-textarea', rows: 6 });
+    const grid = form.querySelector('[data-opinion-grid="agent"]') || form.querySelector('[data-edit-section="opinion"] .edit-opinion-grid');
+    const ensureShell = (fieldName, label) => {
+      const shell = PropertyRenderers.findFieldShell(form, fieldName, { shellSelectors: [`[data-opinion-field="${fieldName}"]`, '[data-ag-field]', '.form-field', '.field'] });
+      if (!shell) return null;
+      PropertyRenderers.ensureTextareaField?.(form, fieldName, shell, { textareaClass: 'ag-textarea', rows: 8 });
       PropertyRenderers.setFieldLabel?.(shell, label);
       shell.classList.remove('hidden');
       shell.hidden = false;
       shell.style.display = '';
-      if (className) shell.classList.add(className);
+      shell.style.gridColumn = '';
+      shell.classList.add('edit-opinion-field');
+      return shell;
     };
-    applyFieldState(dailyIssueShell, 'dailyIssue', '금일 이슈사항', 'opinion-field--daily');
-    applyFieldState(siteShell, 'siteInspection', '현장실사', 'opinion-field--site');
-    applyFieldState(opinionShell, 'opinion', '담당자 의견', 'opinion-field--opinion');
-    const sharedParent = dailyIssueShell && siteShell && opinionShell
-      && dailyIssueShell.parentElement === siteShell.parentElement
-      && siteShell.parentElement === opinionShell.parentElement
-      ? dailyIssueShell.parentElement
-      : null;
-    if (sharedParent) {
-      sharedParent.classList.remove('grid2', 'grid3');
-      sharedParent.classList.add('agent-edit-opinion-layout');
-      sharedParent.appendChild(dailyIssueShell);
-      sharedParent.appendChild(siteShell);
-      sharedParent.appendChild(opinionShell);
+    const dailyIssueShell = ensureShell('dailyIssue', '금일 이슈사항');
+    const siteShell = ensureShell('siteInspection', '현장실사');
+    const opinionShell = ensureShell('opinion', '담당자 의견');
+    if (grid) {
+      if (dailyIssueShell) grid.appendChild(dailyIssueShell);
+      if (siteShell) grid.appendChild(siteShell);
+      if (opinionShell) grid.appendChild(opinionShell);
     }
     return { dailyIssueShell, siteShell, opinionShell };
   }

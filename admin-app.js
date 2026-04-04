@@ -487,6 +487,8 @@
       aemMsg: $("#aemMsg"),
       aemHistoryList: $("#aemHistoryList"),
       aemRegistrationLogList: $("#aemRegistrationLogList"),
+      aemTabs: $$("#aemForm [data-aem-tab]"),
+      aemSections: $$("#aemForm [data-aem-section-page]"),
 
       // geocoding tab
       tabGeocoding: $("#tab-geocoding"),
@@ -797,6 +799,14 @@ function bindEvents() {
     }
     if (els.aemClose) els.aemClose.addEventListener("click", closePropertyEditModal);
     if (els.aemCancel) els.aemCancel.addEventListener("click", closePropertyEditModal);
+    if (els.aemTabs?.length) {
+      els.aemTabs.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = String(btn.dataset.aemTab || "basic").trim() || "basic";
+          AdminModules.propertiesTab?.setAdminEditSection?.(key);
+        });
+      });
+    }
     if (els.aemForm) {
       els.aemForm.addEventListener("submit", (e) => {
         e.preventDefault();

@@ -49,6 +49,11 @@
     root = document.createElement('div');
     root.innerHTML = SECTION_HTML;
     const section = root.firstElementChild;
+    const explicitAnchor = form.querySelector('[data-photo-anchor]');
+    if (explicitAnchor && explicitAnchor.parentElement) {
+      explicitAnchor.replaceWith(section);
+      return section;
+    }
     const fieldNodes = [
       form.querySelector('textarea[name="dailyIssue"]'),
       form.querySelector('textarea[name="opinion"]'),
