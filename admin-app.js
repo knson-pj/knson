@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260403-adminfix2";
+  const ADMIN_FAST_BUILD = "20260403-adminfix2-hotfix1";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -2842,6 +2842,10 @@ function sortGuUnitsByAdjacency(...args) {
 
   function $(sel) {
     return document.querySelector(sel);
+  }
+
+  function $$(sel) {
+    return Array.from(document.querySelectorAll(sel));
   }
 
   function goLoginPage(withLogout = false) {
