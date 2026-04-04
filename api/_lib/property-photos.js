@@ -45,13 +45,27 @@ async function supabaseFetch(path, { method = 'GET', json, body, headers = {}, h
 }
 
 function parsePropertyId(value) {
-  const n = Number(String(value || '').trim());
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.trunc(n);
 }
 
-async function getPropertyRow(propertyId) {
-  const rows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,raw&id=eq.${encodeURIComponent(propertyId)}&limit=1`);
+function encodeOrValue(value) {
+  return String(value || '').replace(/,/g, '%2C').replace(/\)/g, '%29').replace(/\(/g, '%28');
+}
+
+async function getPropertyRow(propertyRef) {
+  const rawRef = String(propertyRef || '').trim();
+  const numericId = parsePropertyId(rawRef);
+  if (numericId) {
+    const rows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,item_no,raw&id=eq.${encodeURIComponent(numericId)}&limit=1`);
+    return Array.isArray(rows) ? (rows[0] || null) : null;
+  }
+  if (!rawRef) return null;
+  const ref = encodeOrValue(rawRef);
+  const rows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,item_no,raw&or=(global_id.eq.${ref},item_no.eq.${ref})&limit=1`);
   return Array.isArray(rows) ? (rows[0] || null) : null;
 }
 
@@ -61,8 +75,8 @@ function getRowAssigneeId(row) {
 }
 
 async function requirePropertyAccess(req, res, propertyId) {
-  const numericPropertyId = parsePropertyId(propertyId);
-  if (!numericPropertyId) {
+  const rawPropertyRef = String(propertyId || '').trim();
+  if (!rawPropertyRef) {
     send(res, 400, { ok: false, message: 'propertyId가 필요합니다.' });
     return null;
   }
@@ -71,12 +85,17 @@ async function requirePropertyAccess(req, res, propertyId) {
     send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
     return null;
   }
-  const property = await getPropertyRow(numericPropertyId).catch((err) => {
+  const property = await getPropertyRow(rawPropertyRef).catch((err) => {
     console.error('property photo property lookup failed', err);
     return null;
   });
   if (!property) {
     send(res, 404, { ok: false, message: '매물을 찾을 수 없습니다.' });
+    return null;
+  }
+  const resolvedId = parsePropertyId(property?.id);
+  if (!resolvedId) {
+    send(res, 400, { ok: false, message: '사진 기능은 숫자형 property id가 있는 매물에만 사용할 수 있습니다.' });
     return null;
   }
   if (ctx.role !== 'admin') {
@@ -86,7 +105,7 @@ async function requirePropertyAccess(req, res, propertyId) {
       return null;
     }
   }
-  return { ctx, propertyId: numericPropertyId, property };
+  return { ctx, propertyId: resolvedId, property, propertyRef: rawPropertyRef };
 }
 
 function buildPhotoPaths(propertyId, photoId) {

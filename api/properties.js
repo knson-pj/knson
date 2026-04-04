@@ -755,7 +755,7 @@ async function handlePhotoAction(req, res, action) {
 
     if (action === 'commit') {
       const photos = Array.isArray(body?.photos) ? body.photos : [];
-      if (!photos.length) return send(res, 400, { ok: false, message: '저장할 사진이 없습니다.' });
+      if (!photos.length) return send(res, 400, { ok: false, message: '저장할 사진 데이터가 비어 있습니다. 요청 본문이 누락되었거나 너무 커서 처리되지 않았을 수 있습니다.' });
       const existing = await PropertyPhotos.listPhotoRows(access.propertyId);
       let nextSort = existing.reduce((max, row) => Math.max(max, Number(row?.sort_order || 0)), -1) + 1;
       const hasPrimary = existing.some((row) => !!row.is_primary);
@@ -839,9 +839,9 @@ module.exports = async function handler(req, res) {
     return handleActivityLog(req, res);
   }
 
-  const photoAction = String((req.method === 'GET' ? url.searchParams.get('photo_action') : req.__jsonBody?.photo_action) || '').trim().toLowerCase();
+  const photoAction = String(url.searchParams.get('photo_action') || req.__jsonBody?.photo_action || req.body?.photo_action || '').trim().toLowerCase();
   if (photoAction) {
-    req.__photoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || '';
+    req.__photoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || req.body?.propertyId || '';
     return handlePhotoAction(req, res, photoAction);
   }
 

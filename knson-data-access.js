@@ -424,27 +424,47 @@
 
 
   async function listPropertyPhotosViaApi(api, { propertyId, auth = true } = {}) {
-    return api(`/properties?photo_action=list&${encodeQueryParams({ propertyId })}`, { auth });
+    return api(`/properties?${encodeQueryParams({ photo_action: 'list', propertyId })}`, { auth });
   }
 
   async function preparePropertyPhotosViaApi(api, { propertyId, count = 1, auth = true } = {}) {
-    return api('/properties', { method: 'POST', auth, body: { photo_action: 'prepare', propertyId, count } });
+    return api(`/properties?${encodeQueryParams({ photo_action: 'prepare', propertyId })}`, {
+      method: 'POST',
+      auth,
+      body: { photo_action: 'prepare', propertyId, count },
+    });
   }
 
   async function commitPropertyPhotosViaApi(api, { propertyId, photos, auth = true } = {}) {
-    return api('/properties', { method: 'POST', auth, body: { photo_action: 'commit', propertyId, photos: Array.isArray(photos) ? photos : [] } });
+    return api(`/properties?${encodeQueryParams({ photo_action: 'commit', propertyId })}`, {
+      method: 'POST',
+      auth,
+      body: { photo_action: 'commit', propertyId, photos: Array.isArray(photos) ? photos : [] },
+    });
   }
 
   async function setPrimaryPropertyPhotoViaApi(api, { propertyId, photoId, auth = true } = {}) {
-    return api('/properties', { method: 'POST', auth, body: { photo_action: 'set_primary', propertyId, photoId } });
+    return api(`/properties?${encodeQueryParams({ photo_action: 'set_primary', propertyId, photoId })}`, {
+      method: 'POST',
+      auth,
+      body: { photo_action: 'set_primary', propertyId, photoId },
+    });
   }
 
   async function reorderPropertyPhotosViaApi(api, { propertyId, orderedPhotoIds, auth = true } = {}) {
-    return api('/properties', { method: 'POST', auth, body: { photo_action: 'reorder', propertyId, orderedPhotoIds: Array.isArray(orderedPhotoIds) ? orderedPhotoIds : [] } });
+    return api(`/properties?${encodeQueryParams({ photo_action: 'reorder', propertyId })}`, {
+      method: 'POST',
+      auth,
+      body: { photo_action: 'reorder', propertyId, orderedPhotoIds: Array.isArray(orderedPhotoIds) ? orderedPhotoIds : [] },
+    });
   }
 
   async function deletePropertyPhotoViaApi(api, { propertyId, photoId, auth = true } = {}) {
-    return api('/properties', { method: 'POST', auth, body: { photo_action: 'delete', propertyId, photoId } });
+    return api(`/properties?${encodeQueryParams({ photo_action: 'delete', propertyId, photoId })}`, {
+      method: 'POST',
+      auth,
+      body: { photo_action: 'delete', propertyId, photoId },
+    });
   }
 
   async function fetchAdminStaffViaApi(api, { auth = true } = {}) {
