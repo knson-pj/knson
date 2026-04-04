@@ -820,7 +820,15 @@ async function handlePhotoAction(req, res, action) {
 
     return send(res, 400, { ok: false, message: '지원하지 않는 photo_action 입니다.' });
   } catch (err) {
-    return send(res, err?.status || 500, { ok: false, message: err?.message || '사진 처리 중 오류가 발생했습니다.', details: err?.data || null });
+    const raw = [err?.message, err?.data?.message, err?.data?.error, err?.data?.hint, err?.data?.details].filter(Boolean).join(' ');
+    const lowered = String(raw || '').toLowerCase();
+    let message = err?.message || '사진 처리 중 오류가 발생했습니다.';
+    if (lowered.includes('property_photos') && (lowered.includes('does not exist') || lowered.includes('relation'))) {
+      message = 'property_photos 테이블이 없어 사진 기능을 사용할 수 없습니다. Supabase SQL을 먼저 실행해 주세요.';
+    } else if (lowered.includes('bucket') && lowered.includes('not found')) {
+      message = 'property-photos 스토리지 버킷이 없어 사진 기능을 사용할 수 없습니다. Supabase SQL을 먼저 실행해 주세요.';
+    }
+    return send(res, err?.status || 500, { ok: false, message, details: err?.data || null });
   }
 }
 
@@ -839,12 +847,10 @@ module.exports = async function handler(req, res) {
     return handleActivityLog(req, res);
   }
 
-  const photoHeaderAction = String(req.headers['x-knsn-photo-action'] || req.headers['X-KNSN-Photo-Action'] || '').trim().toLowerCase();
   const inferredPhotoAction = (() => {
-    if (photoHeaderAction) return photoHeaderAction;
     const body = req.__jsonBody || req.body || {};
+    if (body && typeof body === 'object' && body.photo_action) return String(body.photo_action || '').trim().toLowerCase();
     if (!body || typeof body !== 'object') return '';
-    if (body.photo_action) return String(body.photo_action || '').trim().toLowerCase();
     if (Array.isArray(body.photos) && body.photos.length) return 'commit';
     if (Array.isArray(body.orderedPhotoIds) && body.orderedPhotoIds.length) return 'reorder';
     if (body.photoId && body.propertyId) return 'set_primary';
@@ -853,8 +859,8 @@ module.exports = async function handler(req, res) {
   })();
   const photoAction = String(url.searchParams.get('photo_action') || inferredPhotoAction || '').trim().toLowerCase();
   if (photoAction) {
-    req.__photoPropertyId = url.searchParams.get('propertyId') || req.headers['x-knsn-property-id'] || req.__jsonBody?.propertyId || req.body?.propertyId || '';
-    req.__photoId = url.searchParams.get('photoId') || req.headers['x-knsn-photo-id'] || req.__jsonBody?.photoId || req.body?.photoId || '';
+    req.__photoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || req.body?.propertyId || '';
+    req.__photoId = url.searchParams.get('photoId') || req.__jsonBody?.photoId || req.body?.photoId || '';
     return handlePhotoAction(req, res, photoAction);
   }
 
