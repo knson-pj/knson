@@ -376,43 +376,36 @@
 
 
   function arrangeAdminOpinionFields(form) {
-    if (!form) return null;
-    if (PropertyRenderers && typeof PropertyRenderers.findFieldShell === 'function') {
-      const siteShell = PropertyRenderers.findFieldShell(form, 'siteInspection', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
-      const opinionShell = PropertyRenderers.findFieldShell(form, 'opinion', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
-      const dailyIssueShell = PropertyRenderers.findFieldShell(form, 'dailyIssue', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
-      if (siteShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'siteInspection', siteShell, { textareaClass: 'aem-textarea', rows: 6 });
-        PropertyRenderers.setFieldLabel?.(siteShell, '현장실사');
-        siteShell.classList.remove('hidden');
-        siteShell.hidden = false;
-        siteShell.style.display = '';
-      }
-      if (opinionShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'opinion', opinionShell, { textareaClass: 'aem-textarea', rows: 6 });
-        PropertyRenderers.setFieldLabel?.(opinionShell, '담당자 의견');
-        opinionShell.classList.remove('hidden');
-        opinionShell.hidden = false;
-        opinionShell.style.display = '';
-      }
-      if (dailyIssueShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'dailyIssue', dailyIssueShell, { textareaClass: 'aem-textarea', rows: 6 });
-        PropertyRenderers.setFieldLabel?.(dailyIssueShell, '금일이슈사항');
-        dailyIssueShell.classList.remove('hidden');
-        dailyIssueShell.hidden = false;
-        dailyIssueShell.style.display = '';
-      }
-      const parent = siteShell && opinionShell && dailyIssueShell && siteShell.parentElement === opinionShell.parentElement && opinionShell.parentElement === dailyIssueShell.parentElement ? siteShell.parentElement : null;
-      if (parent) {
-        parent.classList.remove('grid2');
-        parent.classList.add('grid3');
-        parent.appendChild(siteShell);
-        parent.appendChild(opinionShell);
-        parent.appendChild(dailyIssueShell);
-      }
-      return { siteShell, opinionShell, dailyIssueShell };
+    if (!form || !PropertyRenderers || typeof PropertyRenderers.findFieldShell !== 'function') return null;
+    const shellSelectors = ['[data-aem-field]', '.form-field', '.field'];
+    const siteShell = PropertyRenderers.findFieldShell(form, 'siteInspection', { shellSelectors });
+    const opinionShell = PropertyRenderers.findFieldShell(form, 'opinion', { shellSelectors });
+    const dailyIssueShell = PropertyRenderers.findFieldShell(form, 'dailyIssue', { shellSelectors });
+    const applyFieldState = (shell, name, label, className) => {
+      if (!shell) return;
+      PropertyRenderers.ensureTextareaField?.(form, name, shell, { textareaClass: 'aem-textarea', rows: 6 });
+      PropertyRenderers.setFieldLabel?.(shell, label);
+      shell.classList.remove('hidden');
+      shell.hidden = false;
+      shell.style.display = '';
+      if (className) shell.classList.add(className);
+    };
+    applyFieldState(dailyIssueShell, 'dailyIssue', '금일 이슈사항', 'opinion-field--daily');
+    applyFieldState(siteShell, 'siteInspection', '현장실사', 'opinion-field--site');
+    applyFieldState(opinionShell, 'opinion', '담당자 의견', 'opinion-field--opinion');
+    const sharedParent = dailyIssueShell && siteShell && opinionShell
+      && dailyIssueShell.parentElement === siteShell.parentElement
+      && siteShell.parentElement === opinionShell.parentElement
+      ? dailyIssueShell.parentElement
+      : null;
+    if (sharedParent) {
+      sharedParent.classList.remove('grid2', 'grid3', 'property-edit-opinion-grid');
+      sharedParent.classList.add('property-edit-opinion-layout');
+      sharedParent.appendChild(dailyIssueShell);
+      sharedParent.appendChild(siteShell);
+      sharedParent.appendChild(opinionShell);
     }
-    return null;
+    return { dailyIssueShell, siteShell, opinionShell };
   }
 
   function setAdminPropertyEditSection(els, sectionKey) {

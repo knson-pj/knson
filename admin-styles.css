@@ -907,11 +907,38 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .agent-edit-section.is-active{display:block;}
 .admin-edit-form .modal-actions,
 .agent-edit-form .modal-actions{margin-top:4px;}
+.property-edit-opinion-layout,
+.agent-edit-opinion-layout{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+  align-items:start;
+}
+.property-edit-opinion-layout .field,
+.agent-edit-opinion-layout .field,
+.property-edit-opinion-layout .opinion-field,
+.agent-edit-opinion-layout .opinion-field{
+  min-width:0;
+}
+.property-edit-opinion-layout .input,
+.agent-edit-opinion-layout .input,
+.property-edit-opinion-layout textarea,
+.agent-edit-opinion-layout textarea{
+  width:100%;
+}
+.property-edit-opinion-layout .opinion-field--daily,
+.agent-edit-opinion-layout .opinion-field--daily{order:1;}
+.property-edit-opinion-layout .opinion-field--site,
+.agent-edit-opinion-layout .opinion-field--site{order:2;}
+.property-edit-opinion-layout .opinion-field--opinion,
+.agent-edit-opinion-layout .opinion-field--opinion{order:3;}
 @media (max-width: 760px){
   .property-edit-tabs,
   .agent-edit-tabs{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;}
   .property-edit-tab,
   .agent-edit-tab{font-size:12px;padding:0 6px;}
+  .property-edit-opinion-layout,
+  .agent-edit-opinion-layout{grid-template-columns:1fr;gap:10px;}
 }
 
 /* ══════════════════════════════════════════════════
