@@ -1,4 +1,3 @@
-
 const { getJsonBody, send } = require('./utils');
 const { getEnv, resolveCurrentUserContext } = require('./supabase-admin');
 
@@ -44,12 +43,20 @@ async function supabaseFetch(path, { method = 'GET', json, body, headers = {}, h
   return data;
 }
 
+function trimRef(value) {
+  return String(value || '').trim();
+}
+
 function parsePropertyId(value) {
-  const raw = String(value || '').trim();
+  const raw = trimRef(value);
   if (!raw) return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.trunc(n);
+}
+
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimRef(value));
 }
 
 function encodeOrValue(value) {
@@ -57,16 +64,27 @@ function encodeOrValue(value) {
 }
 
 async function getPropertyRow(propertyRef) {
-  const rawRef = String(propertyRef || '').trim();
-  const numericId = parsePropertyId(rawRef);
-  if (numericId) {
-    const rows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,item_no,raw&id=eq.${encodeURIComponent(numericId)}&limit=1`);
-    return Array.isArray(rows) ? (rows[0] || null) : null;
-  }
+  const rawRef = trimRef(propertyRef);
   if (!rawRef) return null;
+
+  const directRows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,item_no,raw&id=eq.${encodeURIComponent(rawRef)}&limit=1`).catch(() => null);
+  if (Array.isArray(directRows) && directRows[0]) return directRows[0];
+
+  const numericId = parsePropertyId(rawRef);
+  if (numericId && String(numericId) !== rawRef) {
+    const numericRows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,item_no,raw&id=eq.${encodeURIComponent(numericId)}&limit=1`).catch(() => null);
+    if (Array.isArray(numericRows) && numericRows[0]) return numericRows[0];
+  }
+
   const ref = encodeOrValue(rawRef);
-  const rows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,item_no,raw&or=(global_id.eq.${ref},item_no.eq.${ref})&limit=1`);
-  return Array.isArray(rows) ? (rows[0] || null) : null;
+  const fallbackRows = await supabaseFetch(`/rest/v1/properties?select=id,global_id,assignee_id,item_no,raw&or=(global_id.eq.${ref},item_no.eq.${ref})&limit=1`).catch(() => null);
+  return Array.isArray(fallbackRows) ? (fallbackRows[0] || null) : null;
+}
+
+function getResolvedPropertyId(row, fallbackRef) {
+  const rowId = trimRef(row?.id);
+  if (rowId) return rowId;
+  return trimRef(fallbackRef);
 }
 
 function getRowAssigneeId(row) {
@@ -75,7 +93,7 @@ function getRowAssigneeId(row) {
 }
 
 async function requirePropertyAccess(req, res, propertyId) {
-  const rawPropertyRef = String(propertyId || '').trim();
+  const rawPropertyRef = trimRef(propertyId);
   if (!rawPropertyRef) {
     send(res, 400, { ok: false, message: 'propertyId가 필요합니다.' });
     return null;
@@ -93,9 +111,9 @@ async function requirePropertyAccess(req, res, propertyId) {
     send(res, 404, { ok: false, message: '매물을 찾을 수 없습니다.' });
     return null;
   }
-  const resolvedId = parsePropertyId(property?.id);
+  const resolvedId = getResolvedPropertyId(property, rawPropertyRef);
   if (!resolvedId) {
-    send(res, 400, { ok: false, message: '사진 기능은 숫자형 property id가 있는 매물에만 사용할 수 있습니다.' });
+    send(res, 400, { ok: false, message: '사진 기능에서 사용할 수 없는 매물 식별자입니다.' });
     return null;
   }
   if (ctx.role !== 'admin') {
@@ -109,11 +127,12 @@ async function requirePropertyAccess(req, res, propertyId) {
 }
 
 function buildPhotoPaths(propertyId, photoId) {
-  const cleanId = String(photoId || '').trim();
+  const cleanId = trimRef(photoId);
+  const safePropertyId = trimRef(propertyId);
   return {
     photoId: cleanId,
-    storagePath: `properties/${propertyId}/original/${cleanId}.webp`,
-    thumbPath: `properties/${propertyId}/thumb/${cleanId}.webp`,
+    storagePath: `properties/${safePropertyId}/original/${cleanId}.webp`,
+    thumbPath: `properties/${safePropertyId}/thumb/${cleanId}.webp`,
   };
 }
 
@@ -153,7 +172,8 @@ async function createSignedUrl(path) {
 }
 
 async function listPhotoRows(propertyId) {
-  const rows = await supabaseFetch(`/rest/v1/property_photos?select=*&property_id=eq.${encodeURIComponent(propertyId)}&deleted_at=is.null&order=sort_order.asc,created_at.asc`);
+  const ref = trimRef(propertyId);
+  const rows = await supabaseFetch(`/rest/v1/property_photos?select=*&property_id=eq.${encodeURIComponent(ref)}&deleted_at=is.null&order=sort_order.asc,created_at.asc`);
   return Array.isArray(rows) ? rows : [];
 }
 
@@ -184,7 +204,8 @@ function makeId() {
 }
 
 async function getActivePhotoCount(propertyId) {
-  const rows = await supabaseFetch(`/rest/v1/property_photos?select=id&property_id=eq.${encodeURIComponent(propertyId)}&deleted_at=is.null`);
+  const ref = trimRef(propertyId);
+  const rows = await supabaseFetch(`/rest/v1/property_photos?select=id&property_id=eq.${encodeURIComponent(ref)}&deleted_at=is.null`);
   return Array.isArray(rows) ? rows.length : 0;
 }
 
@@ -204,5 +225,6 @@ module.exports = {
   makeId,
   getActivePhotoCount,
   parsePropertyId,
+  looksLikeUuid,
   send,
 };

@@ -788,7 +788,7 @@ async function handlePhotoAction(req, res, action) {
     if (action === 'set_primary') {
       if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
       const photo = await PropertyPhotos.getPhotoRow(photoId);
-      if (!photo || Number(photo.property_id) !== Number(access.propertyId) || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      if (!photo || String(photo.property_id || '').trim() !== String(access.propertyId || '').trim() || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
       await PropertyPhotos.patchPhotoRows(`property_id=eq.${encodeURIComponent(access.propertyId)}&deleted_at=is.null`, { is_primary: false, updated_at: new Date().toISOString() });
       const updated = await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { is_primary: true, updated_at: new Date().toISOString() });
       return send(res, 200, { ok: true, item: Array.isArray(updated) ? (updated[0] || null) : updated });
@@ -807,7 +807,7 @@ async function handlePhotoAction(req, res, action) {
     if (action === 'delete') {
       if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
       const photo = await PropertyPhotos.getPhotoRow(photoId);
-      if (!photo || Number(photo.property_id) !== Number(access.propertyId) || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      if (!photo || String(photo.property_id || '').trim() !== String(access.propertyId || '').trim() || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
       await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { deleted_at: new Date().toISOString(), is_primary: false, updated_at: new Date().toISOString() });
       await PropertyPhotos.removeObjects([photo.storage_path, photo.thumb_path]).catch(() => null);
       if (photo.is_primary) {
@@ -827,6 +827,8 @@ async function handlePhotoAction(req, res, action) {
       message = 'property_photos 테이블이 없어 사진 기능을 사용할 수 없습니다. Supabase SQL을 먼저 실행해 주세요.';
     } else if (lowered.includes('bucket') && lowered.includes('not found')) {
       message = 'property-photos 스토리지 버킷이 없어 사진 기능을 사용할 수 없습니다. Supabase SQL을 먼저 실행해 주세요.';
+    } else if (lowered.includes('invalid input syntax for type bigint') || lowered.includes('column "property_id" is of type bigint')) {
+      message = 'property_photos.property_id 타입이 현재 매물 id와 맞지 않습니다. 사진 기능용 SQL 보정 스크립트를 먼저 실행해 주세요.';
     }
     return send(res, err?.status || 500, { ok: false, message, details: err?.data || null });
   }
