@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260403-adminfix2-hotfix1";
+  const ADMIN_FAST_BUILD = "20260403-adminfix2";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -176,6 +176,7 @@
       activeCard: "",   // "" | "all" | "auction" | "onbid" | "realtor_naver" | "realtor_direct" | "general"
       status: "",
       keyword: "",
+      assignee: "",
       area: "",         // "0-5" | "5-10" | ... | "50-"
       priceRange: "",   // "0-1" | "1-3" | ... | "20-"  (억 단위)
       ratio50: "",      // "50" = 50% 이하 (경매/공매만)
@@ -446,6 +447,7 @@
       propSelectAll: $("#propSelectAll"),
       propStatusFilter: $("#propStatusFilter"),
       propSourceFilter: $("#propSourceFilter"),
+      propAssigneeFilter: $("#propAssigneeFilter"),
       propAreaFilter: $("#propAreaFilter"),
       propPriceFilter: $("#propPriceFilter"),
       propRatioFilter: $("#propRatioFilter"),
@@ -487,8 +489,6 @@
       aemMsg: $("#aemMsg"),
       aemHistoryList: $("#aemHistoryList"),
       aemRegistrationLogList: $("#aemRegistrationLogList"),
-      aemTabs: $$("#aemForm [data-aem-tab]"),
-      aemSections: $$("#aemForm [data-aem-section-page]"),
 
       // geocoding tab
       tabGeocoding: $("#tab-geocoding"),
@@ -738,6 +738,11 @@ function bindEvents() {
       state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
+    if (els.propAssigneeFilter) els.propAssigneeFilter.addEventListener("change", (e) => {
+      state.propertyFilters.assignee = String(e.target.value || "");
+      state.propertyPage = 1;
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+    });
 
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
       state.propertyFilters.status = String(e.target.value || "");
@@ -799,14 +804,6 @@ function bindEvents() {
     }
     if (els.aemClose) els.aemClose.addEventListener("click", closePropertyEditModal);
     if (els.aemCancel) els.aemCancel.addEventListener("click", closePropertyEditModal);
-    if (els.aemTabs?.length) {
-      els.aemTabs.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const key = String(btn.dataset.aemTab || "basic").trim() || "basic";
-          AdminModules.propertiesTab?.setAdminEditSection?.(key);
-        });
-      });
-    }
     if (els.aemForm) {
       els.aemForm.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -2842,10 +2839,6 @@ function sortGuUnitsByAdjacency(...args) {
 
   function $(sel) {
     return document.querySelector(sel);
-  }
-
-  function $$(sel) {
-    return Array.from(document.querySelectorAll(sel));
   }
 
   function goLoginPage(withLogout = false) {

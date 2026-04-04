@@ -28,6 +28,83 @@
     return (state.staff || []).find((s) => String(s.id || '').trim() === key)?.name || '';
   }
 
+  function normalizeAssigneeNameKey(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function getAssigneeFilterMeta(state, row) {
+    const assignedId = String(row?.assignedAgentId || row?.assigneeId || row?._raw?.assignee_id || row?._raw?.assignedAgentId || '').trim();
+    const assignedName = String(row?.assignedAgentName || row?.assigneeName || row?._raw?.assignee_name || row?._raw?.assignedAgentName || getStaffNameByIdLocal(state, assignedId) || '').replace(/\s+/g, ' ').trim();
+    if (assignedId) return { value: `id:${assignedId}`, label: assignedName || '담당자' };
+    const normalizedName = normalizeAssigneeNameKey(assignedName);
+    if (normalizedName) return { value: `name:${normalizedName}`, label: assignedName };
+    return { value: '__unassigned__', label: '미배정' };
+  }
+
+  function matchesAssigneeFilterValue(state, row, selectedValue) {
+    const selected = String(selectedValue || '').trim();
+    if (!selected) return true;
+    return getAssigneeFilterMeta(state, row).value === selected;
+  }
+
+  function renderAssigneeFilterOptions(selectEl, rows, state, selectedValue) {
+    if (!selectEl) return;
+    const list = Array.isArray(rows) ? rows : [];
+    const current = String(selectedValue || '').trim();
+    const optionMap = new Map();
+    const touch = (value, label, count = 0, order = Number.MAX_SAFE_INTEGER) => {
+      const key = String(value || '').trim();
+      if (!key && key !== '') return;
+      const prev = optionMap.get(key);
+      if (prev) {
+        prev.count += Number(count || 0);
+        if ((!prev.label || prev.label === '담당자') && label) prev.label = label;
+        if (order < prev.order) prev.order = order;
+        return prev;
+      }
+      const next = { value: key, label: String(label || '').trim() || '담당자', count: Number(count || 0), order };
+      optionMap.set(key, next);
+      return next;
+    };
+
+    touch('', '담당자별 선택 필터', list.length, -1);
+
+    (Array.isArray(state?.staff) ? state.staff : []).forEach((staff, index) => {
+      const id = String(staff?.id || '').trim();
+      if (!id) return;
+      const label = String(staff?.name || staff?.email || '담당자').replace(/\s+/g, ' ').trim();
+      touch(`id:${id}`, label, 0, index);
+    });
+
+    list.forEach((row) => {
+      const meta = getAssigneeFilterMeta(state, row);
+      touch(meta.value, meta.label, 1);
+    });
+
+    if (current && !optionMap.has(current)) {
+      if (current === '__unassigned__') touch(current, '미배정', 0);
+      else touch(current, current.startsWith('name:') ? current.slice(5) : '담당자', 0);
+    }
+
+    const options = [...optionMap.values()]
+      .filter((item) => item.value === '' || item.count > 0 || item.value === current)
+      .sort((a, b) => {
+        if (a.value === '') return -1;
+        if (b.value === '') return 1;
+        if (a.order !== b.order) return a.order - b.order;
+        return String(a.label || '').localeCompare(String(b.label || ''), 'ko');
+      });
+
+    selectEl.innerHTML = '';
+    options.forEach((item) => {
+      const optionEl = document.createElement('option');
+      optionEl.value = item.value;
+      optionEl.textContent = formatOptionLabel(item.label, item.count);
+      selectEl.appendChild(optionEl);
+    });
+    selectEl.value = options.some((item) => item.value === current) ? current : '';
+  }
+
   function nl2brEscaped(utils, value) {
     const safe = utils.escapeHtml(String(value || ''));
     return safe.replace(/\r?\n/g, '<br/>');
@@ -375,48 +452,44 @@
   }
 
 
-  function setAdminEditSection(key) {
-    const { els } = ctx();
-    const activeKey = String(key || 'basic').trim() || 'basic';
-    if (Array.isArray(els.aemTabs)) {
-      els.aemTabs.forEach((btn) => {
-        const isActive = btn.dataset.aemTab === activeKey;
-        btn.classList.toggle('is-active', isActive);
-        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      });
-    }
-    if (Array.isArray(els.aemSections)) {
-      els.aemSections.forEach((section) => {
-        section.classList.toggle('is-active', section.dataset.aemSectionPage === activeKey);
-      });
-    }
-  }
-  mod.setAdminEditSection = setAdminEditSection;
-
   function arrangeAdminOpinionFields(form) {
-    if (!form || !PropertyRenderers || typeof PropertyRenderers.findFieldShell !== 'function') return null;
-    const grid = form.querySelector('[data-opinion-grid="admin"]') || form.querySelector('[data-aem-section-page="opinion"] .edit-opinion-grid');
-    const ensureShell = (fieldName, label) => {
-      const shell = PropertyRenderers.findFieldShell(form, fieldName, { shellSelectors: [`[data-opinion-field="${fieldName}"]`, '[data-aem-field]', '.form-field', '.field'] });
-      if (!shell) return null;
-      PropertyRenderers.ensureTextareaField?.(form, fieldName, shell, { textareaClass: 'aem-textarea', rows: 8 });
-      PropertyRenderers.setFieldLabel?.(shell, label);
-      shell.classList.remove('hidden');
-      shell.hidden = false;
-      shell.style.display = '';
-      shell.style.gridColumn = '';
-      shell.classList.add('edit-opinion-field');
-      return shell;
-    };
-    const dailyIssueShell = ensureShell('dailyIssue', '금일 이슈사항');
-    const siteShell = ensureShell('siteInspection', '현장실사');
-    const opinionShell = ensureShell('opinion', '담당자 의견');
-    if (grid) {
-      if (dailyIssueShell) grid.appendChild(dailyIssueShell);
-      if (siteShell) grid.appendChild(siteShell);
-      if (opinionShell) grid.appendChild(opinionShell);
+    if (!form) return null;
+    if (PropertyRenderers && typeof PropertyRenderers.findFieldShell === 'function') {
+      const siteShell = PropertyRenderers.findFieldShell(form, 'siteInspection', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
+      const opinionShell = PropertyRenderers.findFieldShell(form, 'opinion', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
+      const dailyIssueShell = PropertyRenderers.findFieldShell(form, 'dailyIssue', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
+      if (siteShell) {
+        PropertyRenderers.ensureTextareaField?.(form, 'siteInspection', siteShell, { textareaClass: 'aem-textarea', rows: 6 });
+        PropertyRenderers.setFieldLabel?.(siteShell, '현장실사');
+        siteShell.classList.remove('hidden');
+        siteShell.hidden = false;
+        siteShell.style.display = '';
+      }
+      if (opinionShell) {
+        PropertyRenderers.ensureTextareaField?.(form, 'opinion', opinionShell, { textareaClass: 'aem-textarea', rows: 6 });
+        PropertyRenderers.setFieldLabel?.(opinionShell, '담당자 의견');
+        opinionShell.classList.remove('hidden');
+        opinionShell.hidden = false;
+        opinionShell.style.display = '';
+      }
+      if (dailyIssueShell) {
+        PropertyRenderers.ensureTextareaField?.(form, 'dailyIssue', dailyIssueShell, { textareaClass: 'aem-textarea', rows: 6 });
+        PropertyRenderers.setFieldLabel?.(dailyIssueShell, '금일이슈사항');
+        dailyIssueShell.classList.remove('hidden');
+        dailyIssueShell.hidden = false;
+        dailyIssueShell.style.display = '';
+      }
+      const parent = siteShell && opinionShell && dailyIssueShell && siteShell.parentElement === opinionShell.parentElement && opinionShell.parentElement === dailyIssueShell.parentElement ? siteShell.parentElement : null;
+      if (parent) {
+        parent.classList.remove('grid2');
+        parent.classList.add('grid3');
+        parent.appendChild(siteShell);
+        parent.appendChild(opinionShell);
+        parent.appendChild(dailyIssueShell);
+      }
+      return { siteShell, opinionShell, dailyIssueShell };
     }
-    return { siteShell, opinionShell, dailyIssueShell };
+    return null;
   }
 
 function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
@@ -530,7 +603,10 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
           ],
         })
       : baseRows;
-    return applyPropertySort(filtered, state, ctx().utils);
+    const assigneeFiltered = (ignoreKeys.includes('assignee') || !String(filters.assignee || '').trim())
+      ? filtered
+      : filtered.filter((item) => matchesAssigneeFilterValue(state, item, filters.assignee));
+    return applyPropertySort(assigneeFiltered, state, ctx().utils);
   };
 
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
@@ -540,6 +616,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       String(filters.activeCard || '').trim() ||
       String(filters.status || '').trim() ||
       String(filters.keyword || '').trim() ||
+      String(filters.assignee || '').trim() ||
       String(filters.area || '').trim() ||
       String(filters.priceRange || '').trim() ||
       String(filters.ratio50 || '').trim() ||
@@ -551,6 +628,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
       if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      renderAssigneeFilterOptions(els.propAssigneeFilter, getPropertyFilterSourceRows(state), state, filters.assignee);
       if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
       if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
       if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
@@ -559,6 +637,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     }
 
     const sourceRows = mod.getFilteredProperties({ ignoreKeys: ['activeCard'] });
+    const assigneeRows = mod.getFilteredProperties({ ignoreKeys: ['assignee'] });
     const areaRows = mod.getFilteredProperties({ ignoreKeys: ['area'] });
     const priceRows = mod.getFilteredProperties({ ignoreKeys: ['priceRange'] });
     const ratioRows = mod.getFilteredProperties({ ignoreKeys: ['ratio50'] });
@@ -591,10 +670,12 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     });
 
     applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+    renderAssigneeFilterOptions(els.propAssigneeFilter, assigneeRows, state, state?.propertyFilters?.assignee);
     applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, areaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
     applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, priceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
     applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
     if (els.propSourceFilter) els.propSourceFilter.value = String(state?.propertyFilters?.activeCard || '');
+    if (els.propAssigneeFilter) els.propAssigneeFilter.value = String(state?.propertyFilters?.assignee || '');
     if (els.propAreaFilter) els.propAreaFilter.value = String(state?.propertyFilters?.area || '');
     if (els.propPriceFilter) els.propPriceFilter.value = String(state?.propertyFilters?.priceRange || '');
     if (els.propRatioFilter) els.propRatioFilter.value = String(state?.propertyFilters?.ratio50 || '');
@@ -981,7 +1062,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
     arrangeAdminOpinionFields(f);
-    setAdminEditSection('basic');
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);

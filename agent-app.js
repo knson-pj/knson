@@ -160,6 +160,7 @@
       activeCard: "",
       status: "",
       keyword: "",
+      assignee: "",
       area: "",
       priceRange: "",
       ratio50: "",
@@ -305,6 +306,7 @@
 
     // Filters
     els.agSourceFilter = $("#agSourceFilter");
+    els.agAssigneeFilter = $("#agAssigneeFilter");
     els.agAreaFilter = $("#agAreaFilter");
     els.agPriceFilter = $("#agPriceFilter");
     els.agRatioFilter = $("#agRatioFilter");
@@ -888,6 +890,79 @@
     });
   }
 
+  function normalizeAssigneeNameKey(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function getAssigneeFilterMeta(row) {
+    const assignedId = String(row?.assignedAgentId || row?.assigneeId || row?._raw?.assignee_id || row?._raw?.assignedAgentId || '').trim();
+    const fallbackName = assignedId && String(state.session?.user?.id || '').trim() === assignedId
+      ? String(state.session?.user?.name || state.session?.user?.email || '').trim()
+      : '';
+    const assignedName = String(row?.assignedAgentName || row?.assigneeName || row?._raw?.assignee_name || row?._raw?.assignedAgentName || fallbackName || '').replace(/\s+/g, ' ').trim();
+    if (assignedId) return { value: `id:${assignedId}`, label: assignedName || '담당자' };
+    const normalizedName = normalizeAssigneeNameKey(assignedName);
+    if (normalizedName) return { value: `name:${normalizedName}`, label: assignedName };
+    return { value: '__unassigned__', label: '미배정' };
+  }
+
+  function matchesAssigneeFilterValue(row, selectedValue) {
+    const selected = String(selectedValue || '').trim();
+    if (!selected) return true;
+    return getAssigneeFilterMeta(row).value === selected;
+  }
+
+  function renderAssigneeFilterOptions(selectEl, rows, selectedValue) {
+    if (!selectEl) return;
+    const list = Array.isArray(rows) ? rows : [];
+    const current = String(selectedValue || '').trim();
+    const optionMap = new Map();
+    const touch = (value, label, count = 0, order = Number.MAX_SAFE_INTEGER) => {
+      const key = String(value || '').trim();
+      if (!key && key !== '') return;
+      const prev = optionMap.get(key);
+      if (prev) {
+        prev.count += Number(count || 0);
+        if ((!prev.label || prev.label === '담당자') && label) prev.label = label;
+        if (order < prev.order) prev.order = order;
+        return prev;
+      }
+      const next = { value: key, label: String(label || '').trim() || '담당자', count: Number(count || 0), order };
+      optionMap.set(key, next);
+      return next;
+    };
+
+    touch('', '담당자별 선택 필터', list.length, -1);
+
+    list.forEach((row) => {
+      const meta = getAssigneeFilterMeta(row);
+      touch(meta.value, meta.label, 1);
+    });
+
+    if (current && !optionMap.has(current)) {
+      if (current === '__unassigned__') touch(current, '미배정', 0);
+      else touch(current, current.startsWith('name:') ? current.slice(5) : '담당자', 0);
+    }
+
+    const options = [...optionMap.values()]
+      .filter((item) => item.value === '' || item.count > 0 || item.value === current)
+      .sort((a, b) => {
+        if (a.value === '') return -1;
+        if (b.value === '') return 1;
+        if (a.order !== b.order) return a.order - b.order;
+        return String(a.label || '').localeCompare(String(b.label || ''), 'ko');
+      });
+
+    selectEl.innerHTML = '';
+    options.forEach((item) => {
+      const optionEl = document.createElement('option');
+      optionEl.value = item.value;
+      optionEl.textContent = formatOptionLabel(item.label, item.count);
+      selectEl.appendChild(optionEl);
+    });
+    selectEl.value = options.some((item) => item.value === current) ? current : '';
+  }
+
   function syncSourceFilterUi() {
     const active = String(state.filters?.activeCard || '').trim();
     if (els.agSourceFilter) els.agSourceFilter.value = active;
@@ -925,6 +1000,7 @@
 
     // Filters
     if (els.agSourceFilter) els.agSourceFilter.addEventListener("change", (e) => { state.filters.activeCard = String(e.target.value || ''); syncSourceFilterUi(); state.page = 1; renderTable(); });
+    if (els.agAssigneeFilter) els.agAssigneeFilter.addEventListener("change", (e) => { state.filters.assignee = String(e.target.value || ''); state.page = 1; renderTable(); });
     if (els.agAreaFilter) els.agAreaFilter.addEventListener("change", (e) => { state.filters.area = e.target.value; state.page = 1; renderTable(); });
     if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
     if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
@@ -1478,6 +1554,8 @@
       rightsAnalysis: base.rightsAnalysis,
       siteInspection: base.siteInspection,
       opinion: base.opinion,
+      assignedAgentId: base.assignedAgentId || null,
+      assignedAgentName: base.assignedAgentName || "",
       createdAt: base.createdAt,
       isDirectSubmission: base.isDirectSubmission,
       _raw: item,
@@ -1562,12 +1640,16 @@
   function getFilteredProps(options = {}) {
     const keywordFields = ['address', 'itemNo', 'opinion'];
     if (PropertyDomain && typeof PropertyDomain.applyPropertyFilters === 'function') {
-      return PropertyDomain.applyPropertyFilters(state.properties, state.filters, {
+      const filtered = PropertyDomain.applyPropertyFilters(state.properties, state.filters, {
         ignoreKeys: options?.ignoreKeys,
-        keywordFields,
+        keywordFields: [...keywordFields, 'assignedAgentName'],
         todayKey: getTodayDateKey(),
         isFavorite: (row) => state.favorites.has(row?.id),
       });
+      const ignoreKeys = new Set(Array.isArray(options?.ignoreKeys) ? options.ignoreKeys : []);
+      return (!ignoreKeys.has('assignee') && String(state.filters?.assignee || '').trim())
+        ? filtered.filter((row) => matchesAssigneeFilterValue(row, state.filters.assignee))
+        : filtered;
     }
     let rows = state.properties;
     const f = state.filters;
@@ -1578,6 +1660,7 @@
         return true;
       });
     }
+    if (!ignoreKeys.has('assignee') && f.assignee) rows = rows.filter((r) => matchesAssigneeFilterValue(r, f.assignee));
     if (!ignoreKeys.has('area') && f.area) rows = rows.filter((r) => matchesAreaFilterValue(f.area, r.exclusivearea));
     if (!ignoreKeys.has('priceRange') && f.priceRange) rows = rows.filter((r) => matchesPriceRangeValue(f.priceRange, r));
     if (!ignoreKeys.has('ratio50') && f.ratio50) rows = rows.filter((r) => matchesRatioFilterValue(f.ratio50, r));
@@ -1589,6 +1672,7 @@
 
   function updateFilterOptionCounts() {
     const sourceRows = getFilteredProps({ ignoreKeys: ['activeCard'] });
+    const assigneeRows = getFilteredProps({ ignoreKeys: ['assignee'] });
     const areaRows = getFilteredProps({ ignoreKeys: ['area'] });
     const priceRows = getFilteredProps({ ignoreKeys: ['priceRange'] });
     const ratioRows = getFilteredProps({ ignoreKeys: ['ratio50'] });
@@ -1620,10 +1704,12 @@
     });
 
     applySelectOptionCounts(els.agSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts);
+    renderAssigneeFilterOptions(els.agAssigneeFilter, assigneeRows, state.filters?.assignee);
     applySelectOptionCounts(els.agAreaFilter, AREA_FILTER_OPTIONS, areaCounts);
     applySelectOptionCounts(els.agPriceFilter, PRICE_FILTER_OPTIONS, priceCounts);
     applySelectOptionCounts(els.agRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts);
     if (els.agSourceFilter) els.agSourceFilter.value = String(state.filters?.activeCard || '');
+    if (els.agAssigneeFilter) els.agAssigneeFilter.value = String(state.filters?.assignee || '');
     if (els.agAreaFilter) els.agAreaFilter.value = String(state.filters?.area || '');
     if (els.agPriceFilter) els.agPriceFilter.value = String(state.filters?.priceRange || '');
     if (els.agRatioFilter) els.agRatioFilter.value = String(state.filters?.ratio50 || '');
@@ -1843,29 +1929,13 @@ function renderPagination(totalPages) {
 
 
   function arrangeAgentOpinionFields(form) {
-    if (!form || !PropertyRenderers || typeof PropertyRenderers.findFieldShell !== 'function') return null;
-    const grid = form.querySelector('[data-opinion-grid="agent"]') || form.querySelector('[data-edit-section="opinion"] .edit-opinion-grid');
-    const ensureShell = (fieldName, label) => {
-      const shell = PropertyRenderers.findFieldShell(form, fieldName, { shellSelectors: [`[data-opinion-field="${fieldName}"]`, '[data-ag-field]', '.form-field', '.field'] });
-      if (!shell) return null;
-      PropertyRenderers.ensureTextareaField?.(form, fieldName, shell, { textareaClass: 'ag-textarea', rows: 8 });
-      PropertyRenderers.setFieldLabel?.(shell, label);
-      shell.classList.remove('hidden');
-      shell.hidden = false;
-      shell.style.display = '';
-      shell.style.gridColumn = '';
-      shell.classList.add('edit-opinion-field');
-      return shell;
-    };
-    const dailyIssueShell = ensureShell('dailyIssue', '금일 이슈사항');
-    const siteShell = ensureShell('siteInspection', '현장실사');
-    const opinionShell = ensureShell('opinion', '담당자 의견');
-    if (grid) {
-      if (dailyIssueShell) grid.appendChild(dailyIssueShell);
-      if (siteShell) grid.appendChild(siteShell);
-      if (opinionShell) grid.appendChild(opinionShell);
+    if (PropertyRenderers && typeof PropertyRenderers.arrangeOpinionFields === 'function') {
+      return PropertyRenderers.arrangeOpinionFields(form, {
+        shellSelectors: ['[data-ag-field]', '.form-field'],
+        textareaClass: 'ag-textarea',
+      });
     }
-    return { dailyIssueShell, siteShell, opinionShell };
+    return null;
   }
 
   function applyAgentEditFormMode(item, view) {
