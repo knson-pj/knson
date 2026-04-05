@@ -452,44 +452,48 @@
   }
 
 
-  function arrangeAdminOpinionFields(form) {
-    if (!form) return null;
-    if (PropertyRenderers && typeof PropertyRenderers.findFieldShell === 'function') {
-      const siteShell = PropertyRenderers.findFieldShell(form, 'siteInspection', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
-      const opinionShell = PropertyRenderers.findFieldShell(form, 'opinion', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
-      const dailyIssueShell = PropertyRenderers.findFieldShell(form, 'dailyIssue', { shellSelectors: ['[data-aem-field]', '.form-field', '.field'] });
-      if (siteShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'siteInspection', siteShell, { textareaClass: 'aem-textarea', rows: 6 });
-        PropertyRenderers.setFieldLabel?.(siteShell, '현장실사');
-        siteShell.classList.remove('hidden');
-        siteShell.hidden = false;
-        siteShell.style.display = '';
-      }
-      if (opinionShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'opinion', opinionShell, { textareaClass: 'aem-textarea', rows: 6 });
-        PropertyRenderers.setFieldLabel?.(opinionShell, '담당자 의견');
-        opinionShell.classList.remove('hidden');
-        opinionShell.hidden = false;
-        opinionShell.style.display = '';
-      }
-      if (dailyIssueShell) {
-        PropertyRenderers.ensureTextareaField?.(form, 'dailyIssue', dailyIssueShell, { textareaClass: 'aem-textarea', rows: 6 });
-        PropertyRenderers.setFieldLabel?.(dailyIssueShell, '금일이슈사항');
-        dailyIssueShell.classList.remove('hidden');
-        dailyIssueShell.hidden = false;
-        dailyIssueShell.style.display = '';
-      }
-      const parent = siteShell && opinionShell && dailyIssueShell && siteShell.parentElement === opinionShell.parentElement && opinionShell.parentElement === dailyIssueShell.parentElement ? siteShell.parentElement : null;
-      if (parent) {
-        parent.classList.remove('grid2');
-        parent.classList.add('grid3');
-        parent.appendChild(siteShell);
-        parent.appendChild(opinionShell);
-        parent.appendChild(dailyIssueShell);
-      }
-      return { siteShell, opinionShell, dailyIssueShell };
+  function setAdminEditSection(key) {
+    const { els } = ctx();
+    const activeKey = String(key || 'basic').trim() || 'basic';
+    if (Array.isArray(els.aemTabs)) {
+      els.aemTabs.forEach((btn) => {
+        const isActive = btn.dataset.aemTab === activeKey;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
     }
-    return null;
+    if (Array.isArray(els.aemSections)) {
+      els.aemSections.forEach((section) => {
+        section.classList.toggle('is-active', section.dataset.aemSectionPage === activeKey);
+      });
+    }
+  }
+  mod.setAdminEditSection = setAdminEditSection;
+
+  function arrangeAdminOpinionFields(form) {
+    if (!form || !PropertyRenderers || typeof PropertyRenderers.findFieldShell !== 'function') return null;
+    const grid = form.querySelector('[data-opinion-grid="admin"]') || form.querySelector('[data-aem-section-page="opinion"] .edit-opinion-grid');
+    const ensureShell = (fieldName, label) => {
+      const shell = PropertyRenderers.findFieldShell(form, fieldName, { shellSelectors: [`[data-opinion-field="${fieldName}"]`, '[data-aem-field]', '.form-field', '.field'] });
+      if (!shell) return null;
+      PropertyRenderers.ensureTextareaField?.(form, fieldName, shell, { textareaClass: 'aem-textarea', rows: 8 });
+      PropertyRenderers.setFieldLabel?.(shell, label);
+      shell.classList.remove('hidden');
+      shell.hidden = false;
+      shell.style.display = '';
+      shell.style.gridColumn = '';
+      shell.classList.add('edit-opinion-field');
+      return shell;
+    };
+    const dailyIssueShell = ensureShell('dailyIssue', '금일 이슈사항');
+    const siteShell = ensureShell('siteInspection', '현장실사');
+    const opinionShell = ensureShell('opinion', '담당자 의견');
+    if (grid) {
+      if (dailyIssueShell) grid.appendChild(dailyIssueShell);
+      if (siteShell) grid.appendChild(siteShell);
+      if (opinionShell) grid.appendChild(opinionShell);
+    }
+    return { dailyIssueShell, siteShell, opinionShell };
   }
 
 function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType, view) {
@@ -1062,6 +1066,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
     arrangeAdminOpinionFields(f);
+    setAdminEditSection('basic');
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);

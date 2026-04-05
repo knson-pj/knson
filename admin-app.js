@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260403-adminfix2";
+  const ADMIN_FAST_BUILD = "20260403-adminfix2-hotfix2";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -489,6 +489,8 @@
       aemMsg: $("#aemMsg"),
       aemHistoryList: $("#aemHistoryList"),
       aemRegistrationLogList: $("#aemRegistrationLogList"),
+      aemTabs: $$("#aemForm [data-aem-tab]"),
+      aemSections: $$("#aemForm [data-aem-section-page]"),
 
       // geocoding tab
       tabGeocoding: $("#tab-geocoding"),
@@ -804,6 +806,14 @@ function bindEvents() {
     }
     if (els.aemClose) els.aemClose.addEventListener("click", closePropertyEditModal);
     if (els.aemCancel) els.aemCancel.addEventListener("click", closePropertyEditModal);
+    if (els.aemTabs?.length) {
+      els.aemTabs.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = String(btn.dataset.aemTab || "basic").trim() || "basic";
+          AdminModules.propertiesTab?.setAdminEditSection?.(key);
+        });
+      });
+    }
     if (els.aemForm) {
       els.aemForm.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -2841,6 +2851,10 @@ function sortGuUnitsByAdjacency(...args) {
 
   function $(sel) {
     return document.querySelector(sel);
+  }
+
+  function $$(sel) {
+    return Array.from(document.querySelectorAll(sel));
   }
 
   function goLoginPage(withLogout = false) {
