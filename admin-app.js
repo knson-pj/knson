@@ -282,9 +282,9 @@
         updatePropertyRowResilient,
         getStaffNameById,
         loadRegistrationLog,
-        renderRegistrationLog,
         loadOpinionHistory,
-        renderOpinionHistory,
+        loadPropertyEditChangeSets,
+        renderCombinedPropertyLog,
         appendOpinionEntry,
         mergePropertyRaw,
         formatScheduleHtml,
@@ -487,8 +487,7 @@
       aemSave: $("#aemSave"),
       aemDelete: $("#aemDelete"),
       aemMsg: $("#aemMsg"),
-      aemHistoryList: $("#aemHistoryList"),
-      aemRegistrationLogList: $("#aemRegistrationLogList"),
+      aemCombinedLogList: $("#aemCombinedLogList"),
       aemTabs: $$("#aemForm [data-aem-tab]"),
       aemSections: $$("#aemForm [data-aem-section-page]"),
 
@@ -2110,6 +2109,49 @@ function bindEvents() {
     return null;
   }
 
+  function renderCombinedPropertyLog(container, opinionHistory, registrationLog, propertyEditHistory) {
+    if (!container) return;
+    const list = PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLog === "function"
+      ? PropertyDomain.buildCombinedPropertyLog(opinionHistory, registrationLog, propertyEditHistory)
+      : [];
+    if (!list.length) {
+      container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
+      return;
+    }
+    const escHtml = escapeHtml;
+    const sectionLabel = (section) => ({ detail: '물건상세', opinion: '담당자의견', photos: '사진' }[String(section || '').trim()] || String(section || '').trim());
+    const renderChangeValue = (value, fallback = '빈값') => {
+      const text = String(value || '').trim();
+      return escHtml(text || fallback);
+    };
+    const renderDetailRows = (changes) => {
+      if (!changes.length) return '';
+      return `<div class="agent-combined-log-changes">${changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${escHtml(change.label || '')}</span><span class="agent-combined-log-value">${renderChangeValue(change.beforeDisplay || change.before || '', '빈값')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${renderChangeValue(change.afterDisplay || change.after || '', '빈값')}</span></div>`).join('')}</div>`;
+    };
+    const renderOpinionRows = (changes) => changes.map((change) => `<div class="property-log-text-card"><div class="property-log-text-title">${escHtml(change.label || '')}</div><div class="property-log-text-grid"><div class="property-log-text-box is-before"><div class="property-log-text-label">이전</div><div class="property-log-text-value">${renderChangeValue(change.beforeDisplay || change.before || '', '빈값')}</div></div><div class="property-log-text-box is-after"><div class="property-log-text-label">변경</div><div class="property-log-text-value">${renderChangeValue(change.afterDisplay || change.after || '', '빈값')}</div></div></div></div>`).join('');
+    container.innerHTML = list.map((entry, index) => {
+      const headBits = [
+        `<span class="agent-combined-log-badge ${escHtml(entry.badgeClass || '')}">${escHtml(entry.badgeLabel || '')}</span>`,
+        entry.at ? `<span class="agent-combined-log-date">${escHtml(formatRegLogAt(entry.at))}</span>` : '',
+        entry.author ? `<span class="agent-combined-log-author">${escHtml(entry.author)}</span>` : '',
+      ].filter(Boolean).join('');
+      if (entry.kind === 'opinion') {
+        return `<article class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${escHtml(entry.text || '')}</div></div></article>`;
+      }
+      if (entry.kind === 'registration') {
+        const titleHtml = entry.title ? `<div class="agent-combined-log-text">${escHtml(entry.title)}</div>` : '';
+        const changesHtml = entry.changes?.length ? renderDetailRows(entry.changes) : '<div class="agent-combined-log-text">변경 없음</div>';
+        return `<article class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></article>`;
+      }
+      const detailChanges = (entry.changes || []).filter((change) => change.section === 'detail');
+      const opinionChanges = (entry.changes || []).filter((change) => change.section === 'opinion');
+      const chips = (Array.isArray(entry.sections) ? entry.sections : []).map((section) => `<span class="property-log-chip">${escHtml(sectionLabel(section))} ${Number(entry.counts?.[section] || 0)}</span>`).join('');
+      const detailSection = detailChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">물건상세</div>${renderDetailRows(detailChanges)}</section>` : '';
+      const opinionSection = opinionChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">담당자의견</div>${renderOpinionRows(opinionChanges)}</section>` : '';
+      return `<details class="property-log-card" ${index === 0 ? 'open' : ''}><summary class="property-log-summary"><div class="agent-combined-log-head">${headBits}</div><div class="property-log-summary-main"><div class="property-log-summary-title">${escHtml(entry.title || entry.summary || '수정 이력')}</div><div class="property-log-chip-row">${chips}</div></div></summary><div class="agent-combined-log-body property-log-body">${detailSection}${opinionSection}</div></details>`;
+    }).join('');
+  }
+
   function renderRegistrationLog(container, history) {
     if (!container) return;
     const list = Array.isArray(history) ? history : [];
@@ -2215,6 +2257,14 @@ function bindEvents() {
       return entry ? [entry] : [];
     }
     return [];
+  }
+
+  function loadPropertyEditChangeSets(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadPropertyEditChangeSets === "function") {
+      return PropertyDomain.loadPropertyEditChangeSets(item);
+    }
+    const raw = item?._raw?.raw || {};
+    return Array.isArray(raw.propertyEditLogs) ? raw.propertyEditLogs : [];
   }
 
   function appendOpinionEntry(history, newText, user, options = {}) {
@@ -2736,6 +2786,7 @@ function sortGuUnitsByAdjacency(...args) {
       opinion: patch.opinion ?? currentRaw.opinion ?? null,
       memo: patch.opinion ?? currentRaw.memo ?? null,
       opinionHistory: patch.opinionHistory ?? currentRaw.opinionHistory ?? [],
+      propertyEditLogs: patch.propertyEditLogs ?? currentRaw.propertyEditLogs ?? currentRaw.propertyEditHistory ?? [],
       assigneeId,
       assignee_id: assigneeId,
       assignedAgentId: assigneeId,

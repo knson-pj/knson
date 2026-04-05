@@ -1069,8 +1069,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setAdminEditSection('basic');
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
-    if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
-    if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
+    if (typeof utils.renderCombinedPropertyLog === 'function') utils.renderCombinedPropertyLog(els.aemCombinedLogList, utils.loadOpinionHistory(workingItem), utils.loadRegistrationLog(workingItem), utils.loadPropertyEditChangeSets(workingItem));
     const sourceTypeEl = f.elements['sourceType'];
     const submitterTypeEl = f.elements['submitterType'];
     const refreshFormMode = () => applyAdminPropertyFormMode(els, utils, workingItem, sourceTypeEl?.value || view.sourceType, submitterTypeEl?.value || view.submitterType, view);
@@ -1258,7 +1257,21 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
+    const mergedRaw = utils.mergePropertyRaw(item, patch);
+    const editLogEntry = PropertyDomain && typeof PropertyDomain.buildPropertyEditChangeSet === 'function'
+      ? PropertyDomain.buildPropertyEditChangeSet(item, { ...item, ...patch, raw: mergedRaw, _raw: { ...(item?._raw || {}), raw: mergedRaw } }, {
+          at: new Date().toISOString(),
+          actor: String(ctx().state?.session?.user?.name || ctx().state?.session?.user?.email || '').trim(),
+          actorId: String(ctx().state?.session?.user?.id || '').trim(),
+          actorRole: String(ctx().state?.session?.user?.role || '').trim(),
+          source: 'edit_form',
+        })
+      : null;
+    const mergedRawWithLog = editLogEntry && PropertyDomain && typeof PropertyDomain.appendPropertyEditChangeSet === 'function'
+      ? PropertyDomain.appendPropertyEditChangeSet(mergedRaw, editLogEntry)
+      : mergedRaw;
+    if (mergedRawWithLog?.propertyEditLogs) patch.propertyEditLogs = mergedRawWithLog.propertyEditLogs;
+    const payload = { ...patch, raw: mergedRawWithLog };
 
     // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
     // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.

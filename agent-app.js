@@ -394,11 +394,12 @@
     rightsAnalysis: "rights_analysis",
     siteInspection: "site_inspection",
     dailyIssue: "daily_issue",
+    propertyUpdate: "property_update",
     newProperty: "new_property",
   };
 
   function emptyDailyReportCounts() {
-    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 };
+    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, propertyUpdate: 0, newProperty: 0 };
   }
 
   function getSessionToken() {
@@ -1926,7 +1927,7 @@ function renderPagination(totalPages) {
     });
 
     setAgentEditMsg('', true);
-    renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
+    renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item), loadPropertyEditChangeSets(item));
     applyAgentEditFormMode(item, view);
     arrangeAgentOpinionFields(f);
     setAgentEditSection("basic");
@@ -2018,7 +2019,7 @@ function renderPagination(totalPages) {
       }
       if (normalizedSubmitterType) patch.submitter_type = normalizedSubmitterType;
 
-      const newRaw = sanitizePropertyRawForSave(existingRaw, {
+      let newRaw = sanitizePropertyRawForSave(existingRaw, {
         ...(normalizedSourceType ? {
           sourceType: normalizedSourceType,
           source_type: normalizedSourceType,
@@ -2043,6 +2044,34 @@ function renderPagination(totalPages) {
         ...(newDailyIssueText ? { dailyIssue: newDailyIssueText, daily_issue: newDailyIssueText } : {}),
         opinionHistory,
       });
+      const editLogEntry = PropertyDomain && typeof PropertyDomain.buildPropertyEditChangeSet === 'function'
+        ? PropertyDomain.buildPropertyEditChangeSet(item, {
+            ...item,
+            floor: floorVal,
+            totalfloor: totalFloorVal,
+            useapproval: useApprovalVal,
+            commonarea: commonAreaVal,
+            exclusivearea: exclusiveAreaVal,
+            sitearea: siteAreaVal,
+            priceMain: priceMainVal,
+            currentPrice: currentPriceVal,
+            dateMain: dateMainVal,
+            siteInspection: siteVal,
+            dailyIssue: newDailyIssueText || getLatestHistoryText(item, 'dailyIssue') || null,
+            opinion: patch.memo,
+            raw: newRaw,
+            _raw: { ...(item?._raw || {}), raw: newRaw },
+          }, {
+            at: new Date().toISOString(),
+            actor: String(state.session?.user?.name || state.session?.user?.email || '').trim(),
+            actorId: currentUserId,
+            actorRole: String(state.session?.user?.role || '').trim(),
+            source: 'edit_form',
+          })
+        : null;
+      if (editLogEntry && PropertyDomain && typeof PropertyDomain.appendPropertyEditChangeSet === 'function') {
+        newRaw = PropertyDomain.appendPropertyEditChangeSet(newRaw, editLogEntry);
+      }
 
       maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
       maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
@@ -2064,6 +2093,10 @@ function renderPagination(totalPages) {
       if (newOpinionText) {
         workCategories.push("dailyIssue");
         changedFields.dailyIssue = ["dailyIssue"];
+      }
+      if (editLogEntry && Array.isArray(editLogEntry.changes) && editLogEntry.changes.length) {
+        workCategories.push("propertyUpdate");
+        changedFields.propertyUpdate = editLogEntry.changes.map((change) => String(change.field || '').trim()).filter(Boolean);
       }
       patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
@@ -2647,30 +2680,46 @@ function renderPagination(totalPages) {
     });
   }
 
-  function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
+  function renderCombinedPropertyLog(container, opinionHistory, registrationLog, propertyEditHistory) {
     if (!container) return;
-    const list = buildCombinedPropertyLog(opinionHistory, registrationLog);
+    const list = PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLog === "function"
+      ? PropertyDomain.buildCombinedPropertyLog(opinionHistory, registrationLog, propertyEditHistory)
+      : buildCombinedPropertyLog(opinionHistory, registrationLog);
     if (!list.length) {
       container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
       return;
     }
-    container.innerHTML = list.map((entry) => {
+    const sectionLabel = (section) => ({ detail: '물건상세', opinion: '담당자의견', photos: '사진' }[String(section || '').trim()] || String(section || '').trim());
+    const renderValue = (value, fallback = '빈값') => {
+      const text = String(value || '').trim();
+      return esc(text || fallback);
+    };
+    const renderDetailRows = (changes) => {
+      if (!changes.length) return '';
+      return `<div class="agent-combined-log-changes">${changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || '')}</span><span class="agent-combined-log-value">${renderValue(change.beforeDisplay || change.before || '', '빈값')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${renderValue(change.afterDisplay || change.after || '', '빈값')}</span></div>`).join('')}</div>`;
+    };
+    const renderOpinionRows = (changes) => changes.map((change) => `<div class="property-log-text-card"><div class="property-log-text-title">${esc(change.label || '')}</div><div class="property-log-text-grid"><div class="property-log-text-box is-before"><div class="property-log-text-label">이전</div><div class="property-log-text-value">${renderValue(change.beforeDisplay || change.before || '', '빈값')}</div></div><div class="property-log-text-box is-after"><div class="property-log-text-label">변경</div><div class="property-log-text-value">${renderValue(change.afterDisplay || change.after || '', '빈값')}</div></div></div></div>`).join('');
+    container.innerHTML = list.map((entry, index) => {
       const headBits = [
-        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>`,
-        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : "",
-        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : "",
-      ].filter(Boolean).join("");
-
-      if (entry.kind === "opinion") {
-        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
+        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || '')}">${esc(entry.badgeLabel || '')}</span>`,
+        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : '',
+        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : '',
+      ].filter(Boolean).join('');
+      if (entry.kind === 'opinion') {
+        return `<article class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || '')}</div></div></article>`;
       }
-
-      const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : "";
-      const changesHtml = entry.changes?.length
-        ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
-        : "";
-      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml || '<div class="agent-combined-log-text">변경 없음</div>'}</div></div>`;
-    }).join("");
+      if (entry.kind === 'registration') {
+        const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : '';
+        const changesHtml = entry.changes?.length ? renderDetailRows(entry.changes) : '<div class="agent-combined-log-text">변경 없음</div>';
+        return `<article class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></article>`;
+      }
+      const detailChanges = (entry.changes || []).filter((change) => change.section === 'detail');
+      const opinionChanges = (entry.changes || []).filter((change) => change.section === 'opinion');
+      const chips = (Array.isArray(entry.sections) ? entry.sections : []).map((section) => `<span class="property-log-chip">${esc(sectionLabel(section))} ${Number(entry.counts?.[section] || 0)}</span>`).join('');
+      const detailSection = detailChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">물건상세</div>${renderDetailRows(detailChanges)}</section>` : '';
+      const opinionSection = opinionChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">담당자의견</div>${renderOpinionRows(opinionChanges)}</section>` : '';
+      return `<details class="property-log-card" ${index === 0 ? 'open' : ''}><summary class="property-log-summary"><div class="agent-combined-log-head">${headBits}</div><div class="property-log-summary-main"><div class="property-log-summary-title">${esc(entry.title || entry.summary || '수정 이력')}</div><div class="property-log-chip-row">${chips}</div></div></summary><div class="agent-combined-log-body property-log-body">${detailSection}${opinionSection}</div></details>`;
+    }).join('');
   }
 
   function renderRegistrationLog(container, history) {
@@ -2719,6 +2768,12 @@ function renderPagination(totalPages) {
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     const author = String(user?.name || user?.email || "").trim();
     return [...(Array.isArray(history) ? history : []), { date: today, text, author, kind: String(options.kind || "opinion").trim() || "opinion" }];
+  }
+
+  function loadPropertyEditChangeSets(item) {
+    if (PropertyDomain && typeof PropertyDomain.loadPropertyEditChangeSets === "function") return PropertyDomain.loadPropertyEditChangeSets(item);
+    const raw = item?._raw?.raw || {};
+    return Array.isArray(raw.propertyEditLogs) ? raw.propertyEditLogs : [];
   }
 
   function getLatestHistoryText(item, kind) {
@@ -2770,6 +2825,7 @@ function renderPagination(totalPages) {
     if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
     if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장조사", title: "현장조사" };
     if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일 이슈사항" };
+    if (key === "property_update") return { badgeClass: "is-edit", badgeLabel: "물건수정", title: "물건정보수정" };
     if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
     return { badgeClass: "is-edit", badgeLabel: "업무", title: "업무 수정" };
   }
