@@ -7,7 +7,7 @@
   <meta name="kakao-app-key" content="e204b35f2325614977f2ae1eb673695d" />
   <style>html{visibility:hidden;}</style>
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260405-log1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260405-log2" />
 </head>
 <body class="page-admin">
 
@@ -386,6 +386,6 @@
 <script src="./admin-tab-dashboard.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
-<script src="./admin-app.js?v=20260405-log1"></script>
+<script src="./admin-app.js?v=20260405-log2"></script>
 </body>
 </html>

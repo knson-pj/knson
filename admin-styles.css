@@ -1620,6 +1620,45 @@ textarea.form-textarea-tall{
 .agent-combined-log-value{min-width:0;word-break:break-word;}
 .agent-combined-log-arrow{color:var(--text-3);font-weight:700;}
 
+
+.property-log-list{display:grid;gap:12px;max-height:420px;padding-right:4px;}
+.property-log-card{border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:0 8px 22px rgba(15,23,42,.05);overflow:hidden;}
+.property-log-card.is-static{padding:14px 16px;display:grid;gap:12px;}
+.property-log-card[open]{border-color:rgba(243,115,33,.22);box-shadow:0 12px 28px rgba(15,23,42,.08);}
+.property-log-summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 16px;}
+.property-log-summary::-webkit-details-marker{display:none;}
+.property-log-summary::marker{display:none;content:"";}
+.property-log-summary-main{display:grid;gap:10px;min-width:0;}
+.property-log-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.property-log-summary-title{font-size:15px;font-weight:800;line-height:1.45;color:var(--text);word-break:keep-all;}
+.property-log-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:999px;background:var(--surface-2);color:var(--text-2);font-size:18px;line-height:1;transition:transform .18s ease,background-color .18s ease;}
+.property-log-card[open] .property-log-toggle{transform:rotate(180deg);background:rgba(243,115,33,.12);color:var(--brand-strong);}
+.property-log-chip-row{display:flex;gap:8px;flex-wrap:wrap;}
+.property-log-chip{display:inline-flex;align-items:center;min-height:26px;padding:0 10px;border-radius:999px;background:rgba(243,115,33,.08);color:var(--brand-strong);font-size:12px;font-weight:700;}
+.property-log-body{display:grid;gap:12px;padding:0 16px 16px;}
+.property-log-section{display:grid;gap:10px;padding:14px;border:1px solid rgba(15,23,42,.08);border-radius:16px;background:linear-gradient(180deg,rgba(248,250,252,.95),rgba(255,255,255,.98));}
+.property-log-section-title{font-size:13px;font-weight:800;color:var(--text-2);}
+.property-log-detail-list{display:grid;gap:10px;}
+.property-log-detail-row{display:grid;grid-template-columns:minmax(88px,auto) minmax(0,1fr);gap:12px;align-items:start;}
+.property-log-detail-label{padding-top:10px;font-size:12px;font-weight:800;color:var(--text-2);}
+.property-log-detail-values{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;min-width:0;}
+.property-log-value-pill{min-width:0;padding:10px 12px;border-radius:12px;border:1px solid rgba(15,23,42,.08);font-size:13px;line-height:1.55;word-break:break-word;white-space:pre-wrap;}
+.property-log-value-pill.is-before{background:rgba(148,163,184,.10);color:var(--text-2);}
+.property-log-value-pill.is-after{background:rgba(243,115,33,.10);color:var(--text);}
+.property-log-detail-arrow{color:var(--text-3);font-weight:800;}
+.property-log-text-card{display:grid;gap:10px;padding:12px;border:1px solid rgba(15,23,42,.08);border-radius:14px;background:#fff;}
+.property-log-text-title{font-size:13px;font-weight:800;color:var(--text);}
+.property-log-text-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.property-log-text-box{display:grid;gap:6px;padding:10px 12px;border-radius:12px;border:1px solid rgba(15,23,42,.08);}
+.property-log-text-box.is-before{background:rgba(148,163,184,.08);}
+.property-log-text-box.is-after{background:rgba(243,115,33,.08);}
+.property-log-text-label{font-size:11px;font-weight:800;color:var(--text-3);letter-spacing:.02em;}
+.property-log-text-value{font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word;}
+.property-log-static-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.property-log-static-body{display:grid;gap:10px;}
+.property-log-static-title{font-size:14px;font-weight:800;color:var(--text);}
+.property-log-static-note{font-size:13px;line-height:1.65;color:var(--text-2);white-space:pre-wrap;word-break:break-word;}
+
 /* Agent properties toolbar: single row fixed with horizontal scroll */
 .toolbar.toolbar-agent-properties{
   display:flex !important;
@@ -1646,6 +1685,13 @@ textarea.form-textarea-tall{
   .agent-combined-log-item{padding:10px;}
   .agent-combined-log-change{grid-template-columns:1fr;gap:4px;}
   .agent-combined-log-arrow{display:none;}
+  .property-log-summary{grid-template-columns:1fr;}
+  .property-log-toggle{justify-self:start;}
+  .property-log-detail-row{grid-template-columns:1fr;gap:8px;}
+  .property-log-detail-label{padding-top:0;}
+  .property-log-detail-values{grid-template-columns:1fr;gap:6px;}
+  .property-log-detail-arrow{display:none;}
+  .property-log-text-grid{grid-template-columns:1fr;}
   .toolbar.toolbar-agent-properties .toolbar-keyword,
   .toolbar.toolbar-agent-properties #agKeyword{min-width:220px;}
 }

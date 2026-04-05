@@ -672,7 +672,16 @@
   function buildLogDescription(row) {
     const note = String(row?.note || '').trim();
     if (note) return note;
-    const changed = Array.isArray(row?.changed_fields) ? row.changed_fields.filter(Boolean) : [];
+    const fieldLabels = {
+      floor: '층수', totalfloor: '총층', useapproval: '사용승인일',
+      commonarea: '공용면적(평)', exclusivearea: '전용면적(평)', sitearea: '토지면적(평)',
+      priceMain: '감정가(매각가)', currentPrice: '현재가격', dateMain: '주요일정',
+      dailyIssue: '금일 이슈사항', siteInspection: '현장실사', opinion: '담당자 의견',
+      rightsAnalysis: '권리분석', status: '진행상태'
+    };
+    const changed = Array.isArray(row?.changed_fields)
+      ? row.changed_fields.map((field) => fieldLabels[String(field || '').trim()] || String(field || '').trim()).filter(Boolean)
+      : [];
     if (changed.length) return `${changed.join(', ')} 항목이 반영되었습니다.`;
     const address = String(row?.property_address || '').trim();
     return address ? `${address} 관련 업무 로그입니다.` : '상세 메모가 없는 업무 로그입니다.';
@@ -702,7 +711,7 @@
             <span class="workmgmt-log-time">${esc(formatTime(row?.created_at || row?.action_date))}</span>
           </div>
           ${showTitle ? `<h5 class="workmgmt-log-title">${esc(title)}</h5>` : ''}
-          <p class="workmgmt-log-desc${showTitle ? '' : ' is-tight'}">${esc(buildLogDescription(row))}</p>
+          <p class="workmgmt-log-desc${showTitle ? '' : ' is-tight'}">${esc(buildLogDescription(row)).split(String.fromCharCode(10)).join('<br>')}</p>
         </article>`;
     }).join('');
     container.innerHTML = body || '<div class="workmgmt-empty">표시할 업무 로그가 없습니다.</div>';

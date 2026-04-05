@@ -811,9 +811,27 @@
       propertyItemNo: propertyItemNo || null,
       propertyAddress: propertyAddress || null,
       changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
-      note: key === "dailyIssue" ? (String(options.dailyIssueText || "").trim() || null) : null,
+      note: key === "dailyIssue"
+        ? (String(options.dailyIssueText || "").trim() || null)
+        : key === "propertyUpdate"
+          ? (String(options.propertyUpdateNote || "").trim() || null)
+          : (String(options.noteByKey?.[key] || "").trim() || null),
       actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
     }));
+  }
+
+  function buildPropertyUpdateActivityNote(changeSet) {
+    const changes = Array.isArray(changeSet?.changes) ? changeSet.changes.filter(Boolean) : [];
+    if (!changes.length) return '';
+    const lines = changes.slice(0, 6).map((change) => {
+      const label = String(change?.label || change?.field || '').trim() || '항목';
+      const before = String(change?.beforeDisplay || change?.before || '').trim() || '빈값';
+      const after = String(change?.afterDisplay || change?.after || '').trim() || '빈값';
+      return `${label}: ${before} → ${after}`;
+    });
+    if (changes.length > lines.length) lines.push(`외 ${changes.length - lines.length}건`);
+    const summary = String(changeSet?.summary || '').trim();
+    return [summary, ...lines].filter(Boolean).join('\n');
   }
 
   async function recordDailyReportEntries(entries) {
@@ -2123,6 +2141,7 @@ function renderPagination(totalPages) {
             identityKey: newRaw.registrationIdentityKey || buildRegistrationMatchKey({ ...item, raw: newRaw, _raw: { ...(item._raw || {}), raw: newRaw } }),
             changedFields,
             dailyIssueText: newDailyIssueText,
+            propertyUpdateNote: buildPropertyUpdateActivityNote(editLogEntry),
           }));
         } catch (logErr) {
           activityError = logErr?.message || "일일업무일지 기록 실패";
@@ -2689,36 +2708,39 @@ function renderPagination(totalPages) {
       container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
       return;
     }
+    const escHtml = esc;
     const sectionLabel = (section) => ({ detail: '물건상세', opinion: '담당자의견', photos: '사진' }[String(section || '').trim()] || String(section || '').trim());
-    const renderValue = (value, fallback = '빈값') => {
+    const renderChangeValue = (value, fallback = '빈값') => {
       const text = String(value || '').trim();
-      return esc(text || fallback);
+      return escHtml(text || fallback);
     };
     const renderDetailRows = (changes) => {
       if (!changes.length) return '';
-      return `<div class="agent-combined-log-changes">${changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || '')}</span><span class="agent-combined-log-value">${renderValue(change.beforeDisplay || change.before || '', '빈값')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${renderValue(change.afterDisplay || change.after || '', '빈값')}</span></div>`).join('')}</div>`;
+      return `<div class="property-log-detail-list">${changes.map((change) => `<div class="property-log-detail-row"><div class="property-log-detail-label">${escHtml(change.label || '')}</div><div class="property-log-detail-values"><div class="property-log-value-pill is-before">${renderChangeValue(change.beforeDisplay || change.before || '', '빈값')}</div><span class="property-log-detail-arrow">→</span><div class="property-log-value-pill is-after">${renderChangeValue(change.afterDisplay || change.after || '', '빈값')}</div></div></div>`).join('')}</div>`;
     };
-    const renderOpinionRows = (changes) => changes.map((change) => `<div class="property-log-text-card"><div class="property-log-text-title">${esc(change.label || '')}</div><div class="property-log-text-grid"><div class="property-log-text-box is-before"><div class="property-log-text-label">이전</div><div class="property-log-text-value">${renderValue(change.beforeDisplay || change.before || '', '빈값')}</div></div><div class="property-log-text-box is-after"><div class="property-log-text-label">변경</div><div class="property-log-text-value">${renderValue(change.afterDisplay || change.after || '', '빈값')}</div></div></div></div>`).join('');
+    const renderOpinionRows = (changes) => changes.map((change) => `<div class="property-log-text-card"><div class="property-log-text-title">${escHtml(change.label || '')}</div><div class="property-log-text-grid"><div class="property-log-text-box is-before"><div class="property-log-text-label">이전</div><div class="property-log-text-value">${renderChangeValue(change.beforeDisplay || change.before || '', '빈값')}</div></div><div class="property-log-text-box is-after"><div class="property-log-text-label">변경</div><div class="property-log-text-value">${renderChangeValue(change.afterDisplay || change.after || '', '빈값')}</div></div></div></div>`).join('');
+    const renderMeta = (entry) => `<div class="property-log-meta">${[
+      `<span class="agent-combined-log-badge ${escHtml(entry.badgeClass || '')}">${escHtml(entry.badgeLabel || '')}</span>`,
+      entry.at ? `<span class="agent-combined-log-date">${escHtml(formatRegLogAt(entry.at))}</span>` : '',
+      entry.author ? `<span class="agent-combined-log-author">${escHtml(entry.author)}</span>` : '',
+    ].filter(Boolean).join('')}</div>`;
+    const renderRegistrationCard = (entry) => {
+      const titleHtml = entry.title ? `<div class="property-log-static-title">${escHtml(entry.title)}</div>` : '';
+      const bodyHtml = entry.changes?.length
+        ? renderDetailRows(entry.changes)
+        : '<div class="property-log-static-note">변경 없음</div>';
+      return `<article class="property-log-card is-static"><div class="property-log-static-head">${renderMeta(entry)}</div><div class="property-log-static-body">${titleHtml}${bodyHtml}</div></article>`;
+    };
+    const renderOpinionCard = (entry) => `<article class="property-log-card is-static"><div class="property-log-static-head">${renderMeta(entry)}</div><div class="property-log-static-body"><div class="property-log-static-note">${escHtml(entry.text || '')}</div></div></article>`;
     container.innerHTML = list.map((entry, index) => {
-      const headBits = [
-        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || '')}">${esc(entry.badgeLabel || '')}</span>`,
-        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : '',
-        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : '',
-      ].filter(Boolean).join('');
-      if (entry.kind === 'opinion') {
-        return `<article class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || '')}</div></div></article>`;
-      }
-      if (entry.kind === 'registration') {
-        const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : '';
-        const changesHtml = entry.changes?.length ? renderDetailRows(entry.changes) : '<div class="agent-combined-log-text">변경 없음</div>';
-        return `<article class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></article>`;
-      }
+      if (entry.kind === 'opinion') return renderOpinionCard(entry);
+      if (entry.kind === 'registration') return renderRegistrationCard(entry);
       const detailChanges = (entry.changes || []).filter((change) => change.section === 'detail');
       const opinionChanges = (entry.changes || []).filter((change) => change.section === 'opinion');
-      const chips = (Array.isArray(entry.sections) ? entry.sections : []).map((section) => `<span class="property-log-chip">${esc(sectionLabel(section))} ${Number(entry.counts?.[section] || 0)}</span>`).join('');
+      const chips = (Array.isArray(entry.sections) ? entry.sections : []).map((section) => `<span class="property-log-chip">${escHtml(sectionLabel(section))} ${Number(entry.counts?.[section] || 0)}</span>`).join('');
       const detailSection = detailChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">물건상세</div>${renderDetailRows(detailChanges)}</section>` : '';
       const opinionSection = opinionChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">담당자의견</div>${renderOpinionRows(opinionChanges)}</section>` : '';
-      return `<details class="property-log-card" ${index === 0 ? 'open' : ''}><summary class="property-log-summary"><div class="agent-combined-log-head">${headBits}</div><div class="property-log-summary-main"><div class="property-log-summary-title">${esc(entry.title || entry.summary || '수정 이력')}</div><div class="property-log-chip-row">${chips}</div></div></summary><div class="agent-combined-log-body property-log-body">${detailSection}${opinionSection}</div></details>`;
+      return `<details class="property-log-card" ${index === 0 ? 'open' : ''}><summary class="property-log-summary"><div class="property-log-summary-main">${renderMeta(entry)}<div class="property-log-summary-title">${escHtml(entry.title || entry.summary || '수정 이력')}</div><div class="property-log-chip-row">${chips}</div></div><span class="property-log-toggle" aria-hidden="true">⌄</span></summary><div class="property-log-body">${detailSection}${opinionSection}</div></details>`;
     }).join('');
   }
 
