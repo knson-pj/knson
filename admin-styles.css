@@ -1658,6 +1658,11 @@ textarea.form-textarea-tall{
 .property-log-static-body{display:grid;gap:10px;}
 .property-log-static-title{font-size:14px;font-weight:800;color:var(--text);}
 .property-log-static-note{font-size:13px;line-height:1.65;color:var(--text-2);white-space:pre-wrap;word-break:break-word;}
+.agent-edit-section[data-edit-section="log"] .opinion-history-list,
+.edit-modal-section[data-aem-section-page="log"] .opinion-history-list{max-height:none;overflow:visible;}
+.agent-edit-section[data-edit-section="log"] .property-log-list,
+.edit-modal-section[data-aem-section-page="log"] .property-log-list{max-height:none;}
+
 
 /* Agent properties toolbar: single row fixed with horizontal scroll */
 .toolbar.toolbar-agent-properties{
