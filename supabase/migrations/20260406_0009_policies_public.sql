@@ -1,0 +1,27 @@
+drop policy if exists profiles_insert_own on public.profiles;
+drop policy if exists profiles_select_admin on public.profiles;
+drop policy if exists profiles_select_own on public.profiles;
+drop policy if exists profiles_update_own on public.profiles;
+drop policy if exists properties_delete_admin on public.properties;
+drop policy if exists properties_insert_admin on public.properties;
+drop policy if exists properties_insert_public_open on public.properties;
+drop policy if exists properties_insert_staff_own on public.properties;
+drop policy if exists properties_select_admin on public.properties;
+drop policy if exists properties_select_staff_own on public.properties;
+drop policy if exists properties_update_admin on public.properties;
+drop policy if exists properties_update_staff_own on public.properties;
+drop policy if exists property_activity_logs_select_own on public.property_activity_logs;
+
+create policy profiles_insert_own on public.profiles as PERMISSIVE for INSERT to public with check ((id = auth.uid()));
+create policy profiles_select_admin on public.profiles as PERMISSIVE for SELECT to public using (is_admin());
+create policy profiles_select_own on public.profiles as PERMISSIVE for SELECT to public using ((id = auth.uid()));
+create policy profiles_update_own on public.profiles as PERMISSIVE for UPDATE to public using ((id = auth.uid())) with check ((id = auth.uid()));
+create policy properties_delete_admin on public.properties as PERMISSIVE for DELETE to public using (is_admin());
+create policy properties_insert_admin on public.properties as PERMISSIVE for INSERT to public with check (is_admin());
+create policy properties_insert_public_open on public.properties as PERMISSIVE for INSERT to anon, authenticated with check (((assignee_id IS NULL) AND (((source_type = 'realtor'::source_type) AND (submitter_type = 'realtor'::submitter_type)) OR ((source_type = 'general'::source_type) AND (submitter_type = 'owner'::submitter_type)))));
+create policy properties_insert_staff_own on public.properties as PERMISSIVE for INSERT to public with check ((assignee_id = auth.uid()));
+create policy properties_select_admin on public.properties as PERMISSIVE for SELECT to public using (is_admin());
+create policy properties_select_staff_own on public.properties as PERMISSIVE for SELECT to public using ((assignee_id = auth.uid()));
+create policy properties_update_admin on public.properties as PERMISSIVE for UPDATE to public using (is_admin()) with check (is_admin());
+create policy properties_update_staff_own on public.properties as PERMISSIVE for UPDATE to public using ((assignee_id = auth.uid())) with check ((assignee_id = auth.uid()));
+create policy property_activity_logs_select_own on public.property_activity_logs as PERMISSIVE for SELECT to authenticated using ((actor_id = auth.uid()));
