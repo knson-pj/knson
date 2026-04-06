@@ -1106,7 +1106,6 @@
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
     submitterPhone: "등록자 연락처",
-    memo: "메모/의견",
   };
 
   function hasMeaningfulValue(value) {
@@ -2729,7 +2728,7 @@ function renderPagination(totalPages) {
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
         const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
         const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : ''].filter(Boolean).join('');
-        if (entry.kind === "opinion") {
+        if (entry.kind !== "registration") {
           const title = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
           return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body">${title}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
         }

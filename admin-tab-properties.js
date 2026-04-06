@@ -627,6 +627,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const raw = item?._raw?.raw || {};
     if (latest && String(latest.text || '').trim()) return String(latest.text || '').trim();
     if (target === 'dailyIssue') return String(raw.dailyIssue || raw.daily_issue || '').trim();
+    if (target === 'siteInspection') return String(raw.siteInspection || raw.site_inspection || '').trim();
     return '';
   }
 

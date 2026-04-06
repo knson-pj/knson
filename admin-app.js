@@ -1754,7 +1754,6 @@ function bindEvents() {
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
     assigneeName: "담당자",
-    memo: "메모/의견",
     latitude: "위도",
     longitude: "경도",
   };
@@ -2178,7 +2177,7 @@ function bindEvents() {
       const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
         const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
-        const canEdit = entry.kind === 'opinion' && Number.isInteger(entry.sourceIndex);
+        const canEdit = entry.kind !== 'registration' && Number.isInteger(entry.sourceIndex);
         const actionHtml = canEdit ? `<div class="history-actions"><button type="button" class="history-edit-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="수정">✎</button><button type="button" class="history-del-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="삭제">✕</button></div>` : '';
         const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : '', actionHtml].filter(Boolean).join('');
         if (entry.kind !== 'registration') {

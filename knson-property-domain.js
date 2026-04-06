@@ -27,7 +27,6 @@
     realtorCell: "휴대폰번호",
     submitterName: "등록자명",
     submitterPhone: "등록자 연락처",
-    memo: "메모/의견",
   });
 
   const REGISTRATION_LOG_LABELS_ADMIN = Object.freeze({ ...REGISTRATION_LOG_LABELS_BASE });
