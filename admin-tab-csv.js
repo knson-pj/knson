@@ -126,6 +126,74 @@
     }
     return clean;
   }
+
+
+  function pushImportOutcomeEntry(entries, row, meta = {}) {
+    const safeRow = sanitizePropertyImportRow(row);
+    const safeMeta = meta && typeof meta === "object" ? meta : {};
+    entries.push({
+      row: safeRow,
+      action: String(safeMeta.action || "").trim() || "create",
+      incomingItemNo: String(safeMeta.incomingItemNo || safeRow.item_no || "").trim(),
+      incomingGlobalId: String(safeMeta.incomingGlobalId || safeRow.global_id || "").trim(),
+      matchKey: String(safeMeta.matchKey || "").trim(),
+      changedFieldCount: Number(safeMeta.changedFieldCount || 0) || 0,
+    });
+  }
+
+  function collapseImportOutcomeEntries(entries) {
+    const orderedEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
+    const byGlobalId = new Map();
+    for (const entry of orderedEntries) {
+      const key = String(entry?.row?.global_id || "").trim();
+      if (!key) continue;
+      const existing = byGlobalId.get(key);
+      if (existing) {
+        existing.row = entry.row;
+        existing.lastAction = entry.action;
+        existing.matchKey = entry.matchKey || existing.matchKey || "";
+        existing.changedFieldCount = Math.max(existing.changedFieldCount || 0, Number(entry.changedFieldCount || 0) || 0);
+        existing.actions.add(entry.action);
+        if (entry.incomingItemNo) existing.incomingItemNos.add(entry.incomingItemNo);
+        if (entry.incomingGlobalId) existing.incomingGlobalIds.add(entry.incomingGlobalId);
+        existing.entryCount += 1;
+      } else {
+        byGlobalId.set(key, {
+          row: entry.row,
+          globalId: key,
+          lastAction: entry.action,
+          matchKey: entry.matchKey || "",
+          changedFieldCount: Number(entry.changedFieldCount || 0) || 0,
+          actions: new Set([entry.action]),
+          incomingItemNos: new Set(entry.incomingItemNo ? [entry.incomingItemNo] : []),
+          incomingGlobalIds: new Set(entry.incomingGlobalId ? [entry.incomingGlobalId] : []),
+          entryCount: 1,
+        });
+      }
+    }
+
+    const groups = [...byGlobalId.values()];
+    const outcomeCounts = { create: 0, update: 0, noChange: 0 };
+    for (const group of groups) {
+      if (group.actions.has("create")) outcomeCounts.create += 1;
+      else if (group.actions.has("update")) outcomeCounts.update += 1;
+      else outcomeCounts.noChange += 1;
+    }
+    const duplicateCollapsedCount = Math.max(0, orderedEntries.length - groups.length);
+    return { groups, outcomeCounts, duplicateCollapsedCount };
+  }
+
+  function formatImportFailurePreview(failedList, limit = 5) {
+    const list = Array.isArray(failedList) ? failedList.slice(0, limit) : [];
+    return list.map((item) => {
+      const label = String(item?.itemNo || item?.globalId || "-").trim() || "-";
+      const message = String(item?.message || "").trim();
+      if (!message) return label;
+      const compact = message.replace(/\s+/g, " ").trim();
+      return `${label} (${compact.length > 60 ? `${compact.slice(0, 60)}…` : compact})`;
+    }).join(", ");
+  }
+
   function extractTotalFloorFromTexts(...texts) {
     const candidates = texts
       .map((value) => String(value || "").trim())
@@ -194,30 +262,45 @@
           const key = buildRegistrationMatchKey(buildRegistrationSnapshotFromItem(item));
           if (key && !workingByKey.has(key)) workingByKey.set(key, item);
         });
-        const finalRows = [];
-        let regUpdatedCount = 0;
+        const outcomeEntries = [];
         for (const row of dedupedRows) {
           const snap = buildRegistrationSnapshotFromDbRow(row);
           const matchKey = buildRegistrationMatchKey(snap);
           const existing = matchKey ? workingByKey.get(matchKey) : null;
           if (existing) {
             const merged = buildRegistrationDbRowForExisting(existing, row, regContext);
-            finalRows.push(sanitizePropertyImportRow(merged.row));
+            pushImportOutcomeEntry(outcomeEntries, merged.row, {
+              action: merged.changes.length ? "update" : "no_change",
+              incomingItemNo: row.item_no || row.raw?.itemNo || "",
+              incomingGlobalId: row.global_id || "",
+              matchKey,
+              changedFieldCount: merged.changes.length,
+            });
             workingByKey.set(matchKey, normalizeProperty({ ...merged.row, raw: merged.row.raw }));
-            if (merged.changes.length) regUpdatedCount += 1;
           } else {
             const created = buildRegistrationDbRowForCreate(row, regContext);
-            finalRows.push(sanitizePropertyImportRow(created));
+            pushImportOutcomeEntry(outcomeEntries, created, {
+              action: "create",
+              incomingItemNo: row.item_no || row.raw?.itemNo || "",
+              incomingGlobalId: row.global_id || "",
+              matchKey,
+            });
             if (matchKey) workingByKey.set(matchKey, normalizeProperty({ ...created, raw: created.raw }));
           }
         }
+
+        const collapsed = collapseImportOutcomeEntries(outcomeEntries);
+        const finalRows = collapsed.groups.map((group) => group.row);
         const importResult = await mod.upsertPropertiesResilient(sb, finalRows, { chunkSize: 200 });
-        const summaryParts = [`업로드 완료`, `처리: ${importResult.okCount}건`];
+        const summaryParts = ["업로드 완료", `처리: ${importResult.okCount}건`];
+        if (collapsed.outcomeCounts.create > 0) summaryParts.push(`신규 등록: ${collapsed.outcomeCounts.create}건`);
+        if (collapsed.outcomeCounts.update > 0) summaryParts.push(`기존 물건 갱신(LOG): ${collapsed.outcomeCounts.update}건`);
+        if (collapsed.outcomeCounts.noChange > 0) summaryParts.push(`기존 물건 일치(변경없음): ${collapsed.outcomeCounts.noChange}건`);
         if (dedupedInFile > 0) summaryParts.push(`파일내 중복 통합: ${dedupedInFile}건`);
-        if (regUpdatedCount > 0) summaryParts.push(`기존 물건 갱신(LOG): ${regUpdatedCount}건`);
+        if (collapsed.duplicateCollapsedCount > 0) summaryParts.push(`병합 후 중복 제외: ${collapsed.duplicateCollapsedCount}건`);
         if (importResult.failed.length > 0) {
-          summaryParts.push(`실패: ${importResult.failed.length}건`);
-          const preview = importResult.failed.slice(0, 5).map((v) => v.itemNo || v.globalId || "-").join(", ");
+          summaryParts.push(`실제 실패: ${importResult.failed.length}건`);
+          const preview = formatImportFailurePreview(importResult.failed, 5);
           if (preview) summaryParts.push(`실패 예시: ${preview}`);
         }
 
