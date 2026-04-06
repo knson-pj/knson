@@ -1,8 +1,0 @@
-schema_name,enum_name,enumsortorder,enumlabel
-public,source_type,1,auction
-public,source_type,2,onbid
-public,source_type,3,realtor
-public,source_type,4,general
-public,submitter_type,1,realtor
-public,submitter_type,2,owner
-public,submitter_type,3,admin
