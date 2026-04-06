@@ -1087,8 +1087,15 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setAdminEditSection('basic');
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
-    if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
-    if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
+    const regWrap = els.aemRegistrationLogList?.closest('.opinion-history-wrap');
+    if (typeof utils.renderCombinedPropertyLog === 'function') {
+      utils.renderCombinedPropertyLog(els.aemHistoryList, utils.loadOpinionHistory(workingItem), utils.loadRegistrationLog(workingItem));
+      if (regWrap) regWrap.classList.add('hidden');
+    } else {
+      if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
+      if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
+      if (regWrap) regWrap.classList.remove('hidden');
+    }
     const sourceTypeEl = f.elements['sourceType'];
     const submitterTypeEl = f.elements['submitterType'];
     const refreshFormMode = () => applyAdminPropertyFormMode(els, utils, workingItem, sourceTypeEl?.value || view.sourceType, submitterTypeEl?.value || view.submitterType, view);
@@ -1222,8 +1229,8 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       realtorphone: readStr('realtorphone') || null,
       realtorcell: readStr('realtorcell') || null,
       siteInspection: readStr('siteInspection') || null,
-      dailyIssue: newDailyIssueText || getLatestHistoryText(item, 'dailyIssue') || null,
-      opinion: [...opinionHistory].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === 'opinion')?.text || item.opinion || null,
+      dailyIssue: newDailyIssueText || null,
+      opinion: newOpinionText || null,
       opinionHistory,
       latitude: readNum('latitude'),
       longitude: readNum('longitude'),

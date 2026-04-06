@@ -1795,16 +1795,21 @@ function renderPagination(totalPages) {
   function getAgentEditableSnapshot(item) {
     const raw = item?._raw?.raw || {};
     const row = item?._raw || {};
-    const sourceType = item?.sourceType || row?.source_type || raw.sourceType || raw.source_type || "";
+    const normalizedSourceType = PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function"
+      ? PropertyDomain.normalizeSourceType(item?.sourceType || row?.source_type || raw.sourceType || raw.source_type || "", { fallback: "" })
+      : String(item?.sourceType || row?.source_type || raw.sourceType || raw.source_type || "").trim().toLowerCase();
     const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === "function"
-      ? PropertyDomain.usesDedicatedSourceNote(sourceType)
-      : ["auction", "realtor"].includes(String(sourceType || "").trim().toLowerCase());
+      ? PropertyDomain.usesDedicatedSourceNote(normalizedSourceType)
+      : ["auction", "realtor"].includes(String(normalizedSourceType || "").trim().toLowerCase());
     const sourceNoteInfo = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === "function"
-      ? PropertyDomain.extractDedicatedSourceNote(sourceType, item, raw)
+      ? PropertyDomain.extractDedicatedSourceNote(normalizedSourceType, item, raw)
       : { label: "", text: "" };
-    const stripSourceNote = (value) => (PropertyDomain && typeof PropertyDomain.stripDedicatedSourceNoteText === "function")
-      ? PropertyDomain.stripDedicatedSourceNoteText(sourceType, value, sourceNoteInfo.text)
-      : firstText(value, "");
+    const stripSourceEcho = (value) => {
+      if (PropertyDomain && typeof PropertyDomain.stripDedicatedSourceNoteEcho === 'function') {
+        return PropertyDomain.stripDedicatedSourceNoteEcho(value, sourceNoteInfo.text);
+      }
+      return String(value || '').trim();
+    };
     return {
       floor: firstText(raw.floor, row.floor, item?.floor, ""),
       totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, row.total_floor, row.totalfloor, item?.totalfloor, ""),
@@ -1816,11 +1821,11 @@ function renderPagination(totalPages) {
       currentPrice: raw.currentPrice ?? raw.lowprice ?? row.lowprice ?? row.low_price ?? item?.lowprice ?? null,
       dateMain: firstText(raw.dateMain, row.date_main, item?.dateMain, ""),
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
-      siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
-      dailyIssue: stripSourceNote(firstText(raw.dailyIssue, raw.daily_issue, "")),
-      opinion: preserveImportedMemo
-        ? stripSourceNote(firstText(raw.opinion, item?.opinion, ""))
-        : firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
+      siteInspection: stripSourceEcho(firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, "")),
+      dailyIssue: stripSourceEcho(firstText(raw.dailyIssue, raw.daily_issue, "")),
+      opinion: stripSourceEcho(preserveImportedMemo
+        ? firstText(raw.opinion, item?.opinion, "")
+        : firstText(raw.opinion, raw.memo, row.memo, item?.opinion, "")),
       sourceNoteLabel: sourceNoteInfo.label,
       sourceNoteText: sourceNoteInfo.text,
       realtorName: firstText(raw.realtorName, raw.realtorname, row.broker_office_name, item?._raw?.broker_office_name, ""),
@@ -2012,7 +2017,7 @@ function renderPagination(totalPages) {
     const currentPriceVal = readNum("currentPrice");
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
 
-    patch.memo = [...opinionHistory].reverse().find((entry) => String(entry?.kind || "opinion").trim() === "opinion")?.text || item.opinion || null;
+    patch.memo = newOpinionText || null;
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -2027,6 +2032,9 @@ function renderPagination(totalPages) {
       if (!targetId) throw new Error("수정 대상 물건 식별자를 찾을 수 없습니다.");
 
       const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
+      const sourceNoteInfo = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === "function"
+        ? PropertyDomain.extractDedicatedSourceNote(item?.sourceType || item?._raw?.source_type || existingRaw.source_type || existingRaw.sourceType || "", item, existingRaw)
+        : { label: "", text: "" };
       const normalizedSourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
         ? PropertyDomain.normalizeSourceType(
             item?.sourceType || item?._raw?.source_type || existingRaw.source_type || existingRaw.sourceType || "",
@@ -2055,6 +2063,8 @@ function renderPagination(totalPages) {
           submitterType: normalizedSubmitterType,
           submitter_type: normalizedSubmitterType,
         } : {}),
+        ...(sourceNoteInfo?.label ? { importedSourceLabel: existingRaw.importedSourceLabel || sourceNoteInfo.label, sourceNoteLabel: existingRaw.sourceNoteLabel || sourceNoteInfo.label } : {}),
+        ...(sourceNoteInfo?.text ? { importedSourceText: existingRaw.importedSourceText || sourceNoteInfo.text, sourceNoteText: existingRaw.sourceNoteText || sourceNoteInfo.text } : {}),
         floor: floorVal,
         totalfloor: totalFloorVal,
         useapproval: useApprovalVal,
@@ -2065,9 +2075,11 @@ function renderPagination(totalPages) {
         currentPrice: currentPriceVal,
         dateMain: dateMainVal,
         rightsAnalysis: rightsVal,
-        siteInspection: siteVal,
-        ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
-        ...(newDailyIssueText ? { dailyIssue: newDailyIssueText, daily_issue: newDailyIssueText } : {}),
+        siteInspection: siteVal || null,
+        opinion: patch.memo,
+        memo: patch.memo,
+        dailyIssue: newDailyIssueText || null,
+        daily_issue: newDailyIssueText || null,
         opinionHistory,
       });
 
@@ -2681,7 +2693,12 @@ function renderPagination(totalPages) {
       container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
       return;
     }
-    container.innerHTML = list.map((entry) => {
+    const ordered = [...list].sort((a, b) => {
+      const atA = Date.parse(String(a?.at || '')) || 0;
+      const atB = Date.parse(String(b?.at || '')) || 0;
+      return atB - atA;
+    });
+    container.innerHTML = ordered.map((entry) => {
       const headBits = [
         `<span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>`,
         entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : "",

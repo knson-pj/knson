@@ -180,21 +180,13 @@
     return { label, text };
   }
 
-  function normalizeComparableText(value) {
-    return String(value == null ? "" : value)
-      .replace(/\r\n/g, "\n")
-      .replace(/\r/g, "\n")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  function stripDedicatedSourceNoteText(sourceType, text, sourceNoteText) {
-    if (!usesDedicatedSourceNote(sourceType)) return pickFirstText(text, "");
-    const normalizedText = normalizeComparableText(text);
-    const normalizedSourceNote = normalizeComparableText(sourceNoteText);
-    if (!normalizedText) return "";
-    if (normalizedSourceNote && normalizedText === normalizedSourceNote) return "";
-    return pickFirstText(text, "");
+  function stripDedicatedSourceNoteEcho(value, sourceNoteText) {
+    const text = String(value || "").trim();
+    const sourceText = String(sourceNoteText || "").trim();
+    if (!text) return "";
+    if (!sourceText) return text;
+    const normalize = (input) => String(input || "").replace(/\s+/g, " ").trim();
+    return normalize(text) === normalize(sourceText) ? "" : text;
   }
 
   function inferSourceTypeFromContext(context = {}) {
@@ -301,12 +293,14 @@
     });
     const memoText = pickFirstText(item && item.memo, raw.memo, "");
     const sourceNote = extractDedicatedSourceNote(sourceType, item, raw);
-    const opinionText = sourceType === "onbid"
+    const opinionTextRaw = sourceType === "onbid"
       ? sanitizeOnbidOpinion(pickFirstText(item && item.opinion, raw.opinion, ""), memoText, address)
       : usesDedicatedSourceNote(sourceType)
-        ? stripDedicatedSourceNoteText(sourceType, pickFirstText(item && item.opinion, raw.opinion, item && item.comment, ""), sourceNote.text)
+        ? pickFirstText(item && item.opinion, raw.opinion, item && item.comment, "")
         : pickFirstText(item && item.opinion, raw.opinion, memoText, item && item.comment, "");
-    const dailyIssueText = stripDedicatedSourceNoteText(sourceType, pickFirstText(item && item.dailyIssue, item && item.daily_issue, raw.dailyIssue, raw.daily_issue, ""), sourceNote.text);
+    const opinionText = stripDedicatedSourceNoteEcho(opinionTextRaw, sourceNote.text);
+    const dailyIssueText = stripDedicatedSourceNoteEcho(pickFirstText(item && item.dailyIssue, item && item.daily_issue, raw.dailyIssue, raw.daily_issue, ""), sourceNote.text);
+    const siteInspectionText = stripDedicatedSourceNoteEcho(pickFirstText(item && item.siteInspection, item && item.site_inspection, raw.siteInspection, raw.site_inspection, ""), sourceNote.text);
     const isDirectSubmission = isDirectRealtorSubmission({
       sourceType,
       rawSource,
@@ -359,9 +353,9 @@
       realtorname: pickFirstText(item && item.realtorname, item && item.realtor_name, raw.realtorname, raw.realtorName, brokerOfficeName, ""),
       realtorphone: pickFirstText(item && item.realtorphone, item && item.realtor_phone, raw.realtorphone, raw.realtorPhone, ""),
       realtorcell: pickFirstText(item && item.realtorcell, item && item.realtor_cell, raw.realtorcell, raw.realtorCell, item && item.submitterPhone, item && item.submitter_phone, ""),
-      dailyIssue: dailyIssueText,
       rightsAnalysis: pickFirstText(item && item.rightsAnalysis, item && item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "") || ((item && (item.analysisDone ?? item.analysis_done)) ? "완료" : ""),
-      siteInspection: pickFirstText(item && item.siteInspection, item && item.site_inspection, raw.siteInspection, raw.site_inspection, "") || ((item && (item.siteVisit ?? item.site_visit ?? item.fieldDone ?? item.field_done)) ? "완료" : ""),
+      siteInspection: siteInspectionText || ((item && (item.siteVisit ?? item.site_visit ?? item.fieldDone ?? item.field_done)) ? "완료" : ""),
+      dailyIssue: dailyIssueText,
       geocodeStatus: pickFirstText(item && item.geocode_status, item && item.geocodeStatus, raw.geocode_status, ""),
       geocodedAt: pickFirstText(item && item.geocoded_at, item && item.geocodedAt, ""),
       duplicateFlag: !!(item && item.duplicateFlag),
@@ -888,14 +882,10 @@
     const fallback = String(options.fallback || "general").trim() || "general";
     const value = String(rawValue || "").trim().toLowerCase();
     if (!value) return fallback;
-    if (["auction", "courtauction", "court_auction"].includes(value)) return "auction";
+    if (["auction", "courtauction", "court_auction", "경매"].includes(value)) return "auction";
     if (["onbid", "public", "gongmae", "공매"].includes(value)) return "onbid";
-    if (["realtor", "broker", "naver", "realtor_naver", "realtor_direct", "중개", "중개사"].includes(value)) return "realtor";
+    if (["realtor", "broker", "naver", "realtor_naver", "realtor_direct", "중개", "중개사", "네이버중개", "일반중개", "공인중개사"].includes(value)) return "realtor";
     if (["general", "owner", "public_user", "일반", "직접등록"].includes(value)) return "general";
-    if (value.includes("경매")) return "auction";
-    if (value.includes("공매")) return "onbid";
-    if (value.includes("중개")) return "realtor";
-    if (value.includes("일반")) return "general";
     return fallback;
   }
 
@@ -1673,6 +1663,7 @@
     compactAddressText,
     extractFloorText,
     sanitizeOnbidOpinion,
+    stripDedicatedSourceNoteEcho,
     buildNormalizedPropertyBase,
     parseFloorNumberForLog,
     parseAddressIdentityParts,

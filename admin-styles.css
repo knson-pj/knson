@@ -1708,3 +1708,28 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
 .field[data-ag-source-note] {
   margin-top: 10px;
 }
+
+
+.agent-edit-section[data-aem-section-page="log"] .opinion-history-list,
+.agent-edit-section[data-edit-section="log"] .opinion-history-list,
+.agent-edit-section[data-edit-section="log"] .agent-combined-log-list,
+.agent-edit-section[data-aem-section-page="log"] .agent-combined-log-list{
+  max-height:none;
+  overflow:visible;
+}
+
+.agent-edit-section[data-aem-section-page="log"] .agent-combined-log-item,
+.agent-edit-section[data-edit-section="log"] .agent-combined-log-item{
+  border-radius:18px;
+  padding:14px;
+  box-shadow:0 4px 14px rgba(16,24,40,.05);
+}
+
+.agent-edit-section[data-aem-section-page="log"] .history-empty,
+.agent-edit-section[data-edit-section="log"] .history-empty{
+  padding:14px;
+  border:1px dashed var(--border);
+  border-radius:14px;
+  color:var(--text-3);
+  background:var(--surface);
+}

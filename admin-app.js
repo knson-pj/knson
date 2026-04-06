@@ -285,6 +285,7 @@
         renderRegistrationLog,
         loadOpinionHistory,
         renderOpinionHistory,
+        renderCombinedPropertyLog,
         appendOpinionEntry,
         mergePropertyRaw,
         formatScheduleHtml,
@@ -2158,6 +2159,37 @@ function bindEvents() {
     }).join("")}</div>`;
   }
 
+  function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
+    if (!container) return;
+    const list = (PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLog === "function")
+      ? PropertyDomain.buildCombinedPropertyLog(opinionHistory, registrationLog)
+      : [];
+    if (!Array.isArray(list) || !list.length) {
+      container.innerHTML = '<div class="history-empty">통합 LOG가 없습니다.</div>';
+      return;
+    }
+    const reversed = [...list].sort((a, b) => {
+      const atA = Date.parse(String(a?.at || "")) || 0;
+      const atB = Date.parse(String(b?.at || "")) || 0;
+      return atB - atA;
+    });
+    container.innerHTML = reversed.map((entry) => {
+      const headBits = [
+        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>`,
+        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : "",
+        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : "",
+      ].filter(Boolean).join("");
+      if (entry.kind === 'opinion') {
+        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.title || '')}</div><div class="agent-combined-log-text">${esc(entry.text || '')}</div></div></div>`;
+      }
+      const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : '';
+      const changesHtml = Array.isArray(entry.changes) && entry.changes.length
+        ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || '')}</span><span class="agent-combined-log-value">${esc(change.before || '-')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || '-')}</span></div>`).join('')}</div>`
+        : '<div class="agent-combined-log-text">변경 없음</div>';
+      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></div>`;
+    }).join('');
+  }
+
   // ---------------------------
   // Opinion History 유틸
   // ---------------------------
@@ -2701,10 +2733,14 @@ function sortGuUnitsByAdjacency(...args) {
   function mergePropertyRaw(item, patch) {
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
     const hasOwnAssignee = Object.prototype.hasOwnProperty.call(patch || {}, "assigneeId");
+    const hasOwnDailyIssue = Object.prototype.hasOwnProperty.call(patch || {}, "dailyIssue");
+    const hasOwnOpinion = Object.prototype.hasOwnProperty.call(patch || {}, "opinion");
     const assigneeId = hasOwnAssignee
       ? (patch.assigneeId || null)
       : (item?.assignedAgentId ?? currentRaw.assigneeId ?? currentRaw.assignedAgentId ?? currentRaw.assignee_id ?? null);
     const assigneeName = assigneeId ? (getStaffNameById(assigneeId) || "") : null;
+    const sourceNoteLabel = currentRaw.sourceNoteLabel ?? currentRaw.importedSourceLabel ?? null;
+    const sourceNoteText = currentRaw.sourceNoteText ?? currentRaw.importedSourceText ?? null;
     return {
       ...currentRaw,
       itemNo: patch.itemNo ?? currentRaw.itemNo ?? null,
@@ -2728,15 +2764,19 @@ function sortGuUnitsByAdjacency(...args) {
       lowprice: patch.lowprice ?? currentRaw.lowprice ?? null,
       dateMain: patch.dateMain ?? currentRaw.dateMain ?? null,
       sourceUrl: patch.sourceUrl ?? currentRaw.sourceUrl ?? null,
+      importedSourceLabel: currentRaw.importedSourceLabel ?? sourceNoteLabel,
+      importedSourceText: currentRaw.importedSourceText ?? sourceNoteText,
+      sourceNoteLabel,
+      sourceNoteText,
       realtorname: patch.realtorname ?? currentRaw.realtorname ?? null,
       realtorphone: patch.realtorphone ?? currentRaw.realtorphone ?? null,
       realtorcell: patch.realtorcell ?? currentRaw.realtorcell ?? null,
       rightsAnalysis: patch.rightsAnalysis ?? currentRaw.rightsAnalysis ?? null,
       siteInspection: patch.siteInspection ?? currentRaw.siteInspection ?? null,
-      dailyIssue: patch.dailyIssue ?? currentRaw.dailyIssue ?? currentRaw.daily_issue ?? null,
-      daily_issue: patch.dailyIssue ?? currentRaw.daily_issue ?? currentRaw.dailyIssue ?? null,
-      opinion: patch.opinion ?? currentRaw.opinion ?? null,
-      memo: patch.opinion ?? currentRaw.memo ?? null,
+      dailyIssue: hasOwnDailyIssue ? (patch.dailyIssue || null) : (currentRaw.dailyIssue ?? currentRaw.daily_issue ?? null),
+      daily_issue: hasOwnDailyIssue ? (patch.dailyIssue || null) : (currentRaw.daily_issue ?? currentRaw.dailyIssue ?? null),
+      opinion: hasOwnOpinion ? (patch.opinion || null) : (currentRaw.opinion ?? null),
+      memo: hasOwnOpinion ? (patch.opinion || null) : (currentRaw.memo ?? null),
       opinionHistory: patch.opinionHistory ?? currentRaw.opinionHistory ?? [],
       assigneeId,
       assignee_id: assigneeId,
