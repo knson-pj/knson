@@ -1326,7 +1326,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   };
 
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
-    const { K, api, utils } = ctx();
+    const { state, K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     const currentRawForLog = utils.mergePropertyRaw(item, patch);
     const regContext = utils.buildRegisterLogContext(isAdmin ? '관리자 수정' : '담당자 수정', { user: state.session?.user });
