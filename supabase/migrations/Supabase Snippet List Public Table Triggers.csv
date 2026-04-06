@@ -1,9 +1,0 @@
-table_name,trigger_name,trigger_definition
-profiles,trg_profiles_role_guard,CREATE TRIGGER trg_profiles_role_guard BEFORE INSERT OR UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION enforce_profiles_role_guard()
-profiles,trg_profiles_updated_at,CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION set_updated_at()
-properties,trg_assign_public_property_numbers,CREATE TRIGGER trg_assign_public_property_numbers BEFORE INSERT ON properties FOR EACH ROW EXECUTE FUNCTION assign_public_property_numbers()
-properties,trg_properties_staff_enforce,CREATE TRIGGER trg_properties_staff_enforce BEFORE UPDATE ON properties FOR EACH ROW EXECUTE FUNCTION enforce_staff_property_update()
-properties,trg_properties_updated_at,CREATE TRIGGER trg_properties_updated_at BEFORE UPDATE ON properties FOR EACH ROW EXECUTE FUNCTION set_updated_at()
-properties,trg_sync_properties_identity_key,CREATE TRIGGER trg_sync_properties_identity_key BEFORE INSERT OR UPDATE ON properties FOR EACH ROW EXECUTE FUNCTION sync_properties_identity_key()
-properties,trg_sync_properties_identity_key_v2,CREATE TRIGGER trg_sync_properties_identity_key_v2 BEFORE INSERT OR UPDATE ON properties FOR EACH ROW EXECUTE FUNCTION sync_properties_identity_key_v2()
-property_photos,trg_property_photos_updated_at,CREATE TRIGGER trg_property_photos_updated_at BEFORE UPDATE ON property_photos FOR EACH ROW EXECUTE FUNCTION touch_property_photos_updated_at()
