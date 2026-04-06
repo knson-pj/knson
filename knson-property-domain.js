@@ -165,78 +165,19 @@
     return "";
   }
 
-  function normalizeSourceNoteText(input) {
-    return String(input || "").replace(/\s+/g, " ").trim();
-  }
-
-  function collectLegacySourceNoteCandidates(row, sourceRaw) {
-    const candidates = [];
-    const push = (value, explicit = false) => {
-      const text = normalizeSourceNoteText(value);
-      if (!text) return;
-      candidates.push({ text, explicit });
-    };
-    push(sourceRaw.importedSourceText, true);
-    push(sourceRaw.sourceNoteText, true);
-    push(sourceRaw["경매현황"], true);
-    push(sourceRaw.auctionStatus, true);
-    push(sourceRaw.auction_status, true);
-    push(sourceRaw["매물특징"], true);
-    push(sourceRaw.listingFeature, true);
-    push(sourceRaw.listing_feature, true);
-    push(sourceRaw.memo);
-    push(row.memo);
-    push(sourceRaw.opinion);
-    push(row.opinion);
-    push(sourceRaw.dailyIssue);
-    push(sourceRaw.daily_issue);
-    const opinionHistory = Array.isArray(sourceRaw.opinionHistory) ? sourceRaw.opinionHistory : [];
-    opinionHistory.forEach((entry) => push(entry && (entry.text || entry.note || "")));
-    return candidates;
-  }
-
-  function chooseLegacySourceNoteText(candidates) {
-    const list = Array.isArray(candidates) ? candidates : [];
-    const explicit = list.find((entry) => entry && entry.explicit && entry.text);
-    if (explicit) return explicit.text;
-
-    const counts = new Map();
-    list.forEach((entry) => {
-      if (!entry || !entry.text) return;
-      const bucket = counts.get(entry.text) || { count: 0, explicit: false };
-      bucket.count += 1;
-      bucket.explicit = bucket.explicit || !!entry.explicit;
-      counts.set(entry.text, bucket);
-    });
-
-    let bestText = "";
-    let bestScore = -1;
-    counts.forEach((meta, text) => {
-      let score = text.length;
-      if (meta.explicit) score += 100000;
-      if (meta.count >= 2) score += 10000;
-      if (score > bestScore) {
-        bestScore = score;
-        bestText = text;
-      }
-    });
-    return bestText;
-  }
-
   function extractDedicatedSourceNote(sourceType, item, raw) {
     const normalized = normalizeSourceType(sourceType, { fallback: "" });
     if (!usesDedicatedSourceNote(normalized)) return { label: "", text: "" };
     const row = item && typeof item === "object" ? item : {};
     const sourceRaw = raw && typeof raw === "object" ? raw : {};
     const label = pickFirstText(sourceRaw.importedSourceLabel, sourceRaw.sourceNoteLabel, getDedicatedSourceNoteLabel(normalized));
-    const candidates = collectLegacySourceNoteCandidates(row, sourceRaw);
-    let text = chooseLegacySourceNoteText(candidates);
-    if (!text && normalized === "auction") {
-      text = pickFirstText(row.auctionStatus, row.auction_status, row["경매현황"], "");
-    } else if (!text && normalized === "realtor") {
-      text = pickFirstText(row.listingFeature, row.listing_feature, row["매물특징"], "");
+    let text = "";
+    if (normalized === "auction") {
+      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["경매현황"], sourceRaw.auctionStatus, sourceRaw.auction_status, sourceRaw.memo, row.memo, "");
+    } else if (normalized === "realtor") {
+      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["매물특징"], sourceRaw.listingFeature, sourceRaw.listing_feature, sourceRaw.memo, row.memo, "");
     }
-    return { label, text: normalizeSourceNoteText(text) };
+    return { label, text };
   }
 
   function stripDedicatedSourceNoteEcho(value, sourceNoteText) {
@@ -245,9 +186,7 @@
     if (!text) return "";
     if (!sourceText) return text;
     const normalize = (input) => String(input || "").replace(/\s+/g, " ").trim();
-    const current = normalize(text);
-    const source = normalize(sourceText);
-    return current === source ? "" : text;
+    return normalize(text) === normalize(sourceText) ? "" : text;
   }
 
   function inferSourceTypeFromContext(context = {}) {
@@ -452,9 +391,14 @@
   function buildRegistrationMatchKey(data) {
     const parts = parseAddressIdentityParts(pickFirstText(data?.address, data?.raw?.address, ""));
     const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, data?.totalFloor, data?.raw?.totalfloor, "")) || "0";
-    const hoKey = extractHoNumberForLog(data) || "0";
+    const hoKey = extractHoNumberForLog(data) || "";
+    const sourceType = normalizeSourceType(
+      pickFirstText(data?.sourceType, data?.source_type, data?.raw?.sourceType, data?.raw?.source_type, ""),
+      { fallback: "" }
+    );
     if (!parts.dong || !parts.mainNo) return "";
-    return `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey}|${hoKey}`;
+    if ((sourceType === "realtor" || sourceType === "general") && !hoKey) return "";
+    return `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey}|${hoKey || "0"}`;
   }
 
   function resolveRegistrationCandidateRow(item) {
@@ -539,7 +483,12 @@
     const parts = parseAddressIdentityParts(pickFirstText(data?.address, data?.raw?.address, nextRaw.address, ""));
     const floorKey = parseFloorNumberForLog(pickFirstText(data?.floor, data?.raw?.floor, data?.totalFloor, data?.raw?.totalfloor, nextRaw.floor, nextRaw.totalfloor, ""));
     const hoKey = extractHoNumberForLog(data);
-    const key = parts.dong && parts.mainNo
+    const sourceType = normalizeSourceType(
+      pickFirstText(data?.sourceType, data?.source_type, data?.raw?.sourceType, data?.raw?.source_type, nextRaw.sourceType, nextRaw.source_type, ""),
+      { fallback: "" }
+    );
+    const allowIdentityMatch = !((sourceType === "realtor" || sourceType === "general") && !hoKey);
+    const key = allowIdentityMatch && parts.dong && parts.mainNo
       ? `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}|${floorKey || "0"}|${hoKey || "0"}`
       : "";
     nextRaw.registrationIdentityKey = key;
@@ -785,6 +734,40 @@
 
     return rows.sort((a, b) => {
       if (a.sortAt !== b.sortAt) return a.sortAt - b.sortAt;
+      return a.order - b.order;
+    });
+  }
+
+  function buildCombinedPropertyLogGroups(opinionHistory, registrationLog, options = {}) {
+    const list = buildCombinedPropertyLog(opinionHistory, registrationLog);
+    const formatAt = typeof options.formatAt === "function" ? options.formatAt : (value) => String(value || "").trim();
+    const ordered = [...list].sort((a, b) => {
+      if (a.sortAt !== b.sortAt) return b.sortAt - a.sortAt;
+      return a.order - b.order;
+    });
+    const groups = [];
+    const byKey = new Map();
+    ordered.forEach((entry, index) => {
+      const atKey = formatAt(entry?.at || entry?.date || "");
+      const authorKey = String(entry?.author || "").trim();
+      const key = `${atKey}__${authorKey}`;
+      let group = byKey.get(key);
+      if (!group) {
+        group = {
+          key,
+          at: String(entry?.at || entry?.date || "").trim(),
+          author: authorKey,
+          sortAt: Number(entry?.sortAt || 0) || 0,
+          items: [],
+          order: index,
+        };
+        byKey.set(key, group);
+        groups.push(group);
+      }
+      group.items.push(entry);
+    });
+    return groups.sort((a, b) => {
+      if (a.sortAt !== b.sortAt) return b.sortAt - a.sortAt;
       return a.order - b.order;
     });
   }
@@ -1724,9 +1707,6 @@
     compactAddressText,
     extractFloorText,
     sanitizeOnbidOpinion,
-    usesDedicatedSourceNote,
-    getDedicatedSourceNoteLabel,
-    extractDedicatedSourceNote,
     stripDedicatedSourceNoteEcho,
     buildNormalizedPropertyBase,
     parseFloorNumberForLog,
@@ -1750,6 +1730,7 @@
     appendOpinionEntry,
     getOpinionHistoryMeta,
     buildCombinedPropertyLog,
+    buildCombinedPropertyLogGroups,
     PROPERTY_DUPLICATE_INDEX_NAMES,
     collectPropertyErrorFragments,
     detectPropertyDuplicateIndexName,

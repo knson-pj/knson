@@ -2625,26 +2625,6 @@ function renderPagination(totalPages) {
     return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
   }
 
-  function buildCombinedLogGroups(entries) {
-    const list = Array.isArray(entries) ? entries : [];
-    const groups = [];
-    const keyOf = (entry) => {
-      const stamp = formatRegLogAt(entry?.at || '');
-      const author = String(entry?.author || '').trim();
-      return `${stamp}__${author}`;
-    };
-    list.forEach((entry) => {
-      const key = keyOf(entry);
-      const last = groups[groups.length - 1];
-      if (last && last.key === key) {
-        last.entries.push(entry);
-      } else {
-        groups.push({ key, at: entry?.at || '', author: String(entry?.author || '').trim(), entries: [entry] });
-      }
-    });
-    return groups;
-  }
-
   function toTimelineTimestamp(value) {
     const s = String(value || "").trim();
     if (!s) return Number.POSITIVE_INFINITY;
@@ -2708,34 +2688,32 @@ function renderPagination(totalPages) {
 
   function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
     if (!container) return;
-    const list = buildCombinedPropertyLog(opinionHistory, registrationLog);
-    if (!list.length) {
+    const groups = (PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLogGroups === "function")
+      ? PropertyDomain.buildCombinedPropertyLogGroups(opinionHistory, registrationLog, { formatAt: formatRegLogAt })
+      : [];
+    if (!groups.length) {
       container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
       return;
     }
-    const ordered = [...list].sort((a, b) => {
-      const atA = Date.parse(String(a?.at || '')) || 0;
-      const atB = Date.parse(String(b?.at || '')) || 0;
-      return atB - atA;
-    });
-    const groups = buildCombinedLogGroups(ordered);
     container.innerHTML = groups.map((group) => {
-      const headBits = [
-        group.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(group.at))}</span>` : "",
-        group.author ? `<span class="agent-combined-log-author">${esc(group.author)}</span>` : "",
-      ].filter(Boolean).join("");
-      const entriesHtml = group.entries.map((entry) => {
-        const entryHead = `<div class="agent-combined-log-entry-head"><span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>${entry.title ? `<span class="agent-combined-log-label">${esc(entry.title)}</span>` : ""}</div>`;
+      const groupHead = [
+        group.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(group.at))}</span>` : '',
+        group.author ? `<span class="agent-combined-log-author">${esc(group.author)}</span>` : '',
+      ].filter(Boolean).join('');
+      const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
+        const badgeHtml = `<span class="agent-combined-log-badge ${esc(entry.badgeClass || '')}">${esc(entry.badgeLabel || '')}</span>`;
         if (entry.kind === "opinion") {
-          return `<div class="agent-combined-log-entry">${entryHead}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div>`;
+          const title = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
+          return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}</div><div class="agent-combined-log-body">${title}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
         }
+        const titleHtml = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : "";
         const changesHtml = entry.changes?.length
           ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
           : '<div class="agent-combined-log-text">변경 없음</div>';
-        return `<div class="agent-combined-log-entry">${entryHead}${changesHtml}</div>`;
+        return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></div>`;
       }).join('');
-      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-entry-list">${entriesHtml}</div></div></div>`;
-    }).join("");
+      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${groupHead}</div><div class="agent-combined-log-group-body">${itemsHtml}</div></div>`;
+    }).join('');
   }
 
   function renderRegistrationLog(container, history) {

@@ -378,6 +378,9 @@
     let dateMain = null;
     let sourceUrl = "";
     let memo = "";
+    let realtorName = "";
+    let realtorPhone = "";
+    let realtorCell = "";
 
     if (sourceType === "auction") {
       const caseNo = pick("사건번호", "caseNo", "");
@@ -427,9 +430,9 @@
       assetType = pick("세부유형", "부동산유형명", "부동산유형", "assetType");
       sourceUrl = pick("바로가기(엑셀)", "매물URL", "sourceUrl", "url");
       memo = pick("매물특징", "memo");
-      realtorName = pick("중개사무소명", "중개업소명", "부동산", "중개사명", "사무소명", "broker_office_name", "realtorName");
-      realtorPhone = pick("유선전화", "중개사전화", "대표전화", "전화번호", "realtorPhone");
-      realtorCell = pick("휴대폰번호", "휴대폰", "핸드폰번호", "핸드폰", "연락처", "담당자연락처", "realtorCell", "submitterPhone");
+      realtorName = pick("중개사무소명", "중개업소명", "부동산", "중개사무소", "중개업소", "사무소명", "업체명");
+      realtorPhone = pick("유선전화", "대표전화", "전화번호", "업소전화", "중개사무소전화", "연락처");
+      realtorCell = pick("휴대폰번호", "휴대폰", "핸드폰", "휴대전화", "중개사휴대폰", "중개사 휴대폰번호");
       floor = pick("해당층", "층수", "floor") || extractFloorLabelFromTexts(pick("매물명", "제목", "itemName"), address, memo);
       totalfloor = pick("총층", "전체층", "totalfloor") || extractTotalFloorFromTexts(memo) || null;
       const ex = pick("전용면적(평)", "전용면적", "exclusiveArea");
@@ -467,6 +470,9 @@
       dateMain: m.dateMain || null,
       sourceUrl: m.sourceUrl || null,
       memo: m.memo || null,
+      realtorName: m.realtorName || null,
+      realtorPhone: m.realtorPhone || null,
+      realtorCell: m.realtorCell || null,
       importedSourceLabel: importedSourceLabel || null,
       importedSourceText: m.memo || null,
       sourceNoteLabel: importedSourceLabel || null,
@@ -474,9 +480,6 @@
       lowprice: toNullNum(m.lowprice),
       latitude: toNullNum(m.latitude),
       longitude: toNullNum(m.longitude),
-      realtorName: m.realtorName || null,
-      realtorPhone: m.realtorPhone || null,
-      realtorCell: m.realtorCell || null,
       sourceType,
     };
     const source = sourceType === "onbid" ? "gongmae" : (sourceType === "realtor" ? "general" : sourceType);
@@ -485,9 +488,6 @@
       item_no: String(m.itemNo || ""),
       source,
       source_type: sourceType,
-      submitter_type: sourceType === "realtor" ? "realtor" : null,
-      submitter_phone: m.realtorCell || null,
-      broker_office_name: m.realtorName || null,
       address: m.address || null,
       asset_type: m.assetType || null,
       floor: m.floor || null,
@@ -501,6 +501,8 @@
       lowprice: toNullNum(m.lowprice),
       date_main: m.dateMain || null,
       source_url: m.sourceUrl || null,
+      broker_office_name: m.realtorName || null,
+      submitter_phone: m.realtorCell || m.realtorPhone || null,
       memo: m.memo || null,
       latitude: toNullNum(m.latitude),
       longitude: toNullNum(m.longitude),
