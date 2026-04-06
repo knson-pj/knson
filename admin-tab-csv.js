@@ -427,6 +427,9 @@
       assetType = pick("세부유형", "부동산유형명", "부동산유형", "assetType");
       sourceUrl = pick("바로가기(엑셀)", "매물URL", "sourceUrl", "url");
       memo = pick("매물특징", "memo");
+      realtorName = pick("중개사무소명", "중개업소명", "부동산", "중개사명", "사무소명", "broker_office_name", "realtorName");
+      realtorPhone = pick("유선전화", "중개사전화", "대표전화", "전화번호", "realtorPhone");
+      realtorCell = pick("휴대폰번호", "휴대폰", "핸드폰번호", "핸드폰", "연락처", "담당자연락처", "realtorCell", "submitterPhone");
       floor = pick("해당층", "층수", "floor") || extractFloorLabelFromTexts(pick("매물명", "제목", "itemName"), address, memo);
       totalfloor = pick("총층", "전체층", "totalfloor") || extractTotalFloorFromTexts(memo) || null;
       const ex = pick("전용면적(평)", "전용면적", "exclusiveArea");
@@ -441,7 +444,7 @@
     }
 
     if (!address && !itemNo) return null;
-    return { itemNo, address, status, priceMain, latitude: Number.isFinite(latitude) ? latitude : null, longitude: Number.isFinite(longitude) ? longitude : null, assetType, commonArea, exclusiveArea, siteArea, useApproval, dateMain, sourceUrl, memo, lowprice, floor, totalfloor };
+    return { itemNo, address, status, priceMain, latitude: Number.isFinite(latitude) ? latitude : null, longitude: Number.isFinite(longitude) ? longitude : null, assetType, commonArea, exclusiveArea, siteArea, useApproval, dateMain, sourceUrl, memo, lowprice, floor, totalfloor, realtorName, realtorPhone, realtorCell };
   };
 
   mod.buildSupabasePropertyRow = function buildSupabasePropertyRow(rawRow, m, sourceType) {
@@ -471,6 +474,9 @@
       lowprice: toNullNum(m.lowprice),
       latitude: toNullNum(m.latitude),
       longitude: toNullNum(m.longitude),
+      realtorName: m.realtorName || null,
+      realtorPhone: m.realtorPhone || null,
+      realtorCell: m.realtorCell || null,
       sourceType,
     };
     const source = sourceType === "onbid" ? "gongmae" : (sourceType === "realtor" ? "general" : sourceType);
@@ -479,6 +485,9 @@
       item_no: String(m.itemNo || ""),
       source,
       source_type: sourceType,
+      submitter_type: sourceType === "realtor" ? "realtor" : null,
+      submitter_phone: m.realtorCell || null,
+      broker_office_name: m.realtorName || null,
       address: m.address || null,
       asset_type: m.assetType || null,
       floor: m.floor || null,

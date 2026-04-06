@@ -1603,6 +1603,11 @@ textarea.form-textarea-tall{
 .agent-combined-log-date{font-size:12px;font-weight:600;color:var(--text-2);}
 .agent-combined-log-author{font-size:12px;color:var(--text-3);}
 .agent-combined-log-body{display:grid;gap:8px;}
+.agent-combined-log-entry-list{display:grid;gap:10px;}
+.agent-combined-log-entry{display:grid;gap:8px;padding-top:10px;border-top:1px dashed var(--border);}
+.agent-combined-log-entry:first-child{padding-top:0;border-top:0;}
+.agent-combined-log-entry-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+
 .agent-combined-log-text{font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word;}
 .agent-combined-log-changes{display:grid;gap:6px;}
 .agent-combined-log-change{display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr) auto minmax(0,1fr);gap:6px;align-items:start;font-size:12px;color:var(--text-2);}

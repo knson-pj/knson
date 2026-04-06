@@ -2625,6 +2625,26 @@ function renderPagination(totalPages) {
     return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
   }
 
+  function buildCombinedLogGroups(entries) {
+    const list = Array.isArray(entries) ? entries : [];
+    const groups = [];
+    const keyOf = (entry) => {
+      const stamp = formatRegLogAt(entry?.at || '');
+      const author = String(entry?.author || '').trim();
+      return `${stamp}__${author}`;
+    };
+    list.forEach((entry) => {
+      const key = keyOf(entry);
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) {
+        last.entries.push(entry);
+      } else {
+        groups.push({ key, at: entry?.at || '', author: String(entry?.author || '').trim(), entries: [entry] });
+      }
+    });
+    return groups;
+  }
+
   function toTimelineTimestamp(value) {
     const s = String(value || "").trim();
     if (!s) return Number.POSITIVE_INFINITY;
@@ -2690,7 +2710,7 @@ function renderPagination(totalPages) {
     if (!container) return;
     const list = buildCombinedPropertyLog(opinionHistory, registrationLog);
     if (!list.length) {
-      container.innerHTML = '<div class="history-empty">통합 LOG가 없습니다.</div>';
+      container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
       return;
     }
     const ordered = [...list].sort((a, b) => {
@@ -2698,22 +2718,24 @@ function renderPagination(totalPages) {
       const atB = Date.parse(String(b?.at || '')) || 0;
       return atB - atA;
     });
-    container.innerHTML = ordered.map((entry) => {
+    const groups = buildCombinedLogGroups(ordered);
+    container.innerHTML = groups.map((group) => {
       const headBits = [
-        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>`,
-        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : "",
-        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : "",
+        group.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(group.at))}</span>` : "",
+        group.author ? `<span class="agent-combined-log-author">${esc(group.author)}</span>` : "",
       ].filter(Boolean).join("");
-      if (entry.kind === 'opinion') {
-        const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title || '')}</div>` : '';
-        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}<div class="agent-combined-log-text">${esc(entry.text || '')}</div></div></div>`;
-      }
-      const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : '';
-      const changesHtml = Array.isArray(entry.changes) && entry.changes.length
-        ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || '')}</span><span class="agent-combined-log-value">${esc(change.before || '-')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || '-')}</span></div>`).join('')}</div>`
-        : '<div class="agent-combined-log-text">변경 없음</div>';
-      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></div>`;
-    }).join('');
+      const entriesHtml = group.entries.map((entry) => {
+        const entryHead = `<div class="agent-combined-log-entry-head"><span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>${entry.title ? `<span class="agent-combined-log-label">${esc(entry.title)}</span>` : ""}</div>`;
+        if (entry.kind === "opinion") {
+          return `<div class="agent-combined-log-entry">${entryHead}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div>`;
+        }
+        const changesHtml = entry.changes?.length
+          ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
+          : '<div class="agent-combined-log-text">변경 없음</div>';
+        return `<div class="agent-combined-log-entry">${entryHead}${changesHtml}</div>`;
+      }).join('');
+      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-entry-list">${entriesHtml}</div></div></div>`;
+    }).join("");
   }
 
   function renderRegistrationLog(container, history) {
@@ -2767,25 +2789,10 @@ function renderPagination(totalPages) {
   function getLatestHistoryText(item, kind) {
     const history = loadOpinionHistory(item);
     const target = String(kind || '').trim();
+    const latest = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === target);
     const raw = item?._raw?.raw || {};
-    const sourceType = item?.sourceType || item?._raw?.source_type || raw.sourceType || raw.source_type || '';
-    const sourceNoteInfo = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === 'function'
-      ? PropertyDomain.extractDedicatedSourceNote(sourceType, item, raw)
-      : { text: '' };
-    const stripEcho = (value) => {
-      if (PropertyDomain && typeof PropertyDomain.stripDedicatedSourceNoteEcho === 'function') {
-        return PropertyDomain.stripDedicatedSourceNoteEcho(value, sourceNoteInfo.text);
-      }
-      return String(value || '').trim();
-    };
-    const latest = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => {
-      const entryKind = String(entry?.kind || 'opinion').trim();
-      if (entryKind !== target) return false;
-      return !!stripEcho(entry?.text || '');
-    });
-    if (latest) return stripEcho(latest.text || '');
-    if (target === 'dailyIssue') return stripEcho(raw.dailyIssue || raw.daily_issue || '');
-    if (target === 'opinion') return stripEcho(raw.opinion || raw.memo || '');
+    if (latest && String(latest.text || '').trim()) return String(latest.text || '').trim();
+    if (target === 'dailyIssue') return String(raw.dailyIssue || raw.daily_issue || '').trim();
     return '';
   }
 
