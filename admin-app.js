@@ -2181,7 +2181,7 @@ function bindEvents() {
         const canEdit = entry.kind === 'opinion' && Number.isInteger(entry.sourceIndex);
         const actionHtml = canEdit ? `<div class="history-actions"><button type="button" class="history-edit-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="수정">✎</button><button type="button" class="history-del-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="삭제">✕</button></div>` : '';
         const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : '', actionHtml].filter(Boolean).join('');
-        if (entry.kind === 'opinion') {
+        if (entry.kind !== 'registration') {
           const title = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
           return `<div class="agent-combined-log-entry" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">` +
             `<div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div>` +

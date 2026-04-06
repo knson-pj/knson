@@ -719,7 +719,7 @@
       const meta = getOpinionHistoryMeta(normalized);
       const badges = [{ badgeClass: meta.badgeClass, badgeLabel: meta.badgeLabel }];
       rows.push({
-        kind: "opinion",
+        kind: normalized.kind || "opinion",
         sourceKind: "opinionHistory",
         sourceIndex: idx,
         sortAt: toTimelineTimestamp(normalized.at || normalized.date),
@@ -729,7 +729,7 @@
         badgeLabel: badges[0].badgeLabel,
         author: normalized.author,
         text: normalized.text,
-        title: meta.title,
+        title: normalized.title || meta.title,
         order: idx,
       });
     });
