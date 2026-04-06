@@ -1,5 +1,5 @@
 (() => {
-  const ADMIN_FAST_BUILD = "20260403-adminfix2";
+  const ADMIN_FAST_BUILD = "20260403-adminfix2-hotfix2";
   try { console.info("[admin-app] build", ADMIN_FAST_BUILD); } catch {}
 
   "use strict";
@@ -176,6 +176,7 @@
       activeCard: "",   // "" | "all" | "auction" | "onbid" | "realtor_naver" | "realtor_direct" | "general"
       status: "",
       keyword: "",
+      assignee: "",
       area: "",         // "0-5" | "5-10" | ... | "50-"
       priceRange: "",   // "0-1" | "1-3" | ... | "20-"  (억 단위)
       ratio50: "",      // "50" = 50% 이하 (경매/공매만)
@@ -446,6 +447,7 @@
       propSelectAll: $("#propSelectAll"),
       propStatusFilter: $("#propStatusFilter"),
       propSourceFilter: $("#propSourceFilter"),
+      propAssigneeFilter: $("#propAssigneeFilter"),
       propAreaFilter: $("#propAreaFilter"),
       propPriceFilter: $("#propPriceFilter"),
       propRatioFilter: $("#propRatioFilter"),
@@ -487,6 +489,8 @@
       aemMsg: $("#aemMsg"),
       aemHistoryList: $("#aemHistoryList"),
       aemRegistrationLogList: $("#aemRegistrationLogList"),
+      aemTabs: $$("#aemForm [data-aem-tab]"),
+      aemSections: $$("#aemForm [data-aem-section-page]"),
 
       // geocoding tab
       tabGeocoding: $("#tab-geocoding"),
@@ -736,6 +740,11 @@ function bindEvents() {
       state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
+    if (els.propAssigneeFilter) els.propAssigneeFilter.addEventListener("change", (e) => {
+      state.propertyFilters.assignee = String(e.target.value || "");
+      state.propertyPage = 1;
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+    });
 
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
       state.propertyFilters.status = String(e.target.value || "");
@@ -797,6 +806,14 @@ function bindEvents() {
     }
     if (els.aemClose) els.aemClose.addEventListener("click", closePropertyEditModal);
     if (els.aemCancel) els.aemCancel.addEventListener("click", closePropertyEditModal);
+    if (els.aemTabs?.length) {
+      els.aemTabs.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = String(btn.dataset.aemTab || "basic").trim() || "basic";
+          AdminModules.propertiesTab?.setAdminEditSection?.(key);
+        });
+      });
+    }
     if (els.aemForm) {
       els.aemForm.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -959,6 +976,7 @@ function bindEvents() {
     return !!(
       String(f.activeCard || '').trim() ||
       String(f.status || '').trim() ||
+      String(f.assignee || '').trim() ||
       String(f.keyword || '').trim() ||
       String(f.area || '').trim() ||
       String(f.priceRange || '').trim() ||
@@ -969,6 +987,7 @@ function bindEvents() {
   function hasLocalOnlyPropertyFilters() {
     const f = state.propertyFilters || {};
     return !!(
+      String(f.assignee || '').trim() ||
       String(f.keyword || '').trim() ||
       String(f.area || '').trim() ||
       String(f.priceRange || '').trim() ||
@@ -2681,14 +2700,6 @@ function sortGuUnitsByAdjacency(...args) {
 
   function mergePropertyRaw(item, patch) {
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
-    const effectiveSourceType = (patch?.sourceType || item?.sourceType || currentRaw.sourceType || currentRaw.source_type || "");
-    const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === "function"
-      ? PropertyDomain.usesDedicatedSourceNote(effectiveSourceType)
-      : ["auction", "realtor"].includes(String(effectiveSourceType || "").trim().toLowerCase());
-    const nextOpinion = patch.opinion ?? currentRaw.opinion ?? null;
-    const nextMemo = preserveImportedMemo
-      ? (currentRaw.memo ?? null)
-      : (patch.opinion ?? currentRaw.memo ?? null);
     const hasOwnAssignee = Object.prototype.hasOwnProperty.call(patch || {}, "assigneeId");
     const assigneeId = hasOwnAssignee
       ? (patch.assigneeId || null)
@@ -2724,8 +2735,8 @@ function sortGuUnitsByAdjacency(...args) {
       siteInspection: patch.siteInspection ?? currentRaw.siteInspection ?? null,
       dailyIssue: patch.dailyIssue ?? currentRaw.dailyIssue ?? currentRaw.daily_issue ?? null,
       daily_issue: patch.dailyIssue ?? currentRaw.daily_issue ?? currentRaw.dailyIssue ?? null,
-      opinion: nextOpinion,
-      memo: nextMemo,
+      opinion: patch.opinion ?? currentRaw.opinion ?? null,
+      memo: patch.opinion ?? currentRaw.memo ?? null,
       opinionHistory: patch.opinionHistory ?? currentRaw.opinionHistory ?? [],
       assigneeId,
       assignee_id: assigneeId,
@@ -2842,6 +2853,10 @@ function sortGuUnitsByAdjacency(...args) {
 
   function $(sel) {
     return document.querySelector(sel);
+  }
+
+  function $$(sel) {
+    return Array.from(document.querySelectorAll(sel));
   }
 
   function goLoginPage(withLogout = false) {

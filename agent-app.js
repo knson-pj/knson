@@ -1856,13 +1856,29 @@ function renderPagination(totalPages) {
 
 
   function arrangeAgentOpinionFields(form) {
-    if (PropertyRenderers && typeof PropertyRenderers.arrangeOpinionFields === 'function') {
-      return PropertyRenderers.arrangeOpinionFields(form, {
-        shellSelectors: ['[data-ag-field]', '.form-field'],
-        textareaClass: 'ag-textarea',
-      });
+    if (!form || !PropertyRenderers || typeof PropertyRenderers.findFieldShell !== 'function') return null;
+    const grid = form.querySelector('[data-opinion-grid="agent"]') || form.querySelector('[data-edit-section="opinion"] .edit-opinion-grid');
+    const ensureShell = (fieldName, label) => {
+      const shell = PropertyRenderers.findFieldShell(form, fieldName, { shellSelectors: [`[data-opinion-field="${fieldName}"]`, '[data-ag-field]', '.form-field', '.field'] });
+      if (!shell) return null;
+      PropertyRenderers.ensureTextareaField?.(form, fieldName, shell, { textareaClass: 'ag-textarea', rows: 8 });
+      PropertyRenderers.setFieldLabel?.(shell, label);
+      shell.classList.remove('hidden');
+      shell.hidden = false;
+      shell.style.display = '';
+      shell.style.gridColumn = '';
+      shell.classList.add('edit-opinion-field');
+      return shell;
+    };
+    const dailyIssueShell = ensureShell('dailyIssue', '금일 이슈사항');
+    const siteShell = ensureShell('siteInspection', '현장실사');
+    const opinionShell = ensureShell('opinion', '담당자 의견');
+    if (grid) {
+      if (dailyIssueShell) grid.appendChild(dailyIssueShell);
+      if (siteShell) grid.appendChild(siteShell);
+      if (opinionShell) grid.appendChild(opinionShell);
     }
-    return null;
+    return { dailyIssueShell, siteShell, opinionShell };
   }
 
   function applyAgentSourceNoteField(form, view) {
@@ -1992,7 +2008,8 @@ function renderPagination(totalPages) {
     const priceMainVal = readNum("priceMain");
     const currentPriceVal = readNum("currentPrice");
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
-    const latestOpinionText = [...opinionHistory].reverse().find((entry) => String(entry?.kind || "opinion").trim() === "opinion")?.text || item.opinion || null;
+
+    patch.memo = [...opinionHistory].reverse().find((entry) => String(entry?.kind || "opinion").trim() === "opinion")?.text || item.opinion || null;
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -2007,12 +2024,6 @@ function renderPagination(totalPages) {
       if (!targetId) throw new Error("수정 대상 물건 식별자를 찾을 수 없습니다.");
 
       const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
-      const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === "function"
-        ? PropertyDomain.usesDedicatedSourceNote(item?.sourceType || item?._raw?.source_type || existingRaw?.source_type || existingRaw?.sourceType || "")
-        : ["auction", "realtor"].includes(String(item?.sourceType || item?._raw?.source_type || existingRaw?.source_type || existingRaw?.sourceType || "").trim().toLowerCase());
-      patch.memo = preserveImportedMemo
-        ? (item?._raw?.memo ?? item?._raw?.raw?.memo ?? existingRaw.memo ?? null)
-        : latestOpinionText;
       const normalizedSourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
         ? PropertyDomain.normalizeSourceType(
             item?.sourceType || item?._raw?.source_type || existingRaw.source_type || existingRaw.sourceType || "",
@@ -2052,10 +2063,7 @@ function renderPagination(totalPages) {
         dateMain: dateMainVal,
         rightsAnalysis: rightsVal,
         siteInspection: siteVal,
-        opinion: latestOpinionText,
-        ...(preserveImportedMemo
-          ? { memo: existingRaw.memo ?? null }
-          : { memo: patch.memo }),
+        ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
         ...(newDailyIssueText ? { dailyIssue: newDailyIssueText, daily_issue: newDailyIssueText } : {}),
         opinionHistory,
       });
@@ -2098,7 +2106,7 @@ function renderPagination(totalPages) {
             totalfloor: totalFloorVal || item.totalfloor,
             rightsAnalysis: rightsVal || item.rightsAnalysis,
             siteInspection: siteVal || item.siteInspection,
-            opinion: latestOpinionText,
+            opinion: patch.memo || item.opinion,
             dailyIssue: newDailyIssueText || item.dailyIssue,
             _raw: { ...(item._raw || {}), raw: newRaw },
           }, {
