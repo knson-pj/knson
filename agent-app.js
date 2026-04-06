@@ -1802,6 +1802,9 @@ function renderPagination(totalPages) {
     const sourceNoteInfo = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === "function"
       ? PropertyDomain.extractDedicatedSourceNote(sourceType, item, raw)
       : { label: "", text: "" };
+    const stripSourceNote = (value) => (PropertyDomain && typeof PropertyDomain.stripDedicatedSourceNoteText === "function")
+      ? PropertyDomain.stripDedicatedSourceNoteText(sourceType, value, sourceNoteInfo.text)
+      : firstText(value, "");
     return {
       floor: firstText(raw.floor, row.floor, item?.floor, ""),
       totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, row.total_floor, row.totalfloor, item?.totalfloor, ""),
@@ -1814,9 +1817,9 @@ function renderPagination(totalPages) {
       dateMain: firstText(raw.dateMain, row.date_main, item?.dateMain, ""),
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
-      dailyIssue: firstText(raw.dailyIssue, raw.daily_issue, ""),
+      dailyIssue: stripSourceNote(firstText(raw.dailyIssue, raw.daily_issue, "")),
       opinion: preserveImportedMemo
-        ? firstText(raw.opinion, item?.opinion, "")
+        ? stripSourceNote(firstText(raw.opinion, item?.opinion, ""))
         : firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
       sourceNoteLabel: sourceNoteInfo.label,
       sourceNoteText: sourceNoteInfo.text,
