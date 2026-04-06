@@ -413,6 +413,21 @@
     return '';
   }
 
+  function isAdminSessionUser(user, utils) {
+    const normalize = utils && typeof utils.normalizeRole === 'function'
+      ? utils.normalizeRole
+      : ((value) => String(value || '').trim().toLowerCase());
+    return normalize(user?.role) === 'admin';
+  }
+
+  function safeAdminModalStep(label, fn) {
+    try {
+      return typeof fn === 'function' ? fn() : undefined;
+    } catch (err) {
+      console.warn(`[admin property modal] ${label} failed`, err);
+      return undefined;
+    }
+  }
 
   function toEditSourceTypeValue(item, sourceType, submitterType) {
     const bucket = resolvePropertySourceBucket({ PropertyDomain: window.KNSN_PROPERTY_DOMAIN }, item, sourceType, submitterType);
@@ -1056,7 +1071,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const { state, els, K, utils } = ctx();
     if (!els.propertyEditModalAdmin || !els.aemForm) return;
     const user = state.session?.user;
-    const isAdmin = user?.role === 'admin';
+    const isAdmin = isAdminSessionUser(user, utils);
     let workingItem = item;
     if (!isAdmin) {
       const myId = user?.id || '';
@@ -1119,23 +1134,25 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('longitude', view.longitude ?? '');
 
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
-    applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
-    arrangeAdminOpinionFields(f);
+    safeAdminModalStep('apply form mode', () => applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view));
+    safeAdminModalStep('arrange opinion fields', () => arrangeAdminOpinionFields(f));
     setAdminEditSection('basic');
     const opinionEl = f.elements['opinion'];
     if (opinionEl) opinionEl.disabled = false;
     const regWrap = els.aemRegistrationLogList?.closest('.opinion-history-wrap');
-    if (typeof utils.renderCombinedPropertyLog === 'function') {
-      utils.renderCombinedPropertyLog(els.aemHistoryList, utils.loadOpinionHistory(workingItem), utils.loadRegistrationLog(workingItem));
-      if (regWrap) regWrap.classList.add('hidden');
-    } else {
-      if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
-      if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
-      if (regWrap) regWrap.classList.remove('hidden');
-    }
+    safeAdminModalStep('render combined log', () => {
+      if (typeof utils.renderCombinedPropertyLog === 'function') {
+        utils.renderCombinedPropertyLog(els.aemHistoryList, utils.loadOpinionHistory(workingItem), utils.loadRegistrationLog(workingItem));
+        if (regWrap) regWrap.classList.add('hidden');
+      } else {
+        if (typeof utils.renderOpinionHistory === 'function') utils.renderOpinionHistory(els.aemHistoryList, utils.loadOpinionHistory(workingItem), true);
+        if (typeof utils.renderRegistrationLog === 'function') utils.renderRegistrationLog(els.aemRegistrationLogList, utils.loadRegistrationLog(workingItem));
+        if (regWrap) regWrap.classList.remove('hidden');
+      }
+    });
     const sourceTypeEl = f.elements['sourceType'];
     const submitterTypeEl = f.elements['submitterType'];
-    const refreshFormMode = () => applyAdminPropertyFormMode(els, utils, workingItem, sourceTypeEl?.value || view.sourceType, submitterTypeEl?.value || view.submitterType, view);
+    const refreshFormMode = () => safeAdminModalStep('refresh form mode', () => applyAdminPropertyFormMode(els, utils, workingItem, sourceTypeEl?.value || view.sourceType, submitterTypeEl?.value || view.submitterType, view));
     if (sourceTypeEl) sourceTypeEl.onchange = refreshFormMode;
     if (submitterTypeEl) submitterTypeEl.onchange = refreshFormMode;
 
@@ -1224,7 +1241,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const item = state.editingProperty;
     if (!item || !els.aemForm) return;
     const user = state.session?.user;
-    const isAdmin = user?.role === 'admin';
+    const isAdmin = isAdminSessionUser(user, utils);
     const fd = new FormData(els.aemForm);
     const readStr = (k) => String(fd.get(k) || '').trim();
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));

@@ -729,7 +729,7 @@
         badgeLabel: badges[0].badgeLabel,
         author: normalized.author,
         text: normalized.text,
-        title: normalized.title || meta.title,
+        title: meta.title,
         order: idx,
       });
     });
