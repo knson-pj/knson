@@ -396,11 +396,11 @@
   function extractPropertyContactInfo(view = {}, item = {}) {
     const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || {});
     return {
-      realtorName: utilsFirstText(view?.realtorname, item?.broker_office_name, item?.realtorname, raw?.broker_office_name, raw?.brokerOfficeName, raw?.realtorname, raw?.realtorName, ''),
-      realtorPhone: utilsFirstText(view?.realtorphone, item?.realtorphone, raw?.realtorphone, raw?.realtorPhone, ''),
-      realtorCell: utilsFirstText(view?.realtorcell, item?.submitter_phone, item?.realtorcell, raw?.submitter_phone, raw?.submitterPhone, raw?.realtorcell, raw?.realtorCell, ''),
-      ownerName: utilsFirstText(view?.submitterName, item?.submitter_name, raw?.submitter_name, raw?.submitterName, raw?.registeredByName, ''),
-      ownerPhone: utilsFirstText(view?.submitterPhone, item?.submitter_phone, raw?.submitter_phone, raw?.submitterPhone, ''),
+      realtorName: utilsFirstText(view?.realtorname, item?.broker_office_name, item?._raw?.broker_office_name, item?.realtorname, raw?.broker_office_name, raw?.brokerOfficeName, raw?.realtorname, raw?.realtorName, ''),
+      realtorPhone: utilsFirstText(view?.realtorphone, item?.realtorphone, item?._raw?.realtor_phone, item?._raw?.realtorphone, raw?.realtorphone, raw?.realtorPhone, ''),
+      realtorCell: utilsFirstText(view?.realtorcell, item?.submitter_phone, item?._raw?.submitter_phone, item?._raw?.submitterPhone, item?.realtorcell, raw?.submitter_phone, raw?.submitterPhone, raw?.realtorcell, raw?.realtorCell, ''),
+      ownerName: utilsFirstText(view?.submitterName, item?.submitter_name, item?._raw?.submitter_name, raw?.submitter_name, raw?.submitterName, raw?.registeredByName, ''),
+      ownerPhone: utilsFirstText(view?.submitterPhone, item?.submitter_phone, item?._raw?.submitter_phone, raw?.submitter_phone, raw?.submitterPhone, ''),
     };
   }
 
@@ -449,6 +449,43 @@
     if (key === 'realtor') return 'realtor';
     if (key === 'admin' || key === 'agent' || key === 'owner') return 'owner';
     return String(bucketValue || '').startsWith('realtor_') ? 'realtor' : 'owner';
+  }
+
+  function getTodayDateKeyLocal() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function getHistoryDateKeyLocal(entry) {
+    const value = String(entry?.date || entry?.at || '').trim();
+    if (!value) return '';
+    const direct = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (direct) return direct[1];
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+  }
+
+  function getLatestHistoryEntryLocal(item, kind) {
+    const target = String(kind || '').trim();
+    const history = utils.loadOpinionHistory(item);
+    return [...(Array.isArray(history) ? history : [])].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === target) || null;
+  }
+
+  function getEditorHistoryTextLocal(item, kind, options = {}) {
+    const entry = getLatestHistoryEntryLocal(item, kind);
+    const text = String(entry?.text || '').trim();
+    if (!text) return '';
+    if (options.todayOnly && getHistoryDateKeyLocal(entry) !== getTodayDateKeyLocal()) return '';
+    return text;
+  }
+
+  function appendHistoryIfChangedLocal(item, history, kind, nextText, user, options = {}) {
+    const text = String(nextText || '').trim();
+    if (!text) return Array.isArray(history) ? history : [];
+    const current = String(getEditorHistoryTextLocal(item, kind, { todayOnly: false }) || '').trim();
+    if (current === text) return Array.isArray(history) ? history : [];
+    return appendOpinionEntryLocal(history, text, user, { ...options, kind });
   }
 
 
@@ -1075,9 +1112,9 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('realtorname', view.realtorname ?? '');
     setVal('realtorphone', view.realtorphone ?? '');
     setVal('realtorcell', view.realtorcell ?? '');
-    setVal('siteInspection', view.siteInspection ?? '');
-    setVal('opinion', view.opinion ?? '');
-    setVal('dailyIssue', view.dailyIssue ?? getLatestHistoryText(workingItem, 'dailyIssue'));
+    setVal('siteInspection', getEditorHistoryTextLocal(workingItem, 'siteInspection') || view.siteInspection || '');
+    setVal('opinion', getEditorHistoryTextLocal(workingItem, 'opinion') || view.opinion || '');
+    setVal('dailyIssue', getEditorHistoryTextLocal(workingItem, 'dailyIssue', { todayOnly: true }) || '');
     setVal('latitude', view.latitude ?? '');
     setVal('longitude', view.longitude ?? '');
 
@@ -1193,8 +1230,11 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const readNum = (k) => utils.parseFlexibleNumber(fd.get(k));
     const newOpinionText = readStr('opinion');
     const newDailyIssueText = readStr('dailyIssue');
-    let opinionHistory = appendOpinionEntryLocal(utils.loadOpinionHistory(item), newOpinionText, state.session?.user, { kind: 'opinion' });
-    opinionHistory = appendOpinionEntryLocal(opinionHistory, newDailyIssueText, state.session?.user, { kind: 'dailyIssue' });
+    const newSiteInspectionText = readStr('siteInspection');
+    let opinionHistory = Array.isArray(utils.loadOpinionHistory(item)) ? utils.loadOpinionHistory(item) : [];
+    opinionHistory = appendHistoryIfChangedLocal(item, opinionHistory, 'siteInspection', newSiteInspectionText, state.session?.user);
+    opinionHistory = appendHistoryIfChangedLocal(item, opinionHistory, 'opinion', newOpinionText, state.session?.user);
+    opinionHistory = appendHistoryIfChangedLocal(item, opinionHistory, 'dailyIssue', newDailyIssueText, state.session?.user);
     const sourceBucketValue = readStr('sourceType') || toEditSourceTypeValue(item, item.sourceType, item.submitterType);
     const submitterDisplayValue = readStr('submitterType') || deriveSubmitterDisplayType(item, item);
     const sourceTypeValue = toStoredSourceType(sourceBucketValue);
@@ -1283,7 +1323,36 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    const payload = { ...patch, raw: utils.mergePropertyRaw(item, patch) };
+    const currentRawForLog = utils.mergePropertyRaw(item, patch);
+    const regContext = utils.buildRegisterLogContext(isAdmin ? '관리자 수정' : '담당자 수정', { user: state.session?.user });
+    const mergedLogRow = typeof utils.buildRegistrationDbRowForExisting === 'function'
+      ? utils.buildRegistrationDbRowForExisting(item, {
+          item_no: patch.itemNo,
+          source_type: patch.sourceType,
+          submitter_type: patch.submitterType,
+          assignee_id: patch.assigneeId,
+          assignee_name: patch.assigneeId ? (typeof utils.getStaffNameById === 'function' ? utils.getStaffNameById(patch.assigneeId) : '') : '',
+          address: patch.address,
+          asset_type: patch.assetType,
+          floor: patch.floor,
+          total_floor: patch.totalfloor,
+          common_area: patch.commonarea,
+          exclusive_area: patch.exclusivearea,
+          site_area: patch.sitearea,
+          use_approval: patch.useapproval,
+          status: patch.status,
+          price_main: patch.priceMain,
+          lowprice: patch.lowprice,
+          date_main: patch.dateMain,
+          broker_office_name: patch.realtorname,
+          submitter_phone: patch.realtorcell,
+          memo: patch.opinion,
+          latitude: patch.latitude,
+          longitude: patch.longitude,
+          raw: currentRawForLog,
+        }, regContext)
+      : null;
+    const payload = { ...patch, raw: mergedLogRow?.row?.raw || currentRawForLog };
 
     // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
     // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.

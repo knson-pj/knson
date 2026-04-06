@@ -2174,18 +2174,18 @@ function bindEvents() {
       container.innerHTML = '<div class="history-empty">통합 LOG가 없습니다.</div>';
       return;
     }
-    container.innerHTML = groups.map((group) => {
-      const groupHead = [
-        group.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(group.at))}</span>` : '',
-        group.author ? `<span class="agent-combined-log-author">${esc(group.author)}</span>` : '',
-      ].filter(Boolean).join('');
+    container.innerHTML = groups.map((group, groupIndex) => {
+      const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
-        const badgeHtml = `<span class="agent-combined-log-badge ${esc(entry.badgeClass || '')}">${esc(entry.badgeLabel || '')}</span>`;
+        const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
+        const canEdit = entry.kind === 'opinion' && Number.isInteger(entry.sourceIndex);
+        const actionHtml = canEdit ? `<div class="history-actions"><button type="button" class="history-edit-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="수정">✎</button><button type="button" class="history-del-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="삭제">✕</button></div>` : '';
+        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : '', actionHtml].filter(Boolean).join('');
         if (entry.kind === 'opinion') {
           const title = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
-          return `<div class="agent-combined-log-entry">` +
-            `<div class="agent-combined-log-entry-head">${badgeHtml}</div>` +
-            `<div class="agent-combined-log-body">${title}<div class="agent-combined-log-text">${esc(entry.text || '')}</div></div>` +
+          return `<div class="agent-combined-log-entry" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">` +
+            `<div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div>` +
+            `<div class="agent-combined-log-body">${title}<div class="agent-combined-log-text" id="combinedLogText_${entry.sourceIndex}">${esc(entry.text || '')}</div><div class="history-edit-area hidden" id="combinedLogEdit_${entry.sourceIndex}"><textarea class="input history-edit-textarea" rows="3">${esc(entry.text || '')}</textarea><div class="history-edit-btns"><button type="button" class="btn btn-primary btn-sm history-save-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">저장</button><button type="button" class="btn btn-ghost btn-sm history-cancel-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">취소</button></div></div></div>` +
           `</div>`;
         }
         const titleHtml = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
@@ -2193,15 +2193,70 @@ function bindEvents() {
           ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || '')}</span><span class="agent-combined-log-value">${esc(change.before || '-')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || '-')}</span></div>`).join('')}</div>`
           : '<div class="agent-combined-log-text">변경 없음</div>';
         return `<div class="agent-combined-log-entry">` +
-          `<div class="agent-combined-log-entry-head">${badgeHtml}</div>` +
+          `<div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div>` +
           `<div class="agent-combined-log-body">${titleHtml}${changesHtml}</div>` +
         `</div>`;
       }).join('');
       return `<div class="agent-combined-log-item">` +
-        `<div class="agent-combined-log-head">${groupHead}</div>` +
-        `<div class="agent-combined-log-group-body">${itemsHtml}</div>` +
+        `<div class="agent-combined-log-head"><span class="agent-combined-log-date">${esc(group.displayDate || formatRegLogAt(group.at) || '')}</span><div class="agent-combined-log-summary">${summaryBadges}</div><button type="button" class="agent-combined-log-toggle" data-group-toggle="${groupIndex}" aria-expanded="false">▼</button></div>` +
+        `<div class="agent-combined-log-group-body hidden" data-group-body="${groupIndex}">${itemsHtml}</div>` +
       `</div>`;
     }).join('');
+
+    container.querySelectorAll('[data-group-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-group-toggle');
+        const body = container.querySelector(`[data-group-body="${key}"]`);
+        const willOpen = body?.classList.contains('hidden');
+        body?.classList.toggle('hidden', !willOpen);
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        btn.textContent = willOpen ? '▲' : '▼';
+      });
+    });
+
+    container.querySelectorAll('.history-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.logIdx);
+        container.querySelector(`#combinedLogText_${idx}`)?.classList.add('hidden');
+        container.querySelector(`#combinedLogEdit_${idx}`)?.classList.remove('hidden');
+      });
+    });
+    container.querySelectorAll('.history-cancel-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.logIdx);
+        container.querySelector(`#combinedLogText_${idx}`)?.classList.remove('hidden');
+        container.querySelector(`#combinedLogEdit_${idx}`)?.classList.add('hidden');
+      });
+    });
+    container.querySelectorAll('.history-save-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const idx = Number(btn.dataset.logIdx);
+        const editArea = container.querySelector(`#combinedLogEdit_${idx} textarea`);
+        const newText = String(editArea?.value || '').trim();
+        if (!newText) return;
+        const item = state.editingProperty;
+        if (!item) return;
+        const hist = loadOpinionHistory(item);
+        if (!hist[idx]) return;
+        hist[idx] = { ...hist[idx], text: newText };
+        await patchOpinionHistory(item, hist);
+        if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
+        renderCombinedPropertyLog(container, hist, loadRegistrationLog(item));
+      });
+    });
+    container.querySelectorAll('.history-del-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('이 LOG를 삭제할까요?')) return;
+        const idx = Number(btn.dataset.logIdx);
+        const item = state.editingProperty;
+        if (!item) return;
+        const hist = loadOpinionHistory(item);
+        hist.splice(idx, 1);
+        await patchOpinionHistory(item, hist);
+        if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
+        renderCombinedPropertyLog(container, hist, loadRegistrationLog(item));
+      });
+    });
   }
 
   // ---------------------------
@@ -2234,13 +2289,13 @@ function bindEvents() {
     })();
     const author = String(options.author || user?.name || user?.email || "").trim();
     const titleMap = {
-      opinion: "담당자 의견",
+      opinion: "담당자의견",
       siteInspection: "현장실사",
       dailyIssue: "금일이슈사항",
     };
     return {
       kind: String(kind || "opinion").trim() || "opinion",
-      title: String(options.title || titleMap[kind] || "담당자 의견").trim(),
+      title: String(options.title || titleMap[kind] || "담당자의견").trim(),
       date: String(options.date || formatDate(at) || fallbackDate).trim() || fallbackDate,
       at,
       text: body,
@@ -2280,8 +2335,8 @@ function bindEvents() {
     }
     const kind = String(entry?.kind || "opinion").trim();
     if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
-    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일이슈사항" };
-    return { badgeClass: "is-opinion", badgeLabel: "담당자 의견", title: "담당자 의견" };
+    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈사항", title: "금일이슈사항" };
+    return { badgeClass: "is-opinion", badgeLabel: "담당자의견", title: "담당자의견" };
   }
 
   function renderOpinionHistory(container, history, isAdmin) {
@@ -2369,14 +2424,51 @@ function bindEvents() {
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (!sb) throw new Error("Supabase 연동 필요");
     const targetId = item.id || item.globalId;
-    const latestOpinionEntry = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => !entry?.kind || entry.kind === 'opinion');
-    const latestOpinion = latestOpinionEntry ? latestOpinionEntry.text : null;
+    const list = Array.isArray(history) ? history : [];
+    const latestTextByKind = (kind, options = {}) => {
+      const latest = [...list].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === kind);
+      const text = String(latest?.text || '').trim();
+      if (!text) return null;
+      if (options.todayOnly) {
+        const key = String(latest?.date || latest?.at || '').trim().slice(0, 10);
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        if (key !== today) return null;
+      }
+      return text;
+    };
+    const latestOpinion = latestTextByKind('opinion');
+    const latestSiteInspection = latestTextByKind('siteInspection');
+    const latestDailyIssue = latestTextByKind('dailyIssue', { todayOnly: true });
     const currentRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? { ...item._raw.raw } : {};
-    const nextRaw = { ...currentRaw, opinionHistory: history, opinion: latestOpinion, memo: latestOpinion };
-    if (!DataAccess || typeof DataAccess.updatePropertyMemoRaw !== "function") {
-      throw new Error("KNSN_DATA_ACCESS.updatePropertyMemoRaw 를 찾을 수 없습니다.");
+    const nextRaw = {
+      ...currentRaw,
+      opinionHistory: list,
+      opinion: latestOpinion,
+      memo: latestOpinion,
+      siteInspection: latestSiteInspection,
+      dailyIssue: latestDailyIssue,
+      daily_issue: latestDailyIssue,
+    };
+    await updatePropertyRowResilient(sb, targetId, {
+      memo: latestOpinion,
+      raw: nextRaw,
+      site_inspection: latestSiteInspection,
+      daily_issue: latestDailyIssue,
+    });
+    if (item && typeof item === 'object') {
+      item.opinion = latestOpinion;
+      item.memo = latestOpinion;
+      item.siteInspection = latestSiteInspection;
+      item.dailyIssue = latestDailyIssue;
+      item.daily_issue = latestDailyIssue;
+      if (item._raw && typeof item._raw === 'object') {
+        item._raw.memo = latestOpinion;
+        item._raw.site_inspection = latestSiteInspection;
+        item._raw.daily_issue = latestDailyIssue;
+        item._raw.raw = nextRaw;
+      }
     }
-    await DataAccess.updatePropertyMemoRaw(sb, targetId, { memo: latestOpinion, raw: nextRaw });
   }
 
   function esc(v) {

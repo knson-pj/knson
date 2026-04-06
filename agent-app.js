@@ -1097,6 +1097,9 @@
     useapproval: "사용승인일",
     status: "진행상태",
     priceMain: "매매가",
+    lowprice: "현재가격",
+    dateMain: "주요일정",
+    status: "진행상태",
     sourceUrl: "원문링크",
     realtorName: "중개사무소명",
     realtorPhone: "유선전화",
@@ -1375,9 +1378,9 @@
     if (PropertyDomain && typeof PropertyDomain.buildRegistrationDbRowForExisting === "function") {
       return PropertyDomain.buildRegistrationDbRowForExisting(existingItem, incomingRow, context, {
         labels: REG_LOG_LABELS,
-        amountFields: ["priceMain"],
-        numericFields: ["priceMain", "commonArea", "exclusiveArea", "siteArea"],
-        copyFields: ["address","asset_type","exclusive_area","common_area","site_area","use_approval","price_main","broker_office_name","submitter_name","submitter_phone","memo"],
+        amountFields: ["priceMain", "lowprice"],
+        numericFields: ["priceMain", "lowprice", "commonArea", "exclusiveArea", "siteArea"],
+        copyFields: ["address","asset_type","floor","total_floor","exclusive_area","common_area","site_area","use_approval","status","price_main","lowprice","date_main","broker_office_name","submitter_name","submitter_phone","memo"],
         assignIfEmpty: !!options.assignIfEmpty,
       });
     }
@@ -1945,9 +1948,9 @@ function renderPagination(totalPages) {
     setVal(f, "currentPrice", view.currentPrice != null ? formatMoneyInputValue(view.currentPrice) : "");
     setVal(f, "dateMain", formatDate(view.dateMain) || "");
     setVal(f, "rightsAnalysis", view.rightsAnalysis);
-    setVal(f, "siteInspection", view.siteInspection);
-    setVal(f, "opinion", view.opinion || "");
-    setVal(f, "dailyIssue", view.dailyIssue || getLatestHistoryText(item, "dailyIssue"));
+    setVal(f, "siteInspection", getEditorHistoryText(item, "siteInspection") || view.siteInspection || "");
+    setVal(f, "opinion", getEditorHistoryText(item, "opinion") || view.opinion || "");
+    setVal(f, "dailyIssue", getEditorHistoryText(item, "dailyIssue", { todayOnly: true }) || "");
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
@@ -1997,8 +2000,11 @@ function renderPagination(totalPages) {
     const readNum = (name) => parseFlexibleNumber(f.elements[name]?.value);
     const newOpinionText = readStr("opinion");
     const newDailyIssueText = readStr("dailyIssue");
-    let opinionHistory = appendOpinionEntry(loadOpinionHistory(item), newOpinionText, state.session?.user, { kind: "opinion" });
-    opinionHistory = appendOpinionEntry(opinionHistory, newDailyIssueText, state.session?.user, { kind: "dailyIssue" });
+    const newSiteInspectionText = readStr("siteInspection");
+    let opinionHistory = Array.isArray(loadOpinionHistory(item)) ? loadOpinionHistory(item) : [];
+    opinionHistory = appendHistoryIfChanged(item, opinionHistory, "siteInspection", newSiteInspectionText, state.session?.user);
+    opinionHistory = appendHistoryIfChanged(item, opinionHistory, "opinion", newOpinionText, state.session?.user);
+    opinionHistory = appendHistoryIfChanged(item, opinionHistory, "dailyIssue", newDailyIssueText, state.session?.user);
 
     const currentUserId = String(state.session?.user?.id || "").trim();
     const patch = {};
@@ -2075,13 +2081,36 @@ function renderPagination(totalPages) {
         currentPrice: currentPriceVal,
         dateMain: dateMainVal,
         rightsAnalysis: rightsVal,
-        siteInspection: siteVal || null,
+        siteInspection: newSiteInspectionText || null,
         opinion: patch.memo,
         memo: patch.memo,
         dailyIssue: newDailyIssueText || null,
         daily_issue: newDailyIssueText || null,
         opinionHistory,
       });
+      const regContext = buildRegisterLogContext('담당자 수정', { user: state.session?.user });
+      const mergedLogRow = buildRegistrationDbRowForExisting(item, {
+        address: item.address,
+        asset_type: item.assetType,
+        floor: floorVal,
+        total_floor: totalFloorVal,
+        common_area: commonAreaVal,
+        exclusive_area: exclusiveAreaVal,
+        site_area: siteAreaVal,
+        use_approval: useApprovalVal,
+        status: hidePlainFields ? prev.status : (readStr('status') || null),
+        price_main: priceMainVal,
+        lowprice: currentPriceVal,
+        date_main: dateMainVal,
+        broker_office_name: item._raw?.broker_office_name || null,
+        submitter_name: item._raw?.submitter_name || null,
+        submitter_phone: item._raw?.submitter_phone || null,
+        memo: patch.memo,
+        source_type: normalizedSourceType || item._raw?.source_type || null,
+        submitter_type: normalizedSubmitterType || item._raw?.submitter_type || null,
+        raw: newRaw,
+      }, regContext, { assignIfEmpty: false });
+      if (mergedLogRow?.row?.raw) newRaw.registrationLog = mergedLogRow.row.raw.registrationLog || newRaw.registrationLog;
 
       maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
       maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
@@ -2100,7 +2129,7 @@ function renderPagination(totalPages) {
         workCategories.push("siteInspection");
         changedFields.siteInspection = ["siteInspection"];
       }
-      if (newOpinionText) {
+      if (newDailyIssueText && newDailyIssueText !== String(prev.dailyIssue || '').trim()) {
         workCategories.push("dailyIssue");
         changedFields.dailyIssue = ["dailyIssue"];
       }
@@ -2695,25 +2724,33 @@ function renderPagination(totalPages) {
       container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
       return;
     }
-    container.innerHTML = groups.map((group) => {
-      const groupHead = [
-        group.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(group.at))}</span>` : '',
-        group.author ? `<span class="agent-combined-log-author">${esc(group.author)}</span>` : '',
-      ].filter(Boolean).join('');
+    container.innerHTML = groups.map((group, groupIndex) => {
+      const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
-        const badgeHtml = `<span class="agent-combined-log-badge ${esc(entry.badgeClass || '')}">${esc(entry.badgeLabel || '')}</span>`;
+        const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
+        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : ''].filter(Boolean).join('');
         if (entry.kind === "opinion") {
           const title = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
-          return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}</div><div class="agent-combined-log-body">${title}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
+          return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body">${title}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
         }
         const titleHtml = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : "";
         const changesHtml = entry.changes?.length
           ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
           : '<div class="agent-combined-log-text">변경 없음</div>';
-        return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></div>`;
+        return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></div>`;
       }).join('');
-      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${groupHead}</div><div class="agent-combined-log-group-body">${itemsHtml}</div></div>`;
+      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head"><span class="agent-combined-log-date">${esc(group.displayDate || formatRegLogAt(group.at) || '')}</span><div class="agent-combined-log-summary">${summaryBadges}</div><button type="button" class="agent-combined-log-toggle" data-group-toggle="${groupIndex}" aria-expanded="false">▼</button></div><div class="agent-combined-log-group-body hidden" data-group-body="${groupIndex}">${itemsHtml}</div></div>`;
     }).join('');
+    container.querySelectorAll('[data-group-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-group-toggle');
+        const body = container.querySelector(`[data-group-body="${key}"]`);
+        const willOpen = body?.classList.contains('hidden');
+        body?.classList.toggle('hidden', !willOpen);
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        btn.textContent = willOpen ? '▲' : '▼';
+      });
+    });
   }
 
   function renderRegistrationLog(container, history) {
@@ -2764,6 +2801,38 @@ function renderPagination(totalPages) {
     return [...(Array.isArray(history) ? history : []), { date: today, text, author, kind: String(options.kind || "opinion").trim() || "opinion" }];
   }
 
+  function getHistoryDateKey(entry) {
+    const value = String(entry?.date || entry?.at || '').trim();
+    if (!value) return '';
+    const direct = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (direct) return direct[1];
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+  }
+
+  function getLatestHistoryEntry(item, kind) {
+    const target = String(kind || '').trim();
+    const history = loadOpinionHistory(item);
+    return [...(Array.isArray(history) ? history : [])].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === target) || null;
+  }
+
+  function getEditorHistoryText(item, kind, options = {}) {
+    const entry = getLatestHistoryEntry(item, kind);
+    const text = String(entry?.text || '').trim();
+    if (!text) return '';
+    if (options.todayOnly && getHistoryDateKey(entry) !== getTodayDateKey()) return '';
+    return text;
+  }
+
+  function appendHistoryIfChanged(item, history, kind, nextText, user, options = {}) {
+    const text = String(nextText || '').trim();
+    if (!text) return Array.isArray(history) ? history : [];
+    const current = String(getEditorHistoryText(item, kind, { todayOnly: false }) || '').trim();
+    if (current === text) return Array.isArray(history) ? history : [];
+    return appendOpinionEntry(history, text, user, { ...options, kind });
+  }
+
   function getLatestHistoryText(item, kind) {
     const history = loadOpinionHistory(item);
     const target = String(kind || '').trim();
@@ -2811,8 +2880,8 @@ function renderPagination(totalPages) {
   function getDailyActionMeta(actionType) {
     const key = String(actionType || "").trim();
     if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
-    if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장조사", title: "현장조사" };
-    if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일 이슈사항" };
+    if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
+    if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈사항", title: "금일이슈사항" };
     if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
     return { badgeClass: "is-edit", badgeLabel: "업무", title: "업무 수정" };
   }

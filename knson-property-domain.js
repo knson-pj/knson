@@ -351,8 +351,8 @@
       sourceNoteLabel: sourceNote.label,
       sourceNoteText: sourceNote.text,
       realtorname: pickFirstText(item && item.realtorname, item && item.realtor_name, raw.realtorname, raw.realtorName, brokerOfficeName, ""),
-      realtorphone: pickFirstText(item && item.realtorphone, item && item.realtor_phone, raw.realtorphone, raw.realtorPhone, ""),
-      realtorcell: pickFirstText(item && item.realtorcell, item && item.realtor_cell, raw.realtorcell, raw.realtorCell, item && item.submitterPhone, item && item.submitter_phone, ""),
+      realtorphone: pickFirstText(item && item.realtorphone, item && item.realtor_phone, item && item._raw && item._raw.realtor_phone, item && item._raw && item._raw.realtorphone, raw.realtorphone, raw.realtorPhone, ""),
+      realtorcell: pickFirstText(item && item.realtorcell, item && item.realtor_cell, item && item._raw && item._raw.submitter_phone, item && item._raw && item._raw.submitterPhone, raw.realtorcell, raw.realtorCell, item && item.submitterPhone, item && item.submitter_phone, ""),
       rightsAnalysis: pickFirstText(item && item.rightsAnalysis, item && item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "") || ((item && (item.analysisDone ?? item.analysis_done)) ? "완료" : ""),
       siteInspection: siteInspectionText || ((item && (item.siteVisit ?? item.site_visit ?? item.fieldDone ?? item.field_done)) ? "완료" : ""),
       dailyIssue: dailyIssueText,
@@ -638,13 +638,13 @@
     })();
     const author = String(options.author || user?.name || user?.email || "").trim();
     const titleMap = {
-      opinion: "담당자 의견",
+      opinion: "담당자의견",
       siteInspection: "현장실사",
       dailyIssue: "금일이슈사항",
     };
     return {
       kind: String(kind || "opinion").trim() || "opinion",
-      title: String(options.title || titleMap[kind] || "담당자 의견").trim(),
+      title: String(options.title || titleMap[kind] || "담당자의견").trim(),
       date: date || fallbackDate,
       at,
       text: body,
@@ -675,8 +675,8 @@
   function getOpinionHistoryMeta(entry) {
     const kind = String(entry?.kind || "opinion").trim();
     if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
-    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일이슈사항" };
-    return { badgeClass: "is-opinion", badgeLabel: "담당자 의견", title: "담당자 의견" };
+    if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈사항", title: "금일이슈사항" };
+    return { badgeClass: "is-opinion", badgeLabel: "담당자의견", title: "담당자의견" };
   }
 
   function toTimelineTimestamp(value) {
@@ -690,6 +690,24 @@
     return Number.POSITIVE_INFINITY;
   }
 
+  function buildRegistrationLogBadges(entry) {
+    const type = String(entry?.type || "").trim();
+    if (type === "created") {
+      return [{ badgeClass: "is-new", badgeLabel: "등록LOG" }];
+    }
+    const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter(Boolean);
+    const fields = new Set(changes.map((change) => String(change?.field || "").trim()).filter(Boolean));
+    const badges = [];
+    if (fields.has("assigneeName") || fields.has("assigneeId") || fields.has("assignee_id")) {
+      badges.push({ badgeClass: "is-assignee", badgeLabel: "담당자등록" });
+    }
+    const hasDetailLike = type !== "created" && (!fields.size || [...fields].some((field) => !["assigneeName", "assigneeId", "assignee_id"].includes(field)));
+    if (hasDetailLike) {
+      badges.push({ badgeClass: "is-registration", badgeLabel: "물건Log" });
+    }
+    return badges.length ? badges : [{ badgeClass: "is-registration", badgeLabel: "물건Log" }];
+  }
+
   function buildCombinedPropertyLog(opinionHistory, registrationLog) {
     const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
     const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
@@ -699,12 +717,16 @@
       const normalized = normalizeOpinionHistoryEntry(entry);
       if (!normalized) return;
       const meta = getOpinionHistoryMeta(normalized);
+      const badges = [{ badgeClass: meta.badgeClass, badgeLabel: meta.badgeLabel }];
       rows.push({
         kind: "opinion",
+        sourceKind: "opinionHistory",
+        sourceIndex: idx,
         sortAt: toTimelineTimestamp(normalized.at || normalized.date),
         at: normalized.at || normalized.date || "",
-        badgeClass: meta.badgeClass,
-        badgeLabel: meta.badgeLabel,
+        badges,
+        badgeClass: badges[0].badgeClass,
+        badgeLabel: badges[0].badgeLabel,
         author: normalized.author,
         text: normalized.text,
         title: normalized.title || meta.title,
@@ -718,12 +740,16 @@
       const actor = String(entry?.actor || "").trim();
       const type = String(entry?.type || "").trim();
       const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
+      const badges = buildRegistrationLogBadges({ ...entry, type, changes });
       rows.push({
         kind: "registration",
+        sourceKind: "registrationLog",
+        sourceIndex: idx,
         sortAt: toTimelineTimestamp(at),
         at,
-        badgeClass: "is-registration",
-        badgeLabel: "등록LOG",
+        badges,
+        badgeClass: badges[0]?.badgeClass || "is-registration",
+        badgeLabel: badges[0]?.badgeLabel || "물건Log",
         author: actor,
         title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
         route,
@@ -743,28 +769,46 @@
     const formatAt = typeof options.formatAt === "function" ? options.formatAt : (value) => String(value || "").trim();
     const ordered = [...list].sort((a, b) => {
       if (a.sortAt !== b.sortAt) return b.sortAt - a.sortAt;
-      return a.order - b.order;
+      return b.order - a.order;
     });
     const groups = [];
     const byKey = new Map();
     ordered.forEach((entry, index) => {
-      const atKey = formatAt(entry?.at || entry?.date || "");
-      const authorKey = String(entry?.author || "").trim();
-      const key = `${atKey}__${authorKey}`;
-      let group = byKey.get(key);
+      const atText = String(entry?.at || entry?.date || "").trim();
+      const dayKey = atText ? formatAt(atText).split(' ')[0] : `unknown-${index}`;
+      let group = byKey.get(dayKey);
       if (!group) {
         group = {
-          key,
-          at: String(entry?.at || entry?.date || "").trim(),
-          author: authorKey,
+          key: dayKey,
+          dayKey,
+          at: atText,
+          displayDate: dayKey,
           sortAt: Number(entry?.sortAt || 0) || 0,
           items: [],
+          badges: [],
           order: index,
         };
-        byKey.set(key, group);
+        byKey.set(dayKey, group);
         groups.push(group);
       }
       group.items.push(entry);
+      if (entry.sortAt > group.sortAt) {
+        group.sortAt = entry.sortAt;
+        group.at = atText || group.at;
+      }
+      const existing = new Set(group.badges.map((badge) => `${badge.badgeClass}|${badge.badgeLabel}`));
+      (Array.isArray(entry.badges) ? entry.badges : []).forEach((badge) => {
+        const key = `${badge.badgeClass}|${badge.badgeLabel}`;
+        if (existing.has(key)) return;
+        existing.add(key);
+        group.badges.push({ badgeClass: badge.badgeClass, badgeLabel: badge.badgeLabel });
+      });
+    });
+    groups.forEach((group) => {
+      group.items.sort((a, b) => {
+        if (a.sortAt !== b.sortAt) return b.sortAt - a.sortAt;
+        return b.order - a.order;
+      });
     });
     return groups.sort((a, b) => {
       if (a.sortAt !== b.sortAt) return b.sortAt - a.sortAt;
