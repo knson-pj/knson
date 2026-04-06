@@ -1,0 +1,416 @@
+function_name,function_args,function_definition
+assign_public_property_numbers,,"CREATE OR REPLACE FUNCTION public.assign_public_property_numbers()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  if new.source_type = 'general' then
+    new.is_general := true;
+    if new.submitter_type is null then new.submitter_type := 'owner'; end if;
+  elsif new.source_type = 'realtor' then
+    new.is_general := false;
+    if new.submitter_type is null then new.submitter_type := 'realtor'; end if;
+  end if;
+
+  if (new.status is null or btrim(new.status) = '') and new.source_type in ('general', 'realtor') then
+    new.status := 'review';
+  end if;
+
+  if new.source_type in ('general', 'realtor') and (new.item_no is null or btrim(new.item_no) = '') then
+    if new.source_type = 'general' then
+      new.item_no := 'G' || nextval('public.properties_general_seq');
+    elsif new.source_type = 'realtor' then
+      new.item_no := 'R' || nextval('public.properties_realtor_seq');
+    end if;
+  end if;
+
+  if new.global_id is null or btrim(new.global_id) = '' then
+    if new.item_no is not null and btrim(new.item_no) <> '' then
+      new.global_id := new.source_type::text || ':' || new.item_no;
+    else
+      new.global_id := new.source_type::text || ':' || gen_random_uuid()::text;
+    end if;
+  end if;
+
+  return new;
+end $function$
+"
+compute_property_registration_confidence_v2,"p_address text, p_raw jsonb","CREATE OR REPLACE FUNCTION public.compute_property_registration_confidence_v2(p_address text, p_raw jsonb DEFAULT '{}'::jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  k text;
+  ho_key text;
+begin
+  k := public.compute_property_registration_identity_key_v2(p_address, p_raw);
+  if k = '' then
+    return null;
+  end if;
+
+  ho_key := public.extract_property_ho_key_v2(p_raw);
+
+  if ho_key <> '0' then
+    return 'strict';
+  end if;
+
+  return 'weak';
+end;
+$function$
+"
+compute_property_registration_identity_key,"p_address text, p_raw jsonb","CREATE OR REPLACE FUNCTION public.compute_property_registration_identity_key(p_address text, p_raw jsonb DEFAULT '{}'::jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  compact text;
+  m text[];
+  dong text := '';
+  main_no text := '';
+  sub_no text := '';
+  floor_key text := '0';
+  ho_src text := '';
+  ho_key text := '';
+begin
+  compact := regexp_replace(coalesce(p_address, ''), '\s+', '', 'g');
+
+  m := regexp_match(compact, '([가-힣A-Za-z0-9]+(?:동|읍|면|리))(산?\d+)(?:-(\d+))?');
+  if m is null then
+    return '';
+  end if;
+
+  dong := coalesce(m[1], '');
+  main_no := coalesce(m[2], '');
+  sub_no := coalesce(m[3], '');
+
+  floor_key := public.normalize_property_floor_key(
+    coalesce(
+      p_raw->>'floor',
+      p_raw->>'층',
+      ''
+    )
+  );
+
+  ho_src := coalesce(
+    nullif(btrim(coalesce(p_raw->>'ho', '')), ''),
+    nullif(btrim(coalesce(p_raw->>'unit', '')), ''),
+    nullif(btrim(coalesce(p_raw->>'room', '')), ''),
+    nullif(btrim(coalesce(p_raw->>'detailAddress', '')), ''),
+    nullif(btrim(coalesce(p_raw->>'상세주소', '')), ''),
+    ''
+  );
+
+  if ho_src ~ '([0-9]{1,5})\s*호' then
+    ho_key := regexp_replace(ho_src, '^.*?([0-9]{1,5})\s*호.*$', '\1');
+  else
+    ho_key := '0';
+  end if;
+
+  return dong || '|' || main_no || '|' || coalesce(nullif(sub_no, ''), '0') || '|' || floor_key || '|' || coalesce(nullif(ho_key, ''), '0');
+end;
+$function$
+"
+compute_property_registration_identity_key_v2,"p_address text, p_raw jsonb","CREATE OR REPLACE FUNCTION public.compute_property_registration_identity_key_v2(p_address text, p_raw jsonb DEFAULT '{}'::jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  normalized text;
+  compact text;
+  m text[];
+  dong text := '';
+  main_no text := '';
+  sub_no text := '';
+  floor_key text := '0';
+  ho_key text := '0';
+begin
+  normalized := regexp_replace(coalesce(p_address, ''), '\s+', ' ', 'g');
+  normalized := btrim(normalized);
+
+  m := regexp_match(normalized, '([가-힣A-Za-z0-9]+(?:동|읍|면|리))\s+(산?\d+)(?:-(\d+))?');
+
+  if m is null then
+    compact := regexp_replace(coalesce(p_address, ''), '\s+', '', 'g');
+    m := regexp_match(compact, '([가-힣A-Za-z0-9]+(?:동|읍|면|리))(산?\d+)(?:-(\d+))?');
+  end if;
+
+  if m is null then
+    return '';
+  end if;
+
+  dong := coalesce(m[1], '');
+  main_no := coalesce(m[2], '');
+  sub_no := coalesce(m[3], '');
+
+  floor_key := public.normalize_property_floor_key_v2(
+    coalesce(
+      p_raw->>'floor',
+      p_raw->>'층',
+      ''
+    )
+  );
+
+  ho_key := public.extract_property_ho_key_v2(p_raw);
+
+  return dong
+    || '|' || main_no
+    || '|' || coalesce(nullif(sub_no, ''), '0')
+    || '|' || coalesce(nullif(floor_key, ''), '0')
+    || '|' || coalesce(nullif(ho_key, ''), '0');
+end;
+$function$
+"
+enforce_profiles_role_guard,,"CREATE OR REPLACE FUNCTION public.enforce_profiles_role_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  -- SQL Editor / 서비스 키처럼 auth.uid()가 NULL인 컨텍스트는 통과(관리자 운영용)
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  if (tg_op = 'INSERT') then
+    -- 사용자가 자기 프로필을 만들 때 role은 항상 staff로 강제
+    new.role := 'staff';
+    return new;
+  end if;
+
+  if (tg_op = 'UPDATE') then
+    -- role 변경은 관리자만 허용
+    if new.role is distinct from old.role then
+      if not public.is_admin() then
+        raise exception 'not allowed: cannot change role';
+      end if;
+    end if;
+    return new;
+  end if;
+
+  return new;
+end $function$
+"
+enforce_staff_property_update,,"CREATE OR REPLACE FUNCTION public.enforce_staff_property_update()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare
+  v_role text := coalesce(auth.role(), '');
+  v_uid uuid := auth.uid();
+begin
+  -- 서버 API(service_role)로 들어온 수정은 통과
+  if v_role = 'service_role' then
+    return new;
+  end if;
+
+  -- 로그인 사용자 없으면 차단
+  if v_uid is null then
+    raise exception 'not allowed';
+  end if;
+
+  -- 담당자가 자기 배정 물건만 수정 가능
+  if coalesce(old.assignee_id, new.assignee_id) is distinct from v_uid then
+    raise exception 'not allowed';
+  end if;
+
+  -- 담당자는 assignee_id 자체를 바꾸면 안 됨
+  if new.assignee_id is distinct from old.assignee_id then
+    raise exception 'not allowed';
+  end if;
+
+  return new;
+end;
+$function$
+"
+extract_property_ho_key_v2,p_raw jsonb,"CREATE OR REPLACE FUNCTION public.extract_property_ho_key_v2(p_raw jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  s text := '';
+begin
+  if p_raw is null then
+    return '0';
+  end if;
+
+  s := coalesce(
+    nullif(btrim(coalesce(p_raw->>'ho', '')), ''),
+    nullif(btrim(coalesce(p_raw->>'unit', '')), ''),
+    nullif(btrim(coalesce(p_raw->>'room', '')), ''),
+    ''
+  );
+
+  if s <> '' then
+    if s ~ '^[0-9]{1,5}$' then
+      return s;
+    end if;
+
+    if s ~ '([0-9]{1,5})\s*호' then
+      return regexp_replace(s, '^.*?([0-9]{1,5})\s*호.*$', '\1');
+    end if;
+  end if;
+
+  s := coalesce(
+    nullif(btrim(coalesce(p_raw->>'detailAddress', '')), ''),
+    nullif(btrim(coalesce(p_raw->>'상세주소', '')), ''),
+    ''
+  );
+
+  if s ~ '([0-9]{1,5})\s*호' then
+    return regexp_replace(s, '^.*?([0-9]{1,5})\s*호.*$', '\1');
+  end if;
+
+  return '0';
+end;
+$function$
+"
+is_admin,,"CREATE OR REPLACE FUNCTION public.is_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  select
+    coalesce(lower(auth.jwt() -> 'app_metadata' ->> 'role'), '') = 'admin'
+    or coalesce(lower(auth.jwt() -> 'user_metadata' ->> 'role'), '') = 'admin'
+    or exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and lower(coalesce(p.role, '')) = 'admin'
+    );
+$function$
+"
+normalize_property_floor_key,p_floor text,"CREATE OR REPLACE FUNCTION public.normalize_property_floor_key(p_floor text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  s text := btrim(coalesce(p_floor, ''));
+  n int;
+begin
+  if s = '' then
+    return '0';
+  end if;
+
+  if s ~* '^(B|지하)\s*([0-9]{1,2})\s*층?$' then
+    return 'b' || regexp_replace(s, '^(?:B|b|지하)\s*([0-9]{1,2}).*$', '\1');
+  end if;
+
+  if s ~ '^[0-9]{1,2}\s*층?$' then
+    n := regexp_replace(s, '[^0-9]', '', 'g')::int;
+    if n between 1 and 99 then
+      return n::text;
+    end if;
+  end if;
+
+  return '0';
+end;
+$function$
+"
+normalize_property_floor_key_v2,p_floor text,"CREATE OR REPLACE FUNCTION public.normalize_property_floor_key_v2(p_floor text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  s text := btrim(coalesce(p_floor, ''));
+  n int;
+begin
+  if s = '' then
+    return '0';
+  end if;
+
+  if s ~* '^(B|지하)\s*([0-9]{1,2})\s*층?$' then
+    return 'b' || regexp_replace(s, '^(?:B|b|지하)\s*([0-9]{1,2}).*$', '\1');
+  end if;
+
+  if s ~ '^[0-9]{1,2}\s*층?$' then
+    n := regexp_replace(s, '[^0-9]', '', 'g')::int;
+    if n between 1 and 99 then
+      return n::text;
+    end if;
+  end if;
+
+  return '0';
+end;
+$function$
+"
+set_updated_at,,"CREATE OR REPLACE FUNCTION public.set_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.updated_at = now();
+  return new;
+end $function$
+"
+sync_properties_identity_key,,"CREATE OR REPLACE FUNCTION public.sync_properties_identity_key()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.global_id := nullif(btrim(coalesce(new.global_id, '')), '');
+
+  new.registration_identity_key := nullif(
+    btrim(
+      coalesce(
+        new.registration_identity_key,
+        new.raw->>'registrationIdentityKey',
+        ''
+      )
+    ),
+    ''
+  );
+
+  if new.raw is null then
+    new.raw := '{}'::jsonb;
+  end if;
+
+  if new.registration_identity_key is not null then
+    new.raw := jsonb_set(
+      new.raw,
+      '{registrationIdentityKey}',
+      to_jsonb(new.registration_identity_key),
+      true
+    );
+  end if;
+
+  return new;
+end;
+$function$
+"
+sync_properties_identity_key_v2,,"CREATE OR REPLACE FUNCTION public.sync_properties_identity_key_v2()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  if new.raw is null then
+    new.raw := '{}'::jsonb;
+  end if;
+
+  new.registration_identity_key_v2 := nullif(
+    btrim(public.compute_property_registration_identity_key_v2(new.address, new.raw)),
+    ''
+  );
+
+  new.registration_identity_confidence := public.compute_property_registration_confidence_v2(new.address, new.raw);
+
+  return new;
+end;
+$function$
+"
+touch_property_photos_updated_at,,"CREATE OR REPLACE FUNCTION public.touch_property_photos_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$function$
+"
