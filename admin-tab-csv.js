@@ -12,6 +12,92 @@
     return { rt, state: rt.state || {}, els: rt.els || {}, K: rt.K, api: rt.adminApi, utils: rt.utils || {} };
   }
 
+  function normalizeCompactText(value) {
+    return String(value || "").replace(/\s+/g, "").trim();
+  }
+
+  function normalizeFloorDigits(value) {
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!digits) return "";
+    const trimmed = digits.replace(/^0+/, "") || "0";
+    if (trimmed === "0") return "1";
+    if (trimmed.length <= 2) return String(Number(trimmed));
+    return trimmed.slice(0, -2).replace(/^0+/, "") || "1";
+  }
+
+  function extractGroundFloorFromRoom(text) {
+    const src = normalizeCompactText(text);
+    if (!src) return "";
+    const match = src.match(/(?:^|[^0-9A-Za-z가-힣])(\d{3,5})호(?:$|[^0-9])/u)
+      || src.match(/제(\d{3,5})호/u);
+    if (!match) return "";
+    return normalizeFloorDigits(match[1]);
+  }
+
+  function extractBasementFloorFromRoom(text) {
+    const src = normalizeCompactText(text);
+    if (!src) return "";
+    const match = src.match(/(?:제)?[Bb](\d{1,5})호?/u)
+      || src.match(/(?:제)?비(\d{1,5})호?/u);
+    if (!match) return "";
+    const floorDigits = normalizeFloorDigits(match[1]);
+    return floorDigits ? `B${floorDigits}` : "";
+  }
+
+  function extractFloorLabelFromTexts(...texts) {
+    const candidates = texts
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    for (const text of candidates) {
+      const compact = normalizeCompactText(text);
+      if (!compact) continue;
+
+      if (/지하층제?\d+호/u.test(compact) || /지하층\d+호/u.test(compact)) {
+        return "B1";
+      }
+
+      let match = compact.match(/(?:제)?지하(\d+)층/u)
+        || compact.match(/(?:제)?지(\d+)층/u)
+        || compact.match(/지층(\d+)/u)
+        || compact.match(/(?:^|[^가-힣A-Za-z0-9])지(\d+)(?:$|[^0-9])/u);
+      if (match) return `B${Number(match[1])}`;
+
+      const basementRoomFloor = extractBasementFloorFromRoom(compact);
+      if (basementRoomFloor) return basementRoomFloor;
+    }
+
+    for (const text of candidates) {
+      const compact = normalizeCompactText(text);
+      if (!compact) continue;
+
+      let match = compact.match(/제(\d+)층/u)
+        || compact.match(/지상(\d+)층/u)
+        || compact.match(/(\d+)층/u);
+      if (match) return String(Number(match[1]));
+
+      const roomFloor = extractGroundFloorFromRoom(compact);
+      if (roomFloor) return roomFloor;
+    }
+
+    return "전체";
+  }
+
+  function extractTotalFloorFromTexts(...texts) {
+    const candidates = texts
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    for (const text of candidates) {
+      const compact = normalizeCompactText(text);
+      if (!compact) continue;
+      const match = compact.match(/(?:슬래브|스라브|평슬래브|지붕|건물|판매시설및업무시설|판매시설및근린생활시설|점포및사무실|근린생활시설|업무시설)(\d+)층/u)
+        || compact.match(/(\d+)층건물/u)
+        || compact.match(/(?:철근콘크리트조|콘크리트조|벽돌조|철골조)(\d+)층/u);
+      if (match) return String(Number(match[1]));
+    }
+    return null;
+  }
+
   mod.handleCsvUpload = async function handleCsvUpload() {
     const { state, els, K, api, utils } = ctx();
     const {
@@ -170,31 +256,43 @@
     if (sourceType === "auction") {
       const caseNo = pick("사건번호", "caseNo", "");
       const propNo = pick("물건번호", "");
+      const buildingDetail = pick("건물상세", "물건명", "건물명", "상세");
+      const auctionStatusText = pick("경매현황", "비고", "memo");
       if (caseNo && propNo) itemNo = propNo.includes(caseNo) ? propNo : `${caseNo}(${propNo})`;
       else itemNo = caseNo || propNo || pick("itemNo", "");
       address = pick("주소(시군구동)", "주소", "소재지", "address");
       status = pick("진행상태", "상태", "status");
       priceMain = toNum(pick("감정가", "감정가(원)", "priceMain"));
-      lowprice = toNum(pick("최저가", "매각가", "lowprice")) || null;
+      const salePrice = toNum(pick("매각가", "salePrice"));
+      const lowestPrice = toNum(pick("최저가", "lowprice"));
+      lowprice = salePrice || lowestPrice || null;
       assetType = pick("종별", "부동산유형", "assetType");
       dateMain = toISO(pick("입찰일자", "입찰일", "dateMain")) || null;
-      memo = pick("경매현황", "비고", "memo");
-      const area = parseAuctionAreas(memo);
-      exclusiveArea = area.building;
+      memo = [auctionStatusText, pick("비고", "memo"), pick("담당법원", "court"), pick("담당계", "division")]
+        .filter(Boolean)
+        .join(" / ");
+      const area = parseAuctionAreas(auctionStatusText);
+      exclusiveArea = area.building || (pick("면적(㎡)") ? m2ToPyeong(pick("면적(㎡)")) : null);
       siteArea = area.site;
+      floor = extractFloorLabelFromTexts(buildingDetail, address, auctionStatusText);
+      totalfloor = extractTotalFloorFromTexts(auctionStatusText);
     } else if (sourceType === "onbid") {
+      const itemName = pick("물건명", "재산명", "물건상세", "건물상세");
+      const detailText = pick("상세설명", "물건상세", "건물상세", "비고", "특이사항", "메모", "memo");
       itemNo = pick("물건관리번호", "itemNo", "물건번호");
       address = pick("소재지", "주소", "address", "물건명");
       status = pick("물건상태", "상태", "status");
       priceMain = toNum(pick("감정가(원)", "감정가", "priceMain"));
-      lowprice = toNum(pick("최저입찰가(원)", "lowprice")) || null;
+      lowprice = toNum(pick("최저입찰가(원)", "최저가", "lowprice")) || null;
       assetType = pick("용도", "부동산유형", "assetType");
-      dateMain = pick("입찰마감일시", "입찰마감", "dateMain") || null;
-      memo = pick("비고", "특이사항", "메모", "memo");
+      dateMain = toISO(pick("입찰마감일시", "입찰마감", "dateMain")) || pick("입찰마감일시", "입찰마감", "dateMain") || null;
+      memo = detailText;
       const bM2 = pick("건물 면적(㎡)", "건물 면적(m²)", "건물 면적(m2)", "건물면적(㎡)");
       const tM2 = pick("토지 면적(㎡)", "토지 면적(m²)", "토지 면적(m2)", "토지면적(㎡)");
       if (bM2) exclusiveArea = m2ToPyeong(bM2);
       if (tM2) siteArea = m2ToPyeong(tM2);
+      floor = extractFloorLabelFromTexts(itemName, detailText, address, memo);
+      totalfloor = extractTotalFloorFromTexts(detailText, memo);
     } else {
       itemNo = pick("매물ID", "itemNo", "물건번호");
       address = pick("주소(통합)", "도로명주소", "지번주소", "주소", "address");
@@ -203,8 +301,8 @@
       assetType = pick("세부유형", "부동산유형명", "부동산유형", "assetType");
       sourceUrl = pick("바로가기(엑셀)", "매물URL", "sourceUrl", "url");
       memo = pick("매물특징", "memo");
-      floor = pick("해당층", "층수", "floor") || null;
-      totalfloor = pick("총층", "전체층", "totalfloor") || null;
+      floor = pick("해당층", "층수", "floor") || extractFloorLabelFromTexts(pick("매물명", "제목", "itemName"), address, memo);
+      totalfloor = pick("총층", "전체층", "totalfloor") || extractTotalFloorFromTexts(memo) || null;
       const ex = pick("전용면적(평)", "전용면적", "exclusiveArea");
       const common = pick("공용면적(평)", "공급/계약면적(평)", "공급면적(평)", "commonArea");
       if (ex) exclusiveArea = toNum(ex);
@@ -249,9 +347,19 @@
       source,
       source_type: sourceType,
       address: m.address || null,
+      asset_type: m.assetType || null,
+      floor: m.floor || null,
+      total_floor: m.totalfloor || null,
+      common_area: toNullNum(m.commonArea),
+      exclusive_area: toNullNum(m.exclusiveArea),
+      site_area: toNullNum(m.siteArea),
+      use_approval: m.useApproval || null,
       status: m.status || null,
       price_main: toNullNum(m.priceMain),
       lowprice: toNullNum(m.lowprice),
+      date_main: m.dateMain || null,
+      source_url: m.sourceUrl || null,
+      memo: m.memo || null,
       latitude: toNullNum(m.latitude),
       longitude: toNullNum(m.longitude),
       raw: normalizedRaw,
