@@ -83,6 +83,49 @@
     return "전체";
   }
 
+
+  const CSV_IMPORT_ALLOWED_COLUMNS = new Set([
+    "global_id",
+    "item_no",
+    "source",
+    "source_type",
+    "is_general",
+    "submitter_type",
+    "submitter_name",
+    "submitter_phone",
+    "broker_office_name",
+    "assignee_id",
+    "assignee_name",
+    "address",
+    "asset_type",
+    "floor",
+    "total_floor",
+    "common_area",
+    "exclusive_area",
+    "site_area",
+    "use_approval",
+    "status",
+    "price_main",
+    "lowprice",
+    "date_main",
+    "source_url",
+    "memo",
+    "latitude",
+    "longitude",
+    "raw",
+  ]);
+
+  function sanitizePropertyImportRow(row) {
+    const src = row && typeof row === "object" ? row : {};
+    const clean = {};
+    CSV_IMPORT_ALLOWED_COLUMNS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(src, key)) clean[key] = src[key];
+    });
+    if (!Object.prototype.hasOwnProperty.call(clean, "raw") || !clean.raw || typeof clean.raw !== "object") {
+      clean.raw = {};
+    }
+    return clean;
+  }
   function extractTotalFloorFromTexts(...texts) {
     const candidates = texts
       .map((value) => String(value || "").trim())
@@ -159,12 +202,12 @@
           const existing = matchKey ? workingByKey.get(matchKey) : null;
           if (existing) {
             const merged = buildRegistrationDbRowForExisting(existing, row, regContext);
-            finalRows.push(merged.row);
+            finalRows.push(sanitizePropertyImportRow(merged.row));
             workingByKey.set(matchKey, normalizeProperty({ ...merged.row, raw: merged.row.raw }));
             if (merged.changes.length) regUpdatedCount += 1;
           } else {
             const created = buildRegistrationDbRowForCreate(row, regContext);
-            finalRows.push(created);
+            finalRows.push(sanitizePropertyImportRow(created));
             if (matchKey) workingByKey.set(matchKey, normalizeProperty({ ...created, raw: created.raw }));
           }
         }
@@ -378,7 +421,7 @@
 
   mod.upsertPropertiesResilient = async function upsertPropertiesResilient(sb, rows, { chunkSize = 200 } = {}) {
     if (DataAccess && typeof DataAccess.upsertPropertiesResilient === "function") {
-      return DataAccess.upsertPropertiesResilient(sb, rows, { chunkSize, onConflict: "global_id" });
+      return DataAccess.upsertPropertiesResilient(sb, (Array.isArray(rows) ? rows : []).map(sanitizePropertyImportRow), { chunkSize, onConflict: "global_id" });
     }
     throw new Error("KNSN_DATA_ACCESS.upsertPropertiesResilient 를 찾을 수 없습니다.");
   };
