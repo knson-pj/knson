@@ -394,12 +394,11 @@
     rightsAnalysis: "rights_analysis",
     siteInspection: "site_inspection",
     dailyIssue: "daily_issue",
-    propertyUpdate: "property_update",
     newProperty: "new_property",
   };
 
   function emptyDailyReportCounts() {
-    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, propertyUpdate: 0, newProperty: 0 };
+    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 };
   }
 
   function getSessionToken() {
@@ -811,27 +810,9 @@
       propertyItemNo: propertyItemNo || null,
       propertyAddress: propertyAddress || null,
       changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
-      note: key === "dailyIssue"
-        ? (String(options.dailyIssueText || "").trim() || null)
-        : key === "propertyUpdate"
-          ? (String(options.propertyUpdateNote || "").trim() || null)
-          : (String(options.noteByKey?.[key] || "").trim() || null),
+      note: key === "dailyIssue" ? (String(options.dailyIssueText || "").trim() || null) : null,
       actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
     }));
-  }
-
-  function buildPropertyUpdateActivityNote(changeSet) {
-    const changes = Array.isArray(changeSet?.changes) ? changeSet.changes.filter(Boolean) : [];
-    if (!changes.length) return '';
-    const lines = changes.slice(0, 6).map((change) => {
-      const label = String(change?.label || change?.field || '').trim() || '항목';
-      const before = String(change?.beforeDisplay || change?.before || '').trim() || '빈값';
-      const after = String(change?.afterDisplay || change?.after || '').trim() || '빈값';
-      return `${label}: ${before} → ${after}`;
-    });
-    if (changes.length > lines.length) lines.push(`외 ${changes.length - lines.length}건`);
-    const summary = String(changeSet?.summary || '').trim();
-    return [summary, ...lines].filter(Boolean).join('\n');
   }
 
   async function recordDailyReportEntries(entries) {
@@ -1483,6 +1464,8 @@
       sourceType: base.sourceType,
       itemNo: base.itemNo,
       address: base.address,
+      sourceNoteLabel: base.sourceNoteLabel,
+      sourceNoteText: base.sourceNoteText,
       assetType: base.assetType,
       floor: base.floor,
       totalfloor: base.totalfloor,
@@ -1812,6 +1795,13 @@ function renderPagination(totalPages) {
   function getAgentEditableSnapshot(item) {
     const raw = item?._raw?.raw || {};
     const row = item?._raw || {};
+    const sourceType = item?.sourceType || row?.source_type || raw.sourceType || raw.source_type || "";
+    const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === "function"
+      ? PropertyDomain.usesDedicatedSourceNote(sourceType)
+      : ["auction", "realtor"].includes(String(sourceType || "").trim().toLowerCase());
+    const sourceNoteInfo = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === "function"
+      ? PropertyDomain.extractDedicatedSourceNote(sourceType, item, raw)
+      : { label: "", text: "" };
     return {
       floor: firstText(raw.floor, row.floor, item?.floor, ""),
       totalfloor: firstText(raw.totalfloor, raw.total_floor, raw.totalFloor, row.total_floor, row.totalfloor, item?.totalfloor, ""),
@@ -1825,7 +1815,11 @@ function renderPagination(totalPages) {
       rightsAnalysis: firstText(raw.rightsAnalysis, raw.rights_analysis, item?.rightsAnalysis, ""),
       siteInspection: firstText(raw.siteInspection, raw.site_inspection, item?.siteInspection, ""),
       dailyIssue: firstText(raw.dailyIssue, raw.daily_issue, ""),
-      opinion: firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
+      opinion: preserveImportedMemo
+        ? firstText(raw.opinion, item?.opinion, "")
+        : firstText(raw.opinion, raw.memo, row.memo, item?.opinion, ""),
+      sourceNoteLabel: sourceNoteInfo.label,
+      sourceNoteText: sourceNoteInfo.text,
       realtorName: firstText(raw.realtorName, raw.realtorname, row.broker_office_name, item?._raw?.broker_office_name, ""),
       realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, item?._raw?.realtor_phone, ""),
       realtorCell: firstText(raw.realtorCell, raw.realtorcell, row.submitter_phone, item?._raw?.submitter_phone, ""),
@@ -1862,29 +1856,23 @@ function renderPagination(totalPages) {
 
 
   function arrangeAgentOpinionFields(form) {
-    if (!form || !PropertyRenderers || typeof PropertyRenderers.findFieldShell !== 'function') return null;
-    const grid = form.querySelector('[data-opinion-grid="agent"]') || form.querySelector('[data-edit-section="opinion"] .edit-opinion-grid');
-    const ensureShell = (fieldName, label) => {
-      const shell = PropertyRenderers.findFieldShell(form, fieldName, { shellSelectors: [`[data-opinion-field="${fieldName}"]`, '[data-ag-field]', '.form-field', '.field'] });
-      if (!shell) return null;
-      PropertyRenderers.ensureTextareaField?.(form, fieldName, shell, { textareaClass: 'ag-textarea', rows: 8 });
-      PropertyRenderers.setFieldLabel?.(shell, label);
-      shell.classList.remove('hidden');
-      shell.hidden = false;
-      shell.style.display = '';
-      shell.style.gridColumn = '';
-      shell.classList.add('edit-opinion-field');
-      return shell;
-    };
-    const dailyIssueShell = ensureShell('dailyIssue', '금일 이슈사항');
-    const siteShell = ensureShell('siteInspection', '현장실사');
-    const opinionShell = ensureShell('opinion', '담당자 의견');
-    if (grid) {
-      if (dailyIssueShell) grid.appendChild(dailyIssueShell);
-      if (siteShell) grid.appendChild(siteShell);
-      if (opinionShell) grid.appendChild(opinionShell);
+    if (PropertyRenderers && typeof PropertyRenderers.arrangeOpinionFields === 'function') {
+      return PropertyRenderers.arrangeOpinionFields(form, {
+        shellSelectors: ['[data-ag-field]', '.form-field'],
+        textareaClass: 'ag-textarea',
+      });
     }
-    return { dailyIssueShell, siteShell, opinionShell };
+    return null;
+  }
+
+  function applyAgentSourceNoteField(form, view) {
+    if (!form) return;
+    const wrap = form.querySelector('[data-ag-source-note]');
+    const label = wrap?.querySelector('[data-ag-source-note-label]');
+    const text = String(view?.sourceNoteText || '').trim();
+    setVal(form, 'sourceNoteDisplay', text);
+    if (wrap) wrap.classList.toggle('hidden', !text);
+    if (label) label.textContent = view?.sourceNoteLabel || '원본 참고';
   }
 
   function applyAgentEditFormMode(item, view) {
@@ -1922,6 +1910,7 @@ function renderPagination(totalPages) {
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
     setVal(f, "address", item.address);
+    applyAgentSourceNoteField(f, view);
     setVal(f, "floor", view.floor);
     setVal(f, "totalfloor", view.totalfloor);
     setVal(f, "useapproval", formatDate(view.useapproval));
@@ -1945,7 +1934,7 @@ function renderPagination(totalPages) {
     });
 
     setAgentEditMsg('', true);
-    renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item), loadPropertyEditChangeSets(item));
+    renderCombinedPropertyLog(els.agCombinedLogList, loadOpinionHistory(item), loadRegistrationLog(item));
     applyAgentEditFormMode(item, view);
     arrangeAgentOpinionFields(f);
     setAgentEditSection("basic");
@@ -2003,8 +1992,7 @@ function renderPagination(totalPages) {
     const priceMainVal = readNum("priceMain");
     const currentPriceVal = readNum("currentPrice");
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
-
-    patch.memo = [...opinionHistory].reverse().find((entry) => String(entry?.kind || "opinion").trim() === "opinion")?.text || item.opinion || null;
+    const latestOpinionText = [...opinionHistory].reverse().find((entry) => String(entry?.kind || "opinion").trim() === "opinion")?.text || item.opinion || null;
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
@@ -2019,6 +2007,12 @@ function renderPagination(totalPages) {
       if (!targetId) throw new Error("수정 대상 물건 식별자를 찾을 수 없습니다.");
 
       const existingRaw = sanitizePropertyRawForSave(item._raw?.raw || {});
+      const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === "function"
+        ? PropertyDomain.usesDedicatedSourceNote(item?.sourceType || item?._raw?.source_type || existingRaw?.source_type || existingRaw?.sourceType || "")
+        : ["auction", "realtor"].includes(String(item?.sourceType || item?._raw?.source_type || existingRaw?.source_type || existingRaw?.sourceType || "").trim().toLowerCase());
+      patch.memo = preserveImportedMemo
+        ? (item?._raw?.memo ?? item?._raw?.raw?.memo ?? existingRaw.memo ?? null)
+        : latestOpinionText;
       const normalizedSourceType = (PropertyDomain && typeof PropertyDomain.normalizeSourceType === "function")
         ? PropertyDomain.normalizeSourceType(
             item?.sourceType || item?._raw?.source_type || existingRaw.source_type || existingRaw.sourceType || "",
@@ -2037,7 +2031,7 @@ function renderPagination(totalPages) {
       }
       if (normalizedSubmitterType) patch.submitter_type = normalizedSubmitterType;
 
-      let newRaw = sanitizePropertyRawForSave(existingRaw, {
+      const newRaw = sanitizePropertyRawForSave(existingRaw, {
         ...(normalizedSourceType ? {
           sourceType: normalizedSourceType,
           source_type: normalizedSourceType,
@@ -2058,38 +2052,13 @@ function renderPagination(totalPages) {
         dateMain: dateMainVal,
         rightsAnalysis: rightsVal,
         siteInspection: siteVal,
-        ...(patch.memo !== undefined ? { opinion: patch.memo, memo: patch.memo } : {}),
+        opinion: latestOpinionText,
+        ...(preserveImportedMemo
+          ? { memo: existingRaw.memo ?? null }
+          : { memo: patch.memo }),
         ...(newDailyIssueText ? { dailyIssue: newDailyIssueText, daily_issue: newDailyIssueText } : {}),
         opinionHistory,
       });
-      const editLogEntry = PropertyDomain && typeof PropertyDomain.buildPropertyEditChangeSet === 'function'
-        ? PropertyDomain.buildPropertyEditChangeSet(item, {
-            ...item,
-            floor: floorVal,
-            totalfloor: totalFloorVal,
-            useapproval: useApprovalVal,
-            commonarea: commonAreaVal,
-            exclusivearea: exclusiveAreaVal,
-            sitearea: siteAreaVal,
-            priceMain: priceMainVal,
-            currentPrice: currentPriceVal,
-            dateMain: dateMainVal,
-            siteInspection: siteVal,
-            dailyIssue: newDailyIssueText || getLatestHistoryText(item, 'dailyIssue') || null,
-            opinion: patch.memo,
-            raw: newRaw,
-            _raw: { ...(item?._raw || {}), raw: newRaw },
-          }, {
-            at: new Date().toISOString(),
-            actor: String(state.session?.user?.name || state.session?.user?.email || '').trim(),
-            actorId: currentUserId,
-            actorRole: String(state.session?.user?.role || '').trim(),
-            source: 'edit_form',
-          })
-        : null;
-      if (editLogEntry && PropertyDomain && typeof PropertyDomain.appendPropertyEditChangeSet === 'function') {
-        newRaw = PropertyDomain.appendPropertyEditChangeSet(newRaw, editLogEntry);
-      }
 
       maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
       maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
@@ -2112,10 +2081,6 @@ function renderPagination(totalPages) {
         workCategories.push("dailyIssue");
         changedFields.dailyIssue = ["dailyIssue"];
       }
-      if (editLogEntry && Array.isArray(editLogEntry.changes) && editLogEntry.changes.length) {
-        workCategories.push("propertyUpdate");
-        changedFields.propertyUpdate = editLogEntry.changes.map((change) => String(change.field || '').trim()).filter(Boolean);
-      }
       patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
@@ -2133,7 +2098,7 @@ function renderPagination(totalPages) {
             totalfloor: totalFloorVal || item.totalfloor,
             rightsAnalysis: rightsVal || item.rightsAnalysis,
             siteInspection: siteVal || item.siteInspection,
-            opinion: patch.memo || item.opinion,
+            opinion: latestOpinionText,
             dailyIssue: newDailyIssueText || item.dailyIssue,
             _raw: { ...(item._raw || {}), raw: newRaw },
           }, {
@@ -2141,7 +2106,6 @@ function renderPagination(totalPages) {
             identityKey: newRaw.registrationIdentityKey || buildRegistrationMatchKey({ ...item, raw: newRaw, _raw: { ...(item._raw || {}), raw: newRaw } }),
             changedFields,
             dailyIssueText: newDailyIssueText,
-            propertyUpdateNote: buildPropertyUpdateActivityNote(editLogEntry),
           }));
         } catch (logErr) {
           activityError = logErr?.message || "일일업무일지 기록 실패";
@@ -2699,49 +2663,30 @@ function renderPagination(totalPages) {
     });
   }
 
-  function renderCombinedPropertyLog(container, opinionHistory, registrationLog, propertyEditHistory) {
+  function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
     if (!container) return;
-    const list = PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLog === "function"
-      ? PropertyDomain.buildCombinedPropertyLog(opinionHistory, registrationLog, propertyEditHistory)
-      : buildCombinedPropertyLog(opinionHistory, registrationLog);
+    const list = buildCombinedPropertyLog(opinionHistory, registrationLog);
     if (!list.length) {
       container.innerHTML = '<div class="history-empty">표시할 LOG가 없습니다.</div>';
       return;
     }
-    const escHtml = esc;
-    const sectionLabel = (section) => ({ detail: '물건상세', opinion: '담당자의견', photos: '사진' }[String(section || '').trim()] || String(section || '').trim());
-    const renderChangeValue = (value, fallback = '빈값') => {
-      const text = String(value || '').trim();
-      return escHtml(text || fallback);
-    };
-    const renderDetailRows = (changes) => {
-      if (!changes.length) return '';
-      return `<div class="property-log-detail-list">${changes.map((change) => `<div class="property-log-detail-row"><div class="property-log-detail-label">${escHtml(change.label || '')}</div><div class="property-log-detail-values"><div class="property-log-value-pill is-before">${renderChangeValue(change.beforeDisplay || change.before || '', '빈값')}</div><span class="property-log-detail-arrow">→</span><div class="property-log-value-pill is-after">${renderChangeValue(change.afterDisplay || change.after || '', '빈값')}</div></div></div>`).join('')}</div>`;
-    };
-    const renderOpinionRows = (changes) => changes.map((change) => `<div class="property-log-text-card"><div class="property-log-text-title">${escHtml(change.label || '')}</div><div class="property-log-text-grid"><div class="property-log-text-box is-before"><div class="property-log-text-label">이전</div><div class="property-log-text-value">${renderChangeValue(change.beforeDisplay || change.before || '', '빈값')}</div></div><div class="property-log-text-box is-after"><div class="property-log-text-label">변경</div><div class="property-log-text-value">${renderChangeValue(change.afterDisplay || change.after || '', '빈값')}</div></div></div></div>`).join('');
-    const renderMeta = (entry) => `<div class="property-log-meta">${[
-      `<span class="agent-combined-log-badge ${escHtml(entry.badgeClass || '')}">${escHtml(entry.badgeLabel || '')}</span>`,
-      entry.at ? `<span class="agent-combined-log-date">${escHtml(formatRegLogAt(entry.at))}</span>` : '',
-      entry.author ? `<span class="agent-combined-log-author">${escHtml(entry.author)}</span>` : '',
-    ].filter(Boolean).join('')}</div>`;
-    const renderRegistrationCard = (entry) => {
-      const titleHtml = entry.title ? `<div class="property-log-static-title">${escHtml(entry.title)}</div>` : '';
-      const bodyHtml = entry.changes?.length
-        ? renderDetailRows(entry.changes)
-        : '<div class="property-log-static-note">변경 없음</div>';
-      return `<article class="property-log-card is-static"><div class="property-log-static-head">${renderMeta(entry)}</div><div class="property-log-static-body">${titleHtml}${bodyHtml}</div></article>`;
-    };
-    const renderOpinionCard = (entry) => `<article class="property-log-card is-static"><div class="property-log-static-head">${renderMeta(entry)}</div><div class="property-log-static-body"><div class="property-log-static-note">${escHtml(entry.text || '')}</div></div></article>`;
-    container.innerHTML = list.map((entry, index) => {
-      if (entry.kind === 'opinion') return renderOpinionCard(entry);
-      if (entry.kind === 'registration') return renderRegistrationCard(entry);
-      const detailChanges = (entry.changes || []).filter((change) => change.section === 'detail');
-      const opinionChanges = (entry.changes || []).filter((change) => change.section === 'opinion');
-      const chips = (Array.isArray(entry.sections) ? entry.sections : []).map((section) => `<span class="property-log-chip">${escHtml(sectionLabel(section))} ${Number(entry.counts?.[section] || 0)}</span>`).join('');
-      const detailSection = detailChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">물건상세</div>${renderDetailRows(detailChanges)}</section>` : '';
-      const opinionSection = opinionChanges.length ? `<section class="property-log-section"><div class="property-log-section-title">담당자의견</div>${renderOpinionRows(opinionChanges)}</section>` : '';
-      return `<details class="property-log-card" ${index === 0 ? 'open' : ''}><summary class="property-log-summary"><div class="property-log-summary-main">${renderMeta(entry)}<div class="property-log-summary-title">${escHtml(entry.title || entry.summary || '수정 이력')}</div><div class="property-log-chip-row">${chips}</div></div><span class="property-log-toggle" aria-hidden="true">⌄</span></summary><div class="property-log-body">${detailSection}${opinionSection}</div></details>`;
-    }).join('');
+    container.innerHTML = list.map((entry) => {
+      const headBits = [
+        `<span class="agent-combined-log-badge ${esc(entry.badgeClass || "")}">${esc(entry.badgeLabel || "")}</span>`,
+        entry.at ? `<span class="agent-combined-log-date">${esc(formatRegLogAt(entry.at))}</span>` : "",
+        entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : "",
+      ].filter(Boolean).join("");
+
+      if (entry.kind === "opinion") {
+        return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
+      }
+
+      const titleHtml = entry.title ? `<div class="agent-combined-log-text">${esc(entry.title)}</div>` : "";
+      const changesHtml = entry.changes?.length
+        ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
+        : "";
+      return `<div class="agent-combined-log-item"><div class="agent-combined-log-head">${headBits}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml || '<div class="agent-combined-log-text">변경 없음</div>'}</div></div>`;
+    }).join("");
   }
 
   function renderRegistrationLog(container, history) {
@@ -2790,12 +2735,6 @@ function renderPagination(totalPages) {
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     const author = String(user?.name || user?.email || "").trim();
     return [...(Array.isArray(history) ? history : []), { date: today, text, author, kind: String(options.kind || "opinion").trim() || "opinion" }];
-  }
-
-  function loadPropertyEditChangeSets(item) {
-    if (PropertyDomain && typeof PropertyDomain.loadPropertyEditChangeSets === "function") return PropertyDomain.loadPropertyEditChangeSets(item);
-    const raw = item?._raw?.raw || {};
-    return Array.isArray(raw.propertyEditLogs) ? raw.propertyEditLogs : [];
   }
 
   function getLatestHistoryText(item, kind) {
@@ -2847,7 +2786,6 @@ function renderPagination(totalPages) {
     if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
     if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장조사", title: "현장조사" };
     if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈", title: "금일 이슈사항" };
-    if (key === "property_update") return { badgeClass: "is-edit", badgeLabel: "물건수정", title: "물건정보수정" };
     if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
     return { badgeClass: "is-edit", badgeLabel: "업무", title: "업무 수정" };
   }

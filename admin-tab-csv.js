@@ -12,203 +12,6 @@
     return { rt, state: rt.state || {}, els: rt.els || {}, K: rt.K, api: rt.adminApi, utils: rt.utils || {} };
   }
 
-  function normalizeCompactText(value) {
-    return String(value || "").replace(/\s+/g, "").trim();
-  }
-
-  function normalizeFloorDigits(value) {
-    const digits = String(value || "").replace(/\D/g, "");
-    if (!digits) return "";
-    const trimmed = digits.replace(/^0+/, "") || "0";
-    if (trimmed === "0") return "1";
-    if (trimmed.length <= 2) return String(Number(trimmed));
-    return trimmed.slice(0, -2).replace(/^0+/, "") || "1";
-  }
-
-  function extractGroundFloorFromRoom(text) {
-    const src = normalizeCompactText(text);
-    if (!src) return "";
-    const match = src.match(/(?:^|[^0-9A-Za-z가-힣])(\d{3,5})호(?:$|[^0-9])/u)
-      || src.match(/제(\d{3,5})호/u);
-    if (!match) return "";
-    return normalizeFloorDigits(match[1]);
-  }
-
-  function extractBasementFloorFromRoom(text) {
-    const src = normalizeCompactText(text);
-    if (!src) return "";
-    const match = src.match(/(?:제)?[Bb](\d{1,5})호?/u)
-      || src.match(/(?:제)?비(\d{1,5})호?/u);
-    if (!match) return "";
-    const floorDigits = normalizeFloorDigits(match[1]);
-    return floorDigits ? `B${floorDigits}` : "";
-  }
-
-  function extractFloorLabelFromTexts(...texts) {
-    const candidates = texts
-      .map((value) => String(value || "").trim())
-      .filter(Boolean);
-
-    for (const text of candidates) {
-      const compact = normalizeCompactText(text);
-      if (!compact) continue;
-
-      if (/지하층제?\d+호/u.test(compact) || /지하층\d+호/u.test(compact)) {
-        return "B1";
-      }
-
-      let match = compact.match(/(?:제)?지하(\d+)층/u)
-        || compact.match(/(?:제)?지(\d+)층/u)
-        || compact.match(/지층(\d+)/u)
-        || compact.match(/(?:^|[^가-힣A-Za-z0-9])지(\d+)(?:$|[^0-9])/u);
-      if (match) return `B${Number(match[1])}`;
-
-      const basementRoomFloor = extractBasementFloorFromRoom(compact);
-      if (basementRoomFloor) return basementRoomFloor;
-    }
-
-    for (const text of candidates) {
-      const compact = normalizeCompactText(text);
-      if (!compact) continue;
-
-      let match = compact.match(/제(\d+)층/u)
-        || compact.match(/지상(\d+)층/u)
-        || compact.match(/(\d+)층/u);
-      if (match) return String(Number(match[1]));
-
-      const roomFloor = extractGroundFloorFromRoom(compact);
-      if (roomFloor) return roomFloor;
-    }
-
-    return "전체";
-  }
-
-
-  const CSV_IMPORT_ALLOWED_COLUMNS = new Set([
-    "global_id",
-    "item_no",
-    "source",
-    "source_type",
-    "is_general",
-    "submitter_type",
-    "submitter_name",
-    "submitter_phone",
-    "broker_office_name",
-    "assignee_id",
-    "assignee_name",
-    "address",
-    "asset_type",
-    "floor",
-    "total_floor",
-    "common_area",
-    "exclusive_area",
-    "site_area",
-    "use_approval",
-    "status",
-    "price_main",
-    "lowprice",
-    "date_main",
-    "source_url",
-    "memo",
-    "latitude",
-    "longitude",
-    "raw",
-  ]);
-
-  function sanitizePropertyImportRow(row) {
-    const src = row && typeof row === "object" ? row : {};
-    const clean = {};
-    CSV_IMPORT_ALLOWED_COLUMNS.forEach((key) => {
-      if (Object.prototype.hasOwnProperty.call(src, key)) clean[key] = src[key];
-    });
-    if (!Object.prototype.hasOwnProperty.call(clean, "raw") || !clean.raw || typeof clean.raw !== "object") {
-      clean.raw = {};
-    }
-    return clean;
-  }
-
-
-  function pushImportOutcomeEntry(entries, row, meta = {}) {
-    const safeRow = sanitizePropertyImportRow(row);
-    const safeMeta = meta && typeof meta === "object" ? meta : {};
-    entries.push({
-      row: safeRow,
-      action: String(safeMeta.action || "").trim() || "create",
-      incomingItemNo: String(safeMeta.incomingItemNo || safeRow.item_no || "").trim(),
-      incomingGlobalId: String(safeMeta.incomingGlobalId || safeRow.global_id || "").trim(),
-      matchKey: String(safeMeta.matchKey || "").trim(),
-      changedFieldCount: Number(safeMeta.changedFieldCount || 0) || 0,
-    });
-  }
-
-  function collapseImportOutcomeEntries(entries) {
-    const orderedEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
-    const byGlobalId = new Map();
-    for (const entry of orderedEntries) {
-      const key = String(entry?.row?.global_id || "").trim();
-      if (!key) continue;
-      const existing = byGlobalId.get(key);
-      if (existing) {
-        existing.row = entry.row;
-        existing.lastAction = entry.action;
-        existing.matchKey = entry.matchKey || existing.matchKey || "";
-        existing.changedFieldCount = Math.max(existing.changedFieldCount || 0, Number(entry.changedFieldCount || 0) || 0);
-        existing.actions.add(entry.action);
-        if (entry.incomingItemNo) existing.incomingItemNos.add(entry.incomingItemNo);
-        if (entry.incomingGlobalId) existing.incomingGlobalIds.add(entry.incomingGlobalId);
-        existing.entryCount += 1;
-      } else {
-        byGlobalId.set(key, {
-          row: entry.row,
-          globalId: key,
-          lastAction: entry.action,
-          matchKey: entry.matchKey || "",
-          changedFieldCount: Number(entry.changedFieldCount || 0) || 0,
-          actions: new Set([entry.action]),
-          incomingItemNos: new Set(entry.incomingItemNo ? [entry.incomingItemNo] : []),
-          incomingGlobalIds: new Set(entry.incomingGlobalId ? [entry.incomingGlobalId] : []),
-          entryCount: 1,
-        });
-      }
-    }
-
-    const groups = [...byGlobalId.values()];
-    const outcomeCounts = { create: 0, update: 0, noChange: 0 };
-    for (const group of groups) {
-      if (group.actions.has("create")) outcomeCounts.create += 1;
-      else if (group.actions.has("update")) outcomeCounts.update += 1;
-      else outcomeCounts.noChange += 1;
-    }
-    const duplicateCollapsedCount = Math.max(0, orderedEntries.length - groups.length);
-    return { groups, outcomeCounts, duplicateCollapsedCount };
-  }
-
-  function formatImportFailurePreview(failedList, limit = 5) {
-    const list = Array.isArray(failedList) ? failedList.slice(0, limit) : [];
-    return list.map((item) => {
-      const label = String(item?.itemNo || item?.globalId || "-").trim() || "-";
-      const message = String(item?.message || "").trim();
-      if (!message) return label;
-      const compact = message.replace(/\s+/g, " ").trim();
-      return `${label} (${compact.length > 60 ? `${compact.slice(0, 60)}…` : compact})`;
-    }).join(", ");
-  }
-
-  function extractTotalFloorFromTexts(...texts) {
-    const candidates = texts
-      .map((value) => String(value || "").trim())
-      .filter(Boolean);
-    for (const text of candidates) {
-      const compact = normalizeCompactText(text);
-      if (!compact) continue;
-      const match = compact.match(/(?:슬래브|스라브|평슬래브|지붕|건물|판매시설및업무시설|판매시설및근린생활시설|점포및사무실|근린생활시설|업무시설)(\d+)층/u)
-        || compact.match(/(\d+)층건물/u)
-        || compact.match(/(?:철근콘크리트조|콘크리트조|벽돌조|철골조)(\d+)층/u);
-      if (match) return String(Number(match[1]));
-    }
-    return null;
-  }
-
   mod.handleCsvUpload = async function handleCsvUpload() {
     const { state, els, K, api, utils } = ctx();
     const {
@@ -262,45 +65,30 @@
           const key = buildRegistrationMatchKey(buildRegistrationSnapshotFromItem(item));
           if (key && !workingByKey.has(key)) workingByKey.set(key, item);
         });
-        const outcomeEntries = [];
+        const finalRows = [];
+        let regUpdatedCount = 0;
         for (const row of dedupedRows) {
           const snap = buildRegistrationSnapshotFromDbRow(row);
           const matchKey = buildRegistrationMatchKey(snap);
           const existing = matchKey ? workingByKey.get(matchKey) : null;
           if (existing) {
             const merged = buildRegistrationDbRowForExisting(existing, row, regContext);
-            pushImportOutcomeEntry(outcomeEntries, merged.row, {
-              action: merged.changes.length ? "update" : "no_change",
-              incomingItemNo: row.item_no || row.raw?.itemNo || "",
-              incomingGlobalId: row.global_id || "",
-              matchKey,
-              changedFieldCount: merged.changes.length,
-            });
+            finalRows.push(merged.row);
             workingByKey.set(matchKey, normalizeProperty({ ...merged.row, raw: merged.row.raw }));
+            if (merged.changes.length) regUpdatedCount += 1;
           } else {
             const created = buildRegistrationDbRowForCreate(row, regContext);
-            pushImportOutcomeEntry(outcomeEntries, created, {
-              action: "create",
-              incomingItemNo: row.item_no || row.raw?.itemNo || "",
-              incomingGlobalId: row.global_id || "",
-              matchKey,
-            });
+            finalRows.push(created);
             if (matchKey) workingByKey.set(matchKey, normalizeProperty({ ...created, raw: created.raw }));
           }
         }
-
-        const collapsed = collapseImportOutcomeEntries(outcomeEntries);
-        const finalRows = collapsed.groups.map((group) => group.row);
         const importResult = await mod.upsertPropertiesResilient(sb, finalRows, { chunkSize: 200 });
-        const summaryParts = ["업로드 완료", `처리: ${importResult.okCount}건`];
-        if (collapsed.outcomeCounts.create > 0) summaryParts.push(`신규 등록: ${collapsed.outcomeCounts.create}건`);
-        if (collapsed.outcomeCounts.update > 0) summaryParts.push(`기존 물건 갱신(LOG): ${collapsed.outcomeCounts.update}건`);
-        if (collapsed.outcomeCounts.noChange > 0) summaryParts.push(`기존 물건 일치(변경없음): ${collapsed.outcomeCounts.noChange}건`);
+        const summaryParts = [`업로드 완료`, `처리: ${importResult.okCount}건`];
         if (dedupedInFile > 0) summaryParts.push(`파일내 중복 통합: ${dedupedInFile}건`);
-        if (collapsed.duplicateCollapsedCount > 0) summaryParts.push(`병합 후 중복 제외: ${collapsed.duplicateCollapsedCount}건`);
+        if (regUpdatedCount > 0) summaryParts.push(`기존 물건 갱신(LOG): ${regUpdatedCount}건`);
         if (importResult.failed.length > 0) {
-          summaryParts.push(`실제 실패: ${importResult.failed.length}건`);
-          const preview = formatImportFailurePreview(importResult.failed, 5);
+          summaryParts.push(`실패: ${importResult.failed.length}건`);
+          const preview = importResult.failed.slice(0, 5).map((v) => v.itemNo || v.globalId || "-").join(", ");
           if (preview) summaryParts.push(`실패 예시: ${preview}`);
         }
 
@@ -382,43 +170,31 @@
     if (sourceType === "auction") {
       const caseNo = pick("사건번호", "caseNo", "");
       const propNo = pick("물건번호", "");
-      const buildingDetail = pick("건물상세", "물건명", "건물명", "상세");
-      const auctionStatusText = pick("경매현황", "비고", "memo");
       if (caseNo && propNo) itemNo = propNo.includes(caseNo) ? propNo : `${caseNo}(${propNo})`;
       else itemNo = caseNo || propNo || pick("itemNo", "");
       address = pick("주소(시군구동)", "주소", "소재지", "address");
       status = pick("진행상태", "상태", "status");
       priceMain = toNum(pick("감정가", "감정가(원)", "priceMain"));
-      const salePrice = toNum(pick("매각가", "salePrice"));
-      const lowestPrice = toNum(pick("최저가", "lowprice"));
-      lowprice = salePrice || lowestPrice || null;
+      lowprice = toNum(pick("최저가", "매각가", "lowprice")) || null;
       assetType = pick("종별", "부동산유형", "assetType");
       dateMain = toISO(pick("입찰일자", "입찰일", "dateMain")) || null;
-      memo = [auctionStatusText, pick("비고", "memo"), pick("담당법원", "court"), pick("담당계", "division")]
-        .filter(Boolean)
-        .join(" / ");
-      const area = parseAuctionAreas(auctionStatusText);
-      exclusiveArea = area.building || (pick("면적(㎡)") ? m2ToPyeong(pick("면적(㎡)")) : null);
+      memo = pick("경매현황", "비고", "memo");
+      const area = parseAuctionAreas(memo);
+      exclusiveArea = area.building;
       siteArea = area.site;
-      floor = extractFloorLabelFromTexts(buildingDetail, address, auctionStatusText);
-      totalfloor = extractTotalFloorFromTexts(auctionStatusText);
     } else if (sourceType === "onbid") {
-      const itemName = pick("물건명", "재산명", "물건상세", "건물상세");
-      const detailText = pick("상세설명", "물건상세", "건물상세", "비고", "특이사항", "메모", "memo");
       itemNo = pick("물건관리번호", "itemNo", "물건번호");
       address = pick("소재지", "주소", "address", "물건명");
       status = pick("물건상태", "상태", "status");
       priceMain = toNum(pick("감정가(원)", "감정가", "priceMain"));
-      lowprice = toNum(pick("최저입찰가(원)", "최저가", "lowprice")) || null;
+      lowprice = toNum(pick("최저입찰가(원)", "lowprice")) || null;
       assetType = pick("용도", "부동산유형", "assetType");
-      dateMain = toISO(pick("입찰마감일시", "입찰마감", "dateMain")) || pick("입찰마감일시", "입찰마감", "dateMain") || null;
-      memo = detailText;
+      dateMain = pick("입찰마감일시", "입찰마감", "dateMain") || null;
+      memo = pick("비고", "특이사항", "메모", "memo");
       const bM2 = pick("건물 면적(㎡)", "건물 면적(m²)", "건물 면적(m2)", "건물면적(㎡)");
       const tM2 = pick("토지 면적(㎡)", "토지 면적(m²)", "토지 면적(m2)", "토지면적(㎡)");
       if (bM2) exclusiveArea = m2ToPyeong(bM2);
       if (tM2) siteArea = m2ToPyeong(tM2);
-      floor = extractFloorLabelFromTexts(itemName, detailText, address, memo);
-      totalfloor = extractTotalFloorFromTexts(detailText, memo);
     } else {
       itemNo = pick("매물ID", "itemNo", "물건번호");
       address = pick("주소(통합)", "도로명주소", "지번주소", "주소", "address");
@@ -427,8 +203,8 @@
       assetType = pick("세부유형", "부동산유형명", "부동산유형", "assetType");
       sourceUrl = pick("바로가기(엑셀)", "매물URL", "sourceUrl", "url");
       memo = pick("매물특징", "memo");
-      floor = pick("해당층", "층수", "floor") || extractFloorLabelFromTexts(pick("매물명", "제목", "itemName"), address, memo);
-      totalfloor = pick("총층", "전체층", "totalfloor") || extractTotalFloorFromTexts(memo) || null;
+      floor = pick("해당층", "층수", "floor") || null;
+      totalfloor = pick("총층", "전체층", "totalfloor") || null;
       const ex = pick("전용면적(평)", "전용면적", "exclusiveArea");
       const common = pick("공용면적(평)", "공급/계약면적(평)", "공급면적(평)", "commonArea");
       if (ex) exclusiveArea = toNum(ex);
@@ -447,6 +223,9 @@
   mod.buildSupabasePropertyRow = function buildSupabasePropertyRow(rawRow, m, sourceType) {
     const globalId = `${sourceType}:${m.itemNo}`;
     const toNullNum = (v) => (v == null ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
+    const importedSourceLabel = sourceType === "auction"
+      ? "경매현황"
+      : (sourceType === "realtor" ? "매물특징" : "");
     const normalizedRaw = {
       ...(rawRow || {}),
       itemNo: String(m.itemNo || ""),
@@ -461,6 +240,10 @@
       dateMain: m.dateMain || null,
       sourceUrl: m.sourceUrl || null,
       memo: m.memo || null,
+      importedSourceLabel: importedSourceLabel || null,
+      importedSourceText: m.memo || null,
+      sourceNoteLabel: importedSourceLabel || null,
+      sourceNoteText: m.memo || null,
       lowprice: toNullNum(m.lowprice),
       latitude: toNullNum(m.latitude),
       longitude: toNullNum(m.longitude),
@@ -473,19 +256,9 @@
       source,
       source_type: sourceType,
       address: m.address || null,
-      asset_type: m.assetType || null,
-      floor: m.floor || null,
-      total_floor: m.totalfloor || null,
-      common_area: toNullNum(m.commonArea),
-      exclusive_area: toNullNum(m.exclusiveArea),
-      site_area: toNullNum(m.siteArea),
-      use_approval: m.useApproval || null,
       status: m.status || null,
       price_main: toNullNum(m.priceMain),
       lowprice: toNullNum(m.lowprice),
-      date_main: m.dateMain || null,
-      source_url: m.sourceUrl || null,
-      memo: m.memo || null,
       latitude: toNullNum(m.latitude),
       longitude: toNullNum(m.longitude),
       raw: normalizedRaw,
@@ -504,7 +277,7 @@
 
   mod.upsertPropertiesResilient = async function upsertPropertiesResilient(sb, rows, { chunkSize = 200 } = {}) {
     if (DataAccess && typeof DataAccess.upsertPropertiesResilient === "function") {
-      return DataAccess.upsertPropertiesResilient(sb, (Array.isArray(rows) ? rows : []).map(sanitizePropertyImportRow), { chunkSize, onConflict: "global_id" });
+      return DataAccess.upsertPropertiesResilient(sb, rows, { chunkSize, onConflict: "global_id" });
     }
     throw new Error("KNSN_DATA_ACCESS.upsertPropertiesResilient 를 찾을 수 없습니다.");
   };

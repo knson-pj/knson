@@ -153,6 +153,33 @@
     return cleanCandidate(memo);
   }
 
+  function usesDedicatedSourceNote(sourceType) {
+    const normalized = normalizeSourceType(sourceType, { fallback: "" });
+    return normalized === "auction" || normalized === "realtor";
+  }
+
+  function getDedicatedSourceNoteLabel(sourceType) {
+    const normalized = normalizeSourceType(sourceType, { fallback: "" });
+    if (normalized === "auction") return "경매현황";
+    if (normalized === "realtor") return "매물특징";
+    return "";
+  }
+
+  function extractDedicatedSourceNote(sourceType, item, raw) {
+    const normalized = normalizeSourceType(sourceType, { fallback: "" });
+    if (!usesDedicatedSourceNote(normalized)) return { label: "", text: "" };
+    const row = item && typeof item === "object" ? item : {};
+    const sourceRaw = raw && typeof raw === "object" ? raw : {};
+    const label = pickFirstText(sourceRaw.importedSourceLabel, sourceRaw.sourceNoteLabel, getDedicatedSourceNoteLabel(normalized));
+    let text = "";
+    if (normalized === "auction") {
+      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["경매현황"], sourceRaw.auctionStatus, sourceRaw.auction_status, sourceRaw.memo, row.memo, "");
+    } else if (normalized === "realtor") {
+      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["매물특징"], sourceRaw.listingFeature, sourceRaw.listing_feature, sourceRaw.memo, row.memo, "");
+    }
+    return { label, text };
+  }
+
   function inferSourceTypeFromContext(context = {}) {
     const raw = context && context.raw && typeof context.raw === "object" ? context.raw : {};
     const sourceHints = [
@@ -256,9 +283,12 @@
       fallback: opts.fallbackSource || "general",
     });
     const memoText = pickFirstText(item && item.memo, raw.memo, "");
+    const sourceNote = extractDedicatedSourceNote(sourceType, item, raw);
     const opinionText = sourceType === "onbid"
       ? sanitizeOnbidOpinion(pickFirstText(item && item.opinion, raw.opinion, ""), memoText, address)
-      : pickFirstText(item && item.opinion, raw.opinion, memoText, item && item.comment, "");
+      : usesDedicatedSourceNote(sourceType)
+        ? pickFirstText(item && item.opinion, raw.opinion, item && item.comment, "")
+        : pickFirstText(item && item.opinion, raw.opinion, memoText, item && item.comment, "");
     const isDirectSubmission = isDirectRealtorSubmission({
       sourceType,
       rawSource,
@@ -306,6 +336,8 @@
       regionDong: pickFirstText(item && item.regionDong, item && item.region_dong, raw.regionDong, raw.region_dong, ""),
       memo: memoText,
       opinion: opinionText,
+      sourceNoteLabel: sourceNote.label,
+      sourceNoteText: sourceNote.text,
       realtorname: pickFirstText(item && item.realtorname, item && item.realtor_name, raw.realtorname, raw.realtorName, brokerOfficeName, ""),
       realtorphone: pickFirstText(item && item.realtorphone, item && item.realtor_phone, raw.realtorphone, raw.realtorPhone, ""),
       realtorcell: pickFirstText(item && item.realtorcell, item && item.realtor_cell, raw.realtorcell, raw.realtorCell, item && item.submitterPhone, item && item.submitter_phone, ""),
@@ -617,211 +649,6 @@
     return [...(Array.isArray(history) ? history : []), entry];
   }
 
-  const PROPERTY_EDIT_LOG_SECTION_LABELS = Object.freeze({
-    detail: "물건상세",
-    opinion: "담당자의견",
-    photos: "사진",
-  });
-
-  const PROPERTY_EDIT_LOG_FIELD_DEFS = Object.freeze([
-    { section: "detail", field: "floor", label: "층수", valueType: "text" },
-    { section: "detail", field: "totalfloor", label: "총층", valueType: "text" },
-    { section: "detail", field: "useapproval", label: "사용승인일", valueType: "date" },
-    { section: "detail", field: "commonarea", label: "공용면적(평)", valueType: "number" },
-    { section: "detail", field: "exclusivearea", label: "전용면적(평)", valueType: "number" },
-    { section: "detail", field: "sitearea", label: "토지면적(평)", valueType: "number" },
-    { section: "detail", field: "priceMain", label: "감정가(매각가)", valueType: "amount" },
-    { section: "detail", field: "currentPrice", label: "현재가격", valueType: "amount" },
-    { section: "detail", field: "dateMain", label: "주요일정", valueType: "date" },
-    { section: "opinion", field: "dailyIssue", label: "금일 이슈사항", valueType: "multiline" },
-    { section: "opinion", field: "siteInspection", label: "현장실사", valueType: "multiline" },
-    { section: "opinion", field: "opinion", label: "담당자 의견", valueType: "multiline" },
-  ]);
-
-  const PROPERTY_EDIT_LOG_FIELD_MAP = Object.freeze(PROPERTY_EDIT_LOG_FIELD_DEFS.reduce((acc, entry) => {
-    acc[entry.field] = entry;
-    return acc;
-  }, {}));
-
-  function normalizeMultilineText(value) {
-    return String(value ?? "").replace(/\r\n?/g, "\n").trim();
-  }
-
-  function normalizeEditLogDateValue(value) {
-    const s = String(value || "").trim();
-    if (!s) return "";
-    const normalized = s.replace(/\./g, "-").replace(/\//g, "-");
-    const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) return `${match[1]}-${match[2]}-${match[3]}`;
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) {
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    }
-    return s;
-  }
-
-  function formatEditLogNumber(value) {
-    const num = toNullableNumber(value);
-    if (num == null) return "";
-    return String(num).includes('.') ? String(num) : num.toLocaleString('ko-KR');
-  }
-
-  function formatEditLogValue(field, value) {
-    const meta = PROPERTY_EDIT_LOG_FIELD_MAP[field] || {};
-    if (meta.valueType === "amount") {
-      const num = toNullableNumber(value);
-      return num == null ? "" : num.toLocaleString('ko-KR');
-    }
-    if (meta.valueType === "number") return formatEditLogNumber(value);
-    if (meta.valueType === "date") return normalizeEditLogDateValue(value);
-    return normalizeMultilineText(value);
-  }
-
-  function normalizeEditLogCompareValue(field, value) {
-    const meta = PROPERTY_EDIT_LOG_FIELD_MAP[field] || {};
-    if (meta.valueType === "amount" || meta.valueType === "number") {
-      const num = toNullableNumber(value);
-      return num == null ? "" : String(num);
-    }
-    if (meta.valueType === "date") return normalizeEditLogDateValue(value);
-    return normalizeMultilineText(value);
-  }
-
-  function buildPropertyEditLogSnapshot(input = {}) {
-    const container = input?._raw && typeof input._raw === "object" ? input._raw : (input || {});
-    const raw = getRegistrationRawObject(input);
-    return {
-      floor: pickFirstText(input?.floor, container?.floor, raw.floor, ""),
-      totalfloor: pickFirstText(input?.totalfloor, input?.total_floor, container?.totalfloor, container?.total_floor, raw.totalfloor, raw.totalFloor, raw.total_floor, ""),
-      useapproval: pickFirstText(input?.useapproval, input?.use_approval, container?.useapproval, container?.use_approval, raw.useapproval, raw.useApproval, raw.use_approval, ""),
-      commonarea: input?.commonarea ?? input?.common_area ?? input?.commonArea ?? container?.commonarea ?? container?.common_area ?? container?.commonArea ?? raw.commonarea ?? raw.commonArea ?? raw.common_area ?? null,
-      exclusivearea: input?.exclusivearea ?? input?.exclusive_area ?? input?.exclusiveArea ?? container?.exclusivearea ?? container?.exclusive_area ?? container?.exclusiveArea ?? raw.exclusivearea ?? raw.exclusiveArea ?? raw.exclusive_area ?? null,
-      sitearea: input?.sitearea ?? input?.site_area ?? input?.siteArea ?? container?.sitearea ?? container?.site_area ?? container?.siteArea ?? raw.sitearea ?? raw.siteArea ?? raw.site_area ?? null,
-      priceMain: input?.priceMain ?? input?.price_main ?? container?.priceMain ?? container?.price_main ?? raw.priceMain ?? raw.price_main ?? null,
-      currentPrice: input?.currentPrice ?? input?.lowprice ?? input?.low_price ?? input?.lowPrice ?? container?.currentPrice ?? container?.lowprice ?? container?.low_price ?? raw.currentPrice ?? raw.lowprice ?? raw.low_price ?? raw.lowPrice ?? null,
-      dateMain: pickFirstText(input?.dateMain, input?.date_main, container?.dateMain, container?.date_main, raw.dateMain, raw.date_main, ""),
-      dailyIssue: pickFirstText(input?.dailyIssue, input?.daily_issue, container?.dailyIssue, container?.daily_issue, raw.dailyIssue, raw.daily_issue, ""),
-      siteInspection: pickFirstText(input?.siteInspection, input?.site_inspection, container?.siteInspection, container?.site_inspection, raw.siteInspection, raw.site_inspection, ""),
-      opinion: pickFirstText(input?.opinion, input?.memo, container?.opinion, container?.memo, raw.opinion, raw.memo, ""),
-    };
-  }
-
-  function normalizePropertyEditChange(change) {
-    if (!change || typeof change !== 'object') return null;
-    const field = String(change.field || '').trim();
-    if (!field) return null;
-    const meta = PROPERTY_EDIT_LOG_FIELD_MAP[field] || {};
-    const section = String(change.section || meta.section || '').trim() || 'detail';
-    const label = String(change.label || meta.label || field).trim();
-    const valueType = String(change.valueType || meta.valueType || 'text').trim() || 'text';
-    const before = change.before === undefined ? null : sanitizeJsonValue(change.before, 0);
-    const after = change.after === undefined ? null : sanitizeJsonValue(change.after, 0);
-    const beforeDisplay = String(change.beforeDisplay || formatEditLogValue(field, before) || '').trim();
-    const afterDisplay = String(change.afterDisplay || formatEditLogValue(field, after) || '').trim();
-    const prevNorm = normalizeEditLogCompareValue(field, before);
-    const nextNorm = normalizeEditLogCompareValue(field, after);
-    const changeType = String(change.changeType || (!prevNorm && nextNorm ? 'add' : (prevNorm && !nextNorm ? 'clear' : 'update'))).trim() || 'update';
-    return {
-      section,
-      field,
-      label,
-      valueType,
-      before,
-      after,
-      beforeDisplay,
-      afterDisplay,
-      changeType,
-    };
-  }
-
-  function normalizePropertyEditChangeSet(entry) {
-    if (!entry || typeof entry !== 'object') return null;
-    const changes = (Array.isArray(entry.changes) ? entry.changes : []).map(normalizePropertyEditChange).filter(Boolean);
-    if (!changes.length) return null;
-    const at = String(entry.at || entry.date || '').trim() || new Date().toISOString();
-    const actor = String(entry.actor || entry.author || '').trim();
-    const actorId = String(entry.actorId || entry.actor_id || '').trim();
-    const actorRole = String(entry.actorRole || entry.actor_role || '').trim();
-    const counts = changes.reduce((acc, change) => {
-      acc[change.section] = (Number(acc[change.section] || 0) || 0) + 1;
-      return acc;
-    }, {});
-    const sections = Object.keys(counts).sort((a, b) => {
-      const order = { detail: 1, opinion: 2, photos: 3 };
-      return (order[a] || 99) - (order[b] || 99);
-    });
-    const summary = String(entry.summary || entry.summaryText || sections.map((section) => `${PROPERTY_EDIT_LOG_SECTION_LABELS[section] || section} ${counts[section]}건`).join(' · ') + ' 수정').trim();
-    return {
-      kind: 'propertyEdit',
-      at,
-      actor,
-      actorId,
-      actorRole,
-      source: String(entry.source || 'edit_form').trim() || 'edit_form',
-      counts,
-      sections,
-      summary,
-      changes,
-    };
-  }
-
-  function loadPropertyEditChangeSets(item) {
-    const raw = getRegistrationRawObject(item);
-    const history = raw.propertyEditLogs || raw.propertyEditHistory || raw.editChangeSets || raw.propertyChangeLog;
-    return (Array.isArray(history) ? history : []).map(normalizePropertyEditChangeSet).filter(Boolean);
-  }
-
-  function sanitizePropertyEditChangeSets(history) {
-    return loadPropertyEditChangeSets({ raw: { propertyEditLogs: Array.isArray(history) ? history : [] } }).slice(-150);
-  }
-
-  function buildPropertyEditChangeSet(prevInput, nextInput, context = {}) {
-    const prevSnapshot = buildPropertyEditLogSnapshot(prevInput);
-    const nextSnapshot = buildPropertyEditLogSnapshot(nextInput);
-    const changes = PROPERTY_EDIT_LOG_FIELD_DEFS.map((meta) => {
-      const prevValue = prevSnapshot?.[meta.field];
-      const nextValue = nextSnapshot?.[meta.field];
-      const prevNorm = normalizeEditLogCompareValue(meta.field, prevValue);
-      const nextNorm = normalizeEditLogCompareValue(meta.field, nextValue);
-      if (prevNorm === nextNorm) return null;
-      return normalizePropertyEditChange({
-        section: meta.section,
-        field: meta.field,
-        label: meta.label,
-        valueType: meta.valueType,
-        before: prevValue,
-        after: nextValue,
-        beforeDisplay: formatEditLogValue(meta.field, prevValue),
-        afterDisplay: formatEditLogValue(meta.field, nextValue),
-        changeType: !prevNorm && nextNorm ? 'add' : (prevNorm && !nextNorm ? 'clear' : 'update'),
-      });
-    }).filter(Boolean);
-    if (!changes.length) return null;
-    return normalizePropertyEditChangeSet({
-      at: context.at || new Date().toISOString(),
-      actor: context.actor || context.author || '',
-      actorId: context.actorId || context.actor_id || '',
-      actorRole: context.actorRole || context.actor_role || '',
-      source: context.source || 'edit_form',
-      changes,
-    });
-  }
-
-  function appendPropertyEditChangeSet(raw, changeSet) {
-    const nextRaw = { ...(raw || {}) };
-    const normalized = normalizePropertyEditChangeSet(changeSet);
-    if (!normalized) {
-      if (Array.isArray(nextRaw.propertyEditLogs)) nextRaw.propertyEditLogs = sanitizePropertyEditChangeSets(nextRaw.propertyEditLogs);
-      return nextRaw;
-    }
-    const current = loadPropertyEditChangeSets({ raw: nextRaw });
-    nextRaw.propertyEditLogs = sanitizePropertyEditChangeSets([...current, normalized]);
-    return nextRaw;
-  }
-
   function getOpinionHistoryMeta(entry) {
     const kind = String(entry?.kind || "opinion").trim();
     if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
@@ -840,61 +667,42 @@
     return Number.POSITIVE_INFINITY;
   }
 
-  function buildCombinedPropertyLog(opinionHistory, registrationLog, propertyEditHistory) {
-    const editLogs = (Array.isArray(propertyEditHistory) ? propertyEditHistory : []).map(normalizePropertyEditChangeSet).filter(Boolean);
+  function buildCombinedPropertyLog(opinionHistory, registrationLog) {
     const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
     const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
     const rows = [];
 
-    editLogs.forEach((entry, idx) => {
+    opinions.forEach((entry, idx) => {
+      const normalized = normalizeOpinionHistoryEntry(entry);
+      if (!normalized) return;
+      const meta = getOpinionHistoryMeta(normalized);
       rows.push({
-        kind: 'property-edit',
-        sortAt: toTimelineTimestamp(entry.at),
-        at: entry.at,
-        badgeClass: 'is-edit-form',
-        badgeLabel: '수정LOG',
-        author: entry.actor,
-        title: entry.summary,
-        sections: entry.sections,
-        counts: entry.counts,
-        changes: entry.changes,
+        kind: "opinion",
+        sortAt: toTimelineTimestamp(normalized.at || normalized.date),
+        at: normalized.at || normalized.date || "",
+        badgeClass: meta.badgeClass,
+        badgeLabel: meta.badgeLabel,
+        author: normalized.author,
+        text: normalized.text,
+        title: normalized.title || meta.title,
         order: idx,
       });
     });
 
-    if (!editLogs.length) {
-      opinions.forEach((entry, idx) => {
-        const normalized = normalizeOpinionHistoryEntry(entry);
-        if (!normalized) return;
-        const meta = getOpinionHistoryMeta(normalized);
-        rows.push({
-          kind: 'opinion',
-          sortAt: toTimelineTimestamp(normalized.at || normalized.date),
-          at: normalized.at || normalized.date || '',
-          badgeClass: meta.badgeClass,
-          badgeLabel: meta.badgeLabel,
-          author: normalized.author,
-          text: normalized.text,
-          title: normalized.title || meta.title,
-          order: idx,
-        });
-      });
-    }
-
     regLogs.forEach((entry, idx) => {
-      const at = String(entry?.at || entry?.date || '').trim();
-      const route = String(entry?.route || '').trim();
-      const actor = String(entry?.actor || '').trim();
-      const type = String(entry?.type || '').trim();
-      const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== 'submitterPhone' && change?.label !== '등록자 연락처');
+      const at = String(entry?.at || entry?.date || "").trim();
+      const route = String(entry?.route || "").trim();
+      const actor = String(entry?.actor || "").trim();
+      const type = String(entry?.type || "").trim();
+      const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
       rows.push({
-        kind: 'registration',
+        kind: "registration",
         sortAt: toTimelineTimestamp(at),
         at,
-        badgeClass: 'is-registration',
-        badgeLabel: '등록LOG',
+        badgeClass: "is-registration",
+        badgeLabel: "등록LOG",
         author: actor,
-        title: type === 'created' ? '최초 등록' : (route || '등록 정보 변경'),
+        title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
         route,
         changes,
         order: idx,
@@ -902,8 +710,8 @@
     });
 
     return rows.sort((a, b) => {
-      if (a.sortAt !== b.sortAt) return b.sortAt - a.sortAt;
-      return b.order - a.order;
+      if (a.sortAt !== b.sortAt) return a.sortAt - b.sortAt;
+      return a.order - b.order;
     });
   }
 
@@ -1013,11 +821,6 @@
     const merged = { ...(base || {}), ...(overrides || {}) };
     if (Array.isArray(merged.opinionHistory)) {
       merged.opinionHistory = sanitizeOpinionHistoryEntries(merged.opinionHistory);
-    }
-    if (Array.isArray(merged.propertyEditLogs) || Array.isArray(merged.propertyEditHistory) || Array.isArray(merged.editChangeSets)) {
-      merged.propertyEditLogs = sanitizePropertyEditChangeSets(merged.propertyEditLogs || merged.propertyEditHistory || merged.editChangeSets);
-      delete merged.propertyEditHistory;
-      delete merged.editChangeSets;
     }
     return merged;
   }
@@ -1868,14 +1671,6 @@
     loadOpinionHistory,
     appendOpinionEntry,
     getOpinionHistoryMeta,
-    PROPERTY_EDIT_LOG_FIELD_DEFS,
-    PROPERTY_EDIT_LOG_SECTION_LABELS,
-    buildPropertyEditLogSnapshot,
-    buildPropertyEditChangeSet,
-    normalizePropertyEditChangeSet,
-    loadPropertyEditChangeSets,
-    appendPropertyEditChangeSet,
-    sanitizePropertyEditChangeSets,
     buildCombinedPropertyLog,
     PROPERTY_DUPLICATE_INDEX_NAMES,
     collectPropertyErrorFragments,

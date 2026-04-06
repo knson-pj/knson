@@ -469,6 +469,9 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
   const normalizedSubmitterType = PropertyDomain.normalizeSubmitterType(input.submitter_type ?? input.submitterType, { fallback: '' }) || undefined;
   const derivedIsGeneral = normalizedSourceType ? PropertyDomain.isGeneralSourceType(normalizedSourceType) : undefined;
   const baseRaw = input.raw !== undefined ? sanitizePropertyRaw(input.raw) : undefined;
+  const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === 'function'
+    ? PropertyDomain.usesDedicatedSourceNote(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '')
+    : ['auction', 'realtor'].includes(String(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '').trim().toLowerCase());
   const row = omitUndefined({
     item_no: input.item_no ?? input.itemNo,
     source_type: normalizedSourceType,
@@ -487,7 +490,7 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
     broker_office_name: input.broker_office_name ?? input.brokerOfficeName ?? input.realtorname,
     submitter_name: input.submitter_name ?? input.submitterName,
     submitter_phone: input.submitter_phone ?? input.submitterPhone ?? input.realtorcell,
-    memo: input.memo ?? input.opinion,
+    memo: input.memo !== undefined ? input.memo : (preserveImportedMemo ? undefined : input.opinion),
     latitude: parseNumberOrNull(input.latitude),
     longitude: parseNumberOrNull(input.longitude),
     is_general: input.is_general !== undefined ? !!input.is_general : derivedIsGeneral,
