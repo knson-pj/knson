@@ -581,10 +581,25 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const domain = PropertyDomain || window.KNSN_ADMIN_RUNTIME?.utils?.PropertyDomain || null;
     const history = domain && typeof domain.loadOpinionHistory === 'function' ? domain.loadOpinionHistory(item) : [];
     const target = String(kind || '').trim();
-    const latest = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => String(entry?.kind || 'opinion').trim() === target);
     const raw = item?._raw?.raw || {};
-    if (latest && String(latest.text || '').trim()) return String(latest.text || '').trim();
-    if (target === 'dailyIssue') return String(raw.dailyIssue || raw.daily_issue || '').trim();
+    const sourceType = item?.sourceType || item?._raw?.source_type || raw.sourceType || raw.source_type || '';
+    const sourceNoteInfo = domain && typeof domain.extractDedicatedSourceNote === 'function'
+      ? domain.extractDedicatedSourceNote(sourceType, item, raw)
+      : { text: '' };
+    const stripEcho = (value) => {
+      if (domain && typeof domain.stripDedicatedSourceNoteEcho === 'function') {
+        return domain.stripDedicatedSourceNoteEcho(value, sourceNoteInfo.text);
+      }
+      return String(value || '').trim();
+    };
+    const latest = [...(Array.isArray(history) ? history : [])].reverse().find((entry) => {
+      const entryKind = String(entry?.kind || 'opinion').trim();
+      if (entryKind !== target) return false;
+      return !!stripEcho(entry?.text || '');
+    });
+    if (latest) return stripEcho(latest.text || '');
+    if (target === 'dailyIssue') return stripEcho(raw.dailyIssue || raw.daily_issue || '');
+    if (target === 'opinion') return stripEcho(raw.opinion || raw.memo || '');
     return '';
   }
 

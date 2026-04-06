@@ -472,6 +472,15 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
   const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === 'function'
     ? PropertyDomain.usesDedicatedSourceNote(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '')
     : ['auction', 'realtor'].includes(String(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '').trim().toLowerCase());
+  const existingSourceNote = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === 'function'
+    ? PropertyDomain.extractDedicatedSourceNote(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '', input, baseRaw || {})
+    : { label: baseRaw?.sourceNoteLabel || baseRaw?.importedSourceLabel || '', text: baseRaw?.sourceNoteText || baseRaw?.importedSourceText || '' };
+  if (preserveImportedMemo && existingSourceNote?.text) {
+    baseRaw.importedSourceLabel = baseRaw.importedSourceLabel || existingSourceNote.label || '';
+    baseRaw.sourceNoteLabel = baseRaw.sourceNoteLabel || existingSourceNote.label || '';
+    baseRaw.importedSourceText = baseRaw.importedSourceText || existingSourceNote.text || '';
+    baseRaw.sourceNoteText = baseRaw.sourceNoteText || existingSourceNote.text || '';
+  }
   const row = omitUndefined({
     item_no: input.item_no ?? input.itemNo,
     source_type: normalizedSourceType,

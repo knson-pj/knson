@@ -165,19 +165,78 @@
     return "";
   }
 
+  function normalizeSourceNoteText(input) {
+    return String(input || "").replace(/\s+/g, " ").trim();
+  }
+
+  function collectLegacySourceNoteCandidates(row, sourceRaw) {
+    const candidates = [];
+    const push = (value, explicit = false) => {
+      const text = normalizeSourceNoteText(value);
+      if (!text) return;
+      candidates.push({ text, explicit });
+    };
+    push(sourceRaw.importedSourceText, true);
+    push(sourceRaw.sourceNoteText, true);
+    push(sourceRaw["경매현황"], true);
+    push(sourceRaw.auctionStatus, true);
+    push(sourceRaw.auction_status, true);
+    push(sourceRaw["매물특징"], true);
+    push(sourceRaw.listingFeature, true);
+    push(sourceRaw.listing_feature, true);
+    push(sourceRaw.memo);
+    push(row.memo);
+    push(sourceRaw.opinion);
+    push(row.opinion);
+    push(sourceRaw.dailyIssue);
+    push(sourceRaw.daily_issue);
+    const opinionHistory = Array.isArray(sourceRaw.opinionHistory) ? sourceRaw.opinionHistory : [];
+    opinionHistory.forEach((entry) => push(entry && (entry.text || entry.note || "")));
+    return candidates;
+  }
+
+  function chooseLegacySourceNoteText(candidates) {
+    const list = Array.isArray(candidates) ? candidates : [];
+    const explicit = list.find((entry) => entry && entry.explicit && entry.text);
+    if (explicit) return explicit.text;
+
+    const counts = new Map();
+    list.forEach((entry) => {
+      if (!entry || !entry.text) return;
+      const bucket = counts.get(entry.text) || { count: 0, explicit: false };
+      bucket.count += 1;
+      bucket.explicit = bucket.explicit || !!entry.explicit;
+      counts.set(entry.text, bucket);
+    });
+
+    let bestText = "";
+    let bestScore = -1;
+    counts.forEach((meta, text) => {
+      let score = text.length;
+      if (meta.explicit) score += 100000;
+      if (meta.count >= 2) score += 10000;
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = text;
+      }
+    });
+    return bestText;
+  }
+
   function extractDedicatedSourceNote(sourceType, item, raw) {
     const normalized = normalizeSourceType(sourceType, { fallback: "" });
     if (!usesDedicatedSourceNote(normalized)) return { label: "", text: "" };
     const row = item && typeof item === "object" ? item : {};
     const sourceRaw = raw && typeof raw === "object" ? raw : {};
     const label = pickFirstText(sourceRaw.importedSourceLabel, sourceRaw.sourceNoteLabel, getDedicatedSourceNoteLabel(normalized));
-    let text = "";
-    if (normalized === "auction") {
-      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["경매현황"], sourceRaw.auctionStatus, sourceRaw.auction_status, sourceRaw.memo, row.memo, "");
-    } else if (normalized === "realtor") {
-      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["매물특징"], sourceRaw.listingFeature, sourceRaw.listing_feature, sourceRaw.memo, row.memo, "");
+    const candidates = collectLegacySourceNoteCandidates(row, sourceRaw);
+    let text = chooseLegacySourceNoteText(candidates);
+    if (!text && normalized === "auction") {
+      text = pickFirstText(row.auctionStatus, row.auction_status, row["경매현황"], "");
+    } else if (!text && normalized === "realtor") {
+      text = pickFirstText(row.listingFeature, row.listing_feature, row["매물특징"], "");
     }
-    return { label, text };
+    return { label, text: normalizeSourceNoteText(text) };
   }
 
   function stripDedicatedSourceNoteEcho(value, sourceNoteText) {
@@ -186,7 +245,9 @@
     if (!text) return "";
     if (!sourceText) return text;
     const normalize = (input) => String(input || "").replace(/\s+/g, " ").trim();
-    return normalize(text) === normalize(sourceText) ? "" : text;
+    const current = normalize(text);
+    const source = normalize(sourceText);
+    return current === source ? "" : text;
   }
 
   function inferSourceTypeFromContext(context = {}) {
@@ -1663,6 +1724,9 @@
     compactAddressText,
     extractFloorText,
     sanitizeOnbidOpinion,
+    usesDedicatedSourceNote,
+    getDedicatedSourceNoteLabel,
+    extractDedicatedSourceNote,
     stripDedicatedSourceNoteEcho,
     buildNormalizedPropertyBase,
     parseFloorNumberForLog,

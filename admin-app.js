@@ -2739,8 +2739,12 @@ function sortGuUnitsByAdjacency(...args) {
       ? (patch.assigneeId || null)
       : (item?.assignedAgentId ?? currentRaw.assigneeId ?? currentRaw.assignedAgentId ?? currentRaw.assignee_id ?? null);
     const assigneeName = assigneeId ? (getStaffNameById(assigneeId) || "") : null;
-    const sourceNoteLabel = currentRaw.sourceNoteLabel ?? currentRaw.importedSourceLabel ?? null;
-    const sourceNoteText = currentRaw.sourceNoteText ?? currentRaw.importedSourceText ?? null;
+    const currentSourceType = patch.sourceType ?? currentRaw.sourceType ?? currentRaw.source_type ?? item?.sourceType ?? item?._raw?.source_type ?? '';
+    const sourceNoteInfo = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === 'function'
+      ? PropertyDomain.extractDedicatedSourceNote(currentSourceType, item, currentRaw)
+      : { label: currentRaw.sourceNoteLabel ?? currentRaw.importedSourceLabel ?? null, text: currentRaw.sourceNoteText ?? currentRaw.importedSourceText ?? null };
+    const sourceNoteLabel = sourceNoteInfo.label || currentRaw.sourceNoteLabel || currentRaw.importedSourceLabel || null;
+    const sourceNoteText = sourceNoteInfo.text || currentRaw.sourceNoteText || currentRaw.importedSourceText || null;
     return {
       ...currentRaw,
       itemNo: patch.itemNo ?? currentRaw.itemNo ?? null,
