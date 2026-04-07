@@ -133,10 +133,11 @@ function sanitizePropertyRaw(raw) {
       date: String(entry?.date || '').trim(),
       text: String(entry?.text || '').trim(),
       author: String(entry?.author || '').trim(),
-      kind: String(entry?.kind || entry?.type || '').trim(),
-      title: String(entry?.title || entry?.label || '').trim(),
+      authorRole: String(entry?.authorRole || entry?.actorRole || '').trim(),
+      kind: String(entry?.kind || '').trim(),
+      title: String(entry?.title || '').trim(),
       at: String(entry?.at || '').trim(),
-    })).filter((entry) => entry.date || entry.text || entry.author || entry.kind || entry.title || entry.at);
+    })).filter((entry) => entry.date || entry.text || entry.author || entry.authorRole || entry.kind || entry.title || entry.at);
   }
   return base;
 }
@@ -174,6 +175,7 @@ function normalizeActionType(value) {
     siteinspection: 'site_inspection',
     daily_issue: 'daily_issue',
     dailyissue: 'daily_issue',
+    opinion: 'opinion',
     property_update: 'property_update',
     propertyupdate: 'property_update',
   };
@@ -204,6 +206,7 @@ function summarizeActivityRows(rows) {
     rights_analysis: 'rightsAnalysis',
     site_inspection: 'siteInspection',
     daily_issue: 'dailyIssue',
+    opinion: 'opinion',
     property_update: 'propertyUpdate',
   };
   const buckets = {
@@ -211,6 +214,7 @@ function summarizeActivityRows(rows) {
     rightsAnalysis: new Set(),
     siteInspection: new Set(),
     dailyIssue: new Set(),
+    opinion: new Set(),
     propertyUpdate: new Set(),
   };
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -232,9 +236,10 @@ function summarizeActivityRows(rows) {
     rightsAnalysis: buckets.rightsAnalysis.size,
     siteInspection: buckets.siteInspection.size,
     dailyIssue: buckets.dailyIssue.size,
+    opinion: buckets.opinion.size,
     propertyUpdate: buckets.propertyUpdate.size,
   };
-  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.propertyUpdate;
+  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.opinion + counts.propertyUpdate;
   return counts;
 }
 
@@ -269,6 +274,86 @@ async function insertActivityEntries(entries, ctx) {
     createdCount: Array.isArray(created) ? created.length : 0,
     items: Array.isArray(created) ? created : [],
   };
+}
+
+
+function opinionKindToActionType(kind) {
+  const s = String(kind || '').trim();
+  if (s === 'siteInspection') return 'site_inspection';
+  if (s === 'dailyIssue') return 'daily_issue';
+  if (s === 'opinion') return 'opinion';
+  return '';
+}
+
+function normalizeOpinionLogSyncEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (PropertyDomain && typeof PropertyDomain.normalizeOpinionHistoryEntry === 'function') {
+    return PropertyDomain.normalizeOpinionHistoryEntry(entry);
+  }
+  const text = String(entry?.text || '').trim();
+  if (!text) return null;
+  return {
+    kind: String(entry?.kind || 'opinion').trim() || 'opinion',
+    title: String(entry?.title || '').trim(),
+    date: String(entry?.date || '').trim(),
+    at: String(entry?.at || entry?.date || '').trim(),
+    text,
+    author: String(entry?.author || '').trim(),
+    authorRole: String(entry?.authorRole || entry?.actorRole || '').trim(),
+  };
+}
+
+function extractOpinionLogActionDate(entry) {
+  const raw = String(entry?.at || entry?.date || '').trim();
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return kstDateKey(raw);
+}
+
+async function findOpinionActivityLogRow(propertyId, entry) {
+  const normalized = normalizeOpinionLogSyncEntry(entry);
+  const actionType = opinionKindToActionType(normalized?.kind);
+  const safePropertyId = cleanText(propertyId, 120);
+  if (!normalized || !actionType || !safePropertyId) return null;
+  const actionDate = extractOpinionLogActionDate(normalized);
+  const actorName = cleanText(normalized.author, 120);
+  const note = cleanText(normalized.text, 4000);
+  const base = [
+    `select=id,property_id,action_type,action_date,actor_name,note,created_at`,
+    `property_id=eq.${encodeURIComponent(safePropertyId)}`,
+    `action_type=eq.${encodeURIComponent(actionType)}`,
+  ];
+  if (actionDate) base.push(`action_date=eq.${encodeURIComponent(actionDate)}`);
+  if (actorName) base.push(`actor_name=eq.${encodeURIComponent(actorName)}`);
+  if (note) {
+    const exactRows = await supabaseRest(`/rest/v1/property_activity_logs?${base.join('&')}&note=eq.${encodeURIComponent(note)}&order=created_at.desc&limit=5`);
+    if (Array.isArray(exactRows) && exactRows.length) return exactRows[0];
+  }
+  const rows = await supabaseRest(`/rest/v1/property_activity_logs?${base.join('&')}&order=created_at.desc&limit=20`);
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+async function syncOpinionActivityLogMutation(propertyId, logSync) {
+  if (!logSync || typeof logSync !== 'object') return { ok: true, skipped: true };
+  const mode = String(logSync.mode || '').trim().toLowerCase();
+  const beforeEntry = normalizeOpinionLogSyncEntry(logSync.beforeEntry);
+  const afterEntry = normalizeOpinionLogSyncEntry(logSync.afterEntry);
+  if (!mode || !beforeEntry) return { ok: true, skipped: true };
+  const matchedRow = await findOpinionActivityLogRow(propertyId, beforeEntry);
+  if (!matchedRow?.id) return { ok: true, skipped: true, reason: 'activity_log_not_found' };
+  if (mode === 'delete') {
+    await supabaseRest(`/rest/v1/property_activity_logs?id=eq.${encodeURIComponent(String(matchedRow.id))}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+    return { ok: true, mode, affectedId: matchedRow.id };
+  }
+  if (mode === 'edit' && afterEntry) {
+    await supabaseRest(`/rest/v1/property_activity_logs?id=eq.${encodeURIComponent(String(matchedRow.id))}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      json: { note: cleanText(afterEntry.text, 4000) },
+    });
+    return { ok: true, mode, affectedId: matchedRow.id };
+  }
+  return { ok: true, skipped: true };
 }
 
 
@@ -659,7 +744,17 @@ async function handleSupabaseWrite(req, res) {
       }
     }
 
-    return send(res, 200, { ok: true, item, activityLoggedCount, activityLogError: activityLogError || null });
+    let logSyncError = '';
+    let logSyncResult = null;
+    if (body.logSync && typeof body.logSync === 'object') {
+      try {
+        logSyncResult = await syncOpinionActivityLogMutation(item?.id || current?.id || targetId, body.logSync);
+      } catch (syncErr) {
+        logSyncError = syncErr?.message || 'LOG 동기화 실패';
+      }
+    }
+
+    return send(res, 200, { ok: true, item, activityLoggedCount, activityLogError: activityLogError || null, logSyncResult, logSyncError: logSyncError || null });
   }
 
   return send(res, 405, { ok: false, message: 'Method Not Allowed' });

@@ -2199,6 +2199,34 @@ function bindEvents() {
     return `<span class="agent-combined-log-badge ${esc(badgeClass)}"><span class="material-symbols-outlined chip-icon${extraClass}" aria-hidden="true">${icon}</span><span class="chip-text">${esc(badgeLabel)}</span></span>`;
   }
 
+
+  function sanitizeLogSyncPayload(sync) {
+    if (!sync || typeof sync !== 'object') return null;
+    const cleanEntry = (entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const normalized = (PropertyDomain && typeof PropertyDomain.normalizeOpinionHistoryEntry === 'function')
+        ? PropertyDomain.normalizeOpinionHistoryEntry(entry)
+        : normalizeOpinionHistoryEntry(entry);
+      if (!normalized) return null;
+      return {
+        kind: String(normalized.kind || '').trim(),
+        title: String(normalized.title || '').trim(),
+        at: String(normalized.at || normalized.date || '').trim(),
+        date: String(normalized.date || '').trim(),
+        text: String(normalized.text || '').trim(),
+        author: String(normalized.author || '').trim(),
+        authorRole: String(normalized.authorRole || normalized.actorRole || '').trim(),
+      };
+    };
+    const mode = String(sync.mode || '').trim().toLowerCase();
+    if (!mode) return null;
+    return {
+      mode,
+      beforeEntry: cleanEntry(sync.beforeEntry),
+      afterEntry: cleanEntry(sync.afterEntry),
+    };
+  }
+
   function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
     if (!container) return;
     const groups = (PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLogGroups === "function")
@@ -2270,8 +2298,9 @@ function bindEvents() {
         if (!item) return;
         const hist = loadOpinionHistory(item);
         if (!hist[idx]) return;
+        const beforeEntry = hist[idx] ? { ...hist[idx] } : null;
         hist[idx] = { ...hist[idx], text: newText };
-        await patchOpinionHistory(item, hist);
+        await patchOpinionHistory(item, hist, { mode: 'edit', beforeEntry, afterEntry: hist[idx] });
         if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
         renderCombinedPropertyLog(container, hist, loadRegistrationLog(item));
       });
@@ -2283,8 +2312,9 @@ function bindEvents() {
         const item = state.editingProperty;
         if (!item) return;
         const hist = loadOpinionHistory(item);
+        const beforeEntry = hist[idx] ? { ...hist[idx] } : null;
         hist.splice(idx, 1);
-        await patchOpinionHistory(item, hist);
+        await patchOpinionHistory(item, hist, { mode: 'delete', beforeEntry });
         if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
         renderCombinedPropertyLog(container, hist, loadRegistrationLog(item));
       });
@@ -2431,8 +2461,9 @@ function bindEvents() {
         const item = state.editingProperty;
         if (!item) return;
         const hist = loadOpinionHistory(item);
+        const beforeEntry = hist[idx] ? { ...hist[idx] } : null;
         hist[idx] = { ...hist[idx], text: newText };
-        await patchOpinionHistory(item, hist);
+        await patchOpinionHistory(item, hist, { mode: 'edit', beforeEntry, afterEntry: hist[idx] });
         if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
         renderOpinionHistory(container, hist, true);
       });
@@ -2444,15 +2475,16 @@ function bindEvents() {
         const item = state.editingProperty;
         if (!item) return;
         const hist = loadOpinionHistory(item);
+        const beforeEntry = hist[idx] ? { ...hist[idx] } : null;
         hist.splice(idx, 1);
-        await patchOpinionHistory(item, hist);
+        await patchOpinionHistory(item, hist, { mode: 'delete', beforeEntry });
         if (item._raw?.raw) item._raw.raw.opinionHistory = hist;
         renderOpinionHistory(container, hist, true);
       });
     });
   }
 
-  async function patchOpinionHistory(item, history) {
+  async function patchOpinionHistory(item, history, sync = null) {
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     if (!sb) throw new Error("Supabase 연동 필요");
     const targetId = item.id || item.globalId;
@@ -2482,12 +2514,23 @@ function bindEvents() {
       dailyIssue: latestDailyIssue,
       daily_issue: latestDailyIssue,
     };
-    await updatePropertyRowResilient(sb, targetId, {
+    const payload = {
       memo: latestOpinion,
       raw: nextRaw,
-      site_inspection: latestSiteInspection,
-      daily_issue: latestDailyIssue,
-    });
+      siteInspection: latestSiteInspection,
+      dailyIssue: latestDailyIssue,
+    };
+    const logSync = sanitizeLogSyncPayload(sync);
+    if (typeof api === 'function') {
+      await api('/properties', { method: 'PATCH', auth: true, body: { targetId, patch: payload, logSync } });
+    } else {
+      await updatePropertyRowResilient(sb, targetId, {
+        memo: latestOpinion,
+        raw: nextRaw,
+        site_inspection: latestSiteInspection,
+        daily_issue: latestDailyIssue,
+      });
+    }
     if (item && typeof item === 'object') {
       item.opinion = latestOpinion;
       item.memo = latestOpinion;
