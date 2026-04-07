@@ -32,15 +32,25 @@
     return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
   }
 
-  const PROPERTY_PROGRESS_STATUS_OPTIONS = [
+  const AUCTION_PROGRESS_STATUS_OPTIONS = [
     '유찰 1회', '유찰 2회', '유찰 3회', '유찰 4회', '유찰 5회', '유찰 6회', '유찰 7회',
-    '낙찰', '취하', '변경', '관찰', '협상', '보류',
+    '낙찰', '취하', '변경',
   ];
+  const PLAIN_PROGRESS_STATUS_OPTIONS = ['관찰', '협상', '보류'];
 
-  function ensureProgressStatusSelect(selectEl, currentValue = '') {
+  function getProgressStatusOptionsForBucket(bucket = '') {
+    const key = String(bucket || '').trim();
+    if (key === 'auction' || key === 'onbid') return AUCTION_PROGRESS_STATUS_OPTIONS.slice();
+    if (key === 'realtor_naver' || key === 'realtor_direct' || key === 'general' || key === 'realtor') {
+      return PLAIN_PROGRESS_STATUS_OPTIONS.slice();
+    }
+    return [...AUCTION_PROGRESS_STATUS_OPTIONS, ...PLAIN_PROGRESS_STATUS_OPTIONS];
+  }
+
+  function ensureProgressStatusSelect(selectEl, currentValue = '', bucket = '') {
     if (!selectEl) return;
     const current = String(currentValue || '').trim();
-    const values = PROPERTY_PROGRESS_STATUS_OPTIONS.slice();
+    const values = getProgressStatusOptionsForBucket(bucket);
     if (current && !values.includes(current)) values.unshift(current);
     selectEl.innerHTML = '';
     const emptyOption = document.createElement('option');
@@ -579,6 +589,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
     const isGeneral = bucket === 'general' || normalizedSource === 'general';
     const hideForPlain = isRealtor || isGeneral;
+    ensureProgressStatusSelect(form.elements['status'], form.elements['status']?.value || view?.status || item?.status || '', bucket);
     form.querySelectorAll('[data-aem-field="dateMain"], [data-aem-field="currentPrice"]').forEach((node) => {
       node.classList.toggle('hidden', hideForPlain);
     });
@@ -1141,7 +1152,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('exclusivearea', formatModalAreaValue(view.sourceType, view.exclusivearea ?? ''));
     setVal('sitearea', formatModalAreaValue(view.sourceType, view.sitearea ?? ''));
     setVal('useapproval', view.useapproval ?? '');
-    ensureProgressStatusSelect(f.elements['status'], view.status ?? '');
+    ensureProgressStatusSelect(f.elements['status'], view.status ?? '', toEditSourceTypeValue(workingItem, view.sourceType, view.submitterType));
     setVal('priceMain', utils.formatMoneyInputValue(view.priceMain ?? ''));
     setVal('lowprice', utils.formatMoneyInputValue(view.currentPriceValue ?? view.lowprice ?? ''));
     setVal('dateMain', toInputDate(view.dateMain) ?? '');

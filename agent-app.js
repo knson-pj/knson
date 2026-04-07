@@ -25,15 +25,25 @@
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
   const API_BASE = K && typeof K.getApiBase === "function" ? K.getApiBase() : "https://knson.vercel.app/api";
 
-  const PROPERTY_PROGRESS_STATUS_OPTIONS = [
+  const AUCTION_PROGRESS_STATUS_OPTIONS = [
     '유찰 1회', '유찰 2회', '유찰 3회', '유찰 4회', '유찰 5회', '유찰 6회', '유찰 7회',
-    '낙찰', '취하', '변경', '관찰', '협상', '보류',
+    '낙찰', '취하', '변경',
   ];
+  const PLAIN_PROGRESS_STATUS_OPTIONS = ['관찰', '협상', '보류'];
 
-  function ensureProgressStatusSelect(selectEl, currentValue = '') {
+  function getProgressStatusOptionsForBucket(bucket = '') {
+    const key = String(bucket || '').trim();
+    if (key === 'auction' || key === 'onbid') return AUCTION_PROGRESS_STATUS_OPTIONS.slice();
+    if (key === 'realtor_naver' || key === 'realtor_direct' || key === 'general' || key === 'realtor') {
+      return PLAIN_PROGRESS_STATUS_OPTIONS.slice();
+    }
+    return [...AUCTION_PROGRESS_STATUS_OPTIONS, ...PLAIN_PROGRESS_STATUS_OPTIONS];
+  }
+
+  function ensureProgressStatusSelect(selectEl, currentValue = '', bucket = '') {
     if (!selectEl) return;
     const current = String(currentValue || '').trim();
-    const values = PROPERTY_PROGRESS_STATUS_OPTIONS.slice();
+    const values = getProgressStatusOptionsForBucket(bucket);
     if (current && !values.includes(current)) values.unshift(current);
     selectEl.innerHTML = '';
     const emptyOption = document.createElement('option');
@@ -1964,6 +1974,7 @@ function renderPagination(totalPages) {
     const isRealtor = bucket === "realtor_naver" || bucket === "realtor_direct" || String(item?.sourceType || "").trim() === "realtor";
     const isGeneral = bucket === "general" || String(item?.sourceType || "").trim() === "general";
     const hideForPlain = isRealtor || isGeneral;
+    ensureProgressStatusSelect(form.elements['statusDetail'], form.elements['statusDetail']?.value || view?.status || item?.status || '', bucket);
     form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="currentPrice"]').forEach((node) => {
       node.classList.toggle("hidden", hideForPlain);
     });
@@ -1984,6 +1995,7 @@ function renderPagination(totalPages) {
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
     const kindLabel = getPropertyKindLabel(item.sourceType, item);
+    const bucket = getPropertyBucket(item, item?.sourceType || view?.sourceType || "");
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
@@ -1992,7 +2004,10 @@ function renderPagination(totalPages) {
     setVal(f, "submitterType", getSubmitterDisplayLabel(item));
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
-    ensureProgressStatusSelect(f.elements['statusDetail'], view.status ?? item.status ?? '');
+    ensureProgressStatusSelect(f.elements['statusDetail'], view.status ?? item.status ?? '', bucket);
+    if (f.elements['statusDetail']) {
+      f.elements['statusDetail'].onchange = () => setVal(f, "status", f.elements['statusDetail']?.value || "");
+    }
     setVal(f, "address", item.address);
     applyAgentSourceNoteField(f, view);
     setVal(f, "floor", view.floor);
@@ -2173,7 +2188,7 @@ function renderPagination(totalPages) {
       if (mergedLogRow?.row?.raw) newRaw.registrationLog = mergedLogRow.row.raw.registrationLog || newRaw.registrationLog;
 
       maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
-      maybeAssignInitialColumnValue(patch, "status", statusVal, item?.status ?? item?._raw?.status);
+      patch.status = statusVal;
       maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
       maybeAssignInitialColumnValue(patch, "exclusive_area", exclusiveAreaVal, item?._raw?.exclusive_area);
       maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
