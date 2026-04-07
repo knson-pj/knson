@@ -1911,6 +1911,28 @@ function renderPagination(totalPages) {
     if (label) label.textContent = view?.sourceNoteLabel || '원본 참고';
   }
 
+  function positionAgentSourceNoteField(form, { isRealtor = false, isGeneral = false } = {}) {
+    if (!form) return;
+    const wrap = form.querySelector('[data-ag-source-note]');
+    const basicSection = form.querySelector('[data-edit-section="basic"]');
+    if (!wrap || !basicSection) return;
+
+    const insertAfter = (anchor) => {
+      if (!anchor || anchor.parentNode !== basicSection) return false;
+      if (anchor.nextElementSibling === wrap) return true;
+      basicSection.insertBefore(wrap, anchor.nextSibling);
+      return true;
+    };
+
+    const brokerSection = basicSection.querySelector('[data-ag-section="brokerInfo"]');
+    const ownerSection = basicSection.querySelector('[data-ag-section="ownerInfo"]');
+    const addressField = form.querySelector('input[name="address"]')?.closest('.field');
+
+    if (isRealtor && insertAfter(brokerSection)) return;
+    if (isGeneral && insertAfter(ownerSection)) return;
+    insertAfter(addressField);
+  }
+
   function applyAgentEditFormMode(item, view) {
     const form = els.agEditForm;
     if (!form) return;
@@ -1923,6 +1945,7 @@ function renderPagination(totalPages) {
     });
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
     form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
+    positionAgentSourceNoteField(form, { isRealtor, isGeneral });
     setVal(form, "brokerOfficeDisplay", view?.realtorName || "-");
     setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
     setVal(form, "brokerCellDisplay", view?.realtorCell || "-");
