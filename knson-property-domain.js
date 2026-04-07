@@ -220,14 +220,90 @@
     return String(value || "").replace(/[^\d]/g, "");
   }
 
+  function isLikelyPhoneNumber(value) {
+    const digits = normalizePhoneDigits(value);
+    return /^0\d{8,10}$/.test(digits);
+  }
+
   function isLikelyMobilePhone(value) {
     const digits = normalizePhoneDigits(value);
     return /^(010|011|016|017|018|019)\d{7,8}$/.test(digits);
   }
 
+  function normalizeLooseObjectKey(value) {
+    return String(value || "")
+      .replace(/^﻿/, "")
+      .toLowerCase()
+      .replace(/[\s_\-:./()\[\]{}]+/g, "");
+  }
+
+  function pickObjectValueByAliases(source, aliases = []) {
+    if (!source || typeof source !== "object") return "";
+    const normalizedMap = new Map();
+    Object.keys(source).forEach((key) => {
+      const normalized = normalizeLooseObjectKey(key);
+      if (normalized && !normalizedMap.has(normalized)) normalizedMap.set(normalized, key);
+    });
+    for (const alias of Array.isArray(aliases) ? aliases : [aliases]) {
+      const normalizedAlias = normalizeLooseObjectKey(alias);
+      if (!normalizedAlias) continue;
+      const matchedKey = normalizedMap.get(normalizedAlias);
+      if (!matchedKey) continue;
+      const text = String(source[matchedKey] || "").trim();
+      if (text) return text;
+    }
+    return "";
+  }
+
+  function collectBrokerPhoneCandidates(source, options = {}) {
+    if (!source || typeof source !== "object") return { phone: [], cell: [], generic: [] };
+    const phone = [];
+    const cell = [];
+    const generic = [];
+    const pushUnique = (arr, value) => {
+      const text = String(value || "").trim();
+      if (!text) return;
+      if (!arr.includes(text)) arr.push(text);
+    };
+    const mobileKeyHints = ["휴대폰", "핸드폰", "휴대전화", "mobile", "cell", "hp"];
+    const landlineKeyHints = ["유선", "대표전화", "업소전화", "사무소전화", "전화번호", "office", "tel", "phone", "contact", "연락처"];
+    Object.entries(source).forEach(([key, value]) => {
+      const text = String(value || "").trim();
+      if (!text || !isLikelyPhoneNumber(text)) return;
+      const normalizedKey = normalizeLooseObjectKey(key);
+      if (!normalizedKey) return;
+      if (mobileKeyHints.some((hint) => normalizedKey.includes(normalizeLooseObjectKey(hint)))) {
+        pushUnique(cell, text);
+        return;
+      }
+      if (landlineKeyHints.some((hint) => normalizedKey.includes(normalizeLooseObjectKey(hint)))) {
+        pushUnique(phone, text);
+        return;
+      }
+      pushUnique(generic, text);
+    });
+    return { phone, cell, generic };
+  }
+
   function resolveBrokerContactInfo(item = {}, raw = {}, container = {}) {
     const row = container && typeof container === "object" ? container : {};
     const sourceRaw = raw && typeof raw === "object" ? raw : {};
+    const realtorPhoneAliases = [
+      "realtorPhone", "realtorphone", "realtor_phone", "officePhone", "officephone", "office_phone",
+      "landlinePhone", "landlinephone", "landline_phone", "landline", "유선전화", "대표전화", "대표전화번호",
+      "전화번호", "업소전화", "중개사무소전화", "중개업소전화", "중개사전화", "사무소전화", "대표번호",
+      "중개사무소 전화", "중개업소 전화", "officeTel", "tel"
+    ];
+    const realtorCellAliases = [
+      "realtorCell", "realtorcell", "realtor_cell", "mobilePhone", "mobilephone", "mobile_phone",
+      "cellPhone", "cellphone", "cell_phone", "휴대폰번호", "휴대폰", "핸드폰번호", "핸드폰", "휴대전화번호",
+      "휴대전화", "중개사휴대폰", "중개사휴대폰번호", "중개사 휴대폰번호", "mobile", "cell", "hp"
+    ];
+    const genericAliases = [
+      "submitterPhone", "submitter_phone", "phone", "phoneNumber", "phone_number", "contact", "contactPhone",
+      "contact_phone", "연락처", "전화번호"
+    ];
+
     let realtorPhone = pickFirstText(
       item?.realtorphone,
       item?.realtor_phone,
@@ -235,20 +311,9 @@
       item?.office_phone,
       row?.realtor_phone,
       row?.realtorphone,
-      sourceRaw.realtorPhone,
-      sourceRaw.realtorphone,
-      sourceRaw.realtor_phone,
-      sourceRaw.officePhone,
-      sourceRaw.officephone,
-      sourceRaw.office_phone,
-      sourceRaw.landlinePhone,
-      sourceRaw.landlinephone,
-      sourceRaw.landline_phone,
-      sourceRaw.landline,
-      sourceRaw["유선전화"],
-      sourceRaw["대표전화"],
-      sourceRaw["업소전화"],
-      sourceRaw["중개사무소전화"],
+      pickObjectValueByAliases(item, realtorPhoneAliases),
+      pickObjectValueByAliases(row, realtorPhoneAliases),
+      pickObjectValueByAliases(sourceRaw, realtorPhoneAliases),
       ""
     );
     let realtorCell = pickFirstText(
@@ -257,24 +322,16 @@
       item?.mobilePhone,
       item?.mobilephone,
       item?.mobile_phone,
-      sourceRaw.realtorCell,
-      sourceRaw.realtorcell,
-      sourceRaw.realtor_cell,
-      sourceRaw.mobilePhone,
-      sourceRaw.mobilephone,
-      sourceRaw.mobile_phone,
-      sourceRaw.cellPhone,
-      sourceRaw.cellphone,
-      sourceRaw.cell_phone,
-      sourceRaw["휴대폰번호"],
-      sourceRaw["휴대폰"],
-      sourceRaw["핸드폰"],
-      sourceRaw["휴대전화"],
-      sourceRaw["중개사휴대폰"],
-      sourceRaw["중개사 휴대폰번호"],
+      pickObjectValueByAliases(item, realtorCellAliases),
+      pickObjectValueByAliases(row, realtorCellAliases),
+      pickObjectValueByAliases(sourceRaw, realtorCellAliases),
       ""
     );
+
     const genericCandidates = [
+      pickObjectValueByAliases(item, genericAliases),
+      pickObjectValueByAliases(row, genericAliases),
+      pickObjectValueByAliases(sourceRaw, genericAliases),
       row?.submitter_phone,
       row?.submitterPhone,
       item?.submitter_phone,
@@ -290,10 +347,24 @@
       sourceRaw["연락처"],
       sourceRaw["전화번호"],
     ];
-    for (const candidate of genericCandidates) {
+
+    const scanned = [item, row, sourceRaw].map((entry) => collectBrokerPhoneCandidates(entry));
+    scanned.forEach((bucket) => {
+      bucket.phone.forEach((value) => genericCandidates.push(value));
+      bucket.cell.forEach((value) => genericCandidates.push({ value, force: "cell" }));
+      bucket.generic.forEach((value) => genericCandidates.push(value));
+    });
+
+    for (const candidateEntry of genericCandidates) {
+      const candidate = typeof candidateEntry === "object" && candidateEntry && "value" in candidateEntry
+        ? candidateEntry.value
+        : candidateEntry;
+      const forced = typeof candidateEntry === "object" && candidateEntry && "force" in candidateEntry
+        ? candidateEntry.force
+        : "";
       const text = String(candidate || "").trim();
-      if (!text) continue;
-      if (isLikelyMobilePhone(text)) {
+      if (!text || !isLikelyPhoneNumber(text)) continue;
+      if (forced === "cell" || isLikelyMobilePhone(text)) {
         if (!realtorCell) realtorCell = text;
       } else if (!realtorPhone) {
         realtorPhone = text;
