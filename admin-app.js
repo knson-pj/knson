@@ -2164,6 +2164,22 @@ function bindEvents() {
     }).join("")}</div>`;
   }
 
+  function inferCombinedLogActorRole(entry) {
+    const explicit = String(entry?.authorRole || entry?.actorRole || '').trim().toLowerCase();
+    if (explicit === 'admin') return 'is-admin';
+    if (explicit === 'staff') return 'is-staff';
+    const route = String(entry?.route || '').trim();
+    if (/관리자/.test(route)) return 'is-admin';
+    if (/담당자/.test(route)) return 'is-staff';
+    return 'is-neutral';
+  }
+
+  function renderCombinedLogActorChip(entry) {
+    const name = String(entry?.author || '').trim();
+    if (!name) return '';
+    return `<span class="agent-combined-log-actor-badge ${inferCombinedLogActorRole(entry)}">${esc(name)}</span>`;
+  }
+
   function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
     if (!container) return;
     const groups = (PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLogGroups === "function")
@@ -2179,22 +2195,19 @@ function bindEvents() {
         const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
         const canEdit = entry.kind !== 'registration' && Number.isInteger(entry.sourceIndex);
         const actionHtml = canEdit ? `<div class="history-actions"><button type="button" class="history-edit-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="수정">✎</button><button type="button" class="history-del-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="삭제">✕</button></div>` : '';
-        const authorBadgeHtml = entry.author ? `<span class="agent-combined-log-badge is-actor">${esc(entry.author)}</span>` : '';
-        const entryMeta = [authorBadgeHtml, entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', actionHtml].filter(Boolean).join('');
+        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', renderCombinedLogActorChip(entry), actionHtml].filter(Boolean).join('');
         if (entry.kind !== 'registration') {
           return `<div class="agent-combined-log-entry" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">` +
             `<div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div>` +
             `<div class="agent-combined-log-body"><div class="agent-combined-log-text" id="combinedLogText_${entry.sourceIndex}">${esc(entry.text || '')}</div><div class="history-edit-area hidden" id="combinedLogEdit_${entry.sourceIndex}"><textarea class="input history-edit-textarea" rows="3">${esc(entry.text || '')}</textarea><div class="history-edit-btns"><button type="button" class="btn btn-primary btn-sm history-save-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">저장</button><button type="button" class="btn btn-ghost btn-sm history-cancel-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">취소</button></div></div></div>` +
           `</div>`;
         }
-        const shouldShowTitle = !!(entry.title && !/^(담당자수정|관리자수정|담당자의견)$/u.test(String(entry.title || '').trim()));
-        const titleHtml = shouldShowTitle ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
         const changesHtml = Array.isArray(entry.changes) && entry.changes.length
           ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || '')}</span><span class="agent-combined-log-value">${esc(change.before || '-')}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || '-')}</span></div>`).join('')}</div>`
           : '<div class="agent-combined-log-text">변경 없음</div>';
         return `<div class="agent-combined-log-entry">` +
           `<div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div>` +
-          `<div class="agent-combined-log-body">${titleHtml}${changesHtml}</div>` +
+          `<div class="agent-combined-log-body">${changesHtml}</div>` +
         `</div>`;
       }).join('');
       return `<div class="agent-combined-log-item">` +
@@ -2360,7 +2373,7 @@ function bindEvents() {
         <div class="history-meta">
           <span class="reglog-badge ${esc(meta.badgeClass)}">${esc(entry.title || meta.badgeLabel)}</span>
           <span class="history-date">${esc(entry.date || "")}</span>
-          ${entry.author ? `<span class="history-author">${esc(entry.author)}</span>` : ""}
+          ${entry.author ? `<span class="history-author agent-combined-log-actor-badge ${inferCombinedLogActorRole(entry)}">${esc(entry.author)}</span>` : ""}
           ${adminControls}
         </div>
         <div class="history-text" id="historyText_${realIdx}">${esc(entry.text || "")}</div>

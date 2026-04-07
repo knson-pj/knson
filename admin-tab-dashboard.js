@@ -202,7 +202,7 @@
           actorName,
           items: bucket?.items || [],
           propertyKeys: assignedMap.get(actorId) || new Set(),
-          counts: bucket?.counts || { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
+          counts: bucket?.counts || { rights_analysis: 0, site_inspection: 0, daily_issue: 0, opinion: 0, new_property: 0, property_update: 0 },
           propertyCount: (assignedMap.get(actorId) || new Set()).size,
         };
       })
@@ -227,6 +227,7 @@
       rights_analysis: '권리분석',
       site_inspection: '현장조사',
       daily_issue: '금일이슈',
+      opinion: '담당자의견',
       new_property: '신규등록',
     };
     return map[String(actionType || '').trim()] || '기타';
@@ -237,6 +238,7 @@
       rights_analysis: 'is-rights',
       site_inspection: 'is-site',
       daily_issue: 'is-edit',
+      opinion: 'is-opinion',
       new_property: 'is-new',
     };
     return map[String(actionType || '').trim()] || 'is-edit';
@@ -373,7 +375,7 @@
         actorName,
         items: [],
         propertyKeys: new Set(),
-        counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
+        counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, opinion: 0, new_property: 0, property_update: 0 },
       };
       existing.items.push(row);
       const propertyKey = pickPropertyKey(row);
@@ -427,7 +429,7 @@
           item,
           latestAt: String(row?.created_at || row?.action_date || '').trim(),
           rows: [],
-          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
+          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, opinion: 0, new_property: 0, property_update: 0 },
         };
         map.set(groupKey, bucket);
         groups.push(bucket);
@@ -583,7 +585,7 @@
     const selected = localState.activeActorId || 'all';
     const totalUpdates = actors.reduce((sum, actor) => {
       const counts = actor.counts || {};
-      return sum + Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
+      return sum + Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.opinion || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
     }, 0);
     const totalAssigned = getAllAssignedPropertyTotal();
     const allCard = `
@@ -602,7 +604,7 @@
       </button>`;
     container.innerHTML = allCard + actors.map((actor) => {
       const counts = actor.counts || {};
-      const updateCount = Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
+      const updateCount = Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.opinion || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
       const subText = (!actor.propertyCount && !actor.items.length) ? '금일 진행사항이 없습니다' : '담당자 업무 현황';
       return `
         <button type="button" class="workmgmt-actor-card ${selected === actor.actorId ? 'is-active' : 'is-dim'}" data-actor-id="${esc(actor.actorId)}">
@@ -661,6 +663,7 @@
     const actionType = String(row?.action_type || '').trim();
     const labels = {
       daily_issue: '',
+      opinion: '',
       rights_analysis: '권리분석 업데이트',
       site_inspection: '현장조사 기록',
       new_property: '신규 물건 등록',
@@ -703,7 +706,7 @@
     const body = sortedRows.map((row) => {
       const actionType = String(row?.action_type || '').trim();
       const title = buildLogTitle(row);
-      const showTitle = actionType !== 'daily_issue' && !!title;
+      const showTitle = actionType !== 'daily_issue' && actionType !== 'opinion' && !!title;
       return `
         <article class="workmgmt-log-card">
           <div class="workmgmt-log-top">

@@ -24,40 +24,6 @@
   function loadSession() { return (Shared && typeof Shared.loadSession === "function") ? Shared.loadSession() : (K ? K.loadSession() : null); }
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
   const API_BASE = K && typeof K.getApiBase === "function" ? K.getApiBase() : "https://knson.vercel.app/api";
-
-  const AUCTION_PROGRESS_STATUS_OPTIONS = [
-    '유찰 1회', '유찰 2회', '유찰 3회', '유찰 4회', '유찰 5회', '유찰 6회', '유찰 7회',
-    '낙찰', '취하', '변경',
-  ];
-  const PLAIN_PROGRESS_STATUS_OPTIONS = ['관찰', '협상', '보류'];
-
-  function getProgressStatusOptionsForBucket(bucket = '') {
-    const key = String(bucket || '').trim();
-    if (key === 'auction' || key === 'onbid') return AUCTION_PROGRESS_STATUS_OPTIONS.slice();
-    if (key === 'realtor_naver' || key === 'realtor_direct' || key === 'general' || key === 'realtor') {
-      return PLAIN_PROGRESS_STATUS_OPTIONS.slice();
-    }
-    return [...AUCTION_PROGRESS_STATUS_OPTIONS, ...PLAIN_PROGRESS_STATUS_OPTIONS];
-  }
-
-  function ensureProgressStatusSelect(selectEl, currentValue = '', bucket = '') {
-    if (!selectEl) return;
-    const current = String(currentValue || '').trim();
-    const values = getProgressStatusOptionsForBucket(bucket);
-    if (current && !values.includes(current)) values.unshift(current);
-    selectEl.innerHTML = '';
-    const emptyOption = document.createElement('option');
-    emptyOption.value = '';
-    emptyOption.textContent = '선택';
-    selectEl.appendChild(emptyOption);
-    values.forEach((value) => {
-      const optionEl = document.createElement('option');
-      optionEl.value = value;
-      optionEl.textContent = value;
-      selectEl.appendChild(optionEl);
-    });
-    selectEl.value = current;
-  }
   const sharedApiJson = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
@@ -428,11 +394,12 @@
     rightsAnalysis: "rights_analysis",
     siteInspection: "site_inspection",
     dailyIssue: "daily_issue",
+    opinion: "opinion",
     newProperty: "new_property",
   };
 
   function emptyDailyReportCounts() {
-    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, newProperty: 0 };
+    return { total: 0, rightsAnalysis: 0, siteInspection: 0, dailyIssue: 0, opinion: 0, newProperty: 0 };
   }
 
   function getSessionToken() {
@@ -707,7 +674,7 @@
           key,
           item: matched,
           row,
-          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0 },
+          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, opinion: 0, new_property: 0 },
         };
         map.set(key, group);
         groups.push(group);
@@ -744,6 +711,9 @@
       return firstText(matched?.siteInspection, raw.siteInspection, raw.site_inspection, '입력 내용 없음');
     }
     if (action === 'daily_issue') {
+      return firstText(matched?.dailyIssue, raw.dailyIssue, raw.daily_issue, '입력 내용 없음');
+    }
+    if (action === 'opinion') {
       return firstText(matched?.opinion, raw.opinion, raw.memo, '입력 내용 없음');
     }
     if (action === 'new_property') {
@@ -783,6 +753,7 @@
                   ["rights_analysis", "권리분석"],
                   ["site_inspection", "현장조사"],
                   ["daily_issue", "금일이슈사항"],
+                  ["opinion", "담당자의견"],
                   ["new_property", "신규물건등록"],
                 ].filter(([key]) => Number(group.counts[key] || 0) > 0);
                 return `
@@ -844,7 +815,9 @@
       propertyItemNo: propertyItemNo || null,
       propertyAddress: propertyAddress || null,
       changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
-      note: key === "dailyIssue" ? (String(options.dailyIssueText || "").trim() || null) : null,
+      note: key === "dailyIssue"
+        ? (String(options.dailyIssueText || "").trim() || null)
+        : (key === "opinion" ? (String(options.opinionText || "").trim() || null) : null),
       actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
     }));
   }
@@ -1865,18 +1838,8 @@ function renderPagination(totalPages) {
       sourceNoteLabel: sourceNoteInfo.label,
       sourceNoteText: sourceNoteInfo.text,
       realtorName: firstText(raw.realtorName, raw.realtorname, row.broker_office_name, item?._raw?.broker_office_name, ""),
-      realtorPhone: (() => {
-        if (PropertyDomain && typeof PropertyDomain.resolveBrokerContactInfo === 'function') {
-          return PropertyDomain.resolveBrokerContactInfo(item, raw, row).realtorPhone;
-        }
-        return firstText(raw.realtorPhone, raw.realtorphone, item?._raw?.realtor_phone, "");
-      })(),
-      realtorCell: (() => {
-        if (PropertyDomain && typeof PropertyDomain.resolveBrokerContactInfo === 'function') {
-          return PropertyDomain.resolveBrokerContactInfo(item, raw, row).realtorCell;
-        }
-        return firstText(raw.realtorCell, raw.realtorcell, row.submitter_phone, item?._raw?.submitter_phone, "");
-      })(),
+      realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, item?._raw?.realtor_phone, ""),
+      realtorCell: firstText(raw.realtorCell, raw.realtorcell, row.submitter_phone, item?._raw?.submitter_phone, ""),
       submitterName: firstText(row.submitter_name, raw.submitterName, raw.submitter_name, ""),
       submitterPhone: firstText(row.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
     };
@@ -1945,28 +1908,6 @@ function renderPagination(totalPages) {
     if (label) label.textContent = view?.sourceNoteLabel || '원본 참고';
   }
 
-  function positionAgentSourceNoteField(form, { isRealtor = false, isGeneral = false } = {}) {
-    if (!form) return;
-    const wrap = form.querySelector('[data-ag-source-note]');
-    const basicSection = form.querySelector('[data-edit-section="basic"]');
-    if (!wrap || !basicSection) return;
-
-    const insertAfter = (anchor) => {
-      if (!anchor || anchor.parentNode !== basicSection) return false;
-      if (anchor.nextElementSibling === wrap) return true;
-      basicSection.insertBefore(wrap, anchor.nextSibling);
-      return true;
-    };
-
-    const brokerSection = basicSection.querySelector('[data-ag-section="brokerInfo"]');
-    const ownerSection = basicSection.querySelector('[data-ag-section="ownerInfo"]');
-    const addressField = form.querySelector('input[name="address"]')?.closest('.field');
-
-    if (isRealtor && insertAfter(brokerSection)) return;
-    if (isGeneral && insertAfter(ownerSection)) return;
-    insertAfter(addressField);
-  }
-
   function applyAgentEditFormMode(item, view) {
     const form = els.agEditForm;
     if (!form) return;
@@ -1974,13 +1915,11 @@ function renderPagination(totalPages) {
     const isRealtor = bucket === "realtor_naver" || bucket === "realtor_direct" || String(item?.sourceType || "").trim() === "realtor";
     const isGeneral = bucket === "general" || String(item?.sourceType || "").trim() === "general";
     const hideForPlain = isRealtor || isGeneral;
-    ensureProgressStatusSelect(form.elements['statusDetail'], form.elements['statusDetail']?.value || view?.status || item?.status || '', bucket);
     form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="currentPrice"]').forEach((node) => {
       node.classList.toggle("hidden", hideForPlain);
     });
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
     form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
-    positionAgentSourceNoteField(form, { isRealtor, isGeneral });
     setVal(form, "brokerOfficeDisplay", view?.realtorName || "-");
     setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
     setVal(form, "brokerCellDisplay", view?.realtorCell || "-");
@@ -1995,7 +1934,6 @@ function renderPagination(totalPages) {
     const f = els.agEditForm;
     const view = getAgentEditableSnapshot(item);
     const kindLabel = getPropertyKindLabel(item.sourceType, item);
-    const bucket = getPropertyBucket(item, item?.sourceType || view?.sourceType || "");
 
     configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
 
@@ -2004,10 +1942,6 @@ function renderPagination(totalPages) {
     setVal(f, "submitterType", getSubmitterDisplayLabel(item));
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
-    ensureProgressStatusSelect(f.elements['statusDetail'], view.status ?? item.status ?? '', bucket);
-    if (f.elements['statusDetail']) {
-      f.elements['statusDetail'].onchange = () => setVal(f, "status", f.elements['statusDetail']?.value || "");
-    }
     setVal(f, "address", item.address);
     applyAgentSourceNoteField(f, view);
     setVal(f, "floor", view.floor);
@@ -2093,8 +2027,6 @@ function renderPagination(totalPages) {
     const siteAreaVal = readNum("sitearea");
     const priceMainVal = readNum("priceMain");
     const currentPriceVal = readNum("currentPrice");
-    const statusDetailEl = f.elements['statusDetail'];
-    const statusVal = statusDetailEl ? (readStr("statusDetail") || null) : (readStr("status") || null);
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
 
     patch.memo = newOpinionText || null;
@@ -2148,7 +2080,6 @@ function renderPagination(totalPages) {
         floor: floorVal,
         totalfloor: totalFloorVal,
         useapproval: useApprovalVal,
-        status: statusVal,
         commonArea: commonAreaVal,
         exclusiveArea: exclusiveAreaVal,
         siteArea: siteAreaVal,
@@ -2173,7 +2104,7 @@ function renderPagination(totalPages) {
         exclusive_area: exclusiveAreaVal,
         site_area: siteAreaVal,
         use_approval: useApprovalVal,
-        status: statusVal,
+        status: hidePlainFields ? prev.status : (readStr('status') || null),
         price_main: priceMainVal,
         lowprice: currentPriceVal,
         date_main: dateMainVal,
@@ -2188,7 +2119,6 @@ function renderPagination(totalPages) {
       if (mergedLogRow?.row?.raw) newRaw.registrationLog = mergedLogRow.row.raw.registrationLog || newRaw.registrationLog;
 
       maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
-      patch.status = statusVal;
       maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
       maybeAssignInitialColumnValue(patch, "exclusive_area", exclusiveAreaVal, item?._raw?.exclusive_area);
       maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
@@ -2208,6 +2138,10 @@ function renderPagination(totalPages) {
       if (newDailyIssueText && newDailyIssueText !== String(prev.dailyIssue || '').trim()) {
         workCategories.push("dailyIssue");
         changedFields.dailyIssue = ["dailyIssue"];
+      }
+      if (newOpinionText && newOpinionText !== String(prev.opinion || '').trim()) {
+        workCategories.push("opinion");
+        changedFields.opinion = ["opinion"];
       }
       patch.raw = newRaw;
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
@@ -2234,6 +2168,7 @@ function renderPagination(totalPages) {
             identityKey: newRaw.registrationIdentityKey || buildRegistrationMatchKey({ ...item, raw: newRaw, _raw: { ...(item._raw || {}), raw: newRaw } }),
             changedFields,
             dailyIssueText: newDailyIssueText,
+            opinionText: newOpinionText,
           }));
         } catch (logErr) {
           activityError = logErr?.message || "일일업무일지 기록 실패";
@@ -2791,6 +2726,22 @@ function renderPagination(totalPages) {
     });
   }
 
+  function inferCombinedLogActorRole(entry) {
+    const explicit = String(entry?.authorRole || entry?.actorRole || '').trim().toLowerCase();
+    if (explicit === 'admin') return 'is-admin';
+    if (explicit === 'staff') return 'is-staff';
+    const route = String(entry?.route || '').trim();
+    if (/관리자/.test(route)) return 'is-admin';
+    if (/담당자/.test(route)) return 'is-staff';
+    return 'is-neutral';
+  }
+
+  function renderCombinedLogActorChip(entry) {
+    const name = String(entry?.author || '').trim();
+    if (!name) return '';
+    return `<span class="agent-combined-log-actor-badge ${inferCombinedLogActorRole(entry)}">${esc(name)}</span>`;
+  }
+
   function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
     if (!container) return;
     const groups = (PropertyDomain && typeof PropertyDomain.buildCombinedPropertyLogGroups === "function")
@@ -2804,17 +2755,14 @@ function renderPagination(totalPages) {
       const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
         const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
-        const authorBadgeHtml = entry.author ? `<span class="agent-combined-log-badge is-actor">${esc(entry.author)}</span>` : '';
-        const entryMeta = [authorBadgeHtml, entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : ''].filter(Boolean).join('');
+        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', renderCombinedLogActorChip(entry)].filter(Boolean).join('');
         if (entry.kind !== "registration") {
           return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
         }
-        const shouldShowTitle = !!(entry.title && !/^(담당자수정|관리자수정|담당자의견)$/u.test(String(entry.title || '').trim()));
-        const titleHtml = shouldShowTitle ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : "";
         const changesHtml = entry.changes?.length
           ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
           : '<div class="agent-combined-log-text">변경 없음</div>';
-        return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body">${titleHtml}${changesHtml}</div></div>`;
+        return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body">${changesHtml}</div></div>`;
       }).join('');
       return `<div class="agent-combined-log-item"><div class="agent-combined-log-head"><span class="agent-combined-log-date">${esc(group.displayDate || formatRegLogAt(group.at) || '')}</span><div class="agent-combined-log-summary">${summaryBadges}</div><button type="button" class="agent-combined-log-toggle" data-group-toggle="${groupIndex}" aria-expanded="false">▼</button></div><div class="agent-combined-log-group-body hidden" data-group-body="${groupIndex}">${itemsHtml}</div></div>`;
     }).join('');
@@ -2857,7 +2805,6 @@ function renderPagination(totalPages) {
   // ── Opinion History 유틸 ──
   function loadOpinionHistory(item) {
     if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
-    if (PropertyDomain && typeof PropertyDomain.loadOpinionHistory === "function") return PropertyDomain.loadOpinionHistory(item);
     const raw = item?._raw?.raw || {};
     const hist = raw.opinionHistory;
     if (Array.isArray(hist)) return hist;
@@ -2875,7 +2822,8 @@ function renderPagination(totalPages) {
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     const author = String(user?.name || user?.email || "").trim();
-    return [...(Array.isArray(history) ? history : []), { date: today, text, author, kind: String(options.kind || "opinion").trim() || "opinion" }];
+    const authorRole = String(options.authorRole || user?.role || "").trim();
+    return [...(Array.isArray(history) ? history : []), { date: today, text, author, authorRole, kind: String(options.kind || "opinion").trim() || "opinion" }];
   }
 
   function getHistoryDateKey(entry) {
@@ -2959,6 +2907,7 @@ function renderPagination(totalPages) {
     if (key === "rights_analysis") return { badgeClass: "is-rights", badgeLabel: "권리분석", title: "권리분석" };
     if (key === "site_inspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
     if (key === "daily_issue") return { badgeClass: "is-edit", badgeLabel: "금일이슈사항", title: "금일이슈사항" };
+    if (key === "opinion") return { badgeClass: "is-opinion", badgeLabel: "담당자의견", title: "담당자의견" };
     if (key === "new_property") return { badgeClass: "is-new", badgeLabel: "신규등록", title: "신규 물건 등록" };
     return { badgeClass: "is-edit", badgeLabel: "업무", title: "업무 수정" };
   }
@@ -3035,6 +2984,7 @@ function renderPagination(totalPages) {
           if (group.counts.rights_analysis) actionSummary.push(`권리 ${group.counts.rights_analysis}건`);
           if (group.counts.site_inspection) actionSummary.push(`현장 ${group.counts.site_inspection}건`);
           if (group.counts.daily_issue) actionSummary.push(`이슈 ${group.counts.daily_issue}건`);
+          if (group.counts.opinion) actionSummary.push(`의견 ${group.counts.opinion}건`);
           if (group.counts.new_property) actionSummary.push(`신규 ${group.counts.new_property}건`);
           const totalActions = Object.values(group.counts).reduce((sum, v) => sum + Number(v || 0), 0);
           const activeClass = selectedKey === group.key ? ' is-active' : '';

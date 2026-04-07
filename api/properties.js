@@ -133,7 +133,11 @@ function sanitizePropertyRaw(raw) {
       date: String(entry?.date || '').trim(),
       text: String(entry?.text || '').trim(),
       author: String(entry?.author || '').trim(),
-    })).filter((entry) => entry.date || entry.text || entry.author);
+      authorRole: String(entry?.authorRole || entry?.actorRole || '').trim(),
+      kind: String(entry?.kind || '').trim(),
+      title: String(entry?.title || '').trim(),
+      at: String(entry?.at || '').trim(),
+    })).filter((entry) => entry.date || entry.text || entry.author || entry.authorRole || entry.kind || entry.title || entry.at);
   }
   return base;
 }
@@ -171,6 +175,9 @@ function normalizeActionType(value) {
     siteinspection: 'site_inspection',
     daily_issue: 'daily_issue',
     dailyissue: 'daily_issue',
+    opinion: 'opinion',
+    opinion_note: 'opinion',
+    opinionnote: 'opinion',
     property_update: 'property_update',
     propertyupdate: 'property_update',
   };
@@ -201,6 +208,7 @@ function summarizeActivityRows(rows) {
     rights_analysis: 'rightsAnalysis',
     site_inspection: 'siteInspection',
     daily_issue: 'dailyIssue',
+    opinion: 'opinion',
     property_update: 'propertyUpdate',
   };
   const buckets = {
@@ -208,6 +216,7 @@ function summarizeActivityRows(rows) {
     rightsAnalysis: new Set(),
     siteInspection: new Set(),
     dailyIssue: new Set(),
+    opinion: new Set(),
     propertyUpdate: new Set(),
   };
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -229,9 +238,10 @@ function summarizeActivityRows(rows) {
     rightsAnalysis: buckets.rightsAnalysis.size,
     siteInspection: buckets.siteInspection.size,
     dailyIssue: buckets.dailyIssue.size,
+    opinion: buckets.opinion.size,
     propertyUpdate: buckets.propertyUpdate.size,
   };
-  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.propertyUpdate;
+  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.opinion + counts.propertyUpdate;
   return counts;
 }
 
