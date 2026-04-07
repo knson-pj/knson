@@ -24,6 +24,30 @@
   function loadSession() { return (Shared && typeof Shared.loadSession === "function") ? Shared.loadSession() : (K ? K.loadSession() : null); }
   function isSupabaseMode() { return !!(K && K.supabaseEnabled && K.supabaseEnabled()); }
   const API_BASE = K && typeof K.getApiBase === "function" ? K.getApiBase() : "https://knson.vercel.app/api";
+
+  const PROPERTY_PROGRESS_STATUS_OPTIONS = [
+    '유찰 1회', '유찰 2회', '유찰 3회', '유찰 4회', '유찰 5회', '유찰 6회', '유찰 7회',
+    '낙찰', '취하', '변경', '관찰', '협상', '보류',
+  ];
+
+  function ensureProgressStatusSelect(selectEl, currentValue = '') {
+    if (!selectEl) return;
+    const current = String(currentValue || '').trim();
+    const values = PROPERTY_PROGRESS_STATUS_OPTIONS.slice();
+    if (current && !values.includes(current)) values.unshift(current);
+    selectEl.innerHTML = '';
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = '선택';
+    selectEl.appendChild(emptyOption);
+    values.forEach((value) => {
+      const optionEl = document.createElement('option');
+      optionEl.value = value;
+      optionEl.textContent = value;
+      selectEl.appendChild(optionEl);
+    });
+    selectEl.value = current;
+  }
   const sharedApiJson = (Shared && typeof Shared.createApiClient === "function")
     ? Shared.createApiClient({
         baseUrl: API_BASE,
@@ -1968,6 +1992,7 @@ function renderPagination(totalPages) {
     setVal(f, "submitterType", getSubmitterDisplayLabel(item));
     setVal(f, "assetType", item.assetType === "-" ? "" : item.assetType);
     setVal(f, "status", item.status);
+    ensureProgressStatusSelect(f.elements['statusDetail'], view.status ?? item.status ?? '');
     setVal(f, "address", item.address);
     applyAgentSourceNoteField(f, view);
     setVal(f, "floor", view.floor);
@@ -2053,6 +2078,8 @@ function renderPagination(totalPages) {
     const siteAreaVal = readNum("sitearea");
     const priceMainVal = readNum("priceMain");
     const currentPriceVal = readNum("currentPrice");
+    const statusDetailEl = f.elements['statusDetail'];
+    const statusVal = statusDetailEl ? (readStr("statusDetail") || null) : (readStr("status") || null);
     const dateMainVal = hidePlainFields ? (String(prev.dateMain || "").trim() || null) : (readStr("dateMain") || null);
 
     patch.memo = newOpinionText || null;
@@ -2106,6 +2133,7 @@ function renderPagination(totalPages) {
         floor: floorVal,
         totalfloor: totalFloorVal,
         useapproval: useApprovalVal,
+        status: statusVal,
         commonArea: commonAreaVal,
         exclusiveArea: exclusiveAreaVal,
         siteArea: siteAreaVal,
@@ -2130,7 +2158,7 @@ function renderPagination(totalPages) {
         exclusive_area: exclusiveAreaVal,
         site_area: siteAreaVal,
         use_approval: useApprovalVal,
-        status: hidePlainFields ? prev.status : (readStr('status') || null),
+        status: statusVal,
         price_main: priceMainVal,
         lowprice: currentPriceVal,
         date_main: dateMainVal,
@@ -2145,6 +2173,7 @@ function renderPagination(totalPages) {
       if (mergedLogRow?.row?.raw) newRaw.registrationLog = mergedLogRow.row.raw.registrationLog || newRaw.registrationLog;
 
       maybeAssignInitialColumnValue(patch, "use_approval", useApprovalVal, item?._raw?.use_approval);
+      maybeAssignInitialColumnValue(patch, "status", statusVal, item?.status ?? item?._raw?.status);
       maybeAssignInitialColumnValue(patch, "common_area", commonAreaVal, item?._raw?.common_area);
       maybeAssignInitialColumnValue(patch, "exclusive_area", exclusiveAreaVal, item?._raw?.exclusive_area);
       maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);

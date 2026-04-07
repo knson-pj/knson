@@ -32,6 +32,30 @@
     return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
   }
 
+  const PROPERTY_PROGRESS_STATUS_OPTIONS = [
+    '유찰 1회', '유찰 2회', '유찰 3회', '유찰 4회', '유찰 5회', '유찰 6회', '유찰 7회',
+    '낙찰', '취하', '변경', '관찰', '협상', '보류',
+  ];
+
+  function ensureProgressStatusSelect(selectEl, currentValue = '') {
+    if (!selectEl) return;
+    const current = String(currentValue || '').trim();
+    const values = PROPERTY_PROGRESS_STATUS_OPTIONS.slice();
+    if (current && !values.includes(current)) values.unshift(current);
+    selectEl.innerHTML = '';
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = '선택';
+    selectEl.appendChild(emptyOption);
+    values.forEach((value) => {
+      const optionEl = document.createElement('option');
+      optionEl.value = value;
+      optionEl.textContent = value;
+      selectEl.appendChild(optionEl);
+    });
+    selectEl.value = current;
+  }
+
   function getAssigneeFilterMeta(state, row) {
     const assignedId = String(row?.assignedAgentId || row?.assigneeId || row?._raw?.assignee_id || row?._raw?.assignedAgentId || '').trim();
     const assignedName = String(row?.assignedAgentName || row?.assigneeName || row?._raw?.assignee_name || row?._raw?.assignedAgentName || getStaffNameByIdLocal(state, assignedId) || '').replace(/\s+/g, ' ').trim();
@@ -555,7 +579,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
     const isGeneral = bucket === 'general' || normalizedSource === 'general';
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-aem-field="status"], [data-aem-field="dateMain"], [data-aem-field="currentPrice"]').forEach((node) => {
+    form.querySelectorAll('[data-aem-field="dateMain"], [data-aem-field="currentPrice"]').forEach((node) => {
       node.classList.toggle('hidden', hideForPlain);
     });
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
@@ -1117,7 +1141,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('exclusivearea', formatModalAreaValue(view.sourceType, view.exclusivearea ?? ''));
     setVal('sitearea', formatModalAreaValue(view.sourceType, view.sitearea ?? ''));
     setVal('useapproval', view.useapproval ?? '');
-    setVal('status', view.status ?? '');
+    ensureProgressStatusSelect(f.elements['status'], view.status ?? '');
     setVal('priceMain', utils.formatMoneyInputValue(view.priceMain ?? ''));
     setVal('lowprice', utils.formatMoneyInputValue(view.currentPriceValue ?? view.lowprice ?? ''));
     setVal('dateMain', toInputDate(view.dateMain) ?? '');
@@ -1289,7 +1313,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       longitude: readNum('longitude'),
     };
     if (hiddenStatusFields) {
-      delete patch.status;
       delete patch.dateMain;
       delete patch.lowprice;
     }
