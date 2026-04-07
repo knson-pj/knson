@@ -169,10 +169,19 @@
     if (!usesDedicatedSourceNote(normalized)) return { label: "", text: "" };
     const row = item && typeof item === "object" ? item : {};
     const sourceRaw = raw && typeof raw === "object" ? raw : {};
-    const label = pickFirstText(sourceRaw.importedSourceLabel, sourceRaw.sourceNoteLabel, getDedicatedSourceNoteLabel(normalized));
+    let label = pickFirstText(sourceRaw.importedSourceLabel, sourceRaw.sourceNoteLabel, getDedicatedSourceNoteLabel(normalized));
     let text = "";
     if (normalized === "auction") {
-      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["경매현황"], sourceRaw.auctionStatus, sourceRaw.auction_status, sourceRaw.memo, row.memo, "");
+      const statusText = pickFirstText(sourceRaw["경매현황"], sourceRaw.auctionStatus, sourceRaw.auction_status, sourceRaw.statusText, "");
+      const remarkText = pickFirstText(sourceRaw["비고"], sourceRaw.remark, sourceRaw.note, sourceRaw.notes, "");
+      text = mergeUniqueNoteLines([
+        statusText,
+        remarkText,
+      ]);
+      if (!text) {
+        text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw.memo, row.memo, "");
+      }
+      if (statusText && remarkText) label = "경매현황 + 비고";
     } else if (normalized === "realtor") {
       text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["매물특징"], sourceRaw.listingFeature, sourceRaw.listing_feature, sourceRaw.memo, row.memo, "");
     }
@@ -186,6 +195,120 @@
     if (!sourceText) return text;
     const normalize = (input) => String(input || "").replace(/\s+/g, " ").trim();
     return normalize(text) === normalize(sourceText) ? "" : text;
+  }
+
+  function normalizeNoteCompareText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function mergeUniqueNoteLines(values = []) {
+    const out = [];
+    for (const value of Array.isArray(values) ? values : [values]) {
+      const text = String(value || "").trim();
+      if (!text) continue;
+      const normalized = normalizeNoteCompareText(text);
+      const duplicated = out.some((saved) => {
+        const savedNormalized = normalizeNoteCompareText(saved);
+        return savedNormalized === normalized || savedNormalized.includes(normalized) || normalized.includes(savedNormalized);
+      });
+      if (!duplicated) out.push(text);
+    }
+    return out.join("\n");
+  }
+
+  function normalizePhoneDigits(value) {
+    return String(value || "").replace(/[^\d]/g, "");
+  }
+
+  function isLikelyMobilePhone(value) {
+    const digits = normalizePhoneDigits(value);
+    return /^(010|011|016|017|018|019)\d{7,8}$/.test(digits);
+  }
+
+  function resolveBrokerContactInfo(item = {}, raw = {}, container = {}) {
+    const row = container && typeof container === "object" ? container : {};
+    const sourceRaw = raw && typeof raw === "object" ? raw : {};
+    let realtorPhone = pickFirstText(
+      item?.realtorphone,
+      item?.realtor_phone,
+      item?.officePhone,
+      item?.office_phone,
+      row?.realtor_phone,
+      row?.realtorphone,
+      sourceRaw.realtorPhone,
+      sourceRaw.realtorphone,
+      sourceRaw.realtor_phone,
+      sourceRaw.officePhone,
+      sourceRaw.officephone,
+      sourceRaw.office_phone,
+      sourceRaw.landlinePhone,
+      sourceRaw.landlinephone,
+      sourceRaw.landline_phone,
+      sourceRaw.landline,
+      sourceRaw["유선전화"],
+      sourceRaw["대표전화"],
+      sourceRaw["업소전화"],
+      sourceRaw["중개사무소전화"],
+      ""
+    );
+    let realtorCell = pickFirstText(
+      item?.realtorcell,
+      item?.realtor_cell,
+      item?.mobilePhone,
+      item?.mobilephone,
+      item?.mobile_phone,
+      sourceRaw.realtorCell,
+      sourceRaw.realtorcell,
+      sourceRaw.realtor_cell,
+      sourceRaw.mobilePhone,
+      sourceRaw.mobilephone,
+      sourceRaw.mobile_phone,
+      sourceRaw.cellPhone,
+      sourceRaw.cellphone,
+      sourceRaw.cell_phone,
+      sourceRaw["휴대폰번호"],
+      sourceRaw["휴대폰"],
+      sourceRaw["핸드폰"],
+      sourceRaw["휴대전화"],
+      sourceRaw["중개사휴대폰"],
+      sourceRaw["중개사 휴대폰번호"],
+      ""
+    );
+    const genericCandidates = [
+      row?.submitter_phone,
+      row?.submitterPhone,
+      item?.submitter_phone,
+      item?.submitterPhone,
+      sourceRaw.submitterPhone,
+      sourceRaw.submitter_phone,
+      sourceRaw.phone,
+      sourceRaw.phoneNumber,
+      sourceRaw.phone_number,
+      sourceRaw.contact,
+      sourceRaw.contactPhone,
+      sourceRaw.contact_phone,
+      sourceRaw["연락처"],
+      sourceRaw["전화번호"],
+    ];
+    for (const candidate of genericCandidates) {
+      const text = String(candidate || "").trim();
+      if (!text) continue;
+      if (isLikelyMobilePhone(text)) {
+        if (!realtorCell) realtorCell = text;
+      } else if (!realtorPhone) {
+        realtorPhone = text;
+      }
+      if (realtorPhone && realtorCell) break;
+    }
+    if (!realtorPhone && realtorCell && !isLikelyMobilePhone(realtorCell)) {
+      realtorPhone = realtorCell;
+      realtorCell = "";
+    }
+    if (!realtorCell && realtorPhone && isLikelyMobilePhone(realtorPhone)) {
+      realtorCell = realtorPhone;
+      realtorPhone = "";
+    }
+    return { realtorPhone, realtorCell };
   }
 
   function inferSourceTypeFromContext(context = {}) {
@@ -350,8 +473,8 @@
       sourceNoteLabel: sourceNote.label,
       sourceNoteText: sourceNote.text,
       realtorname: pickFirstText(item && item.realtorname, item && item.realtor_name, raw.realtorname, raw.realtorName, brokerOfficeName, ""),
-      realtorphone: pickFirstText(item && item.realtorphone, item && item.realtor_phone, item && item._raw && item._raw.realtor_phone, item && item._raw && item._raw.realtorphone, raw.realtorphone, raw.realtorPhone, ""),
-      realtorcell: pickFirstText(item && item.realtorcell, item && item.realtor_cell, item && item._raw && item._raw.submitter_phone, item && item._raw && item._raw.submitterPhone, raw.realtorcell, raw.realtorCell, item && item.submitterPhone, item && item.submitter_phone, ""),
+      realtorphone: resolveBrokerContactInfo(item, raw, item && item._raw).realtorPhone,
+      realtorcell: resolveBrokerContactInfo(item, raw, item && item._raw).realtorCell,
       rightsAnalysis: pickFirstText(item && item.rightsAnalysis, item && item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "") || ((item && (item.analysisDone ?? item.analysis_done)) ? "완료" : ""),
       siteInspection: siteInspectionText || ((item && (item.siteVisit ?? item.site_visit ?? item.fieldDone ?? item.field_done)) ? "완료" : ""),
       dailyIssue: dailyIssueText,
@@ -1607,8 +1730,8 @@
       dateMain: pickFirstText(input?.dateMain, input?.date_main, container?.date_main, container?.dateMain, raw.dateMain, raw.date_main, ""),
       sourceUrl: pickFirstText(input?.sourceUrl, input?.source_url, container?.source_url, container?.sourceUrl, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
       realtorName: pickFirstText(input?.realtorName, input?.realtorname, input?.broker_office_name, container?.broker_office_name, container?.brokerOfficeName, raw.realtorName, raw.realtorname, raw.brokerOfficeName, raw.broker_office_name, ""),
-      realtorPhone: pickFirstText(input?.realtorPhone, input?.realtorphone, raw.realtorPhone, raw.realtorphone, ""),
-      realtorCell: pickFirstText(input?.realtorCell, input?.realtorcell, input?.submitter_phone, container?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
+      realtorPhone: resolveBrokerContactInfo(input, raw, container).realtorPhone,
+      realtorCell: resolveBrokerContactInfo(input, raw, container).realtorCell,
       submitterName: pickFirstText(input?.submitterName, input?.submitter_name, container?.submitter_name, raw.registeredByName, raw.submitterName, raw.submitter_name, ""),
       submitterPhone: pickFirstText(input?.submitterPhone, input?.submitter_phone, container?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
       memo: pickFirstText(input?.memo, input?.opinion, container?.memo, raw.memo, raw.opinion, ""),
@@ -1750,6 +1873,8 @@
     compactAddressText,
     extractFloorText,
     sanitizeOnbidOpinion,
+    usesDedicatedSourceNote,
+    extractDedicatedSourceNote,
     stripDedicatedSourceNoteEcho,
     buildNormalizedPropertyBase,
     parseFloorNumberForLog,
@@ -1798,6 +1923,7 @@
     buildRegistrationSubmissionPackage,
     buildRegistrationSubmissionPayload,
     buildPublicListingPayload,
+    resolveBrokerContactInfo,
     isBrokerLikeSource,
     isAuctionLikeSource,
     isGeneralSourceType,

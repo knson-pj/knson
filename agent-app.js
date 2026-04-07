@@ -1831,8 +1831,18 @@ function renderPagination(totalPages) {
       sourceNoteLabel: sourceNoteInfo.label,
       sourceNoteText: sourceNoteInfo.text,
       realtorName: firstText(raw.realtorName, raw.realtorname, row.broker_office_name, item?._raw?.broker_office_name, ""),
-      realtorPhone: firstText(raw.realtorPhone, raw.realtorphone, item?._raw?.realtor_phone, ""),
-      realtorCell: firstText(raw.realtorCell, raw.realtorcell, row.submitter_phone, item?._raw?.submitter_phone, ""),
+      realtorPhone: (() => {
+        if (PropertyDomain && typeof PropertyDomain.resolveBrokerContactInfo === 'function') {
+          return PropertyDomain.resolveBrokerContactInfo(item, raw, row).realtorPhone;
+        }
+        return firstText(raw.realtorPhone, raw.realtorphone, item?._raw?.realtor_phone, "");
+      })(),
+      realtorCell: (() => {
+        if (PropertyDomain && typeof PropertyDomain.resolveBrokerContactInfo === 'function') {
+          return PropertyDomain.resolveBrokerContactInfo(item, raw, row).realtorCell;
+        }
+        return firstText(raw.realtorCell, raw.realtorcell, row.submitter_phone, item?._raw?.submitter_phone, "");
+      })(),
       submitterName: firstText(row.submitter_name, raw.submitterName, raw.submitter_name, ""),
       submitterPhone: firstText(row.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
     };

@@ -394,13 +394,20 @@
   }
 
   function extractPropertyContactInfo(view = {}, item = {}) {
-    const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || {});
+    const row = item?._raw && typeof item._raw === 'object' ? item._raw : {};
+    const raw = row?.raw && typeof row.raw === 'object' ? row.raw : row;
+    const brokerContact = PropertyDomain && typeof PropertyDomain.resolveBrokerContactInfo === 'function'
+      ? PropertyDomain.resolveBrokerContactInfo({ ...(item || {}), ...(view || {}) }, raw, row)
+      : {
+          realtorPhone: utilsFirstText(view?.realtorphone, item?.realtorphone, row?.realtor_phone, row?.realtorphone, raw?.realtorphone, raw?.realtorPhone, ''),
+          realtorCell: utilsFirstText(view?.realtorcell, item?.submitter_phone, row?.submitter_phone, row?.submitterPhone, item?.realtorcell, raw?.submitter_phone, raw?.submitterPhone, raw?.realtorcell, raw?.realtorCell, ''),
+        };
     return {
-      realtorName: utilsFirstText(view?.realtorname, item?.broker_office_name, item?._raw?.broker_office_name, item?.realtorname, raw?.broker_office_name, raw?.brokerOfficeName, raw?.realtorname, raw?.realtorName, ''),
-      realtorPhone: utilsFirstText(view?.realtorphone, item?.realtorphone, item?._raw?.realtor_phone, item?._raw?.realtorphone, raw?.realtorphone, raw?.realtorPhone, ''),
-      realtorCell: utilsFirstText(view?.realtorcell, item?.submitter_phone, item?._raw?.submitter_phone, item?._raw?.submitterPhone, item?.realtorcell, raw?.submitter_phone, raw?.submitterPhone, raw?.realtorcell, raw?.realtorCell, ''),
-      ownerName: utilsFirstText(view?.submitterName, item?.submitter_name, item?._raw?.submitter_name, raw?.submitter_name, raw?.submitterName, raw?.registeredByName, ''),
-      ownerPhone: utilsFirstText(view?.submitterPhone, item?.submitter_phone, item?._raw?.submitter_phone, raw?.submitter_phone, raw?.submitterPhone, ''),
+      realtorName: utilsFirstText(view?.realtorname, item?.broker_office_name, row?.broker_office_name, item?.realtorname, raw?.broker_office_name, raw?.brokerOfficeName, raw?.realtorname, raw?.realtorName, ''),
+      realtorPhone: utilsFirstText(view?.realtorphone, brokerContact?.realtorPhone, ''),
+      realtorCell: utilsFirstText(view?.realtorcell, brokerContact?.realtorCell, ''),
+      ownerName: utilsFirstText(view?.submitterName, item?.submitter_name, row?.submitter_name, raw?.submitter_name, raw?.submitterName, raw?.registeredByName, ''),
+      ownerPhone: utilsFirstText(view?.submitterPhone, item?.submitter_phone, row?.submitter_phone, raw?.submitter_phone, raw?.submitterPhone, ''),
     };
   }
 
