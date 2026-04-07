@@ -133,7 +133,10 @@ function sanitizePropertyRaw(raw) {
       date: String(entry?.date || '').trim(),
       text: String(entry?.text || '').trim(),
       author: String(entry?.author || '').trim(),
-    })).filter((entry) => entry.date || entry.text || entry.author);
+      kind: String(entry?.kind || entry?.type || '').trim(),
+      title: String(entry?.title || entry?.label || '').trim(),
+      at: String(entry?.at || '').trim(),
+    })).filter((entry) => entry.date || entry.text || entry.author || entry.kind || entry.title || entry.at);
   }
   return base;
 }
@@ -731,7 +734,7 @@ async function handlePhotoAction(req, res, action) {
   if (!access) return;
   try {
     if (action === 'list') {
-      const rows = await PropertyPhotos.listPhotoRows(access.propertyId, access.propertyGlobalId);
+      const rows = await PropertyPhotos.listPhotoRows(access.propertyId);
       const items = await Promise.all(rows.map(async (row) => ({
         id: row.id,
         propertyId: row.property_id,
@@ -768,7 +771,7 @@ async function handlePhotoAction(req, res, action) {
     if (action === 'commit') {
       const photos = Array.isArray(body?.photos) ? body.photos : [];
       if (!photos.length) return send(res, 400, { ok: false, message: '저장할 사진 데이터가 비어 있습니다. 요청 본문이 누락되었거나 너무 커서 처리되지 않았을 수 있습니다.' });
-      const existing = await PropertyPhotos.listPhotoRows(access.propertyId, access.propertyGlobalId);
+      const existing = await PropertyPhotos.listPhotoRows(access.propertyId);
       let nextSort = existing.reduce((max, row) => Math.max(max, Number(row?.sort_order || 0)), -1) + 1;
       const hasPrimary = existing.some((row) => !!row.is_primary);
       const items = [];
@@ -800,7 +803,7 @@ async function handlePhotoAction(req, res, action) {
     if (action === 'set_primary') {
       if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
       const photo = await PropertyPhotos.getPhotoRow(photoId);
-      if (!photo || !PropertyPhotos.photoMatchesProperty(photo, access.propertyId, access.propertyGlobalId) || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      if (!photo || String(photo.property_id || '').trim() !== String(access.propertyId || '').trim() || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
       await PropertyPhotos.patchPhotoRows(`property_id=eq.${encodeURIComponent(access.propertyId)}&deleted_at=is.null`, { is_primary: false, updated_at: new Date().toISOString() });
       const updated = await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { is_primary: true, updated_at: new Date().toISOString() });
       return send(res, 200, { ok: true, item: Array.isArray(updated) ? (updated[0] || null) : updated });
@@ -808,7 +811,7 @@ async function handlePhotoAction(req, res, action) {
 
     if (action === 'reorder') {
       const orderedPhotoIds = Array.isArray(body?.orderedPhotoIds) ? body.orderedPhotoIds.map((v) => String(v || '').trim()).filter(Boolean) : [];
-      const rows = await PropertyPhotos.listPhotoRows(access.propertyId, access.propertyGlobalId);
+      const rows = await PropertyPhotos.listPhotoRows(access.propertyId);
       const rowIds = new Set(rows.map((row) => String(row.id || '').trim()));
       const finalOrder = orderedPhotoIds.filter((id) => rowIds.has(id));
       rows.forEach((row) => { const id = String(row.id || '').trim(); if (!finalOrder.includes(id)) finalOrder.push(id); });
@@ -819,11 +822,11 @@ async function handlePhotoAction(req, res, action) {
     if (action === 'delete') {
       if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
       const photo = await PropertyPhotos.getPhotoRow(photoId);
-      if (!photo || !PropertyPhotos.photoMatchesProperty(photo, access.propertyId, access.propertyGlobalId) || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      if (!photo || String(photo.property_id || '').trim() !== String(access.propertyId || '').trim() || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
       await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { deleted_at: new Date().toISOString(), is_primary: false, updated_at: new Date().toISOString() });
       await PropertyPhotos.removeObjects([photo.storage_path, photo.thumb_path]).catch(() => null);
       if (photo.is_primary) {
-        const remaining = await PropertyPhotos.listPhotoRows(access.propertyId, access.propertyGlobalId);
+        const remaining = await PropertyPhotos.listPhotoRows(access.propertyId);
         const next = remaining.find((row) => String(row.id || '') !== photoId);
         if (next) await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(next.id)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { is_primary: true, updated_at: new Date().toISOString() });
       }

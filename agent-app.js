@@ -2804,12 +2804,13 @@ function renderPagination(totalPages) {
       const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
         const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
-        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', entry.author ? `<span class="agent-combined-log-author">${esc(entry.author)}</span>` : ''].filter(Boolean).join('');
+        const authorBadgeHtml = entry.author ? `<span class="agent-combined-log-badge is-actor">${esc(entry.author)}</span>` : '';
+        const entryMeta = [authorBadgeHtml, entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : ''].filter(Boolean).join('');
         if (entry.kind !== "registration") {
-          const title = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : '';
-          return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body">${title}<div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
+          return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
         }
-        const titleHtml = entry.title ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : "";
+        const shouldShowTitle = !!(entry.title && !/^(담당자수정|관리자수정|담당자의견)$/u.test(String(entry.title || '').trim()));
+        const titleHtml = shouldShowTitle ? `<div class="agent-combined-log-text agent-combined-log-title">${esc(entry.title)}</div>` : "";
         const changesHtml = entry.changes?.length
           ? `<div class="agent-combined-log-changes">${entry.changes.map((change) => `<div class="agent-combined-log-change"><span class="agent-combined-log-label">${esc(change.label || "")}</span><span class="agent-combined-log-value">${esc(change.before || "-")}</span><span class="agent-combined-log-arrow">→</span><span class="agent-combined-log-value">${esc(change.after || "-")}</span></div>`).join("")}</div>`
           : '<div class="agent-combined-log-text">변경 없음</div>';

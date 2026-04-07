@@ -1606,6 +1606,7 @@ textarea.form-textarea-tall{
 .agent-combined-log-badge.is-assignee{background:rgba(12,74,110,.12);color:#0c4a6e;}
 .agent-combined-log-badge.is-rights{background:rgba(147,51,234,.12);color:#7e22ce;}
 .agent-combined-log-badge.is-site{background:rgba(234,88,12,.12);color:#c2410c;}
+.agent-combined-log-badge.is-actor{background:rgba(99,102,241,.10);color:#4338ca;border:1px solid rgba(99,102,241,.14);}
 .agent-combined-log-date{font-size:12px;font-weight:600;color:var(--text-2);}
 .agent-combined-log-author{font-size:12px;color:var(--text-3);}
 .agent-combined-log-body{display:grid;gap:8px;}

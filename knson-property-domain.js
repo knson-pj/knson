@@ -809,20 +809,40 @@
     return out;
   }
 
+  function normalizeOpinionHistoryKind(value, fallback = "opinion") {
+    const raw = String(value || "").trim();
+    if (!raw) return fallback;
+    if (raw === "site_inspection" || raw === "siteInspection") return "siteInspection";
+    if (raw === "daily_issue" || raw === "dailyIssue") return "dailyIssue";
+    if (raw === "opinion") return "opinion";
+    return raw;
+  }
+
+  function inferOpinionHistoryKind(entry, fallback = "opinion") {
+    const explicit = normalizeOpinionHistoryKind(entry?.kind || entry?.type || "", "");
+    if (explicit) return explicit;
+    const title = String(entry?.title || entry?.label || "").trim();
+    if (title === "현장실사") return "siteInspection";
+    if (title === "금일이슈사항") return "dailyIssue";
+    if (title === "담당자의견" || title === "담당자 의견") return "opinion";
+    return fallback;
+  }
+
   function normalizeOpinionHistoryEntry(entry) {
     if (!entry || typeof entry !== "object") return null;
     const text = String(entry.text || entry.note || "").trim();
     if (!text) return null;
-    const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
+    const kind = inferOpinionHistoryKind(entry, "opinion");
     const title = String(entry.title || entry.label || "").trim();
     const date = String(entry.date || entry.at || "").trim();
     const author = String(entry.author || entry.actor || "").trim();
-    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author };
+    return { ...entry, kind, title, date, at: String(entry.at || date || "").trim(), text, author };
   }
 
   function buildOpinionHistoryEntry(kind, text, user, options = {}) {
     const body = String(text || "").trim();
     if (!body) return null;
+    const normalizedKind = normalizeOpinionHistoryKind(kind, "opinion");
     const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
     const date = String(options.date || (Shared && typeof Shared.formatDate === "function" ? (Shared.formatDate(at) || "") : "")).trim();
     const fallbackDate = (() => {
@@ -836,8 +856,8 @@
       dailyIssue: "금일이슈사항",
     };
     return {
-      kind: String(kind || "opinion").trim() || "opinion",
-      title: String(options.title || titleMap[kind] || "담당자의견").trim(),
+      kind: normalizedKind,
+      title: String(options.title || titleMap[normalizedKind] || "담당자의견").trim(),
       date: date || fallbackDate,
       at,
       text: body,
@@ -849,7 +869,22 @@
     const raw = item?._raw?.raw || item?.raw || {};
     const hist = raw.opinionHistory;
     if (Array.isArray(hist) && hist.length) {
-      return hist.map((entry) => normalizeOpinionHistoryEntry(entry)).filter(Boolean);
+      const currentSite = String(item?.siteInspection || raw.siteInspection || raw.site_inspection || "").trim();
+      const currentDaily = String(item?.dailyIssue || raw.dailyIssue || raw.daily_issue || "").trim();
+      const currentOpinion = String(item?.opinion || raw.opinion || raw.memo || "").trim();
+      return hist.map((entry) => {
+        const normalized = normalizeOpinionHistoryEntry(entry);
+        if (!normalized) return null;
+        const explicitKind = normalizeOpinionHistoryKind(entry?.kind || entry?.type || "", "");
+        if (explicitKind) return normalized;
+        const text = String(normalized.text || "").trim();
+        const matches = [];
+        if (text && currentSite && text === currentSite) matches.push("siteInspection");
+        if (text && currentDaily && text === currentDaily) matches.push("dailyIssue");
+        if (text && currentOpinion && text === currentOpinion) matches.push("opinion");
+        if (matches.length === 1) return { ...normalized, kind: matches[0] };
+        return normalized;
+      }).filter(Boolean);
     }
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
@@ -866,7 +901,7 @@
   }
 
   function getOpinionHistoryMeta(entry) {
-    const kind = String(entry?.kind || "opinion").trim();
+    const kind = normalizeOpinionHistoryKind(entry?.kind, "opinion");
     if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
     if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈사항", title: "금일이슈사항" };
     return { badgeClass: "is-opinion", badgeLabel: "담당자의견", title: "담당자의견" };
