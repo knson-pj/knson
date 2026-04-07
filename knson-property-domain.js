@@ -550,13 +550,21 @@
     return changes;
   }
 
+  function normalizeLogActorRole(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (!v) return '';
+    if (['관리자', 'admin', 'administrator', 'manager', 'master', 'superadmin', 'super_admin'].includes(v)) return 'admin';
+    if (['담당자', 'staff', 'agent', 'employee', 'member'].includes(v)) return 'staff';
+    return v;
+  }
+
   function buildRegisterLogContext(route, options = {}) {
     const user = options.user || null;
     return {
       at: String(options.at || new Date().toISOString()).trim(),
       route: String(route || options.route || "등록").trim(),
       actor: String(options.actor || user?.name || user?.email || "").trim(),
-      actorRole: String(options.actorRole || user?.role || "").trim(),
+      actorRole: normalizeLogActorRole(options.actorRole || user?.role || ""),
     };
   }
 
@@ -625,7 +633,7 @@
     const title = String(entry.title || entry.label || "").trim();
     const date = String(entry.date || entry.at || "").trim();
     const author = String(entry.author || entry.actor || "").trim();
-    const authorRole = String(entry.authorRole || entry.actorRole || "").trim();
+    const authorRole = normalizeLogActorRole(entry.authorRole || entry.actorRole || "");
     return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author, authorRole };
   }
 
@@ -639,7 +647,7 @@
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     })();
     const author = String(options.author || user?.name || user?.email || "").trim();
-    const authorRole = String(options.authorRole || user?.role || "").trim();
+    const authorRole = normalizeLogActorRole(options.authorRole || user?.role || "");
     const titleMap = {
       opinion: "담당자의견",
       siteInspection: "현장실사",
@@ -751,7 +759,7 @@
   }
 
   function pickCombinedLogActorRole(entry) {
-    return pickFirstText(
+    return normalizeLogActorRole(pickFirstText(
       entry?.authorRole,
       entry?.actorRole,
       entry?.actor_role,
@@ -759,7 +767,7 @@
       entry?.user_role,
       entry?.role,
       ""
-    );
+    ));
   }
 
   function buildCombinedPropertyLog(opinionHistory, registrationLog) {
@@ -793,7 +801,7 @@
       const at = String(entry?.at || entry?.date || "").trim();
       const route = String(entry?.route || "").trim();
       const actor = String(pickCombinedLogAuthor(entry) || '').trim();
-      const actorRole = String(pickCombinedLogActorRole(entry) || '').trim() || (/관리자/.test(String(entry?.route || '')) ? 'admin' : (/담당자/.test(String(entry?.route || '')) ? 'staff' : ''));
+      const actorRole = normalizeLogActorRole(pickCombinedLogActorRole(entry) || '') || (/관리자/.test(String(entry?.route || '')) ? 'admin' : (/담당자/.test(String(entry?.route || '')) ? 'staff' : ''));
       const type = String(entry?.type || "").trim();
       const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
       const badges = buildRegistrationLogBadges({ ...entry, type, changes });

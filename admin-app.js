@@ -2168,8 +2168,8 @@ function bindEvents() {
 
   function inferCombinedLogActorRole(entry) {
     const explicit = String(entry?.authorRole || entry?.actorRole || '').trim().toLowerCase();
-    if (explicit === 'admin') return 'is-admin';
-    if (explicit === 'staff' || explicit === 'agent') return 'is-staff';
+    if (['admin', '관리자', 'administrator', 'manager', 'master', 'superadmin', 'super_admin'].includes(explicit)) return 'is-admin';
+    if (['staff', 'agent', '담당자', 'employee', 'member'].includes(explicit)) return 'is-staff';
     const route = String(entry?.route || '').trim();
     if (/관리자/.test(route)) return 'is-admin';
     if (/담당자/.test(route)) return 'is-staff';
