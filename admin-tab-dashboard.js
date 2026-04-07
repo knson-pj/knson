@@ -202,7 +202,7 @@
           actorName,
           items: bucket?.items || [],
           propertyKeys: assignedMap.get(actorId) || new Set(),
-          counts: bucket?.counts || { rights_analysis: 0, site_inspection: 0, daily_issue: 0, opinion: 0, new_property: 0, property_update: 0 },
+          counts: bucket?.counts || { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
           propertyCount: (assignedMap.get(actorId) || new Set()).size,
         };
       })
@@ -375,7 +375,7 @@
         actorName,
         items: [],
         propertyKeys: new Set(),
-        counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, opinion: 0, new_property: 0, property_update: 0 },
+        counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
       };
       existing.items.push(row);
       const propertyKey = pickPropertyKey(row);
@@ -429,7 +429,7 @@
           item,
           latestAt: String(row?.created_at || row?.action_date || '').trim(),
           rows: [],
-          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, opinion: 0, new_property: 0, property_update: 0 },
+          counts: { rights_analysis: 0, site_inspection: 0, daily_issue: 0, new_property: 0, property_update: 0 },
         };
         map.set(groupKey, bucket);
         groups.push(bucket);
@@ -585,7 +585,7 @@
     const selected = localState.activeActorId || 'all';
     const totalUpdates = actors.reduce((sum, actor) => {
       const counts = actor.counts || {};
-      return sum + Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.opinion || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
+      return sum + Number(counts.rights_analysis || 0) + Number(counts.site_inspection || 0) + Number(counts.daily_issue || 0) + Number(counts.property_update || 0) + Number(counts.new_property || 0);
     }, 0);
     const totalAssigned = getAllAssignedPropertyTotal();
     const allCard = `

@@ -169,19 +169,10 @@
     if (!usesDedicatedSourceNote(normalized)) return { label: "", text: "" };
     const row = item && typeof item === "object" ? item : {};
     const sourceRaw = raw && typeof raw === "object" ? raw : {};
-    let label = pickFirstText(sourceRaw.importedSourceLabel, sourceRaw.sourceNoteLabel, getDedicatedSourceNoteLabel(normalized));
+    const label = pickFirstText(sourceRaw.importedSourceLabel, sourceRaw.sourceNoteLabel, getDedicatedSourceNoteLabel(normalized));
     let text = "";
     if (normalized === "auction") {
-      const statusText = pickFirstText(sourceRaw["경매현황"], sourceRaw.auctionStatus, sourceRaw.auction_status, sourceRaw.statusText, "");
-      const remarkText = pickFirstText(sourceRaw["비고"], sourceRaw.remark, sourceRaw.note, sourceRaw.notes, "");
-      text = mergeUniqueNoteLines([
-        statusText,
-        remarkText,
-      ]);
-      if (!text) {
-        text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw.memo, row.memo, "");
-      }
-      if (statusText && remarkText) label = "경매현황 + 비고";
+      text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["경매현황"], sourceRaw.auctionStatus, sourceRaw.auction_status, sourceRaw.memo, row.memo, "");
     } else if (normalized === "realtor") {
       text = pickFirstText(sourceRaw.importedSourceText, sourceRaw.sourceNoteText, sourceRaw["매물특징"], sourceRaw.listingFeature, sourceRaw.listing_feature, sourceRaw.memo, row.memo, "");
     }
@@ -195,191 +186,6 @@
     if (!sourceText) return text;
     const normalize = (input) => String(input || "").replace(/\s+/g, " ").trim();
     return normalize(text) === normalize(sourceText) ? "" : text;
-  }
-
-  function normalizeNoteCompareText(value) {
-    return String(value || "").replace(/\s+/g, " ").trim();
-  }
-
-  function mergeUniqueNoteLines(values = []) {
-    const out = [];
-    for (const value of Array.isArray(values) ? values : [values]) {
-      const text = String(value || "").trim();
-      if (!text) continue;
-      const normalized = normalizeNoteCompareText(text);
-      const duplicated = out.some((saved) => {
-        const savedNormalized = normalizeNoteCompareText(saved);
-        return savedNormalized === normalized || savedNormalized.includes(normalized) || normalized.includes(savedNormalized);
-      });
-      if (!duplicated) out.push(text);
-    }
-    return out.join("\n");
-  }
-
-  function normalizePhoneDigits(value) {
-    return String(value || "").replace(/[^\d]/g, "");
-  }
-
-  function isLikelyPhoneNumber(value) {
-    const digits = normalizePhoneDigits(value);
-    return /^0\d{8,10}$/.test(digits);
-  }
-
-  function isLikelyMobilePhone(value) {
-    const digits = normalizePhoneDigits(value);
-    return /^(010|011|016|017|018|019)\d{7,8}$/.test(digits);
-  }
-
-  function normalizeLooseObjectKey(value) {
-    return String(value || "")
-      .replace(/^﻿/, "")
-      .toLowerCase()
-      .replace(/[\s_\-:./()\[\]{}]+/g, "");
-  }
-
-  function pickObjectValueByAliases(source, aliases = []) {
-    if (!source || typeof source !== "object") return "";
-    const normalizedMap = new Map();
-    Object.keys(source).forEach((key) => {
-      const normalized = normalizeLooseObjectKey(key);
-      if (normalized && !normalizedMap.has(normalized)) normalizedMap.set(normalized, key);
-    });
-    for (const alias of Array.isArray(aliases) ? aliases : [aliases]) {
-      const normalizedAlias = normalizeLooseObjectKey(alias);
-      if (!normalizedAlias) continue;
-      const matchedKey = normalizedMap.get(normalizedAlias);
-      if (!matchedKey) continue;
-      const text = String(source[matchedKey] || "").trim();
-      if (text) return text;
-    }
-    return "";
-  }
-
-  function collectBrokerPhoneCandidates(source, options = {}) {
-    if (!source || typeof source !== "object") return { phone: [], cell: [], generic: [] };
-    const phone = [];
-    const cell = [];
-    const generic = [];
-    const pushUnique = (arr, value) => {
-      const text = String(value || "").trim();
-      if (!text) return;
-      if (!arr.includes(text)) arr.push(text);
-    };
-    const mobileKeyHints = ["휴대폰", "핸드폰", "휴대전화", "mobile", "cell", "hp"];
-    const landlineKeyHints = ["유선", "대표전화", "업소전화", "사무소전화", "전화번호", "office", "tel", "phone", "contact", "연락처"];
-    Object.entries(source).forEach(([key, value]) => {
-      const text = String(value || "").trim();
-      if (!text || !isLikelyPhoneNumber(text)) return;
-      const normalizedKey = normalizeLooseObjectKey(key);
-      if (!normalizedKey) return;
-      if (mobileKeyHints.some((hint) => normalizedKey.includes(normalizeLooseObjectKey(hint)))) {
-        pushUnique(cell, text);
-        return;
-      }
-      if (landlineKeyHints.some((hint) => normalizedKey.includes(normalizeLooseObjectKey(hint)))) {
-        pushUnique(phone, text);
-        return;
-      }
-      pushUnique(generic, text);
-    });
-    return { phone, cell, generic };
-  }
-
-  function resolveBrokerContactInfo(item = {}, raw = {}, container = {}) {
-    const row = container && typeof container === "object" ? container : {};
-    const sourceRaw = raw && typeof raw === "object" ? raw : {};
-    const realtorPhoneAliases = [
-      "realtorPhone", "realtorphone", "realtor_phone", "officePhone", "officephone", "office_phone",
-      "landlinePhone", "landlinephone", "landline_phone", "landline", "유선전화", "대표전화", "대표전화번호",
-      "전화번호", "업소전화", "중개사무소전화", "중개업소전화", "중개사전화", "사무소전화", "대표번호",
-      "중개사무소 전화", "중개업소 전화", "officeTel", "tel"
-    ];
-    const realtorCellAliases = [
-      "realtorCell", "realtorcell", "realtor_cell", "mobilePhone", "mobilephone", "mobile_phone",
-      "cellPhone", "cellphone", "cell_phone", "휴대폰번호", "휴대폰", "핸드폰번호", "핸드폰", "휴대전화번호",
-      "휴대전화", "중개사휴대폰", "중개사휴대폰번호", "중개사 휴대폰번호", "mobile", "cell", "hp"
-    ];
-    const genericAliases = [
-      "submitterPhone", "submitter_phone", "phone", "phoneNumber", "phone_number", "contact", "contactPhone",
-      "contact_phone", "연락처", "전화번호"
-    ];
-
-    let realtorPhone = pickFirstText(
-      item?.realtorphone,
-      item?.realtor_phone,
-      item?.officePhone,
-      item?.office_phone,
-      row?.realtor_phone,
-      row?.realtorphone,
-      pickObjectValueByAliases(item, realtorPhoneAliases),
-      pickObjectValueByAliases(row, realtorPhoneAliases),
-      pickObjectValueByAliases(sourceRaw, realtorPhoneAliases),
-      ""
-    );
-    let realtorCell = pickFirstText(
-      item?.realtorcell,
-      item?.realtor_cell,
-      item?.mobilePhone,
-      item?.mobilephone,
-      item?.mobile_phone,
-      pickObjectValueByAliases(item, realtorCellAliases),
-      pickObjectValueByAliases(row, realtorCellAliases),
-      pickObjectValueByAliases(sourceRaw, realtorCellAliases),
-      ""
-    );
-
-    const genericCandidates = [
-      pickObjectValueByAliases(item, genericAliases),
-      pickObjectValueByAliases(row, genericAliases),
-      pickObjectValueByAliases(sourceRaw, genericAliases),
-      row?.submitter_phone,
-      row?.submitterPhone,
-      item?.submitter_phone,
-      item?.submitterPhone,
-      sourceRaw.submitterPhone,
-      sourceRaw.submitter_phone,
-      sourceRaw.phone,
-      sourceRaw.phoneNumber,
-      sourceRaw.phone_number,
-      sourceRaw.contact,
-      sourceRaw.contactPhone,
-      sourceRaw.contact_phone,
-      sourceRaw["연락처"],
-      sourceRaw["전화번호"],
-    ];
-
-    const scanned = [item, row, sourceRaw].map((entry) => collectBrokerPhoneCandidates(entry));
-    scanned.forEach((bucket) => {
-      bucket.phone.forEach((value) => genericCandidates.push(value));
-      bucket.cell.forEach((value) => genericCandidates.push({ value, force: "cell" }));
-      bucket.generic.forEach((value) => genericCandidates.push(value));
-    });
-
-    for (const candidateEntry of genericCandidates) {
-      const candidate = typeof candidateEntry === "object" && candidateEntry && "value" in candidateEntry
-        ? candidateEntry.value
-        : candidateEntry;
-      const forced = typeof candidateEntry === "object" && candidateEntry && "force" in candidateEntry
-        ? candidateEntry.force
-        : "";
-      const text = String(candidate || "").trim();
-      if (!text || !isLikelyPhoneNumber(text)) continue;
-      if (forced === "cell" || isLikelyMobilePhone(text)) {
-        if (!realtorCell) realtorCell = text;
-      } else if (!realtorPhone) {
-        realtorPhone = text;
-      }
-      if (realtorPhone && realtorCell) break;
-    }
-    if (!realtorPhone && realtorCell && !isLikelyMobilePhone(realtorCell)) {
-      realtorPhone = realtorCell;
-      realtorCell = "";
-    }
-    if (!realtorCell && realtorPhone && isLikelyMobilePhone(realtorPhone)) {
-      realtorCell = realtorPhone;
-      realtorPhone = "";
-    }
-    return { realtorPhone, realtorCell };
   }
 
   function inferSourceTypeFromContext(context = {}) {
@@ -544,8 +350,8 @@
       sourceNoteLabel: sourceNote.label,
       sourceNoteText: sourceNote.text,
       realtorname: pickFirstText(item && item.realtorname, item && item.realtor_name, raw.realtorname, raw.realtorName, brokerOfficeName, ""),
-      realtorphone: resolveBrokerContactInfo(item, raw, item && item._raw).realtorPhone,
-      realtorcell: resolveBrokerContactInfo(item, raw, item && item._raw).realtorCell,
+      realtorphone: pickFirstText(item && item.realtorphone, item && item.realtor_phone, item && item._raw && item._raw.realtor_phone, item && item._raw && item._raw.realtorphone, raw.realtorphone, raw.realtorPhone, ""),
+      realtorcell: pickFirstText(item && item.realtorcell, item && item.realtor_cell, item && item._raw && item._raw.submitter_phone, item && item._raw && item._raw.submitterPhone, raw.realtorcell, raw.realtorCell, item && item.submitterPhone, item && item.submitter_phone, ""),
       rightsAnalysis: pickFirstText(item && item.rightsAnalysis, item && item.rights_analysis, raw.rightsAnalysis, raw.rights_analysis, "") || ((item && (item.analysisDone ?? item.analysis_done)) ? "완료" : ""),
       siteInspection: siteInspectionText || ((item && (item.siteVisit ?? item.site_visit ?? item.fieldDone ?? item.field_done)) ? "완료" : ""),
       dailyIssue: dailyIssueText,
@@ -750,6 +556,7 @@
       at: String(options.at || new Date().toISOString()).trim(),
       route: String(route || options.route || "등록").trim(),
       actor: String(options.actor || user?.name || user?.email || "").trim(),
+      actorRole: String(options.actorRole || user?.role || "").trim(),
     };
   }
 
@@ -758,7 +565,7 @@
     const firstAt = pickFirstText(nextRaw.firstRegisteredAt, context?.at, new Date().toISOString());
     const current = Array.isArray(nextRaw.registrationLog) ? nextRaw.registrationLog.slice() : [];
     if (!current.length) {
-      current.push({ type: "created", at: firstAt, route: context?.route || "등록", actor: context?.actor || "" });
+      current.push({ type: "created", at: firstAt, route: context?.route || "등록", actor: context?.actor || "", actorRole: context?.actorRole || "" });
     }
     nextRaw.firstRegisteredAt = firstAt;
     nextRaw.registrationLog = current;
@@ -773,6 +580,7 @@
         at: context?.at || new Date().toISOString(),
         route: context?.route || "등록",
         actor: context?.actor || "",
+        actorRole: context?.actorRole || "",
         changes: changes.map((entry) => ({ ...entry })),
       }];
     }
@@ -809,40 +617,21 @@
     return out;
   }
 
-  function normalizeOpinionHistoryKind(value, fallback = "opinion") {
-    const raw = String(value || "").trim();
-    if (!raw) return fallback;
-    if (raw === "site_inspection" || raw === "siteInspection") return "siteInspection";
-    if (raw === "daily_issue" || raw === "dailyIssue") return "dailyIssue";
-    if (raw === "opinion") return "opinion";
-    return raw;
-  }
-
-  function inferOpinionHistoryKind(entry, fallback = "opinion") {
-    const explicit = normalizeOpinionHistoryKind(entry?.kind || entry?.type || "", "");
-    if (explicit) return explicit;
-    const title = String(entry?.title || entry?.label || "").trim();
-    if (title === "현장실사") return "siteInspection";
-    if (title === "금일이슈사항") return "dailyIssue";
-    if (title === "담당자의견" || title === "담당자 의견") return "opinion";
-    return fallback;
-  }
-
   function normalizeOpinionHistoryEntry(entry) {
     if (!entry || typeof entry !== "object") return null;
     const text = String(entry.text || entry.note || "").trim();
     if (!text) return null;
-    const kind = inferOpinionHistoryKind(entry, "opinion");
+    const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
     const title = String(entry.title || entry.label || "").trim();
     const date = String(entry.date || entry.at || "").trim();
     const author = String(entry.author || entry.actor || "").trim();
-    return { ...entry, kind, title, date, at: String(entry.at || date || "").trim(), text, author };
+    const authorRole = String(entry.authorRole || entry.actorRole || "").trim();
+    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author, authorRole };
   }
 
   function buildOpinionHistoryEntry(kind, text, user, options = {}) {
     const body = String(text || "").trim();
     if (!body) return null;
-    const normalizedKind = normalizeOpinionHistoryKind(kind, "opinion");
     const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
     const date = String(options.date || (Shared && typeof Shared.formatDate === "function" ? (Shared.formatDate(at) || "") : "")).trim();
     const fallbackDate = (() => {
@@ -850,41 +639,51 @@
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     })();
     const author = String(options.author || user?.name || user?.email || "").trim();
+    const authorRole = String(options.authorRole || user?.role || "").trim();
     const titleMap = {
       opinion: "담당자의견",
       siteInspection: "현장실사",
       dailyIssue: "금일이슈사항",
     };
     return {
-      kind: normalizedKind,
-      title: String(options.title || titleMap[normalizedKind] || "담당자의견").trim(),
+      kind: String(kind || "opinion").trim() || "opinion",
+      title: String(options.title || titleMap[kind] || "담당자의견").trim(),
       date: date || fallbackDate,
       at,
       text: body,
       author,
+      authorRole,
     };
+  }
+
+  function inferOpinionHistoryKind(entry, item, raw) {
+    const normalized = normalizeOpinionHistoryEntry(entry);
+    if (!normalized) return null;
+    if (normalized.kind && normalized.kind !== "opinion") return normalized;
+    if (/현장실사/.test(String(normalized.title || "").trim())) return { ...normalized, kind: "siteInspection" };
+    if (/금일\s*이슈/.test(String(normalized.title || "").trim())) return { ...normalized, kind: "dailyIssue" };
+    if (/담당자\s*의견/.test(String(normalized.title || "").trim())) return { ...normalized, kind: "opinion" };
+    const text = String(normalized.text || "").trim();
+    if (!text) return normalized;
+    const opinion = String(item?.opinion || raw.opinion || raw.memo || "").trim();
+    const site = String(item?.siteInspection || raw.siteInspection || raw.site_inspection || "").trim();
+    const daily = String(item?.dailyIssue || raw.dailyIssue || raw.daily_issue || "").trim();
+    const matches = [];
+    if (site && site === text) matches.push("siteInspection");
+    if (daily && daily === text) matches.push("dailyIssue");
+    if (opinion && opinion === text) matches.push("opinion");
+    return matches.length === 1 ? { ...normalized, kind: matches[0] } : normalized;
   }
 
   function loadOpinionHistory(item) {
     const raw = item?._raw?.raw || item?.raw || {};
     const hist = raw.opinionHistory;
     if (Array.isArray(hist) && hist.length) {
-      const currentSite = String(item?.siteInspection || raw.siteInspection || raw.site_inspection || "").trim();
-      const currentDaily = String(item?.dailyIssue || raw.dailyIssue || raw.daily_issue || "").trim();
-      const currentOpinion = String(item?.opinion || raw.opinion || raw.memo || "").trim();
-      return hist.map((entry) => {
-        const normalized = normalizeOpinionHistoryEntry(entry);
-        if (!normalized) return null;
-        const explicitKind = normalizeOpinionHistoryKind(entry?.kind || entry?.type || "", "");
-        if (explicitKind) return normalized;
-        const text = String(normalized.text || "").trim();
-        const matches = [];
-        if (text && currentSite && text === currentSite) matches.push("siteInspection");
-        if (text && currentDaily && text === currentDaily) matches.push("dailyIssue");
-        if (text && currentOpinion && text === currentOpinion) matches.push("opinion");
-        if (matches.length === 1) return { ...normalized, kind: matches[0] };
-        return normalized;
-      }).filter(Boolean);
+      return hist.map((entry) => inferOpinionHistoryKind(entry, item, raw)).filter(Boolean).map((entry) => {
+        if (entry.title) return entry;
+        const meta = getOpinionHistoryMeta(entry);
+        return { ...entry, title: meta.title };
+      });
     }
     const legacy = String(item?.opinion || raw.opinion || "").trim();
     if (legacy) {
@@ -901,7 +700,7 @@
   }
 
   function getOpinionHistoryMeta(entry) {
-    const kind = normalizeOpinionHistoryKind(entry?.kind, "opinion");
+    const kind = String(entry?.kind || "opinion").trim();
     if (kind === "siteInspection") return { badgeClass: "is-site", badgeLabel: "현장실사", title: "현장실사" };
     if (kind === "dailyIssue") return { badgeClass: "is-edit", badgeLabel: "금일이슈사항", title: "금일이슈사항" };
     return { badgeClass: "is-opinion", badgeLabel: "담당자의견", title: "담당자의견" };
@@ -956,6 +755,7 @@
         badgeClass: badges[0].badgeClass,
         badgeLabel: badges[0].badgeLabel,
         author: normalized.author,
+        authorRole: normalized.authorRole || "",
         text: normalized.text,
         title: normalized.title || meta.title,
         order: idx,
@@ -966,6 +766,7 @@
       const at = String(entry?.at || entry?.date || "").trim();
       const route = String(entry?.route || "").trim();
       const actor = String(entry?.actor || "").trim();
+      const actorRole = String(entry?.actorRole || '').trim() || (/관리자/.test(String(entry?.route || '')) ? 'admin' : (/담당자/.test(String(entry?.route || '')) ? 'staff' : ''));
       const type = String(entry?.type || "").trim();
       const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
       const badges = buildRegistrationLogBadges({ ...entry, type, changes });
@@ -979,6 +780,7 @@
         badgeClass: badges[0]?.badgeClass || "is-registration",
         badgeLabel: badges[0]?.badgeLabel || "물건Log",
         author: actor,
+        authorRole: actorRole,
         title: type === "created" ? "최초 등록" : (route || "등록 정보 변경"),
         route,
         changes,
@@ -1137,11 +939,12 @@
         date: String(entry?.date || "").trim(),
         text: String(entry?.text || "").trim(),
         author: String(entry?.author || "").trim(),
+        authorRole: String(entry?.authorRole || entry?.actorRole || "").trim(),
         kind: String(entry?.kind || "").trim(),
         title: String(entry?.title || "").trim(),
         at: String(entry?.at || "").trim(),
       }))
-      .filter((entry) => entry.date || entry.text || entry.author || entry.kind || entry.title || entry.at);
+      .filter((entry) => entry.date || entry.text || entry.author || entry.authorRole || entry.kind || entry.title || entry.at);
   }
 
   function sanitizePropertyRawForSave(raw, overrides = {}) {
@@ -1836,8 +1639,8 @@
       dateMain: pickFirstText(input?.dateMain, input?.date_main, container?.date_main, container?.dateMain, raw.dateMain, raw.date_main, ""),
       sourceUrl: pickFirstText(input?.sourceUrl, input?.source_url, container?.source_url, container?.sourceUrl, raw.sourceUrl, raw.source_url, raw.url, raw["바로가기(엑셀)"], raw["매물URL"], ""),
       realtorName: pickFirstText(input?.realtorName, input?.realtorname, input?.broker_office_name, container?.broker_office_name, container?.brokerOfficeName, raw.realtorName, raw.realtorname, raw.brokerOfficeName, raw.broker_office_name, ""),
-      realtorPhone: resolveBrokerContactInfo(input, raw, container).realtorPhone,
-      realtorCell: resolveBrokerContactInfo(input, raw, container).realtorCell,
+      realtorPhone: pickFirstText(input?.realtorPhone, input?.realtorphone, raw.realtorPhone, raw.realtorphone, ""),
+      realtorCell: pickFirstText(input?.realtorCell, input?.realtorcell, input?.submitter_phone, container?.submitter_phone, raw.realtorCell, raw.realtorcell, raw.submitterPhone, raw.submitter_phone, ""),
       submitterName: pickFirstText(input?.submitterName, input?.submitter_name, container?.submitter_name, raw.registeredByName, raw.submitterName, raw.submitter_name, ""),
       submitterPhone: pickFirstText(input?.submitterPhone, input?.submitter_phone, container?.submitter_phone, raw.submitterPhone, raw.submitter_phone, ""),
       memo: pickFirstText(input?.memo, input?.opinion, container?.memo, raw.memo, raw.opinion, ""),
@@ -1979,8 +1782,6 @@
     compactAddressText,
     extractFloorText,
     sanitizeOnbidOpinion,
-    usesDedicatedSourceNote,
-    extractDedicatedSourceNote,
     stripDedicatedSourceNoteEcho,
     buildNormalizedPropertyBase,
     parseFloorNumberForLog,
@@ -2029,7 +1830,6 @@
     buildRegistrationSubmissionPackage,
     buildRegistrationSubmissionPayload,
     buildPublicListingPayload,
-    resolveBrokerContactInfo,
     isBrokerLikeSource,
     isAuctionLikeSource,
     isGeneralSourceType,

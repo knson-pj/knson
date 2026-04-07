@@ -176,8 +176,6 @@ function normalizeActionType(value) {
     daily_issue: 'daily_issue',
     dailyissue: 'daily_issue',
     opinion: 'opinion',
-    opinion_note: 'opinion',
-    opinionnote: 'opinion',
     property_update: 'property_update',
     propertyupdate: 'property_update',
   };
