@@ -1156,11 +1156,13 @@
   }
 
   function buildRegisterLogContext(route, user) {
-    if (PropertyDomain && typeof PropertyDomain.buildRegisterLogContext === "function") return PropertyDomain.buildRegisterLogContext(route, { user });
+    const actorUser = user && typeof user === 'object' && user.user ? user.user : user;
+    if (PropertyDomain && typeof PropertyDomain.buildRegisterLogContext === "function") return PropertyDomain.buildRegisterLogContext(route, { user: actorUser });
     return {
       at: new Date().toISOString(),
       route: String(route || "등록").trim(),
-      actor: String(user?.name || user?.email || "").trim(),
+      actor: String(actorUser?.name || actorUser?.email || "").trim(),
+      actorRole: String(actorUser?.role || '').trim(),
     };
   }
 
@@ -2736,9 +2738,26 @@ function renderPagination(totalPages) {
   }
 
   function renderCombinedLogActorChip(entry) {
-    const name = String(entry?.author || '').trim();
+    const name = String(entry?.author || entry?.actor || entry?.actor_name || entry?.actorName || '').trim();
     if (!name) return '';
-    return `<span class="agent-combined-log-actor-badge ${inferCombinedLogActorRole(entry)}">${esc(name)}</span>`;
+    const roleClass = inferCombinedLogActorRole(entry);
+    const icon = roleClass === 'is-admin' ? 'shield' : 'person';
+    return `<span class="agent-combined-log-actor-badge ${roleClass}"><span class="material-symbols-outlined chip-icon" aria-hidden="true">${icon}</span><span class="chip-text">${esc(name)}</span></span>`;
+  }
+
+  function renderCombinedLogBadge(badge) {
+    const badgeClass = String(badge?.badgeClass || '').trim();
+    const badgeLabel = String(badge?.badgeLabel || '').trim();
+    if (!badgeLabel) return '';
+    let icon = 'inventory_2';
+    let extraClass = '';
+    if (badgeClass === 'is-site') icon = 'fact_check';
+    else if (badgeClass === 'is-edit') { icon = 'warning'; extraClass = ' is-filled'; }
+    else if (badgeClass === 'is-opinion') icon = 'chat';
+    else if (badgeClass === 'is-rights') icon = 'gavel';
+    else if (badgeClass === 'is-assignee') icon = 'person_add';
+    else if (badgeClass === 'is-new') icon = 'inventory_2';
+    return `<span class="agent-combined-log-badge ${esc(badgeClass)}"><span class="material-symbols-outlined chip-icon${extraClass}" aria-hidden="true">${icon}</span><span class="chip-text">${esc(badgeLabel)}</span></span>`;
   }
 
   function renderCombinedPropertyLog(container, opinionHistory, registrationLog) {
@@ -2751,9 +2770,9 @@ function renderPagination(totalPages) {
       return;
     }
     container.innerHTML = groups.map((group, groupIndex) => {
-      const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
+      const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => renderCombinedLogBadge(badge)).join('');
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
-        const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => `<span class="agent-combined-log-badge ${esc(badge.badgeClass || '')}">${esc(badge.badgeLabel || '')}</span>`).join('');
+        const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => renderCombinedLogBadge(badge)).join('');
         const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', renderCombinedLogActorChip(entry)].filter(Boolean).join('');
         if (entry.kind !== "registration") {
           return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;

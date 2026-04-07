@@ -735,6 +735,33 @@
     return badges.length ? badges : [{ badgeClass: "is-registration", badgeLabel: "물건Log" }];
   }
 
+  function pickCombinedLogAuthor(entry) {
+    return pickFirstText(
+      entry?.author,
+      entry?.actor,
+      entry?.actor_name,
+      entry?.actorName,
+      entry?.updatedByName,
+      entry?.updated_by_name,
+      entry?.userName,
+      entry?.user_name,
+      entry?.name,
+      ""
+    );
+  }
+
+  function pickCombinedLogActorRole(entry) {
+    return pickFirstText(
+      entry?.authorRole,
+      entry?.actorRole,
+      entry?.actor_role,
+      entry?.userRole,
+      entry?.user_role,
+      entry?.role,
+      ""
+    );
+  }
+
   function buildCombinedPropertyLog(opinionHistory, registrationLog) {
     const opinions = Array.isArray(opinionHistory) ? opinionHistory : [];
     const regLogs = Array.isArray(registrationLog) ? registrationLog : [];
@@ -754,8 +781,8 @@
         badges,
         badgeClass: badges[0].badgeClass,
         badgeLabel: badges[0].badgeLabel,
-        author: normalized.author,
-        authorRole: normalized.authorRole || "",
+        author: pickCombinedLogAuthor(normalized),
+        authorRole: pickCombinedLogActorRole(normalized),
         text: normalized.text,
         title: normalized.title || meta.title,
         order: idx,
@@ -765,8 +792,8 @@
     regLogs.forEach((entry, idx) => {
       const at = String(entry?.at || entry?.date || "").trim();
       const route = String(entry?.route || "").trim();
-      const actor = String(entry?.actor || "").trim();
-      const actorRole = String(entry?.actorRole || '').trim() || (/관리자/.test(String(entry?.route || '')) ? 'admin' : (/담당자/.test(String(entry?.route || '')) ? 'staff' : ''));
+      const actor = String(pickCombinedLogAuthor(entry) || '').trim();
+      const actorRole = String(pickCombinedLogActorRole(entry) || '').trim() || (/관리자/.test(String(entry?.route || '')) ? 'admin' : (/담당자/.test(String(entry?.route || '')) ? 'staff' : ''));
       const type = String(entry?.type || "").trim();
       const changes = (Array.isArray(entry?.changes) ? entry.changes : []).filter((change) => change?.field !== "submitterPhone" && change?.label !== "등록자 연락처");
       const badges = buildRegistrationLogBadges({ ...entry, type, changes });
