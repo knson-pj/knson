@@ -1472,6 +1472,7 @@
       id: base.id,
       globalId: base.globalId,
       sourceType: base.sourceType,
+      sourceUrl: base.sourceUrl,
       itemNo: base.itemNo,
       address: base.address,
       sourceNoteLabel: base.sourceNoteLabel,
