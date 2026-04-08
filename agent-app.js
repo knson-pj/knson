@@ -1725,9 +1725,12 @@ function renderRow(p) {
   favTd.appendChild(favBtn);
   tr.appendChild(favTd);
 
+  const _srcUrl = p.sourceUrl || p.source_url || '';
+  const _itemNoHtml = _srcUrl ? '<a href="' + esc(_srcUrl) + '" target="_blank" rel="noopener" class="item-no-link">' + esc(p.itemNo || "-") + '</a>' : esc(p.itemNo || "-");
+
   tr.insertAdjacentHTML("beforeend",
     usePlainLayout
-      ? "<td>" + esc(p.itemNo || "-") + "</td>" +
+      ? "<td>" + _itemNoHtml + "</td>" +
         '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
@@ -1741,7 +1744,7 @@ function renderRow(p) {
         "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
-      : "<td>" + esc(p.itemNo || "-") + "</td>" +
+      : "<td>" + _itemNoHtml + "</td>" +
         '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
         '<td class="text-cell">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
@@ -1758,6 +1761,7 @@ function renderRow(p) {
   );
 
   tr.addEventListener("click", () => openEditModal(p));
+  tr.querySelectorAll(".item-no-link").forEach((a) => a.addEventListener("click", (e) => e.stopPropagation()));
   return tr;
 }
 
