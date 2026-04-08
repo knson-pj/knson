@@ -464,9 +464,9 @@
   function formatScheduleHtml(item, options = {}) {
     const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || item?.raw || {});
     const resultStatus = item?.result_status || item?.resultStatus || item?._raw?.result_status || '';
-    if (resultStatus === '낙찰') {
-      return `<span class="schedule-stack"><span class="schedule-date result-nakchal">낙찰</span></span>`;
-    }
+    const statusVal = item?.status || item?.statusLabel || '';
+    const isNakchal = resultStatus === '낙찰' || statusVal === '낙찰';
+
     const keys = Array.isArray(options.rawKeys) && options.rawKeys.length ? options.rawKeys : ["입찰일자", "입찰마감일시"];
     let rawValue = item?.dateMain || item?.bidDate || item?.date_main || "";
     if (!rawValue) {
@@ -474,6 +474,14 @@
         if (raw && raw[key]) { rawValue = raw[key]; break; }
       }
     }
+
+    if (isNakchal) {
+      // 낙찰: 결과일자 또는 입찰일 표시 + "낙찰" 라벨
+      const resultDateVal = item?.result_date || item?._raw?.result_date || rawValue || '';
+      const dateText = formatDateValue(resultDateVal, "-");
+      return `<span class="schedule-stack"><span class="schedule-date">${escapeHtml(dateText)}</span><span class="schedule-dday result-nakchal">낙찰</span></span>`;
+    }
+
     const dateText = formatDateValue(rawValue, "-");
     const dday = computeDdayLabel(rawValue);
     return `<span class="schedule-stack"><span class="schedule-date">${escapeHtml(dateText)}</span>${dday ? `<span class="schedule-dday">${escapeHtml(dday)}</span>` : `<span class="schedule-dday schedule-dday-empty"></span>`}</span>`;

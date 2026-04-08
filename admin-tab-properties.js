@@ -1180,7 +1180,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('dailyIssue', getEditorHistoryTextLocal(workingItem, 'dailyIssue', { todayOnly: true }) || '');
     setVal('latitude', view.latitude ?? '');
     setVal('longitude', view.longitude ?? '');
-    setVal('resultStatus', workingItem?.result_status || workingItem?.resultStatus || '');
+    setVal('resultStatus', workingItem?.result_status || workingItem?.resultStatus || (workingItem?.status === '낙찰' ? '낙찰' : '') || '');
     setVal('resultPrice', workingItem?.result_price != null ? utils.formatMoneyInputValue(workingItem.result_price) : (workingItem?.resultPrice != null ? utils.formatMoneyInputValue(workingItem.resultPrice) : ''));
     setVal('resultDate', toInputDate(workingItem?.result_date || workingItem?.resultDate || ''));
 

@@ -1977,9 +1977,9 @@ function renderPagination(totalPages) {
     setVal(f, "siteInspection", getEditorHistoryText(item, "siteInspection") || view.siteInspection || "");
     setVal(f, "opinion", getEditorHistoryText(item, "opinion") || view.opinion || "");
     setVal(f, "dailyIssue", getEditorHistoryText(item, "dailyIssue", { todayOnly: true }) || "");
-    setVal(f, "resultStatus", item?._raw?.result_status || item?.resultStatus || "");
-    setVal(f, "resultPrice", item?._raw?.result_price != null ? formatMoneyInputValue(item._raw.result_price) : (item?.resultPrice != null ? formatMoneyInputValue(item.resultPrice) : ""));
-    setVal(f, "resultDate", formatDate(item?._raw?.result_date || item?.resultDate || ""));
+    setVal(f, "resultStatus", item?._raw?.result_status || item?.result_status || item?.resultStatus || (item?.status === '낙찰' || item?._raw?.status === '낙찰' ? '낙찰' : '') || "");
+    setVal(f, "resultPrice", item?._raw?.result_price != null ? formatMoneyInputValue(item._raw.result_price) : (item?.result_price != null ? formatMoneyInputValue(item.result_price) : (item?.resultPrice != null ? formatMoneyInputValue(item.resultPrice) : "")));
+    setVal(f, "resultDate", formatDate(item?._raw?.result_date || item?.result_date || item?.resultDate || ""));
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
