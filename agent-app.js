@@ -1927,10 +1927,14 @@ function renderPagination(totalPages) {
     setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
     setVal(form, "brokerCellDisplay", view?.realtorCell || "-");
     const _agRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? item._raw.raw : (item?.raw && typeof item.raw === "object" ? item.raw : {});
+    if (!form.elements["brokerPhoneDisplay"]?.value || form.elements["brokerPhoneDisplay"]?.value === "-") setVal(form, "brokerPhoneDisplay", _agRaw["중개사 유선전화"] || _agRaw["중개사무소전화"] || _agRaw["대표전화"] || _agRaw.realtorPhone || "-");
+    if (!form.elements["brokerCellDisplay"]?.value || form.elements["brokerCellDisplay"]?.value === "-") setVal(form, "brokerCellDisplay", _agRaw["중개사 휴대폰"] || _agRaw["휴대폰번호"] || _agRaw["휴대폰"] || _agRaw.realtorCell || "-");
     const agBrokerMemoEl = form.elements["brokerMemoDisplay"];
     if (agBrokerMemoEl) agBrokerMemoEl.value = _agRaw.memo || _agRaw.importedSourceText || _agRaw.sourceNoteText || _agRaw["매물특징"] || "";
     const agAuctionInfoEl = form.elements["auctionInfoDisplay"];
-    if (agAuctionInfoEl) agAuctionInfoEl.value = [_agRaw["경매현황"], _agRaw.auctionStatus, _agRaw.auction_status].filter(Boolean).join("\n") || item?.memo || "";
+    if (agAuctionInfoEl) agAuctionInfoEl.value = _agRaw["경매현황"] || _agRaw.auctionStatus || _agRaw.auction_status || "";
+    const agAuctionBigoEl = form.elements["auctionBigoDisplay"];
+    if (agAuctionBigoEl) agAuctionBigoEl.value = _agRaw["비고"] || "";
     setVal(form, "ownerNameDisplay", view?.submitterName || "-");
     setVal(form, "ownerPhoneDisplay", view?.submitterPhone || "-");
     arrangeAgentOpinionFields(form);

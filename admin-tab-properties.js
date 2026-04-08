@@ -1167,10 +1167,14 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     if (_brokerInfo.realtorPhone) setVal('realtorphone', _brokerInfo.realtorPhone);
     if (_brokerInfo.realtorCell) setVal('realtorcell', _brokerInfo.realtorCell);
     const _editRaw = workingItem?._raw?.raw && typeof workingItem._raw.raw === 'object' ? workingItem._raw.raw : (workingItem?.raw && typeof workingItem.raw === 'object' ? workingItem.raw : {});
+    if (!f.elements['realtorphone']?.value) setVal('realtorphone', _editRaw['중개사 유선전화'] || _editRaw['중개사무소전화'] || _editRaw['대표전화'] || _editRaw.realtorPhone || '');
+    if (!f.elements['realtorcell']?.value) setVal('realtorcell', _editRaw['중개사 휴대폰'] || _editRaw['휴대폰번호'] || _editRaw['휴대폰'] || _editRaw.realtorCell || '');
     const brokerMemoEl = f.elements['brokerMemoDisplay'];
     if (brokerMemoEl) brokerMemoEl.value = _editRaw.memo || _editRaw.importedSourceText || _editRaw.sourceNoteText || _editRaw['매물특징'] || '';
     const auctionInfoEl = f.elements['auctionInfoDisplay'];
-    if (auctionInfoEl) auctionInfoEl.value = [_editRaw['경매현황'], _editRaw.auctionStatus, _editRaw.auction_status].filter(Boolean).join('\n') || workingItem?.memo || '';
+    if (auctionInfoEl) auctionInfoEl.value = _editRaw['경매현황'] || _editRaw.auctionStatus || _editRaw.auction_status || '';
+    const auctionBigoEl = f.elements['auctionBigoDisplay'];
+    if (auctionBigoEl) auctionBigoEl.value = _editRaw['비고'] || '';
     setVal('siteInspection', getEditorHistoryTextLocal(workingItem, 'siteInspection') || view.siteInspection || '');
     setVal('opinion', getEditorHistoryTextLocal(workingItem, 'opinion') || view.opinion || '');
     setVal('dailyIssue', getEditorHistoryTextLocal(workingItem, 'dailyIssue', { todayOnly: true }) || '');

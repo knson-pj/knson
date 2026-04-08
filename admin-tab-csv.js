@@ -431,8 +431,8 @@
       sourceUrl = pick("바로가기(엑셀)", "매물URL", "sourceUrl", "url");
       memo = pick("매물특징", "memo");
       realtorName = pick("중개사무소명", "중개업소명", "부동산", "중개사무소", "중개업소", "사무소명", "업체명");
-      realtorPhone = pick("유선전화", "대표전화", "전화번호", "업소전화", "중개사무소전화", "연락처");
-      realtorCell = pick("휴대폰번호", "휴대폰", "핸드폰", "휴대전화", "중개사휴대폰", "중개사 휴대폰번호");
+      realtorPhone = pick("유선전화", "중개사 유선전화", "대표전화", "전화번호", "업소전화", "중개사무소전화", "연락처");
+      realtorCell = pick("휴대폰번호", "중개사 휴대폰", "휴대폰", "핸드폰", "휴대전화", "중개사휴대폰", "중개사 휴대폰번호");
       floor = pick("해당층", "층수", "floor") || extractFloorLabelFromTexts(pick("매물명", "제목", "itemName"), address, memo);
       totalfloor = pick("총층", "전체층", "totalfloor") || extractTotalFloorFromTexts(memo) || null;
       const ex = pick("전용면적(평)", "전용면적", "exclusiveArea");
