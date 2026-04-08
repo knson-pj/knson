@@ -1180,9 +1180,23 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('dailyIssue', getEditorHistoryTextLocal(workingItem, 'dailyIssue', { todayOnly: true }) || '');
     setVal('latitude', view.latitude ?? '');
     setVal('longitude', view.longitude ?? '');
-    setVal('resultStatus', workingItem?.result_status || workingItem?.resultStatus || (workingItem?.status === '낙찰' ? '낙찰' : '') || '');
-    setVal('resultPrice', workingItem?.result_price != null ? utils.formatMoneyInputValue(workingItem.result_price) : (workingItem?.resultPrice != null ? utils.formatMoneyInputValue(workingItem.resultPrice) : ''));
-    setVal('resultDate', toInputDate(workingItem?.result_date || workingItem?.resultDate || ''));
+    const _rr = workingItem?._raw || workingItem;
+    setVal('resultStatus', _rr?.result_status || workingItem?.result_status || workingItem?.resultStatus || ((_rr?.status || workingItem?.status) === '낙찰' ? '낙찰' : '') || '');
+    setVal('resultPrice', _rr?.result_price != null ? utils.formatMoneyInputValue(_rr.result_price) : (workingItem?.result_price != null ? utils.formatMoneyInputValue(workingItem.result_price) : ''));
+    setVal('resultDate', toInputDate(_rr?.result_date || workingItem?.result_date || workingItem?.resultDate || ''));
+    // fallback: DB에서 직접 조회 (normalize에서 result 필드가 누락된 경우)
+    if (!f.elements['resultPrice']?.value && sb && detailTargetId) {
+      (async () => {
+        try {
+          const { data } = await sb.from('properties').select('result_status,result_price,result_date').or('id.eq.' + detailTargetId + ',global_id.eq.' + detailTargetId).limit(1).maybeSingle();
+          if (data) {
+            if (data.result_status && !f.elements['resultStatus']?.value) setVal('resultStatus', data.result_status);
+            if (data.result_price != null && !f.elements['resultPrice']?.value) setVal('resultPrice', utils.formatMoneyInputValue(data.result_price));
+            if (data.result_date && !f.elements['resultDate']?.value) setVal('resultDate', toInputDate(data.result_date));
+          }
+        } catch (_) {}
+      })();
+    }
 
     utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice', 'resultPrice'] });
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);

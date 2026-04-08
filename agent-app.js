@@ -1978,8 +1978,25 @@ function renderPagination(totalPages) {
     setVal(f, "opinion", getEditorHistoryText(item, "opinion") || view.opinion || "");
     setVal(f, "dailyIssue", getEditorHistoryText(item, "dailyIssue", { todayOnly: true }) || "");
     setVal(f, "resultStatus", item?._raw?.result_status || item?.result_status || item?.resultStatus || (item?.status === '낙찰' || item?._raw?.status === '낙찰' ? '낙찰' : '') || "");
-    setVal(f, "resultPrice", item?._raw?.result_price != null ? formatMoneyInputValue(item._raw.result_price) : (item?.result_price != null ? formatMoneyInputValue(item.result_price) : (item?.resultPrice != null ? formatMoneyInputValue(item.resultPrice) : "")));
+    setVal(f, "resultPrice", item?._raw?.result_price != null ? formatMoneyInputValue(item._raw.result_price) : (item?.result_price != null ? formatMoneyInputValue(item.result_price) : ""));
     setVal(f, "resultDate", formatDate(item?._raw?.result_date || item?.result_date || item?.resultDate || ""));
+    // fallback: DB에서 직접 조회
+    if (!f.elements["resultPrice"]?.value && isSupabaseMode()) {
+      const _sb = K.initSupabase();
+      const _tid = String(item?._raw?.id || item?.id || item?.globalId || "").trim();
+      if (_sb && _tid) {
+        (async () => {
+          try {
+            const { data } = await _sb.from("properties").select("result_status,result_price,result_date").or("id.eq." + _tid + ",global_id.eq." + _tid).limit(1).maybeSingle();
+            if (data) {
+              if (data.result_status && !f.elements["resultStatus"]?.value) setVal(f, "resultStatus", data.result_status);
+              if (data.result_price != null && !f.elements["resultPrice"]?.value) setVal(f, "resultPrice", formatMoneyInputValue(data.result_price));
+              if (data.result_date && !f.elements["resultDate"]?.value) setVal(f, "resultDate", formatDate(data.result_date));
+            }
+          } catch (_) {}
+        })();
+      }
+    }
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
