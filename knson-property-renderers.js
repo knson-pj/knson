@@ -463,6 +463,10 @@
 
   function formatScheduleHtml(item, options = {}) {
     const raw = item?._raw?.raw && typeof item._raw.raw === 'object' ? item._raw.raw : (item?._raw || item?.raw || {});
+    const resultStatus = item?.result_status || item?.resultStatus || item?._raw?.result_status || '';
+    if (resultStatus === '낙찰') {
+      return `<span class="schedule-stack"><span class="schedule-date result-nakchal">낙찰</span></span>`;
+    }
     const keys = Array.isArray(options.rawKeys) && options.rawKeys.length ? options.rawKeys : ["입찰일자", "입찰마감일시"];
     let rawValue = item?.dateMain || item?.bidDate || item?.date_main || "";
     if (!rawValue) {

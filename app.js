@@ -559,6 +559,9 @@
       latitude: base.latitude,
       longitude: base.longitude,
       isDirectSubmission: base.isDirectSubmission,
+      result_status: p?.result_status || null,
+      result_price: p?.result_price || null,
+      result_date: p?.result_date || null,
       sourceBucket: (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") ? PropertyDomain.getSourceBucket(sourceContext) : base.sourceType,
       raw: base.raw,
     };

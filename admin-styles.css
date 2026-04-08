@@ -556,6 +556,7 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .schedule-date{font-weight:600;font-size:12px;}
 .schedule-dday{font-size:10px;color:var(--brand);font-weight:700;}
 .schedule-dday-empty{visibility:hidden;}
+.result-nakchal{color:#e53e3e;font-weight:700;font-size:12px;}
 
 /* Map link */
 .map-link{

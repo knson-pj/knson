@@ -1493,6 +1493,9 @@
       opinion: base.opinion,
       createdAt: base.createdAt,
       isDirectSubmission: base.isDirectSubmission,
+      result_status: item?.result_status || null,
+      result_price: item?.result_price || null,
+      result_date: item?.result_date || null,
       _raw: item,
     };
   }
