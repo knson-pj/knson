@@ -510,6 +510,9 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
     memo: input.memo !== undefined ? input.memo : (preserveImportedMemo ? undefined : input.opinion),
     latitude: parseNumberOrNull(input.latitude),
     longitude: parseNumberOrNull(input.longitude),
+    result_status: input.result_status ?? input.resultStatus,
+    result_price: parseNumberOrNull(input.result_price ?? input.resultPrice),
+    result_date: input.result_date ?? input.resultDate,
     is_general: input.is_general !== undefined ? !!input.is_general : derivedIsGeneral,
     raw: baseRaw,
   });
