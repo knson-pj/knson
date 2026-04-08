@@ -595,6 +595,8 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     });
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
     form.querySelectorAll('[data-aem-section="owner"]').forEach((node) => node.classList.toggle('hidden', !isGeneral));
+    const isAuction = bucket === 'auction';
+    form.querySelectorAll('[data-aem-section="auctionInfo"]').forEach((node) => node.classList.toggle('hidden', !isAuction));
     const info = extractPropertyContactInfo(view, item);
     const ownerNameEl = form.elements['ownerNameDisplay'];
     const ownerPhoneEl = form.elements['ownerPhoneDisplay'];
@@ -1160,6 +1162,15 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('realtorname', view.realtorname ?? '');
     setVal('realtorphone', view.realtorphone ?? '');
     setVal('realtorcell', view.realtorcell ?? '');
+    const _brokerInfo = extractPropertyContactInfo(view, workingItem);
+    if (_brokerInfo.realtorName) setVal('realtorname', _brokerInfo.realtorName);
+    if (_brokerInfo.realtorPhone) setVal('realtorphone', _brokerInfo.realtorPhone);
+    if (_brokerInfo.realtorCell) setVal('realtorcell', _brokerInfo.realtorCell);
+    const _editRaw = workingItem?._raw?.raw && typeof workingItem._raw.raw === 'object' ? workingItem._raw.raw : (workingItem?.raw && typeof workingItem.raw === 'object' ? workingItem.raw : {});
+    const brokerMemoEl = f.elements['brokerMemoDisplay'];
+    if (brokerMemoEl) brokerMemoEl.value = _editRaw.memo || _editRaw.importedSourceText || _editRaw.sourceNoteText || _editRaw['매물특징'] || '';
+    const auctionInfoEl = f.elements['auctionInfoDisplay'];
+    if (auctionInfoEl) auctionInfoEl.value = [_editRaw['경매현황'], _editRaw.auctionStatus, _editRaw.auction_status].filter(Boolean).join('\n') || workingItem?.memo || '';
     setVal('siteInspection', getEditorHistoryTextLocal(workingItem, 'siteInspection') || view.siteInspection || '');
     setVal('opinion', getEditorHistoryTextLocal(workingItem, 'opinion') || view.opinion || '');
     setVal('dailyIssue', getEditorHistoryTextLocal(workingItem, 'dailyIssue', { todayOnly: true }) || '');

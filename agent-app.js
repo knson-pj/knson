@@ -1921,9 +1921,16 @@ function renderPagination(totalPages) {
     });
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
     form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
+    const isAuction = bucket === "auction";
+    form.querySelectorAll('[data-ag-section="auctionInfo"]').forEach((node) => node.classList.toggle("hidden", !isAuction));
     setVal(form, "brokerOfficeDisplay", view?.realtorName || "-");
     setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
     setVal(form, "brokerCellDisplay", view?.realtorCell || "-");
+    const _agRaw = item?._raw?.raw && typeof item._raw.raw === "object" ? item._raw.raw : (item?.raw && typeof item.raw === "object" ? item.raw : {});
+    const agBrokerMemoEl = form.elements["brokerMemoDisplay"];
+    if (agBrokerMemoEl) agBrokerMemoEl.value = _agRaw.memo || _agRaw.importedSourceText || _agRaw.sourceNoteText || _agRaw["매물특징"] || "";
+    const agAuctionInfoEl = form.elements["auctionInfoDisplay"];
+    if (agAuctionInfoEl) agAuctionInfoEl.value = [_agRaw["경매현황"], _agRaw.auctionStatus, _agRaw.auction_status].filter(Boolean).join("\n") || item?.memo || "";
     setVal(form, "ownerNameDisplay", view?.submitterName || "-");
     setVal(form, "ownerPhoneDisplay", view?.submitterPhone || "-");
     arrangeAgentOpinionFields(form);
