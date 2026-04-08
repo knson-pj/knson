@@ -572,6 +572,7 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
 .kind-gongmae{color:var(--c-onbid);}
 .kind-realtor{color:var(--c-realtor);}
 .kind-general{color:var(--c-general);}
+.item-no-link{color:var(--c-auction, #d97706);text-decoration:none;font-weight:600;cursor:pointer;}.item-no-link:hover{text-decoration:underline;opacity:0.85;}
 .summary-mini{color:var(--text-3);font-size:11px;}
 
 /* Fav */

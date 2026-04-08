@@ -1003,7 +1003,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       ? `
       <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
       <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
-      <td>${utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
+      <td>${(p.sourceUrl || p.source_url) ? '<a href="' + utils.escapeAttr(p.sourceUrl || p.source_url) + '" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">' + utils.escapeHtml(listView?.itemNo || p.itemNo || '-') + '</a>' : utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
       <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
@@ -1020,7 +1020,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       : `
       <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
       <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
-      <td>${utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
+      <td>${(p.sourceUrl || p.source_url) ? '<a href="' + utils.escapeAttr(p.sourceUrl || p.source_url) + '" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">' + utils.escapeHtml(listView?.itemNo || p.itemNo || '-') + '</a>' : utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
       <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
