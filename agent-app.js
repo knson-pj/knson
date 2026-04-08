@@ -1952,7 +1952,7 @@ function renderPagination(totalPages) {
     const view = getAgentEditableSnapshot(item);
     const kindLabel = getPropertyKindLabel(item.sourceType, item);
 
-    configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice"] });
+    configureFormNumericUx(f, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain", "currentPrice", "resultPrice"] });
 
     setVal(f, "itemNo", item.itemNo);
     setVal(f, "sourceType", kindLabel || "일반");
@@ -1974,6 +1974,9 @@ function renderPagination(totalPages) {
     setVal(f, "siteInspection", getEditorHistoryText(item, "siteInspection") || view.siteInspection || "");
     setVal(f, "opinion", getEditorHistoryText(item, "opinion") || view.opinion || "");
     setVal(f, "dailyIssue", getEditorHistoryText(item, "dailyIssue", { todayOnly: true }) || "");
+    setVal(f, "resultStatus", item?._raw?.result_status || item?.resultStatus || "");
+    setVal(f, "resultPrice", item?._raw?.result_price != null ? formatMoneyInputValue(item._raw.result_price) : (item?.resultPrice != null ? formatMoneyInputValue(item.resultPrice) : ""));
+    setVal(f, "resultDate", formatDate(item?._raw?.result_date || item?.resultDate || ""));
 
     ["itemNo", "sourceType", "assetType", "status", "address"].forEach((name) => {
       const el = f.elements[name];
@@ -2141,6 +2144,13 @@ function renderPagination(totalPages) {
       maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
       maybeAssignInitialColumnValue(patch, "price_main", priceMainVal, item?._raw?.price_main);
       maybeAssignInitialColumnValue(patch, "date_main", dateMainVal, item?._raw?.date_main);
+
+      const resultStatusVal = readStr("resultStatus") || null;
+      const resultPriceVal = readNum("resultPrice");
+      const resultDateVal = readStr("resultDate") || null;
+      if (resultStatusVal != null) patch.result_status = resultStatusVal;
+      if (resultPriceVal != null) patch.result_price = resultPriceVal;
+      if (resultDateVal) patch.result_date = resultDateVal;
 
       const workCategories = [];
       const changedFields = {};

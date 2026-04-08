@@ -1180,8 +1180,11 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     setVal('dailyIssue', getEditorHistoryTextLocal(workingItem, 'dailyIssue', { todayOnly: true }) || '');
     setVal('latitude', view.latitude ?? '');
     setVal('longitude', view.longitude ?? '');
+    setVal('resultStatus', workingItem?.result_status || workingItem?.resultStatus || '');
+    setVal('resultPrice', workingItem?.result_price != null ? utils.formatMoneyInputValue(workingItem.result_price) : (workingItem?.resultPrice != null ? utils.formatMoneyInputValue(workingItem.resultPrice) : ''));
+    setVal('resultDate', toInputDate(workingItem?.result_date || workingItem?.resultDate || ''));
 
-    utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice'] });
+    utils.configureFormNumericUx(f, { decimalNames: ['commonarea', 'exclusivearea', 'sitearea', 'latitude', 'longitude'], amountNames: ['priceMain', 'lowprice', 'resultPrice'] });
     applyAdminPropertyFormMode(els, utils, workingItem, view.sourceType, view.submitterType, view);
     arrangeAdminOpinionFields(f);
     setAdminEditSection('basic');
@@ -1337,6 +1340,9 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       opinionHistory,
       latitude: readNum('latitude'),
       longitude: readNum('longitude'),
+      resultStatus: readStr('resultStatus') || null,
+      resultPrice: readNum('resultPrice'),
+      resultDate: readStr('resultDate') || null,
     };
     if (hiddenStatusFields) {
       delete patch.dateMain;
@@ -1411,6 +1417,9 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
           memo: patch.opinion,
           latitude: patch.latitude,
           longitude: patch.longitude,
+          result_status: patch.resultStatus,
+          result_price: patch.resultPrice,
+          result_date: patch.resultDate,
           raw: currentRawForLog,
         }, regContext)
       : null;
@@ -1441,6 +1450,9 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
         memo: patch.opinion,
         latitude: patch.latitude,
         longitude: patch.longitude,
+        result_status: patch.resultStatus,
+        result_price: patch.resultPrice,
+        result_date: patch.resultDate,
         raw: payload.raw,
       };
       Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
