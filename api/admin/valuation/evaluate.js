@@ -28,6 +28,156 @@ function buildHeaders({ hasJson = false } = {}) {
   };
 }
 
+// ═══════════════════════════════════════════════════
+// 법정동코드 API (행정안전부) — 실시간 조회
+// ═══════════════════════════════════════════════════
+// 환경변수: REGION_API_KEY (data.go.kr 서비스키)
+// API: http://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList
+
+const REGION_API_BASE = 'http://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList';
+const regionCodeCache = new Map(); // 메모리 캐시 (함수 warm 동안 유지)
+
+function getRegionApiKey() {
+  return String(process.env.REGION_API_KEY || process.env.MOLIT_API_KEY || '').trim();
+}
+
+/**
+ * 주소 문자열에서 법정동코드 API를 호출하여 시군구코드(5자리) + 동 이름을 반환
+ * @param {string} address - 전체 주소 (예: "서울특별시 강남구 역삼동 123-45")
+ * @returns {{ sigunguCode: string, dongName: string, regionCd: string }}
+ */
+async function resolveRegionCode(address) {
+  const text = String(address || '').replace(/\s+/g, ' ').trim();
+  if (!text) return { sigunguCode: '', dongName: '', regionCd: '' };
+
+  // 주소에서 검색어 추출: "OO시 OO구 OO동" 또는 "OO도 OO시 OO동" 형태
+  // 동 단위까지 포함하여 검색하면 정확도 높음
+  const dongMatch = text.match(/([가-힣0-9]+동)\b/);
+  const guMatch = text.match(/([가-힣]+[시군구])\s/);
+  const sidoMatch = text.match(/^([가-힣]+(?:특별시|광역시|특별자치시|특별자치도|도))/);
+
+  // 검색어 조합: 가장 구체적인 것부터 시도
+  const searchParts = [sidoMatch?.[1], guMatch?.[1], dongMatch?.[1]].filter(Boolean);
+  const searchQuery = searchParts.join(' ') || text.substring(0, 20);
+
+  // 캐시 확인
+  if (regionCodeCache.has(searchQuery)) return regionCodeCache.get(searchQuery);
+
+  const apiKey = getRegionApiKey();
+  if (!apiKey) {
+    console.warn('REGION_API_KEY 미설정, 주소 파싱으로 폴백');
+    return fallbackParseAddress(text);
+  }
+
+  try {
+    const params = new URLSearchParams({
+      ServiceKey: apiKey,
+      type: 'json',
+      pageNo: '1',
+      numOfRows: '10',
+      flag: 'Y',
+      locatadd_nm: searchQuery,
+    });
+
+    const res = await fetch(`${REGION_API_BASE}?${params.toString()}`);
+    if (!res.ok) {
+      console.warn(`법정동코드 API 응답 오류: ${res.status}`);
+      return fallbackParseAddress(text);
+    }
+
+    const data = await res.json();
+    const rows = data?.StanReginCd?.[1]?.row || [];
+
+    if (!rows.length) {
+      // 동 이름으로만 재시도
+      if (dongMatch) {
+        const params2 = new URLSearchParams({
+          ServiceKey: apiKey, type: 'json', pageNo: '1', numOfRows: '10',
+          flag: 'Y', locatadd_nm: dongMatch[1],
+        });
+        const res2 = await fetch(`${REGION_API_BASE}?${params2.toString()}`);
+        if (res2.ok) {
+          const data2 = await res2.json();
+          const rows2 = data2?.StanReginCd?.[1]?.row || [];
+          if (rows2.length) {
+            const best = pickBestMatch(rows2, text);
+            const result = {
+              sigunguCode: best.region_cd ? best.region_cd.substring(0, 5) : '',
+              dongName: best.locallow_nm || dongMatch[1],
+              regionCd: best.region_cd || '',
+            };
+            regionCodeCache.set(searchQuery, result);
+            return result;
+          }
+        }
+      }
+      return fallbackParseAddress(text);
+    }
+
+    const best = pickBestMatch(rows, text);
+    const result = {
+      sigunguCode: best.region_cd ? best.region_cd.substring(0, 5) : '',
+      dongName: best.locallow_nm || dongMatch?.[1] || '',
+      regionCd: best.region_cd || '',
+    };
+    regionCodeCache.set(searchQuery, result);
+    return result;
+  } catch (err) {
+    console.warn('법정동코드 API 호출 실패:', err.message);
+    return fallbackParseAddress(text);
+  }
+}
+
+/**
+ * API 응답에서 주소와 가장 잘 매칭되는 row 선택
+ */
+function pickBestMatch(rows, address) {
+  const normalized = address.replace(/\s+/g, '');
+  let best = rows[0];
+  let bestScore = 0;
+
+  for (const row of rows) {
+    const locatAddr = (row.locatadd_nm || '').replace(/\s+/g, '');
+    let score = 0;
+    // 동 레벨까지 매칭되면 높은 점수 (umd_cd가 000이 아닌 것)
+    if (row.umd_cd && row.umd_cd !== '000') score += 10;
+    // 주소 문자열에 포함되면 가산
+    if (normalized.includes(locatAddr.replace(/\s+/g, ''))) score += 5;
+    if (locatAddr && normalized.includes(locatAddr)) score += 5;
+    // 리 코드가 00이면 동 레벨 (리 레벨보다 선호)
+    if (row.ri_cd === '00') score += 2;
+    if (score > bestScore) { bestScore = score; best = row; }
+  }
+  return best;
+}
+
+/**
+ * API 사용 불가 시 주소 문자열에서 직접 파싱 (폴백)
+ * 주요 시군구 코드만 하드코딩
+ */
+function fallbackParseAddress(address) {
+  const dongMatch = address.match(/([가-힣0-9]+동)\b/);
+  const dongName = dongMatch ? dongMatch[1] : '';
+
+  // 간단한 시군구 매핑 (주요 지역만)
+  const KNOWN_CODES = {
+    '강남구': '11680', '서초구': '11650', '송파구': '11710', '강동구': '11740',
+    '마포구': '11440', '용산구': '11170', '성동구': '11200', '광진구': '11215',
+    '동대문구': '11230', '중랑구': '11260', '성북구': '11290', '강북구': '11305',
+    '도봉구': '11320', '노원구': '11350', '은평구': '11380', '서대문구': '11410',
+    '종로구': '11110', '중구': '11140', '영등포구': '11560', '동작구': '11590',
+    '관악구': '11620', '금천구': '11545', '구로구': '11530', '양천구': '11470',
+    '강서구': '11500', '중구': '11140',
+  };
+
+  for (const [gu, code] of Object.entries(KNOWN_CODES)) {
+    if (address.includes(gu)) {
+      return { sigunguCode: code, dongName, regionCd: '' };
+    }
+  }
+  return { sigunguCode: '', dongName, regionCd: '' };
+}
+
 async function sbRest(path, opts = {}) {
   const { url } = getEnv();
   const res = await fetch(`${url}${path}`, {
@@ -321,31 +471,17 @@ async function evaluateProperty(propertyId) {
   const address = prop.address || '';
   const raw = prop.raw && typeof prop.raw === 'object' ? prop.raw : {};
 
-  // 2. 주소에서 시군구코드 + 동 추출
-  const guMatch = address.match(/([가-힣]+[시군구])\s/);
+  // 2. 주소에서 시군구코드 + 동 추출 (법정동코드 API 실시간 호출)
   const dongMatch = address.match(/([가-힣0-9]+동)\b/);
-  const guName = guMatch ? guMatch[1] : '';
   const dongName = dongMatch ? dongMatch[1] : '';
 
-  // region_codes 테이블에서 시군구코드 조회
-  let sigunguCode = '';
-  if (dongName) {
-    const codes = await sbRest(
-      `/rest/v1/region_codes?dong=eq.${encodeURIComponent(dongName)}&limit=5`
-    );
-    if (Array.isArray(codes) && codes.length) {
-      // 시군구명으로 재필터
-      const matched = guName
-        ? codes.find((c) => (c.sigungu || '').includes(guName))
-        : codes[0];
-      sigunguCode = (matched || codes[0]).sigungu_code || '';
-    }
-  }
+  const resolved = await resolveRegionCode(address);
+  const sigunguCode = resolved.sigunguCode;
 
   if (!sigunguCode) {
     return {
       property_id: propertyId,
-      error: '시군구코드를 확인할 수 없습니다. 주소를 확인하세요.',
+      error: '시군구코드를 확인할 수 없습니다. 주소를 확인하세요: ' + address,
       grade: null,
     };
   }
