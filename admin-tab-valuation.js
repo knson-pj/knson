@@ -105,12 +105,18 @@
       '</div>' +
 
       '<div style="margin-bottom:24px">' +
-        '<h3 style="font-size:15px;font-weight:600;margin-bottom:12px">🏪 네이버 상가 임대 호가 수집</h3>' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">' +
-          '<label style="display:flex;flex-direction:column;gap:4px;font-size:13px">페이지 수<input id="valRentalPages" type="number" value="5" min="1" max="20" style="' + S + 'width:70px" /></label>' +
-          '<button id="btnFetchRental" type="button" style="' + B + 'background:#0FA68B">임대 호가 수집</button>' +
+        '<h3 style="font-size:15px;font-weight:600;margin-bottom:12px">🏪 상가 임대 호가 등록 (CSV 업로드)</h3>' +
+        '<div style="margin-bottom:10px;font-size:12px;color:#888;line-height:1.6">' +
+          '네이버 부동산에서 상가 월세 매물을 조회 → 엑셀에 정리 → CSV로 저장 후 업로드<br>' +
+          '<strong>필수 컬럼:</strong> 동, 월세(만원) &nbsp; <strong>권장 컬럼:</strong> 주소, 층, 면적(㎡), 보증금(만원), 건물명' +
         '</div>' +
-        '<div id="valRentalLog" style="margin-top:10px;font-size:12px;color:#666"></div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">' +
+          '<label style="display:flex;flex-direction:column;gap:4px;font-size:13px">CSV 파일' +
+            '<input id="valRentalCsv" type="file" accept=".csv,.tsv,.txt" style="font-size:12px" /></label>' +
+          '<button id="btnUploadRental" type="button" style="' + B + 'background:#0FA68B">업로드</button>' +
+          '<button id="btnShowRentalSample" type="button" style="padding:7px 12px;border:1px solid rgba(0,0,0,0.15);border-radius:6px;font-size:12px;cursor:pointer;background:#fff;">샘플 CSV 다운로드</button>' +
+        '</div>' +
+        '<div id="valRentalLog" style="margin-top:10px;font-size:12px;color:#666;max-height:200px;overflow-y:auto"></div>' +
       '</div>' +
 
       '<div style="margin-bottom:24px">' +
@@ -229,22 +235,76 @@
     log.innerHTML += '<br><strong>완료! 총 ' + total + '건 저장</strong>';
   }
 
-  async function handleFetchRental() {
+  async function handleUploadRental() {
     var log = document.getElementById("valRentalLog");
-    if (!curSgg) { log.textContent = "⚠️ 시도/시군구를 선택하세요."; return; }
-    var cortarNo = curSgg.code + "00000";
-    var pages = parseInt(document.getElementById("valRentalPages").value || "5");
-    log.textContent = curSgg.name + " 임대 호가 수집 중...";
+    if (!curSgg) { log.textContent = "⚠️ 시도/시군구를 먼저 선택하세요."; return; }
+
+    var fileInput = document.getElementById("valRentalCsv");
+    if (!fileInput || !fileInput.files.length) {
+      log.textContent = "⚠️ CSV 파일을 선택하세요.";
+      return;
+    }
+
+    log.textContent = "파일 읽는 중...";
+
+    var file = fileInput.files[0];
+    var text = await file.text();
+    var rows = parseCsvText(text);
+
+    if (!rows.length) {
+      log.textContent = "⚠️ CSV에서 데이터를 읽을 수 없습니다. 헤더 행이 있는지 확인하세요.";
+      return;
+    }
+
+    log.textContent = rows.length + "건 파싱 완료, 업로드 중...";
+
     try {
       var res = await fetch(API_BASE + "/admin/valuation/rental-data", {
         method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ cortarNo: cortarNo, pages: pages }),
+        body: JSON.stringify({
+          action: "upload-csv",
+          sigunguCode: curSgg.code,
+          csvRows: rows,
+        }),
       });
       var data = await res.json();
-      log.textContent = '✅ ' + curSgg.name + ': ' + (data.fetched || 0) + '건 수집 / ' + (data.inserted || 0) + '건 저장';
+      log.textContent = '✅ 전체 ' + (data.total || 0) + '건 중 유효 ' + (data.valid || 0) + '건 / 저장 ' + (data.inserted || 0) + '건' +
+        (data.errors ? ' / 오류 ' + data.errors + '건' : '');
     } catch (err) {
       log.textContent = '❌ ' + err.message;
     }
+  }
+
+  function parseCsvText(text) {
+    var lines = text.split(/\r?\n/);
+    if (lines.length < 2) return [];
+
+    // 탭 또는 쉼표 구분 자동 감지
+    var sep = lines[0].includes('\t') ? '\t' : ',';
+    var headers = lines[0].split(sep).map(function(h) { return h.replace(/^\uFEFF/, '').replace(/^"|"$/g, '').trim(); });
+
+    var result = [];
+    for (var i = 1; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
+      var values = line.split(sep).map(function(v) { return v.replace(/^"|"$/g, '').trim(); });
+      var obj = {};
+      headers.forEach(function(h, idx) { obj[h] = values[idx] || ''; });
+      result.push(obj);
+    }
+    return result;
+  }
+
+  function handleDownloadSample() {
+    var csv = '동,주소,건물명,층,면적(㎡),보증금(만원),월세(만원),설명\n' +
+      '역삼동,서울특별시 강남구 역삼동 123-4,OO빌딩,1,45.5,3000,150,역삼역 도보 3분\n' +
+      '역삼동,서울특별시 강남구 역삼동 456-7,△△상가,B1,33.2,1000,80,지하 상가\n' +
+      '논현동,서울특별시 강남구 논현동 89-1,□□타워,2,60.0,5000,200,대로변 코너\n';
+    var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'rental_sample.csv';
+    a.click();
   }
 
   async function handleRunEval() {
@@ -293,8 +353,9 @@
 
     document.getElementById("valSido").addEventListener("change", onSidoChange);
     document.getElementById("valSgg").addEventListener("change", onSggChange);
+    document.getElementById("btnUploadRental").addEventListener("click", handleUploadRental);
+    document.getElementById("btnShowRentalSample").addEventListener("click", handleDownloadSample);
     document.getElementById("btnFetchMolit").addEventListener("click", handleFetchMolit);
-    document.getElementById("btnFetchRental").addEventListener("click", handleFetchRental);
     document.getElementById("btnRunEval").addEventListener("click", handleRunEval);
     loadSummary();
   }
