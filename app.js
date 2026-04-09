@@ -564,6 +564,7 @@
       result_date: p?.result_date || null,
       sourceBucket: (PropertyDomain && typeof PropertyDomain.getSourceBucket === "function") ? PropertyDomain.getSourceBucket(sourceContext) : base.sourceType,
       raw: base.raw,
+      valuation: null, // 가격평가 결과 (lazy load)
     };
   }
 
@@ -1327,9 +1328,14 @@
         '</div>';
     }
 
+    // 평가 배지
+    const Valuation = window.KNSN_VALUATION;
+    const gradeBadge = Valuation ? Valuation.renderGradeBadge(p.valuation) : '';
+
     card.innerHTML =
       '<div class="mv-card-top">' +
         '<span class="mv-badge mv-badge-' + (p.sourceBucket || p.source) + '">' + escapeHtml(kindLabel) + '</span>' +
+        gradeBadge +
       '</div>' +
       '<div class="mv-card-addr">' + escapeHtml(p.address || "-") + '</div>' +
       '<div class="mv-card-info">' + escapeHtml((p.type || "") + (p.floor ? " · " + p.floor + "층" : "") + (p.exclusivearea != null ? " · 전용 " + formatAreaPyeong(p.exclusivearea) + "평" : "")) + '</div>' +
@@ -1470,8 +1476,55 @@
     }
 
     els.mvDetailBody.innerHTML = body;
+
+    // 가격평가 상세 표시 (비동기)
+    const Valuation = window.KNSN_VALUATION;
+    if (Valuation && item.id) {
+      const valWrap = document.createElement('div');
+      valWrap.className = 'mv-detail-section';
+      valWrap.innerHTML = '<div class="mv-detail-stitle">E. 가격평가</div><div style="font-size:12px;color:var(--muted);">평가 정보 조회 중...</div>';
+      els.mvDetailBody.appendChild(valWrap);
+
+      Valuation.fetchValuation(item.id).then(function(val) {
+        item.valuation = val;
+        if (val && val.grade) {
+          valWrap.innerHTML = '<div class="mv-detail-stitle">E. 가격평가</div>' + Valuation.renderValuationDetail(val);
+        } else {
+          valWrap.innerHTML = '<div class="mv-detail-stitle">E. 가격평가</div>' +
+            '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">아직 평가되지 않은 매물입니다.</div>' +
+            '<button type="button" onclick="window.__runValuation(\'' + (item.id || '') + '\')" ' +
+            'style="padding:6px 14px;background:#534AB7;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;">' +
+            '평가 실행</button>';
+        }
+      }).catch(function() {
+        valWrap.innerHTML = '<div class="mv-detail-stitle">E. 가격평가</div><div style="font-size:12px;color:var(--muted);">평가 정보를 불러올 수 없습니다.</div>';
+      });
+    }
+
     els.mvDetail.classList.remove("hidden");
   }
+
+  // 평가 실행 글로벌 함수
+  window.__runValuation = async function(propertyId) {
+    const Valuation = window.KNSN_VALUATION;
+    if (!Valuation) return;
+    const btn = event && event.target;
+    if (btn) { btn.disabled = true; btn.textContent = '평가 중...'; }
+    try {
+      const result = await Valuation.requestEvaluation(propertyId);
+      if (result && result.grade) {
+        alert('평가 완료: ' + result.grade + ' 등급' + (result.annual_yield ? ' (수익률 ' + result.annual_yield.toFixed(1) + '%)' : ''));
+        // 상세 팝업 갱신
+        const item = state.items.find(function(i) { return i.id === propertyId; });
+        if (item) { item.valuation = result; }
+      } else {
+        alert('평가 실패: ' + (result?.error || '비교사례 부족'));
+      }
+    } catch (err) {
+      alert('평가 오류: ' + err.message);
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '평가 실행'; }
+  };
 
   async function openMapDetail(item) {
     if (!els.mvDetail || !els.mvDetailGrade || !els.mvDetailBody) return;

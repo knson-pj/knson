@@ -347,6 +347,7 @@
       regions: els.tabRegions,
       geocoding: els.tabGeocoding,
       workmgmt: els.tabWorkmgmt,
+      valuation: els.tabValuation,
     };
     const active = panelMap[next] ? next : 'home';
     state.activeTab = active;
@@ -364,6 +365,11 @@
 
     if (active === 'properties') {
       syncPropertySourceFilterUi();
+    }
+
+    // 가격평가 탭 초기화
+    if (active === 'valuation' && window.KNSN_VALUATION_ADMIN) {
+      window.KNSN_VALUATION_ADMIN.initValuationTab(els.tabValuation);
     }
 
     try {
@@ -510,6 +516,9 @@
       geocodeListTitle: $("#geocodeListTitle"),
       geocodeListBody: $("#geocodeListBody"),
       geocodeListEmpty: $("#geocodeListEmpty"),
+
+      // valuation tab
+      tabValuation: $("#tab-valuation"),
 
       // new property modal
       btnNewProperty: $("#btnNewProperty"),
