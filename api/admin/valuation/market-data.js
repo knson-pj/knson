@@ -131,23 +131,38 @@ async function upsertTransactions(sigunguCode, items) {
     ...item,
   }));
 
-  // Supabase upsert (on conflict 무시)
-  const batchSize = 50;
+  // 단순 POST (중복은 개별 에러로 무시)
+  const batchSize = 20;
   let inserted = 0;
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
     try {
-      await supabaseRest(
+      const result = await supabaseRest(
         '/rest/v1/market_transactions',
         {
           method: 'POST',
           json: batch,
-          headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+          headers: { Prefer: 'return=representation' },
         }
       );
-      inserted += batch.length;
+      inserted += Array.isArray(result) ? result.length : batch.length;
     } catch (err) {
-      console.error('Batch upsert error:', err.message);
+      // 배치 실패 시 개별 INSERT로 폴백
+      for (const row of batch) {
+        try {
+          await supabaseRest(
+            '/rest/v1/market_transactions',
+            {
+              method: 'POST',
+              json: row,
+              headers: { Prefer: 'return=minimal' },
+            }
+          );
+          inserted += 1;
+        } catch (innerErr) {
+          // 중복이거나 기타 에러 — 무시
+        }
+      }
     }
   }
   return { inserted };

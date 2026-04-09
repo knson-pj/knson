@@ -115,20 +115,31 @@ async function fetchNaverRentals(cortarNo, maxPages = 5) {
 async function upsertRentals(items) {
   if (!items.length) return { inserted: 0 };
 
-  const batchSize = 50;
+  const batchSize = 20;
   let inserted = 0;
 
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
     try {
-      await supabaseRest('/rest/v1/rental_listings', {
+      const result = await supabaseRest('/rest/v1/rental_listings', {
         method: 'POST',
         json: batch,
-        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        headers: { Prefer: 'return=representation' },
       });
-      inserted += batch.length;
+      inserted += Array.isArray(result) ? result.length : batch.length;
     } catch (err) {
-      console.error('Rental upsert error:', err.message);
+      for (const row of batch) {
+        try {
+          await supabaseRest('/rest/v1/rental_listings', {
+            method: 'POST',
+            json: row,
+            headers: { Prefer: 'return=minimal' },
+          });
+          inserted += 1;
+        } catch (innerErr) {
+          // 중복 무시
+        }
+      }
     }
   }
   return { inserted };
