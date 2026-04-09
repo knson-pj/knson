@@ -1,148 +1,115 @@
 /**
  * api/admin/valuation/rental-data.js
- * Phase 1 — 네이버 부동산 상가 월세 호가 수집
+ * Phase 1 — 상가 임대 호가 데이터 관리 (CSV 업로드 방식)
  *
  * POST /api/admin/valuation/rental-data
- * Body: { cortarNo: "1168010600", pages: 5 }
- *   → 네이버 부동산 내부 API에서 상가+월세 데이터를 수집하여 DB 적재
+ * Body: { action: "upload-csv", csvRows: [ { dong, address, floor, area, deposit, monthlyRent, ... }, ... ] }
+ *   → CSV에서 파싱된 임대 호가 데이터를 DB에 적재
+ *
+ * POST /api/admin/valuation/rental-data
+ * Body: { action: "add-single", dong, address, floor, area, deposit, monthlyRent, ... }
+ *   → 수동 단건 입력
  *
  * GET /api/admin/valuation/rental-data?sigunguCode=11680&dong=역삼동
  *   → DB에서 임대 호가 조회
- *
- * 네이버 부동산 내부 API 파라미터:
- *   rletTypeCd=D02 (상가), tradeTypeCd=B2 (월세)
- *   cortarNo: 법정동코드 10자리
  */
 
 const { applyCors } = require('../../_lib/cors');
 const { send, getJsonBody } = require('../../_lib/utils');
 const { hasSupabaseAdminEnv, getEnv } = require('../../_lib/supabase-admin');
 
-function buildSupabaseHeaders({ hasJson = false } = {}) {
+function buildHeaders({ hasJson = false } = {}) {
   const { serviceRoleKey } = getEnv();
-  const headers = {
+  return {
     Accept: 'application/json',
     apikey: serviceRoleKey,
     Authorization: `Bearer ${serviceRoleKey}`,
+    ...(hasJson ? { 'Content-Type': 'application/json' } : {}),
   };
-  if (hasJson) headers['Content-Type'] = 'application/json';
-  return headers;
 }
 
-async function supabaseRest(path, { method = 'GET', json, headers: extra = {} } = {}) {
+async function sbRest(path, opts = {}) {
   const { url } = getEnv();
   const res = await fetch(`${url}${path}`, {
-    method,
-    headers: { ...buildSupabaseHeaders({ hasJson: json !== undefined }), ...extra },
-    body: json !== undefined ? JSON.stringify(json) : undefined,
+    method: opts.method || 'GET',
+    headers: { ...buildHeaders({ hasJson: opts.json !== undefined }), ...(opts.headers || {}) },
+    body: opts.json !== undefined ? JSON.stringify(opts.json) : undefined,
   });
   const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) {
-    const err = new Error((data?.message || data?.error) || `Supabase ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
+  let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw new Error((data?.message || data?.error) || `Supabase ${res.status}`);
   return data;
 }
 
-// ── 네이버 부동산 내부 API ──
+// ── CSV 행 → DB 행 변환 ──
 
-const NAVER_LAND_API = 'https://new.land.naver.com/api/articles';
+function parseNumber(v) {
+  if (v == null || v === '') return null;
+  const n = Number(String(v).replace(/[,\s원만억]/g, '').trim());
+  return Number.isFinite(n) ? n : null;
+}
 
-async function fetchNaverRentals(cortarNo, maxPages = 5) {
-  const allArticles = [];
+function normalizeRow(row, sigunguCode) {
+  // CSV 컬럼명 유연 매핑
+  const dong = String(row.dong || row['동'] || row.dong_name || row['법정동'] || row['동이름'] || '').trim();
+  const address = String(row.address || row['주소'] || row['소재지'] || row['도로명주소'] || '').trim();
+  const buildingName = String(row.building_name || row['건물명'] || row['상가명'] || row['빌딩명'] || '').trim();
+  const floor = parseNumber(row.floor || row['층'] || row['해당층']);
+  const area = parseNumber(row.area || row.area_m2 || row['면적'] || row['전용면적'] || row['면적(㎡)'] || row['전용면적(㎡)']);
+  const deposit = parseNumber(row.deposit || row['보증금'] || row['보증금(만원)']);
+  const monthlyRent = parseNumber(row.monthly_rent || row.monthlyRent || row['월세'] || row['월세(만원)'] || row['월임대료']);
+  const direction = String(row.direction || row['방향'] || '').trim();
+  const description = String(row.description || row['설명'] || row['매물설명'] || row['특징'] || '').trim();
+  const articleNo = String(row.article_no || row.articleNo || row['매물번호'] || row['매물No'] || '').trim() || null;
 
-  for (let page = 1; page <= maxPages; page++) {
-    const params = new URLSearchParams({
-      cortarNo,
-      rletTypeCd: 'D02',       // 상가
-      tradeTypeCd: 'B2',       // 월세
-      order: 'dateDesc',
-      page: String(page),
-    });
-
-    try {
-      const res = await fetch(`${NAVER_LAND_API}?${params.toString()}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json',
-          'Referer': 'https://new.land.naver.com/',
-        },
-      });
-
-      if (!res.ok) {
-        console.warn(`Naver API page ${page} failed: ${res.status}`);
-        break;
-      }
-
-      const data = await res.json();
-      const articles = data?.articleList || [];
-      if (!articles.length) break;
-
-      for (const a of articles) {
-        allArticles.push({
-          article_no: String(a.atclNo || ''),
-          sigungu_code: cortarNo.substring(0, 5),
-          dong_name: a.atclNm || '',
-          address: [a.rletTpNm, a.atclNm, a.bildNm].filter(Boolean).join(' '),
-          building_name: a.bildNm || '',
-          floor: parseInt(a.flrInfo || '0', 10) || null,
-          area_m2: parseFloat(a.spc2 || a.spc1 || '0') || null,
-          deposit: parseInt(String(a.hanPrc || '').split('/')[0]?.replace(/[^0-9]/g, '') || '0', 10) || null,
-          monthly_rent: parseInt(String(a.hanPrc || '').split('/')[1]?.replace(/[^0-9]/g, '') || '0', 10) || null,
-          trade_type: 'B2',
-          direction: a.direction || '',
-          description: a.atclFetrDesc || '',
-          confirm_date: a.cfmYmd || '',
-        });
-      }
-
-      // 너무 빨리 요청하지 않도록 지연
-      await new Promise((r) => setTimeout(r, 800));
-    } catch (err) {
-      console.warn(`Naver fetch page ${page} error:`, err.message);
-      break;
-    }
-  }
-
-  return allArticles;
+  return {
+    article_no: articleNo,
+    sigungu_code: sigunguCode || '',
+    dong_name: dong,
+    address: address || (dong + ' ' + buildingName).trim(),
+    building_name: buildingName,
+    floor: floor,
+    area_m2: area,
+    deposit: deposit,
+    monthly_rent: monthlyRent,
+    trade_type: 'B2',
+    direction: direction,
+    description: description,
+    confirm_date: String(row.confirm_date || row['확인일자'] || row['날짜'] || '').trim() || null,
+    expired: false,
+  };
 }
 
 // ── DB 적재 ──
 
-async function upsertRentals(items) {
-  if (!items.length) return { inserted: 0 };
+async function insertRentals(rows) {
+  if (!rows.length) return { inserted: 0, errors: 0 };
 
+  let inserted = 0, errors = 0;
   const batchSize = 20;
-  let inserted = 0;
 
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
     try {
-      const result = await supabaseRest('/rest/v1/rental_listings', {
+      const result = await sbRest('/rest/v1/rental_listings', {
         method: 'POST',
         json: batch,
         headers: { Prefer: 'return=representation' },
       });
       inserted += Array.isArray(result) ? result.length : batch.length;
-    } catch (err) {
+    } catch {
+      // 배치 실패 시 개별 INSERT
       for (const row of batch) {
         try {
-          await supabaseRest('/rest/v1/rental_listings', {
-            method: 'POST',
-            json: row,
-            headers: { Prefer: 'return=minimal' },
+          await sbRest('/rest/v1/rental_listings', {
+            method: 'POST', json: row, headers: { Prefer: 'return=minimal' },
           });
-          inserted += 1;
-        } catch (innerErr) {
-          // 중복 무시
-        }
+          inserted++;
+        } catch { errors++; }
       }
     }
   }
-  return { inserted };
+  return { inserted, errors };
 }
 
 // ── DB 조회 ──
@@ -155,9 +122,7 @@ async function queryRentals({ sigunguCode, dong }) {
     'limit=300',
   ];
   if (dong) parts.push(`dong_name=ilike.*${encodeURIComponent(dong)}*`);
-
-  const qs = parts.join('&');
-  const data = await supabaseRest(`/rest/v1/rental_listings?${qs}`);
+  const data = await sbRest(`/rest/v1/rental_listings?${parts.join('&')}`);
   return Array.isArray(data) ? data : [];
 }
 
@@ -168,22 +133,48 @@ module.exports = async function handler(req, res) {
   if (!hasSupabaseAdminEnv()) return send(res, 500, { error: 'Supabase 미설정' });
 
   try {
-    if (req.method === 'POST') {
-      const body = getJsonBody(req);
-      const { cortarNo, pages } = body;
-      if (!cortarNo) return send(res, 400, { error: 'cortarNo (법정동코드 10자리) 필수' });
-
-      const items = await fetchNaverRentals(cortarNo, parseInt(pages || '5', 10));
-      const result = await upsertRentals(items);
-      return send(res, 200, { ok: true, fetched: items.length, ...result });
-    }
-
     if (req.method === 'GET') {
       const { sigunguCode, dong } = req.query || {};
       if (!sigunguCode) return send(res, 400, { error: 'sigunguCode 필수' });
-
       const rows = await queryRentals({ sigunguCode, dong });
       return send(res, 200, { ok: true, count: rows.length, items: rows });
+    }
+
+    if (req.method === 'POST') {
+      const body = getJsonBody(req);
+      const action = body.action || 'upload-csv';
+
+      if (action === 'upload-csv') {
+        // CSV 일괄 업로드
+        const csvRows = body.csvRows;
+        const sigunguCode = body.sigunguCode || '';
+        if (!Array.isArray(csvRows) || !csvRows.length) {
+          return send(res, 400, { error: 'csvRows 배열이 필요합니다.' });
+        }
+
+        const normalized = csvRows
+          .map((r) => normalizeRow(r, sigunguCode))
+          .filter((r) => r.monthly_rent != null && r.monthly_rent > 0);
+
+        const result = await insertRentals(normalized);
+        return send(res, 200, {
+          ok: true,
+          total: csvRows.length,
+          valid: normalized.length,
+          ...result,
+        });
+      }
+
+      if (action === 'add-single') {
+        // 수동 단건 입력
+        const row = normalizeRow(body, body.sigunguCode || '');
+        if (!row.monthly_rent) return send(res, 400, { error: '월세 정보가 필요합니다.' });
+
+        const result = await insertRentals([row]);
+        return send(res, 200, { ok: true, ...result });
+      }
+
+      return send(res, 400, { error: '알 수 없는 action: ' + action });
     }
 
     return send(res, 405, { error: 'Method not allowed' });
