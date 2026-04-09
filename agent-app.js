@@ -1924,13 +1924,52 @@ function renderPagination(totalPages) {
     const isRealtor = bucket === "realtor_naver" || bucket === "realtor_direct" || String(item?.sourceType || "").trim() === "realtor";
     const isGeneral = bucket === "general" || String(item?.sourceType || "").trim() === "general";
     const hideForPlain = isRealtor || isGeneral;
-    form.querySelectorAll('[data-ag-field="status"], [data-ag-field="dateMain"], [data-ag-field="currentPrice"]').forEach((node) => {
+    form.querySelectorAll('[data-ag-field="dateMain"], [data-ag-field="currentPrice"]').forEach((node) => {
       node.classList.toggle("hidden", hideForPlain);
     });
+    // 진행상태: 경매/공매는 readonly, 나머지는 select로 변경
+    const statusWrap = form.querySelector('[data-ag-field="status"]');
+    if (statusWrap) {
+      statusWrap.classList.remove("hidden");
+      const currentStatus = form.elements["status"]?.value || "";
+      const isAuctionType = bucket === "auction" || bucket === "onbid";
+      if (isAuctionType) {
+        // 경매/공매: readonly input
+        if (form.elements["status"]?.tagName === "SELECT") {
+          const inp = document.createElement("input");
+          inp.name = "status"; inp.className = "input"; inp.type = "text"; inp.readOnly = true;
+          inp.value = currentStatus;
+          form.elements["status"].replaceWith(inp);
+        } else {
+          form.elements["status"].readOnly = true;
+        }
+      } else {
+        // 중개/일반: select
+        const el = form.elements["status"];
+        if (el?.tagName !== "SELECT") {
+          const sel = document.createElement("select");
+          sel.name = "status"; sel.className = "input";
+          ["", "관찰", "협상", "보류"].forEach((v) => {
+            const opt = document.createElement("option");
+            opt.value = v; opt.textContent = v || "선택";
+            sel.appendChild(opt);
+          });
+          if (currentStatus && !["관찰","협상","보류"].includes(currentStatus)) {
+            const opt = document.createElement("option");
+            opt.value = currentStatus; opt.textContent = currentStatus;
+            sel.insertBefore(opt, sel.options[1]);
+          }
+          sel.value = currentStatus;
+          el.replaceWith(sel);
+        }
+      }
+    }
     form.querySelectorAll('[data-ag-section="brokerInfo"]').forEach((node) => node.classList.toggle("hidden", !isRealtor));
     form.querySelectorAll('[data-ag-section="ownerInfo"]').forEach((node) => node.classList.toggle("hidden", !isGeneral));
     const isAuction = bucket === "auction";
+    const isOnbid = bucket === "onbid";
     form.querySelectorAll('[data-ag-section="auctionInfo"]').forEach((node) => node.classList.toggle("hidden", !isAuction));
+    form.querySelectorAll('[data-ag-section="resultInfo"]').forEach((node) => node.classList.toggle("hidden", !(isAuction || isOnbid)));
     setVal(form, "brokerOfficeDisplay", view?.realtorName || "-");
     setVal(form, "brokerPhoneDisplay", view?.realtorPhone || "-");
     setVal(form, "brokerCellDisplay", view?.realtorCell || "-");

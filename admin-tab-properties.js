@@ -596,7 +596,9 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     form.querySelectorAll('[data-aem-section="broker"]').forEach((node) => node.classList.toggle('hidden', !isRealtor));
     form.querySelectorAll('[data-aem-section="owner"]').forEach((node) => node.classList.toggle('hidden', !isGeneral));
     const isAuction = bucket === 'auction';
+    const isOnbid = bucket === 'onbid';
     form.querySelectorAll('[data-aem-section="auctionInfo"]').forEach((node) => node.classList.toggle('hidden', !isAuction));
+    form.querySelectorAll('[data-aem-section="resultInfo"]').forEach((node) => node.classList.toggle('hidden', !(isAuction || isOnbid)));
     const info = extractPropertyContactInfo(view, item);
     const ownerNameEl = form.elements['ownerNameDisplay'];
     const ownerPhoneEl = form.elements['ownerPhoneDisplay'];
