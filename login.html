@@ -3,68 +3,99 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
   <title>부동산 매입 관리 시스템 | 로그인</title>
   <meta name="supabase-url" content="https://sdkiwbzpllyqqlvdtimz.supabase.co" />
   <meta name="supabase-anon-key" content="sb_publishable_Q3YN6qECq8gl1ABy4elRqg_jLAn_Te7" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./login.css?v=20260410-ui3" />
+  <link rel="stylesheet" href="./login.css?v=20260410-ui4" />
+  <style>
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: #eef1f5;
+      color: #14181d;
+      font-family: "Inter", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    img { max-width: 100%; display: block; }
+    .login-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(380px, 0.95fr);
+    }
+    .login-visual,
+    .login-panel {
+      min-height: 100vh;
+    }
+    .login-mobile-brand {
+      display: none;
+    }
+    @media (max-width: 1024px) {
+      .login-shell { grid-template-columns: 1fr; }
+      .login-visual,
+      .login-panel { min-height: auto; }
+    }
+    @media (max-width: 820px) {
+      .login-mobile-brand { display: inline-flex; }
+    }
+  </style>
 </head>
 <body>
   <main class="login-shell" role="main">
     <section class="login-visual" aria-label="브랜드 및 서비스 소개 영역">
-      <div class="visual-bg" aria-hidden="true"></div>
-      <div class="visual-overlay" aria-hidden="true"></div>
+      <div class="login-visual-bg" aria-hidden="true"></div>
+      <div class="login-visual-overlay" aria-hidden="true"></div>
 
-      <div class="visual-content">
-        <div class="brand-row">
-          <span class="brand-mark">
-            <img class="brand-mark-image" src="./image/logo.png" alt="HMK 홀딩스 그룹 로고" />
+      <div class="login-visual-content">
+        <div class="login-brand-row">
+          <span class="login-brand-mark">
+            <img class="login-brand-mark-image" src="./image/logo.png" alt="HMK 홀딩스 그룹 로고" />
           </span>
-          <span class="brand-name">HMKHOLDINGS_INTELLIGENCE</span>
+          <span class="login-brand-name">HMKHOLDINGS_INTELLIGENCE</span>
         </div>
 
-        <div class="hero-copy">
-          <h1 class="hero-title">
+        <div class="login-hero-copy">
+          <h1 class="login-hero-title">
             상업용 부동산<br />
             AI 매입 평가 플랫폼
           </h1>
-          <p class="hero-text">
+          <p class="login-hero-text">
             Transforming real estate acquisition through precision data and architectural insight.
             High-performance intelligence for institutional investment.
           </p>
         </div>
 
-        <div class="source-chip-wrap" aria-label="데이터 소스 목록">
-          <span class="source-chip">공공데이터포털</span>
-          <span class="source-chip">서울시열린데이터</span>
-          <span class="source-chip">소상공인시장진흥공단</span>
-          <span class="source-chip">국토교통부</span>
-          <span class="source-chip">공정거래위원회</span>
-          <span class="source-chip">한국은행</span>
-          <span class="source-chip">한국부동산원</span>
+        <div class="login-source-chip-wrap" aria-label="데이터 소스 목록">
+          <span class="login-source-chip">공공데이터포털</span>
+          <span class="login-source-chip">서울시열린데이터</span>
+          <span class="login-source-chip">소상공인시장진흥공단</span>
+          <span class="login-source-chip">국토교통부</span>
+          <span class="login-source-chip">공정거래위원회</span>
+          <span class="login-source-chip">한국은행</span>
+          <span class="login-source-chip">한국부동산원</span>
         </div>
       </div>
     </section>
 
     <section class="login-panel" aria-label="로그인 영역">
       <div class="login-panel-inner">
-        <div class="mobile-brand-row" aria-hidden="true">
-          <img class="mobile-brand-logo" src="./image/logo.png" alt="" />
-          <span class="mobile-brand-name">HMKHOLDINGS_INTELLIGENCE</span>
+        <div class="login-mobile-brand" aria-hidden="true">
+          <img class="login-mobile-brand-logo" src="./image/logo.png" alt="" />
+          <span class="login-mobile-brand-name">HMKHOLDINGS_INTELLIGENCE</span>
         </div>
 
-        <header class="panel-header">
-          <h2 class="panel-title">Welcome</h2>
-          <p class="panel-subtitle">Please enter your credentials to access the platform.</p>
+        <header class="login-panel-header">
+          <h2 class="login-panel-title">Welcome</h2>
+          <p class="login-panel-subtitle">Please enter your credentials to access the platform.</p>
         </header>
 
         <form id="loginForm" class="login-form" autocomplete="on" novalidate>
-          <label class="field-group" for="loginEmail">
-            <span class="field-label">Email Address</span>
-            <span class="field-box">
-              <span class="field-icon" aria-hidden="true">✉</span>
+          <label class="login-field-group" for="loginEmail">
+            <span class="login-field-label">Email Address</span>
+            <span class="login-field-box">
+              <span class="login-field-icon" aria-hidden="true">✉</span>
               <input
                 id="loginEmail"
                 name="name"
@@ -77,10 +108,10 @@
             </span>
           </label>
 
-          <label class="field-group" for="loginPassword">
-            <span class="field-label">Password</span>
-            <span class="field-box">
-              <span class="field-icon" aria-hidden="true">🔒</span>
+          <label class="login-field-group" for="loginPassword">
+            <span class="login-field-label">Password</span>
+            <span class="login-field-box">
+              <span class="login-field-icon" aria-hidden="true">🔒</span>
               <input
                 id="loginPassword"
                 name="password"
@@ -92,37 +123,37 @@
             </span>
           </label>
 
-          <label class="remember-row" for="rememberDevice">
+          <label class="login-remember-row" for="rememberDevice">
             <input id="rememberDevice" name="remember-me" type="checkbox" />
             <span>Remember this device</span>
           </label>
 
-          <div class="action-group">
+          <div class="login-action-group">
             <button
               id="btnLogin"
               type="submit"
-              class="btn btn-primary"
+              class="login-btn login-btn-primary"
               data-idle-text="플랫폼 로그인 →"
               data-busy-text="로그인 중..."
             >
               플랫폼 로그인 →
             </button>
-            <button id="btnPublicRegister" type="button" class="btn btn-secondary">
+            <button id="btnPublicRegister" type="button" class="login-btn login-btn-secondary">
               누구나 매물 등록 →
             </button>
           </div>
 
-          <div id="loginMsg" class="msg" role="status" aria-live="polite"></div>
+          <div id="loginMsg" class="login-msg" role="status" aria-live="polite"></div>
         </form>
 
-        <div class="access-divider" aria-hidden="true">
+        <div class="login-access-divider" aria-hidden="true">
           <span></span>
           <strong>AUTHORIZED ACCESS ONLY</strong>
           <span></span>
         </div>
 
-        <aside class="insight-card" aria-label="운영 안내">
-          <span class="insight-star" aria-hidden="true">✦</span>
+        <aside class="login-insight-card" aria-label="운영 안내">
+          <span class="login-insight-star" aria-hidden="true">✦</span>
           <p>
             <strong>HMK 데이터베이스</strong>에 등록된 매물을 실시간으로 업데이트하고
             모니터링하고 있습니다.
@@ -130,9 +161,9 @@
         </aside>
       </div>
 
-      <footer class="panel-footer">
-        <div class="footer-copy">© 2026 HMK HOLDINGS Intelligence. All rights reserved.</div>
-        <nav class="footer-links" aria-label="하단 링크">
+      <footer class="login-panel-footer">
+        <div class="login-footer-copy">© 2026 HMK HOLDINGS Intelligence. All rights reserved.</div>
+        <nav class="login-footer-links" aria-label="하단 링크">
           <a href="#">Terms of Service</a>
           <a href="#">Privacy Policy</a>
           <a href="#">Contact Support</a>
@@ -144,6 +175,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./knson-core.js?v=20260316-ui2"></script>
   <script src="./knson-shared.js?v=20260325-shared1"></script>
-  <script src="./login.js?v=20260410-ui3"></script>
+  <script src="./login.js?v=20260410-ui4"></script>
 </body>
 </html>

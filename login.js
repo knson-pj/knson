@@ -11,9 +11,8 @@
 
   const nextUrl = getNextUrl();
 
-const urlObj = (() => { try { return new URL(location.href); } catch { return null; } })();
-const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
-
+  const urlObj = (() => { try { return new URL(location.href); } catch { return null; } })();
+  const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
 
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
@@ -30,10 +29,10 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
       })
     : null;
 
-  // 이미 로그인되어 있으면 바로 이동
+  const btnLoginIdleText = String(btnLogin?.dataset?.idleText || btnLogin?.textContent || "SIGN IN").trim();
+  const btnLoginBusyText = String(btnLogin?.dataset?.busyText || "로그인 중...").trim();
+
   (async () => {
-    // 로그아웃으로 넘어온 경우: Supabase 세션/로컬 세션을 강제로 정리한 뒤,
-    // 자동 리다이렉트(자동 로그인)를 하지 않고 로그인 화면을 유지합니다.
     if (isLogoutFlow) {
       try {
         if (sbEnabled && K && typeof K.sbHardSignOut === "function") await K.sbHardSignOut();
@@ -71,11 +70,11 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
     }
   })();
 
-  btnPublicRegister.addEventListener("click", () => {
+  btnPublicRegister?.addEventListener("click", () => {
     location.href = "./buypage.html";
   });
 
-  form.addEventListener("submit", async (e) => {
+  form?.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const fd = new FormData(form);
@@ -115,12 +114,14 @@ const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
   });
 
   function setBusy(b) {
+    if (!btnLogin) return;
     btnLogin.disabled = !!b;
     btnLogin.classList.toggle("is-busy", !!b);
-    btnLogin.textContent = b ? "SIGNING..." : "SIGN IN";
+    btnLogin.textContent = b ? btnLoginBusyText : btnLoginIdleText;
   }
 
   function setMsg(msg, type = "error") {
+    if (!msgEl) return;
     msgEl.textContent = msg || "";
     msgEl.classList.toggle("show", !!msg);
     msgEl.classList.toggle("is-warning", !!msg && type === "warning");
