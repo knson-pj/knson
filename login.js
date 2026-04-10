@@ -10,9 +10,7 @@
   const msgEl = document.getElementById("loginMsg");
   const btnLogin = document.getElementById("btnLogin");
   const btnAdminLogin = document.getElementById("btnAdminLogin");
-
-  const urlObj = (() => { try { return new URL(location.href); } catch { return null; } })();
-  const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
+  const loginModeEl = document.getElementById("loginMode");
 
   const K = window.KNSN || null;
   const Shared = window.KNSN_SHARED || null;
@@ -33,10 +31,14 @@
 
   const btnLoginIdleText = String(btnLogin?.dataset?.idleText || btnLogin?.textContent || "플랫폼 로그인 →").trim();
   const btnLoginBusyText = String(btnLogin?.dataset?.busyText || "로그인 중...").trim();
-  const btnAdminIdleText = String(btnAdminLogin?.dataset?.idleText || btnAdminLogin?.textContent || "관리자시스템 로그인 →").trim();
-  const btnAdminBusyText = String(btnAdminLogin?.dataset?.busyText || "로그인 중...").trim();
+  const btnAdminIdleText = String(btnAdminLogin?.textContent || "관리자시스템 로그인 →").trim();
+  const btnAdminBusyText = "로그인 중...";
 
-  let activeFlow = "platform";
+  const urlObj = (() => {
+    try { return new URL(location.href); }
+    catch { return null; }
+  })();
+  const isLogoutFlow = !!(urlObj && urlObj.searchParams.get("logout") === "1");
 
   (async () => {
     if (isLogoutFlow) {
@@ -54,45 +56,35 @@
       try {
         if (urlObj) {
           urlObj.searchParams.delete("logout");
-          history.replaceState({}, "", urlObj.pathname + (urlObj.searchParams.toString() ? `?${urlObj.searchParams.toString()}` : ""));
+          history.replaceState({}, "", urlObj.pathname + (urlObj.searchParams.toString() ? ("?" + urlObj.searchParams.toString()) : ""));
         }
       } catch {}
       setMsg("로그아웃 되었습니다", "warning");
       return;
     }
 
-    if (sbEnabled) {
-      try {
-        const synced = await K.sbSyncLocalSession();
-        if (synced?.token && synced?.user) {
-          location.replace(resolvePostLoginUrl(synced, "platform"));
-          return;
-        }
-      } catch {}
-    } else {
-      const existing = loadSession();
-      if (existing?.token && existing?.user) {
-        location.replace(resolvePostLoginUrl(existing, "platform"));
-        return;
-      }
+    const existing = await getExistingSession();
+    if (existing?.token && existing?.user) {
+      location.replace(resolveTargetUrl(existing, "platform"));
     }
   })();
 
-  btnAdminLogin?.addEventListener("click", async () => {
-    activeFlow = "admin";
-    await attemptLogin("admin");
+  btnAdminLogin?.addEventListener("click", () => {
+    setMode("admin");
+    form?.requestSubmit?.();
+  });
+
+  btnLogin?.addEventListener("click", () => {
+    setMode("platform");
   });
 
   form?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    activeFlow = "platform";
-    await attemptLogin("platform");
-  });
 
-  async function attemptLogin(flow) {
     const fd = new FormData(form);
     const name = String(fd.get("name") || "").trim();
     const password = String(fd.get("password") || "");
+    const mode = getMode();
 
     if (!name || !password) {
       setMsg("아이디/비밀번호를 입력해 주세요.", "error");
@@ -100,46 +92,63 @@
     }
 
     try {
-      setBusy(flow, true);
+      setBusy(true, mode);
       setMsg("", "error");
 
+      let session;
       if (sbEnabled) {
-        const session = await K.sbSignIn({ name, password });
-        const target = resolvePostLoginUrl(session, flow);
-        if (!target) return;
-        location.replace(target);
-        return;
+        session = await K.sbSignIn({ name, password });
+      } else {
+        const res = await api("/auth/login", {
+          method: "POST",
+          body: { name, password },
+        });
+        if (!res?.token || !res?.user) throw new Error("로그인에 실패했습니다.");
+        session = { token: res.token, user: res.user, at: Date.now(), backend: "vercel" };
+        saveSession(session);
       }
 
-      const res = await api("/auth/login", {
-        method: "POST",
-        body: { name, password },
-      });
+      if (mode === "admin") {
+        const role = normalizeRole(session?.user?.role);
+        if (role === "admin") {
+          location.replace("./admin-index.html");
+          return;
+        }
+        if (role === "staff" || role === "agent") {
+          location.replace("./agent-index.html");
+          return;
+        }
+        throw new Error("관리자시스템은 관리자 또는 담당자 계정만 로그인할 수 있습니다.");
+      }
 
-      if (!res?.token || !res?.user) throw new Error("로그인에 실패했습니다.");
-
-      const session = { token: res.token, user: res.user, at: Date.now(), backend: "vercel" };
-      saveSession(session);
-      const target = resolvePostLoginUrl(session, flow);
-      if (!target) return;
-      location.replace(target);
+      location.replace("./index.html");
     } catch (err) {
       setMsg(err?.message || "로그인에 실패했습니다.", "error");
     } finally {
-      setBusy(flow, false);
+      setBusy(false, mode);
+      setMode("platform");
     }
+  });
+
+  function setMode(mode) {
+    if (loginModeEl) loginModeEl.value = mode === "admin" ? "admin" : "platform";
   }
 
-  function setBusy(flow, busy) {
+  function getMode() {
+    return loginModeEl?.value === "admin" ? "admin" : "platform";
+  }
+
+  function setBusy(isBusy, mode) {
+    const busy = !!isBusy;
     if (btnLogin) {
-      btnLogin.disabled = !!busy;
-      btnLogin.classList.toggle("is-busy", !!busy && flow === "platform");
-      btnLogin.textContent = (busy && flow === "platform") ? btnLoginBusyText : btnLoginIdleText;
+      btnLogin.disabled = busy;
+      btnLogin.classList.toggle("is-busy", busy && mode === "platform");
+      btnLogin.textContent = busy && mode === "platform" ? btnLoginBusyText : btnLoginIdleText;
     }
     if (btnAdminLogin) {
-      btnAdminLogin.disabled = !!busy;
-      btnAdminLogin.classList.toggle("is-busy", !!busy && flow === "admin");
-      btnAdminLogin.textContent = (busy && flow === "admin") ? btnAdminBusyText : btnAdminIdleText;
+      btnAdminLogin.disabled = busy;
+      btnAdminLogin.classList.toggle("is-busy", busy && mode === "admin");
+      btnAdminLogin.textContent = busy && mode === "admin" ? btnAdminBusyText : btnAdminIdleText;
     }
   }
 
@@ -149,6 +158,16 @@
     msgEl.classList.toggle("show", !!msg);
     msgEl.classList.toggle("is-warning", !!msg && type === "warning");
     msgEl.classList.toggle("is-error", !!msg && type !== "warning");
+  }
+
+  async function getExistingSession() {
+    if (sbEnabled) {
+      try {
+        const synced = await K.sbSyncLocalSession();
+        if (synced?.token && synced?.user) return synced;
+      } catch {}
+    }
+    return loadSession();
   }
 
   function saveSession(session) {
@@ -183,21 +202,26 @@
     });
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    try { data = text ? JSON.parse(text) : null; }
+    catch { data = { raw: text }; }
     if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
     return data;
   }
 
-  function resolvePostLoginUrl(session, flow) {
-    const role = String(session?.user?.role || "").trim().toLowerCase();
+  function normalizeRole(role) {
+    const value = String(role || "").trim().toLowerCase();
+    if (value === "관리자") return "admin";
+    if (value === "담당자") return "staff";
+    return value;
+  }
 
-    if (flow === "admin") {
-      if (role === "admin" || role === "관리자") return "./admin-index.html";
-      if (role === "staff" || role === "담당자" || role === "agent") return "./agent-index.html";
-      setMsg("관리자 또는 담당자 계정으로만 관리자시스템에 로그인할 수 있습니다.", "error");
-      return "";
-    }
+  function resolveTargetUrl(session, mode) {
+    const normalizedMode = mode === "admin" ? "admin" : "platform";
+    if (normalizedMode === "platform") return "./index.html";
 
+    const role = normalizeRole(session?.user?.role);
+    if (role === "admin") return "./admin-index.html";
+    if (role === "staff" || role === "agent") return "./agent-index.html";
     return "./index.html";
   }
 })();
