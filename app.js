@@ -1440,6 +1440,15 @@
       raWrap.innerHTML = buildRadiusAnalysisUI(item);
       els.mvDetailBody.appendChild(raWrap);
       bindRadiusAnalysisEvents(raWrap, item);
+
+      // 300m 자동 분석 실행
+      setTimeout(function() {
+        var defaultBtn = raWrap.querySelector('.ra-radius-btn[data-radius="300"]');
+        if (defaultBtn) {
+          defaultBtn.classList.add('is-active');
+          runRadiusAnalysis(item, 300, raWrap);
+        }
+      }, 100);
     }
 
     els.mvDetail.classList.remove("hidden");
@@ -1614,18 +1623,23 @@
         const revRes = await fetch(revUrl, { headers: authHeaders });
         if (revRes.ok) {
           const revData = await revRes.json();
-          // reverseGeo 응답에 dongCode가 포함됨 (Data API 병행 조회)
+          // reverseGeo 응답에 dongCode/dongName이 포함됨
           var revCode = revData?.dongCode || '';
           var revName = revData?.dongName || '';
-          // dongCode 없으면 DONG_CODE_MAP 폴백
-          if (!revCode && revName && DONG_CODE_MAP[revName]) {
-            revCode = DONG_CODE_MAP[revName];
-          }
+
+          // dongCode 없으면 items에서 ri 필드(10자리 법정동코드) 추출
           if (!revCode) {
-            // 역지오코딩 결과의 읍면동명으로 시도
             var revItems = revData?.items || [];
             for (var ri = 0; ri < revItems.length; ri++) {
+              var riVal = String(revItems[ri].ri || '').trim();
               var dn = revItems[ri].eupmyeondong || '';
+              // ri가 10자리 숫자면 법정동코드
+              if (/^\d{10}$/.test(riVal)) {
+                revCode = riVal;
+                revName = dn || revName;
+                break;
+              }
+              // 아니면 DONG_CODE_MAP 폴백
               if (dn && DONG_CODE_MAP[dn]) {
                 revCode = DONG_CODE_MAP[dn];
                 revName = dn;
@@ -1633,6 +1647,12 @@
               }
             }
           }
+
+          // 그래도 없으면 dongName으로 DONG_CODE_MAP 시도
+          if (!revCode && revName && DONG_CODE_MAP[revName]) {
+            revCode = DONG_CODE_MAP[revName];
+          }
+
           if (revCode) {
             dongList.push({ code: revCode, name: revName, fullName: revName });
           }
