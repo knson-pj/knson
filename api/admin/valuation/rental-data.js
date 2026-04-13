@@ -136,9 +136,10 @@ function normalizeRow(row, sigunguCode) {
 // ── DB 적재 ──
 
 async function insertRentals(rows) {
-  if (!rows.length) return { inserted: 0, errors: 0 };
+  if (!rows.length) return { inserted: 0, errors: 0, firstError: null };
 
   let inserted = 0, errors = 0;
+  let firstError = null;
   const batchSize = 20;
 
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -150,7 +151,8 @@ async function insertRentals(rows) {
         headers: { Prefer: 'return=representation' },
       });
       inserted += Array.isArray(result) ? result.length : batch.length;
-    } catch {
+    } catch (batchErr) {
+      console.error('rental batch insert error:', batchErr?.message || batchErr);
       // 배치 실패 시 개별 INSERT
       for (const row of batch) {
         try {
@@ -158,11 +160,15 @@ async function insertRentals(rows) {
             method: 'POST', json: row, headers: { Prefer: 'return=minimal' },
           });
           inserted++;
-        } catch { errors++; }
+        } catch (rowErr) {
+          errors++;
+          if (!firstError) firstError = String(rowErr?.message || rowErr || '').slice(0, 200);
+          console.error('rental row insert error:', rowErr?.message || rowErr);
+        }
       }
     }
   }
-  return { inserted, errors };
+  return { inserted, errors, firstError };
 }
 
 // ── DB 조회 ──
