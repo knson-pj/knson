@@ -249,6 +249,87 @@ body.is-map-view .content{padding:0;}
   height:100%;color:var(--muted);font-weight:700;font-size:14px;
 }
 
+/* ── Radius Analysis (G. 반경 배후 분석) ── */
+.ra-section{position:relative;}
+.ra-desc{font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;}
+.ra-radius-bar{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;}
+.ra-radius-btn{
+  appearance:none;border:1px solid var(--line);
+  background:var(--surface);color:var(--text);
+  padding:5px 10px;border-radius:8px;
+  font-size:11px;font-weight:700;cursor:pointer;
+  transition:all .15s;flex:1;min-width:0;text-align:center;
+}
+.ra-radius-btn:hover{border-color:color-mix(in srgb, #F37022 40%, var(--line));background:color-mix(in srgb, #F37022 5%, var(--surface));}
+.ra-radius-btn.is-active{
+  background:#F37022;color:#fff;border-color:#F37022;
+  box-shadow:0 2px 8px rgba(243,112,34,.25);
+}
+
+/* Loading */
+.ra-loading{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);padding:12px 0;}
+.ra-spinner{
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid var(--line);border-top-color:#F37022;
+  animation:ra-spin .7s linear infinite;flex-shrink:0;
+}
+@keyframes ra-spin{to{transform:rotate(360deg);}}
+.ra-error{font-size:11px;color:#E74C3C;padding:8px 0;line-height:1.5;}
+.ra-empty{font-size:11px;color:var(--muted);padding:8px 0;line-height:1.6;text-align:center;}
+
+/* Summary KPI */
+.ra-summary{margin-bottom:10px;}
+.ra-summary-title{font-size:11px;font-weight:800;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.ra-summary-title::before{
+  content:'';display:inline-block;width:3px;height:12px;
+  background:#F37022;border-radius:2px;
+}
+.ra-kpi-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:6px;
+}
+.ra-kpi{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:10px;padding:10px;text-align:center;
+  transition:border-color .15s;
+}
+.ra-kpi:hover{border-color:color-mix(in srgb, #F37022 25%, var(--line));}
+.ra-kpi-val{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.02em;line-height:1.2;}
+.ra-kpi-label{font-size:9px;color:var(--muted);margin-top:2px;font-weight:600;letter-spacing:.02em;}
+
+/* Gender bar */
+.ra-gender-bar{margin-bottom:10px;}
+.ra-gender-track{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line);}
+.ra-gender-fill.ra-male{background:#59A7FF;}
+.ra-gender-fill.ra-female{background:#FF7EB3;}
+.ra-gender-labels{display:flex;justify-content:space-between;margin-top:3px;}
+.ra-gender-label{font-size:9px;color:var(--muted);display:flex;align-items:center;gap:3px;font-weight:600;}
+.ra-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.ra-dot-male{background:#59A7FF;}
+.ra-dot-female{background:#FF7EB3;}
+
+/* Dong list */
+.ra-dong-list{margin-bottom:8px;}
+.ra-dong-header{
+  display:grid;grid-template-columns:1fr 1.2fr .6fr;
+  gap:4px;padding:4px 0;border-bottom:1px solid var(--line);
+  font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.03em;
+}
+.ra-dong-row{
+  display:grid;grid-template-columns:1fr 1.2fr .6fr;
+  gap:4px;padding:5px 0;border-bottom:1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  font-size:10px;align-items:center;
+}
+.ra-dong-row:last-child{border-bottom:none;}
+.ra-dong-name{font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ra-dong-pop{display:flex;align-items:center;gap:4px;}
+.ra-dong-bar-track{flex:1;height:5px;background:var(--line);border-radius:3px;overflow:hidden;min-width:0;}
+.ra-dong-bar-fill{height:100%;background:linear-gradient(90deg,#F37022,#FF9A5C);border-radius:3px;transition:width .3s;}
+.ra-dong-num{font-weight:700;color:var(--text);min-width:36px;text-align:right;font-size:10px;flex-shrink:0;}
+.ra-dong-hh{font-weight:600;color:var(--muted);text-align:right;font-size:10px;}
+
+/* Footer */
+.ra-footer{font-size:9px;color:var(--muted);padding-top:6px;border-top:1px solid var(--line);line-height:1.4;}
+
 /* ── Responsive ── */
 @media(max-width:900px){
   .map-view.is-active{grid-template-columns:1fr;grid-template-rows:240px 1fr;}

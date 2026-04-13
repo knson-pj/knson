@@ -1433,6 +1433,15 @@
       });
     }
 
+    // ── G. 반경 배후 분석 섹션 ──
+    if (item.latitude != null && item.longitude != null) {
+      const raWrap = document.createElement('div');
+      raWrap.className = 'mv-detail-section ra-section';
+      raWrap.innerHTML = buildRadiusAnalysisUI(item);
+      els.mvDetailBody.appendChild(raWrap);
+      bindRadiusAnalysisEvents(raWrap, item);
+    }
+
     els.mvDetail.classList.remove("hidden");
   }
 
@@ -1473,8 +1482,313 @@
     }
   }
 
+  // ── 반경 배후 분석 ──
+  let _radiusCircle = null;  // 카카오맵 Circle overlay
+  let _radiusAnalysisCache = new Map(); // key: `${lat},${lng},${radius}` → result
+
+  function getVworldProxyUrl() {
+    const meta = document.querySelector('meta[name="vworld-proxy-url"]');
+    return meta?.getAttribute("content")?.trim() || "";
+  }
+
+  function getSupabaseAnonKey() {
+    return document.querySelector('meta[name="supabase-anon-key"]')?.getAttribute("content") || "";
+  }
+
+  function buildRadiusAnalysisUI(item) {
+    const radii = [
+      { value: 100, label: '100m' },
+      { value: 300, label: '300m' },
+      { value: 500, label: '500m' },
+      { value: 1000, label: '1km' },
+      { value: 2000, label: '2km' },
+      { value: 3000, label: '3km' },
+    ];
+    let html = '<div class="mv-detail-stitle">G. 반경 배후 분석</div>';
+    html += '<div class="ra-desc">매물 좌표 기준 반경 내 배후세대·거주인구를 분석합니다.</div>';
+    html += '<div class="ra-radius-bar">';
+    radii.forEach(function(r) {
+      html += '<button type="button" class="ra-radius-btn" data-radius="' + r.value + '">' + escapeHtml(r.label) + '</button>';
+    });
+    html += '</div>';
+    html += '<div class="ra-result" id="raResult"></div>';
+    return html;
+  }
+
+  function bindRadiusAnalysisEvents(wrap, item) {
+    const btns = wrap.querySelectorAll('.ra-radius-btn');
+    btns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        // 토글: 이미 선택된 반경 클릭 시 해제
+        const radius = parseInt(btn.dataset.radius, 10);
+        const isActive = btn.classList.contains('is-active');
+
+        // 모든 버튼 비활성화
+        btns.forEach(function(b) { b.classList.remove('is-active'); });
+
+        if (isActive) {
+          // 해제 모드
+          clearRadiusCircle();
+          const resultEl = wrap.querySelector('#raResult');
+          if (resultEl) resultEl.innerHTML = '';
+          return;
+        }
+
+        // 활성화
+        btn.classList.add('is-active');
+        runRadiusAnalysis(item, radius, wrap);
+      });
+    });
+  }
+
+  function clearRadiusCircle() {
+    if (_radiusCircle) {
+      try { _radiusCircle.setMap(null); } catch {}
+      _radiusCircle = null;
+    }
+  }
+
+  function drawRadiusCircle(lat, lng, radius) {
+    clearRadiusCircle();
+    if (!state.map || !window.kakao?.maps) return;
+
+    const center = new kakao.maps.LatLng(lat, lng);
+    _radiusCircle = new kakao.maps.Circle({
+      center: center,
+      radius: radius,
+      strokeWeight: 2,
+      strokeColor: '#F37022',
+      strokeOpacity: 0.8,
+      strokeStyle: 'solid',
+      fillColor: '#F37022',
+      fillOpacity: 0.08,
+    });
+    _radiusCircle.setMap(state.map);
+
+    // 지도 범위를 원에 맞게 조정
+    const bounds = _radiusCircle.getBounds();
+    if (bounds) {
+      state.map.setBounds(bounds, 50, 50, 50, 420);
+    }
+  }
+
+  async function runRadiusAnalysis(item, radius, wrap) {
+    const lat = Number(item.latitude);
+    const lng = Number(item.longitude);
+    const resultEl = wrap.querySelector('#raResult');
+    if (!resultEl) return;
+
+    // 지도에 원 표시
+    drawRadiusCircle(lat, lng, radius);
+
+    const cacheKey = lat.toFixed(6) + ',' + lng.toFixed(6) + ',' + radius;
+    if (_radiusAnalysisCache.has(cacheKey)) {
+      renderRadiusResult(resultEl, _radiusAnalysisCache.get(cacheKey), radius);
+      return;
+    }
+
+    resultEl.innerHTML = '<div class="ra-loading"><div class="ra-spinner"></div><span>반경 ' + radius + 'm 내 행정구역을 조회하고 있습니다...</span></div>';
+
+    const proxyUrl = getVworldProxyUrl();
+    if (!proxyUrl) {
+      resultEl.innerHTML = '<div class="ra-error">Vworld 프록시 URL이 설정되지 않았습니다.</div>';
+      return;
+    }
+
+    const anonKey = getSupabaseAnonKey();
+    const authHeaders = anonKey ? { 'Authorization': 'Bearer ' + anonKey } : {};
+
+    try {
+      // Step 1: Vworld WFS로 반경 내 법정동 목록 조회
+      const nearbyUrl = proxyUrl + '?mode=nearbyDong&lat=' + lat + '&lng=' + lng + '&radius=' + radius;
+      const nearbyRes = await fetch(nearbyUrl, { headers: authHeaders });
+      if (!nearbyRes.ok) throw new Error('WFS 조회 실패 (' + nearbyRes.status + ')');
+      const nearbyData = await nearbyRes.json();
+
+      let dongList = nearbyData?.dongs || [];
+
+      // WFS 결과가 없으면 역지오코딩으로 폴백
+      if (!dongList.length) {
+        const revUrl = proxyUrl + '?mode=reverseGeo&lat=' + lat + '&lng=' + lng;
+        const revRes = await fetch(revUrl, { headers: authHeaders });
+        if (revRes.ok) {
+          const revData = await revRes.json();
+          const revItems = revData?.items || [];
+          // 역지오코딩 결과에서 동 이름 추출 → DONG_CODE_MAP에서 코드 찾기
+          for (const ri of revItems) {
+            const dongName = ri.dong || '';
+            if (dongName && DONG_CODE_MAP[dongName]) {
+              dongList.push({ code: DONG_CODE_MAP[dongName], name: dongName, fullName: ri.fullAddr || dongName });
+            }
+          }
+        }
+      }
+
+      if (!dongList.length) {
+        resultEl.innerHTML = '<div class="ra-empty">반경 내 행정구역을 찾을 수 없습니다.<br><span style="font-size:10px;color:var(--muted);">해당 지역이 Vworld 커버리지에 포함되지 않을 수 있습니다.</span></div>';
+        return;
+      }
+
+      // 진행 상태 업데이트
+      resultEl.innerHTML = '<div class="ra-loading"><div class="ra-spinner"></div><span>' + dongList.length + '개 행정구역의 인구 데이터를 조회 중...</span></div>';
+
+      // Step 2: 인구 데이터 일괄 조회
+      const codes = dongList.map(function(d) { return d.code; });
+      let popResults = [];
+
+      // batchPopulation POST 호출
+      const batchUrl = proxyUrl + '?mode=batchPopulation';
+      const batchRes = await fetch(batchUrl, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codes: codes }),
+      });
+
+      if (batchRes.ok) {
+        const batchData = await batchRes.json();
+        popResults = batchData?.results || [];
+      } else {
+        // 일괄 실패 시 개별 조회 폴백
+        for (const dong of dongList) {
+          try {
+            const popUrl = proxyUrl + '?mode=population&stdgCd=' + dong.code;
+            const popRes = await fetch(popUrl, { headers: authHeaders });
+            if (popRes.ok) {
+              const popData = await popRes.json();
+              if (popData?.data) {
+                popResults.push(popData.data);
+              } else {
+                popResults.push({ dong_code: dong.code, dong_name: dong.name, total_pop: 0, household_count: 0, male_pop: 0, female_pop: 0 });
+              }
+            }
+          } catch {
+            popResults.push({ dong_code: dong.code, dong_name: dong.name, total_pop: 0, household_count: 0, male_pop: 0, female_pop: 0 });
+          }
+        }
+      }
+
+      // 동 이름 매핑 보강
+      popResults.forEach(function(p, i) {
+        if (!p.dong_name && dongList[i]) p.dong_name = dongList[i].name;
+        if (!p.fullName && dongList[i]) p.fullName = dongList[i].fullName;
+      });
+
+      const analysisResult = {
+        center: { lat: lat, lng: lng },
+        radius: radius,
+        dongs: dongList,
+        population: popResults,
+        timestamp: Date.now(),
+      };
+
+      _radiusAnalysisCache.set(cacheKey, analysisResult);
+      if (_radiusAnalysisCache.size > 30) {
+        const firstKey = _radiusAnalysisCache.keys().next().value;
+        if (firstKey) _radiusAnalysisCache.delete(firstKey);
+      }
+
+      renderRadiusResult(resultEl, analysisResult, radius);
+    } catch (err) {
+      console.error('radius analysis error:', err);
+      resultEl.innerHTML = '<div class="ra-error">분석 중 오류: ' + escapeHtml(err.message || '알 수 없는 오류') + '</div>';
+    }
+  }
+
+  function renderRadiusResult(container, result, radius) {
+    const popList = result?.population || [];
+    if (!popList.length) {
+      container.innerHTML = '<div class="ra-empty">인구 데이터가 없습니다.</div>';
+      return;
+    }
+
+    // 집계
+    let totalPop = 0, totalHh = 0, totalMale = 0, totalFemale = 0;
+    const dongDetails = [];
+
+    popList.forEach(function(p) {
+      const pop = Number(p.total_pop || 0);
+      const hh = Number(p.household_count || 0);
+      const male = Number(p.male_pop || 0);
+      const female = Number(p.female_pop || 0);
+      totalPop += pop;
+      totalHh += hh;
+      totalMale += male;
+      totalFemale += female;
+      if (pop > 0) {
+        dongDetails.push({
+          name: p.dong_name || p.dong_code || '?',
+          pop: pop,
+          hh: hh,
+          male: male,
+          female: female,
+        });
+      }
+    });
+
+    dongDetails.sort(function(a, b) { return b.pop - a.pop; });
+
+    const fmtN = function(n) { return Number(n || 0).toLocaleString(); };
+    const perHh = totalHh > 0 ? (totalPop / totalHh).toFixed(1) : '-';
+    const maleRatio = totalPop > 0 ? Math.round((totalMale / totalPop) * 100) : 0;
+
+    let html = '';
+
+    // 요약 카드
+    html += '<div class="ra-summary">';
+    html += '<div class="ra-summary-title">반경 ' + (radius >= 1000 ? (radius / 1000) + 'km' : radius + 'm') + ' 배후 분석 결과</div>';
+    html += '<div class="ra-kpi-grid">';
+    html += '<div class="ra-kpi"><div class="ra-kpi-val">' + fmtN(totalPop) + '</div><div class="ra-kpi-label">거주인구</div></div>';
+    html += '<div class="ra-kpi"><div class="ra-kpi-val">' + fmtN(totalHh) + '</div><div class="ra-kpi-label">배후세대</div></div>';
+    html += '<div class="ra-kpi"><div class="ra-kpi-val">' + escapeHtml(perHh) + '</div><div class="ra-kpi-label">세대당 인구</div></div>';
+    html += '<div class="ra-kpi"><div class="ra-kpi-val">' + dongDetails.length + '</div><div class="ra-kpi-label">포함 행정동</div></div>';
+    html += '</div>';
+    html += '</div>';
+
+    // 성별 분포 바
+    if (totalPop > 0) {
+      html += '<div class="ra-gender-bar">';
+      html += '<div class="ra-gender-track">';
+      html += '<div class="ra-gender-fill ra-male" style="width:' + maleRatio + '%"></div>';
+      html += '<div class="ra-gender-fill ra-female" style="width:' + (100 - maleRatio) + '%"></div>';
+      html += '</div>';
+      html += '<div class="ra-gender-labels">';
+      html += '<span class="ra-gender-label"><span class="ra-dot ra-dot-male"></span>남 ' + fmtN(totalMale) + '명 (' + maleRatio + '%)</span>';
+      html += '<span class="ra-gender-label"><span class="ra-dot ra-dot-female"></span>여 ' + fmtN(totalFemale) + '명 (' + (100 - maleRatio) + '%)</span>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    // 행정동별 상세
+    if (dongDetails.length > 0) {
+      html += '<div class="ra-dong-list">';
+      html += '<div class="ra-dong-header"><span>행정동</span><span>거주인구</span><span>세대수</span></div>';
+      const maxPop = dongDetails[0].pop || 1;
+      dongDetails.forEach(function(d) {
+        const barPct = Math.max(4, Math.round((d.pop / maxPop) * 100));
+        html += '<div class="ra-dong-row">';
+        html += '<span class="ra-dong-name">' + escapeHtml(d.name) + '</span>';
+        html += '<span class="ra-dong-pop">';
+        html += '<span class="ra-dong-bar-track"><span class="ra-dong-bar-fill" style="width:' + barPct + '%"></span></span>';
+        html += '<span class="ra-dong-num">' + fmtN(d.pop) + '</span>';
+        html += '</span>';
+        html += '<span class="ra-dong-hh">' + fmtN(d.hh) + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // 출처
+    const dataDate = popList.find(function(p) { return p.data_date; })?.data_date || '';
+    html += '<div class="ra-footer">출처: 행안부 주민등록 인구통계 · Vworld 행정구역';
+    if (dataDate) html += ' · ' + escapeHtml(dataDate);
+    html += '</div>';
+
+    container.innerHTML = html;
+  }
+
   function closeMapDetail() {
     if (els.mvDetail) els.mvDetail.classList.add("hidden");
+    clearRadiusCircle();
     document.querySelectorAll(".mv-marker.is-active").forEach((m) => m.classList.remove("is-active"));
     document.querySelectorAll(".mv-card.is-selected").forEach((c) => c.classList.remove("is-selected"));
   }
