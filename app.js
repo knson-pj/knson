@@ -1600,33 +1600,46 @@
 
     try {
       // Step 1: Vworld 프록시로 반경 내 법정동 목록 조회
+      // 서버에서 Data API + 격자 폴백으로 법정동 코드(emd_cd)를 항상 반환
       const nearbyUrl = proxyUrl + '?mode=nearbyDong&lat=' + lat + '&lng=' + lng + '&radius=' + radius;
       const nearbyRes = await fetch(nearbyUrl, { headers: authHeaders });
       if (!nearbyRes.ok) throw new Error('법정동 조회 실패 (' + nearbyRes.status + ')');
       const nearbyData = await nearbyRes.json();
 
-      let dongList = nearbyData?.dongs || [];
+      var dongList = nearbyData?.dongs || [];
 
-      // 서버 폴백도 실패 시 프론트엔드 역지오코딩 최종 폴백
+      // 최종 폴백: nearbyDong이 빈 경우 reverseGeo로 중심점의 법정동만이라도 확보
       if (!dongList.length) {
         const revUrl = proxyUrl + '?mode=reverseGeo&lat=' + lat + '&lng=' + lng;
         const revRes = await fetch(revUrl, { headers: authHeaders });
         if (revRes.ok) {
           const revData = await revRes.json();
-          const revItems = revData?.items || [];
-          var seen = {};
-          for (var ri = 0; ri < revItems.length; ri++) {
-            var dongName = revItems[ri].eupmyeondong || revItems[ri].dong || '';
-            if (dongName && !seen[dongName]) {
-              seen[dongName] = true;
-              var code = DONG_CODE_MAP[dongName] || '';
-              dongList.push({ code: code, name: dongName, fullName: revItems[ri].fullAddr || dongName });
+          // reverseGeo 응답에 dongCode가 포함됨 (Data API 병행 조회)
+          var revCode = revData?.dongCode || '';
+          var revName = revData?.dongName || '';
+          // dongCode 없으면 DONG_CODE_MAP 폴백
+          if (!revCode && revName && DONG_CODE_MAP[revName]) {
+            revCode = DONG_CODE_MAP[revName];
+          }
+          if (!revCode) {
+            // 역지오코딩 결과의 읍면동명으로 시도
+            var revItems = revData?.items || [];
+            for (var ri = 0; ri < revItems.length; ri++) {
+              var dn = revItems[ri].eupmyeondong || '';
+              if (dn && DONG_CODE_MAP[dn]) {
+                revCode = DONG_CODE_MAP[dn];
+                revName = dn;
+                break;
+              }
             }
+          }
+          if (revCode) {
+            dongList.push({ code: revCode, name: revName, fullName: revName });
           }
         }
       }
 
-      // 코드 없는 동은 DONG_CODE_MAP에서 매핑
+      // 코드 없는 동은 DONG_CODE_MAP에서 추가 매핑 시도
       dongList.forEach(function(d) {
         if (!d.code && d.name && DONG_CODE_MAP[d.name]) {
           d.code = DONG_CODE_MAP[d.name];
@@ -1642,8 +1655,7 @@
       }
 
       if (!validDongs.length) {
-        // 동 이름은 있지만 코드 매핑 불가
-        resultEl.innerHTML = '<div class="ra-empty">발견된 행정동: ' + dongList.map(function(d) { return escapeHtml(d.name); }).join(', ') + '<br><span style="font-size:10px;color:var(--muted);">해당 법정동의 코드 매핑이 없어 인구 조회를 할 수 없습니다.</span></div>';
+        resultEl.innerHTML = '<div class="ra-empty">발견된 행정동: ' + dongList.map(function(d) { return escapeHtml(d.name); }).join(', ') + '<br><span style="font-size:10px;color:var(--muted);">해당 법정동의 코드를 확인할 수 없어 인구 조회가 불가합니다.</span></div>';
         return;
       }
 
