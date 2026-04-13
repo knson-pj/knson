@@ -1479,7 +1479,7 @@
     document.querySelectorAll(".mv-card.is-selected").forEach((c) => c.classList.remove("is-selected"));
   }
 
-  // ---- 인구 데이터 (Cloudflare Worker 프록시 경유) ----
+  // ---- 인구 데이터 (Supabase Edge Function 프록시 경유) ----
   const _popCache = new Map();
 
   const DONG_CODE_MAP = {
@@ -1594,7 +1594,11 @@
           + "&srchFrYm=" + ym + "&srchToYm=" + ym
           + "&lv=4&regSeCd=1&numOfRows=100&pageNo=1";
 
-        const res = await fetch(url);
+        // Supabase Edge Function은 anon key 인증 필요
+        const anonKey = document.querySelector('meta[name="supabase-anon-key"]')?.getAttribute("content") || "";
+        const fetchOpts = anonKey ? { headers: { "Authorization": "Bearer " + anonKey } } : {};
+
+        const res = await fetch(url, fetchOpts);
         if (!res.ok) continue;
         const text = await res.text();
         if (!text || text.length < 50) continue;
