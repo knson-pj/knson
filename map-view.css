@@ -330,6 +330,26 @@ body.is-map-view .content{padding:0;}
 /* Footer */
 .ra-footer{font-size:9px;color:var(--muted);padding-top:6px;border-top:1px solid var(--line);line-height:1.4;}
 
+/* ── Building Analysis ── */
+.ra-building{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
+.ra-bld-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:8px;}
+.ra-bld-item{text-align:center;padding:8px 4px;border-radius:8px;border:1px solid var(--line);background:var(--surface);}
+.ra-bld-val{font-size:14px;font-weight:800;color:var(--text);}
+.ra-bld-label{font-size:8px;color:var(--muted);margin-top:1px;font-weight:600;}
+.ra-bld-res .ra-bld-val{color:#4CAF50;}
+.ra-bld-com .ra-bld-val{color:#FF9800;}
+.ra-bld-off .ra-bld-val{color:#2196F3;}
+.ra-bld-etc .ra-bld-val{color:#9E9E9E;}
+.ra-bld-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line);margin-bottom:4px;}
+.ra-bld-seg{height:100%;min-width:2px;}
+.ra-bld-seg-res{background:#4CAF50;}
+.ra-bld-seg-com{background:#FF9800;}
+.ra-bld-seg-off{background:#2196F3;}
+.ra-bld-seg-etc{background:#9E9E9E;}
+.ra-bld-bar-labels{display:flex;gap:8px;flex-wrap:wrap;font-size:9px;color:var(--muted);margin-bottom:8px;font-weight:600;}
+.ra-bld-bar-labels span{display:flex;align-items:center;gap:3px;}
+.ra-bld-detail{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;}
+
 /* ── Responsive ── */
 @media(max-width:900px){
   .map-view.is-active{grid-template-columns:1fr;grid-template-rows:240px 1fr;}

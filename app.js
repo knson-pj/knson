@@ -1708,6 +1708,54 @@
       html += '</div>';
     }
 
+    // 건축물 분석 (서버에서 building 데이터가 있을 때)
+    var bld = result?.building || null;
+    if (bld && bld.totalBuildings > 0) {
+      var bp = bld.byPurpose || {};
+      html += '<div class="ra-building">';
+      html += '<div class="ra-summary-title">건축물 용도 분석 <span style="font-size:9px;color:var(--muted);font-weight:400;">(건축물대장 기준)</span></div>';
+
+      // 용도별 요약
+      html += '<div class="ra-bld-grid">';
+      html += '<div class="ra-bld-item ra-bld-res"><div class="ra-bld-val">' + (bp.residential?.count || 0) + '</div><div class="ra-bld-label">주거용</div></div>';
+      html += '<div class="ra-bld-item ra-bld-com"><div class="ra-bld-val">' + (bp.commercial?.count || 0) + '</div><div class="ra-bld-label">상업용</div></div>';
+      html += '<div class="ra-bld-item ra-bld-off"><div class="ra-bld-val">' + (bp.office?.count || 0) + '</div><div class="ra-bld-label">업무용</div></div>';
+      html += '<div class="ra-bld-item ra-bld-etc"><div class="ra-bld-val">' + ((bp.industrial?.count || 0) + (bp.public?.count || 0) + (bp.other?.count || 0)) + '</div><div class="ra-bld-label">기타</div></div>';
+      html += '</div>';
+
+      // 용도별 바 차트
+      var bldTotal = bld.totalBuildings || 1;
+      var resPct = Math.round(((bp.residential?.count || 0) / bldTotal) * 100);
+      var comPct = Math.round(((bp.commercial?.count || 0) / bldTotal) * 100);
+      var offPct = Math.round(((bp.office?.count || 0) / bldTotal) * 100);
+      var etcPct = 100 - resPct - comPct - offPct;
+      html += '<div class="ra-bld-bar">';
+      if (resPct > 0) html += '<div class="ra-bld-seg ra-bld-seg-res" style="width:' + resPct + '%" title="주거 ' + resPct + '%"></div>';
+      if (comPct > 0) html += '<div class="ra-bld-seg ra-bld-seg-com" style="width:' + comPct + '%" title="상업 ' + comPct + '%"></div>';
+      if (offPct > 0) html += '<div class="ra-bld-seg ra-bld-seg-off" style="width:' + offPct + '%" title="업무 ' + offPct + '%"></div>';
+      if (etcPct > 0) html += '<div class="ra-bld-seg ra-bld-seg-etc" style="width:' + etcPct + '%" title="기타 ' + etcPct + '%"></div>';
+      html += '</div>';
+      html += '<div class="ra-bld-bar-labels">';
+      html += '<span><span class="ra-dot" style="background:#4CAF50"></span>주거 ' + resPct + '%</span>';
+      html += '<span><span class="ra-dot" style="background:#FF9800"></span>상업 ' + comPct + '%</span>';
+      html += '<span><span class="ra-dot" style="background:#2196F3"></span>업무 ' + offPct + '%</span>';
+      html += '<span><span class="ra-dot" style="background:#9E9E9E"></span>기타 ' + etcPct + '%</span>';
+      html += '</div>';
+
+      // 주거 세대수 기반 추정
+      if (bp.residential?.hhld > 0) {
+        html += '<div class="ra-bld-detail">';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거용 건물</span><span class="mv-detail-rv">' + (bp.residential?.count || 0) + '동</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거 세대수</span><span class="mv-detail-rv">' + fmtN(bp.residential.hhld) + '세대</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거 연면적</span><span class="mv-detail-rv">' + fmtN(bp.residential.area) + '㎡</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">세대 기반 추정인구</span><span class="mv-detail-rv" style="color:#F37022;font-weight:800;">' + fmtN(bld.estPopByBuilding) + '명</span></div>';
+        html += '<div style="font-size:9px;color:var(--muted);margin-top:4px;">※ 세대수 × 평균 가구원수(' + bld.avgHouseholdSize + '명) 기준</div>';
+        html += '</div>';
+      }
+
+      html += '</div>';
+    }
+
     // 출처
     var dataDate = dongs.find(function(d) { return d.dataDate; })?.dataDate || '';
     html += '<div class="ra-footer">';
