@@ -256,7 +256,8 @@
           `삽입: ${res?.inserted ?? 0}건`,
         ];
         if (res?.errors > 0) parts.push(`오류: ${res.errors}건`);
-        showResultBox(els.csvResultBox, parts.join(" / "));
+        if (res?.firstError) parts.push(`사유: ${res.firstError}`);
+        showResultBox(els.csvResultBox, parts.join(" / "), (res?.errors > 0));
         return;
       }
 
