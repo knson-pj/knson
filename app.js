@@ -1744,12 +1744,13 @@
 
       // 주거 세대수 기반 추정
       if (bp.residential?.hhld > 0) {
+        var estHhld = bp.residential?.estHhld || bp.residential?.hhld || 0;
         html += '<div class="ra-bld-detail">';
-        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거용 건물</span><span class="mv-detail-rv">' + (bp.residential?.count || 0) + '동</span></div>';
-        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거 세대수</span><span class="mv-detail-rv">' + fmtN(bp.residential.hhld) + '세대</span></div>';
-        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거 연면적</span><span class="mv-detail-rv">' + fmtN(bp.residential.area) + '㎡</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거용 건물 (동 전체)</span><span class="mv-detail-rv">' + (bp.residential?.count || 0) + '동</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">주거 세대수 (동 전체)</span><span class="mv-detail-rv">' + fmtN(bp.residential.hhld) + '세대</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">반경 내 추정 세대수</span><span class="mv-detail-rv" style="color:#4CAF50;font-weight:800;">' + fmtN(estHhld) + '세대</span></div>';
         html += '<div class="mv-detail-row"><span class="mv-detail-rl">세대 기반 추정인구</span><span class="mv-detail-rv" style="color:#F37022;font-weight:800;">' + fmtN(bld.estPopByBuilding) + '명</span></div>';
-        html += '<div style="font-size:9px;color:var(--muted);margin-top:4px;">※ 세대수 × 평균 가구원수(' + bld.avgHouseholdSize + '명) 기준</div>';
+        html += '<div style="font-size:9px;color:var(--muted);margin-top:4px;">※ 추정 세대수 × 평균 가구원수(' + bld.avgHouseholdSize + '명) · 면적비례 보정 적용</div>';
         html += '</div>';
       }
 
