@@ -1479,8 +1479,48 @@
     document.querySelectorAll(".mv-card.is-selected").forEach((c) => c.classList.remove("is-selected"));
   }
 
-  // ---- 인구 데이터 ----
+  // ---- 인구 데이터 (브라우저 직접 호출 — Vercel Hobby 해외 IP 차단 우회) ----
   const _popCache = new Map();
+  const MOIS_POP_URL = 'https://apis.data.go.kr/1741000/stdgPpltnHhStus';
+
+  const DONG_CODE_MAP = {
+    '역삼동':'1168010100','삼성동':'1168010300','대치동':'1168010500','논현동':'1168010800',
+    '압구정동':'1168011000','청담동':'1168011100','신사동':'1168011200','도곡동':'1168010600',
+    '개포동':'1168010700','세곡동':'1168010900',
+    '서초동':'1165010100','반포동':'1165010400','잠원동':'1165010500','방배동':'1165010700',
+    '양재동':'1165010800','내곡동':'1165011000',
+    '잠실동':'1171010100','신천동':'1171010200','가락동':'1171010300','문정동':'1171010600',
+    '방이동':'1171010800','오금동':'1171010900','석촌동':'1171010400',
+    '영등포동':'1156010100','여의도동':'1156010400','당산동':'1156010500','문래동':'1156010200',
+    '양평동':'1156010700','신길동':'1156010800','대림동':'1156010900',
+    '서교동':'1144010600','합정동':'1144010500','상수동':'1144010700','망원동':'1144010800',
+    '연남동':'1144010900','성산동':'1144011100',
+    '삼청동':'1111014000','종로동':'1111011100','사직동':'1111012500','인사동':'1111012100',
+    '명동':'1114011500','회현동':'1114012400','을지로동':'1114011200',
+    '이태원동':'1117010200','한남동':'1117010300','용산동':'1117010800',
+    '성수동':'1120010800','금호동':'1120010100','옥수동':'1120010200',
+    '자양동':'1121510200','구의동':'1121510100','화양동':'1121510300',
+    '마곡동':'1150010500','등촌동':'1150010200','화곡동':'1150010300',
+    '구로동':'1153010100','신도림동':'1153010300','가리봉동':'1153010200',
+    '신림동':'1162010200','봉천동':'1162010100',
+    '노량진동':'1159010100','상도동':'1159010300',
+    '천호동':'1174010100','길동':'1174010500','명일동':'1174010300',
+    '상계동':'1135010100','공릉동':'1135010300',
+    '불광동':'1138010100','갈현동':'1138010200',
+    '연희동':'1141010100','신촌동':'1141010700',
+    '전농동':'1123010100','답십리동':'1123010300',
+    '정릉동':'1129010800','길음동':'1129010600',
+    '목동':'1147010100','신정동':'1147010200',
+    '가산동':'1154510100','독산동':'1154510200',
+    '창동':'1132010200','방학동':'1132010100',
+    '면목동':'1126010100','상봉동':'1126010200',
+    '미아동':'1130510100','번동':'1130510200',
+    '정자동':'4113510900','서현동':'4113510700','수내동':'4113510600',
+    '야탑동':'4113510300','이매동':'4113510400','판교동':'4113511200',
+    '인계동':'4111110700','매탄동':'4111110600',
+    '일산동':'4128110300','풍동':'4128510100',
+    '송도동':'2826010500','부평동':'2823710100',
+  };
 
   function extractDongFromAddress(address) {
     const a = String(address || "").trim();
@@ -1489,20 +1529,102 @@
     return m ? m[1] : "";
   }
 
+  function getMoisPopApiKey() {
+    const meta = document.querySelector('meta[name="mois-pop-api-key"]');
+    return meta?.getAttribute("content")?.trim() || "";
+  }
+
+  function getPopulationYm() {
+    // 3개월 전부터 시도 (최신 집계 데이터)
+    const d = new Date();
+    d.setMonth(d.getMonth() - 3);
+    return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
+  function parsePopulationXml(xmlText) {
+    const items = [];
+    const re = /<item>([\s\S]*?)<\/item>/g;
+    let m;
+    while ((m = re.exec(xmlText)) !== null) {
+      const b = m[1];
+      const g = (t) => { const r = b.match(new RegExp("<" + t + ">([^<]*)</" + t + ">")); return r ? r[1].trim() : ""; };
+      items.push({
+        statsYm: g("statsYm"), ctpvNm: g("ctpvNm"), sggNm: g("sggNm"),
+        stdgNm: g("stdgNm"), admmCd: g("admmCd"), stdgCd: g("stdgCd"),
+        totNmprCnt: g("totNmprCnt"), hhCnt: g("hhCnt"),
+        maleNmprCnt: g("maleNmprCnt"), femlNmprCnt: g("femlNmprCnt"),
+      });
+    }
+    return items;
+  }
+
+  function aggregatePopulationItems(items, dongCode) {
+    if (!items.length) return null;
+    let totalPop = 0, hhCount = 0, malePop = 0, femalePop = 0;
+    let regionName = "", dongName = "";
+    for (const r of items) {
+      totalPop += parseInt(r.totNmprCnt || 0, 10) || 0;
+      hhCount += parseInt(r.hhCnt || 0, 10) || 0;
+      malePop += parseInt(r.maleNmprCnt || 0, 10) || 0;
+      femalePop += parseInt(r.femlNmprCnt || 0, 10) || 0;
+      if (!regionName && r.ctpvNm) regionName = (r.ctpvNm + " " + (r.sggNm || "")).trim();
+      if (!dongName && r.stdgNm) dongName = r.stdgNm;
+    }
+    return {
+      region_name: regionName, dong_name: dongName, dong_code: dongCode,
+      total_pop: totalPop, household_count: hhCount,
+      male_pop: malePop, female_pop: femalePop,
+      data_date: items[0]?.statsYm || "", source: "api",
+    };
+  }
+
   async function fetchPopulationData(dongName) {
     if (!dongName) return null;
     if (_popCache.has(dongName)) return _popCache.get(dongName);
-    try {
-      const res = await api(`/admin/population?dong=${encodeURIComponent(dongName)}`, { auth: true });
-      const data = res?.data || null;
-      if (data) {
-        data.source = res?.source || 'api';
-        _popCache.set(dongName, data);
-      }
-      return data;
-    } catch {
-      return null;
+
+    const apiKey = getMoisPopApiKey();
+    if (!apiKey) return null;
+
+    const dongCode = DONG_CODE_MAP[dongName];
+    if (!dongCode) return null;
+
+    // 최대 4개월 후보 시도 (3~6개월 전)
+    const candidates = [];
+    const now = new Date();
+    for (let offset = 3; offset <= 6; offset++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      candidates.push(String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, "0"));
     }
+
+    for (const ym of candidates) {
+      try {
+        const url = MOIS_POP_URL
+          + "?serviceKey=" + apiKey
+          + "&stdgCd=" + dongCode
+          + "&srchFrYm=" + ym
+          + "&srchToYm=" + ym
+          + "&lv=4&regSeCd=1&type=XML&numOfRows=100&pageNo=1";
+
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const text = await res.text();
+        if (!text || text.length < 50) continue;
+
+        // resultCode 확인
+        const codeMatch = text.match(/<resultCode>([^<]*)<\/resultCode>/);
+        if (codeMatch && codeMatch[1] !== "0") continue;
+
+        const items = parsePopulationXml(text);
+        const data = aggregatePopulationItems(items, dongCode);
+        if (data && data.total_pop > 0) {
+          _popCache.set(dongName, data);
+          return data;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
   }
 
   function getKakaoKey() {
