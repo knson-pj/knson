@@ -1479,9 +1479,8 @@
     document.querySelectorAll(".mv-card.is-selected").forEach((c) => c.classList.remove("is-selected"));
   }
 
-  // ---- 인구 데이터 (브라우저 직접 호출 — Vercel Hobby 해외 IP 차단 우회) ----
+  // ---- 인구 데이터 (Cloudflare Worker 프록시 경유) ----
   const _popCache = new Map();
-  const MOIS_POP_URL = 'https://apis.data.go.kr/1741000/stdgPpltnHhStus';
 
   const DONG_CODE_MAP = {
     '역삼동':'1168010100','삼성동':'1168010300','대치동':'1168010500','논현동':'1168010800',
@@ -1529,16 +1528,9 @@
     return m ? m[1] : "";
   }
 
-  function getMoisPopApiKey() {
-    const meta = document.querySelector('meta[name="mois-pop-api-key"]');
+  function getPopProxyUrl() {
+    const meta = document.querySelector('meta[name="pop-proxy-url"]');
     return meta?.getAttribute("content")?.trim() || "";
-  }
-
-  function getPopulationYm() {
-    // 3개월 전부터 시도 (최신 집계 데이터)
-    const d = new Date();
-    d.setMonth(d.getMonth() - 3);
-    return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, "0");
   }
 
   function parsePopulationXml(xmlText) {
@@ -1582,13 +1574,13 @@
     if (!dongName) return null;
     if (_popCache.has(dongName)) return _popCache.get(dongName);
 
-    const apiKey = getMoisPopApiKey();
-    if (!apiKey) return null;
+    const proxyUrl = getPopProxyUrl();
+    if (!proxyUrl) return null;
 
     const dongCode = DONG_CODE_MAP[dongName];
     if (!dongCode) return null;
 
-    // 최대 4개월 후보 시도 (3~6개월 전)
+    // 3~6개월 전 후보 시도
     const candidates = [];
     const now = new Date();
     for (let offset = 3; offset <= 6; offset++) {
@@ -1598,19 +1590,15 @@
 
     for (const ym of candidates) {
       try {
-        const url = MOIS_POP_URL
-          + "?serviceKey=" + apiKey
-          + "&stdgCd=" + dongCode
-          + "&srchFrYm=" + ym
-          + "&srchToYm=" + ym
-          + "&lv=4&regSeCd=1&type=XML&numOfRows=100&pageNo=1";
+        const url = proxyUrl + "?stdgCd=" + dongCode
+          + "&srchFrYm=" + ym + "&srchToYm=" + ym
+          + "&lv=4&regSeCd=1&numOfRows=100&pageNo=1";
 
         const res = await fetch(url);
         if (!res.ok) continue;
         const text = await res.text();
         if (!text || text.length < 50) continue;
 
-        // resultCode 확인
         const codeMatch = text.match(/<resultCode>([^<]*)<\/resultCode>/);
         if (codeMatch && codeMatch[1] !== "0") continue;
 
