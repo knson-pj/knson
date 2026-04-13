@@ -38,7 +38,7 @@
   const state = {
     session: loadSession(),
     items: [],
-    view: "text", // text | map
+    view: "map", // map (default) | text (removed)
     source: "all", // all | auction | onbid | realtor | realtor_naver | realtor_direct | general
     keyword: "",
     status: "",
@@ -110,6 +110,9 @@
       els.adminLink.classList.add("is-visible");
     }
 
+    // 지도뷰 기본 활성화
+    document.body.classList.add("is-map-view");
+
     bindEvents();
     loadProperties();
   }
@@ -118,40 +121,8 @@
     els.btnLogout = document.getElementById("btnLogout");
     els.adminLink = document.querySelector(".admin-link");
 
-    // KPI
-    els.statTotal = document.getElementById("statTotal");
-    els.statAuction = document.getElementById("statAuction");
-    els.statGongmae = document.getElementById("statGongmae");
-    els.statRealtor = document.getElementById("statRealtor");
-    els.statGeneral = document.getElementById("statGeneral");
-
-    els.statTotalCard = document.getElementById("statTotalCard");
-    els.statAuctionCard = document.getElementById("statAuctionCard");
-    els.statGongmaeCard = document.getElementById("statGongmaeCard");
-    els.statRealtorCard = document.getElementById("statRealtorCard");
-    els.statGeneralCard = document.getElementById("statGeneralCard");
-
-    // Views
-    els.tabText = document.getElementById("tabText");
-    els.tabMap = document.getElementById("tabMap");
-    els.textView = document.getElementById("textView");
+    // Views (stat view removed — map is the only view)
     els.mapView = document.getElementById("mapView");
-
-    // Filters (map sidebar only)
-    els.agentChart = document.getElementById("agentChart");
-    els.agentChartEmpty = document.getElementById("agentChartEmpty");
-    els.agentChartMeta = document.getElementById("agentChartMeta");
-
-    // Stats charts
-    els.inflowChart = document.getElementById("inflowChart");
-    els.inflowTabs = document.getElementById("inflowTabs");
-    els.sourceDistChart = document.getElementById("sourceDistChart");
-    els.regionDistChart = document.getElementById("regionDistChart");
-    els.typeDistChart = document.getElementById("typeDistChart");
-    els.priceDistChart = document.getElementById("priceDistChart");
-    els.statMenu = document.getElementById("statMenu");
-    els.statTabProperties = document.getElementById("statTabProperties");
-    els.statTabAgents = document.getElementById("statTabAgents");
 
     // Map view
     els.mvPropertyList = document.getElementById("mvPropertyList");
@@ -204,61 +175,6 @@
       });
     }
 
-    // KPI 카드 클릭 → 소스 필터 (지도 뷰에서만 작동)
-    const bindCard = (el, source) => {
-      if (!el) return;
-      el.addEventListener("click", () => {
-        state.source = source;
-        renderKPIs();
-        if (els.mvSourceFilter) {
-          els.mvSourceFilter.value = state.source === "all" ? "" : (state.source || "");
-        }
-        if (state.view === "map") { void refreshMapDataMaybe(); }
-      });
-    };
-
-    bindCard(els.statTotalCard, "all");
-    bindCard(els.statAuctionCard, "auction");
-    bindCard(els.statGongmaeCard, "onbid");
-    bindCard(els.statRealtorCard, "realtor");
-    bindCard(els.statGeneralCard, "general");
-
-    // 탭
-    if (els.tabText) {
-      els.tabText.addEventListener("click", () => setView("text"));
-    }
-    if (els.tabMap) {
-      els.tabMap.addEventListener("click", async () => {
-        setView("map");
-        await ensureKakaoMap();
-        await refreshMapDataMaybe();
-      });
-    }
-
-    // Inflow chart period tabs
-    if (els.inflowTabs) {
-      els.inflowTabs.addEventListener("click", (e) => {
-        const btn = e.target.closest(".stat-period-tab");
-        if (!btn) return;
-        els.inflowTabs.querySelectorAll(".stat-period-tab").forEach((b) => b.classList.remove("is-active"));
-        btn.classList.add("is-active");
-        renderInflowChart(btn.dataset.period || "day");
-      });
-    }
-
-    // Stat menu tabs (매물현황 / 담당자현황)
-    if (els.statMenu) {
-      els.statMenu.addEventListener("click", (e) => {
-        const btn = e.target.closest(".stat-menu-item");
-        if (!btn) return;
-        els.statMenu.querySelectorAll(".stat-menu-item").forEach((b) => b.classList.remove("is-active"));
-        btn.classList.add("is-active");
-        const tab = btn.dataset.statTab;
-        if (els.statTabProperties) els.statTabProperties.classList.toggle("hidden", tab !== "properties");
-        if (els.statTabAgents) els.statTabAgents.classList.toggle("hidden", tab !== "agents");
-      });
-    }
-
     // Map sidebar filters
     if (els.mvKeyword) {
       els.mvKeyword.addEventListener("input", debounce(async (e) => {
@@ -269,7 +185,6 @@
     if (els.mvSourceFilter) {
       els.mvSourceFilter.addEventListener("change", async (e) => {
         state.source = String(e.target.value || "") || "all";
-        renderKPIs();
         await refreshMapDataMaybe();
       });
     }
@@ -286,7 +201,6 @@
         const nextSource = String(trigger.dataset.source || "all").trim() || "all";
         state.source = nextSource;
         if (els.mvSourceFilter) els.mvSourceFilter.value = nextSource === "all" ? "" : nextSource;
-        renderKPIs();
         await refreshMapDataMaybe();
       });
     }
@@ -302,7 +216,7 @@
     window.addEventListener(
       "resize",
       debounce(() => {
-        if (state.view === "map" && state.map && window.kakao?.maps) {
+        if (state.map && window.kakao?.maps) {
           state.map.relayout();
         }
       }, 150)
@@ -310,41 +224,26 @@
   }
 
   function setView(view) {
-    state.view = view;
-    const isMap = view === "map";
+    state.view = "map"; // always map — stat view removed
+    document.body.classList.add("is-map-view");
 
-    // Body class for CSS overrides
-    document.body.classList.toggle("is-map-view", isMap);
-
-    if (els.tabText) {
-      els.tabText.classList.toggle("is-active", !isMap);
-      els.tabText.setAttribute("aria-selected", !isMap ? "true" : "false");
-    }
-    if (els.tabMap) {
-      els.tabMap.classList.toggle("is-active", isMap);
-      els.tabMap.setAttribute("aria-selected", isMap ? "true" : "false");
-    }
-
-    if (els.textView) els.textView.classList.toggle("hidden", isMap);
     if (els.mapView) {
-      els.mapView.classList.toggle("hidden", !isMap);
-      els.mapView.classList.toggle("is-active", isMap);
+      els.mapView.classList.remove("hidden");
+      els.mapView.classList.add("is-active");
     }
 
     // Sync sidebar filters with main state
-    if (isMap) {
-      if (els.mvKeyword) els.mvKeyword.value = state.keyword || "";
-      if (els.mvSourceFilter) els.mvSourceFilter.value = state.source === "all" ? "" : (state.source || "");
-      if (els.mvStatusFilter) els.mvStatusFilter.value = state.status || "";
-      renderMapSidebar();
-      if (shouldUseServerMap()) {
-        Promise.resolve().then(async () => {
-          try {
-            await ensureKakaoMap();
-            await refreshMapDataMaybe();
-          } catch {}
-        });
-      }
+    if (els.mvKeyword) els.mvKeyword.value = state.keyword || "";
+    if (els.mvSourceFilter) els.mvSourceFilter.value = state.source === "all" ? "" : (state.source || "");
+    if (els.mvStatusFilter) els.mvStatusFilter.value = state.status || "";
+    renderMapSidebar();
+    if (shouldUseServerMap()) {
+      Promise.resolve().then(async () => {
+        try {
+          await ensureKakaoMap();
+          await refreshMapDataMaybe();
+        } catch {}
+      });
     }
   }
 
@@ -355,16 +254,14 @@
   }
 
   async function refreshMapDataMaybe() {
-    if (state.view === "map" && shouldUseServerMap()) {
+    if (shouldUseServerMap()) {
       await loadAdminMapData();
       renderMapSidebar();
       await renderKakaoMarkers();
       return;
     }
-    if (state.view === "map") {
-      renderMapSidebar();
-      await renderKakaoMarkers();
-    }
+    renderMapSidebar();
+    await renderKakaoMarkers();
   }
 
   async function loadAdminMapData() {
@@ -463,10 +360,8 @@
 
         if (isAdmin) {
           state.useServerMap = true;
-          if (state.view === "map") {
-            await ensureKakaoMap();
-            await loadAdminMapData();
-          }
+          await ensureKakaoMap();
+          await loadAdminMapData();
         } else {
           const data = await fetchPropertiesBatch(sb, 0, 300, { isAdmin, uid });
           state.items = Array.isArray(data) ? data.map(normalizeItem) : [];
@@ -476,10 +371,8 @@
         if (isAdmin) {
           staffPromise = loadStaffAssignments();
           state.useServerMap = true;
-          if (state.view === "map") {
-            await ensureKakaoMap();
-            await loadAdminMapData();
-          }
+          await ensureKakaoMap();
+          await loadAdminMapData();
         } else {
           const scope = isAdmin ? "all" : "mine";
           const res = await DataAccess.fetchScopedPropertiesViaApi(api, { scope, auth: true });
@@ -489,22 +382,14 @@
 
       try { state.staffAssignments = await staffPromise; } catch { state.staffAssignments = []; }
 
-      renderKPIs();
-      renderAgentChart();
-      renderStatCharts();
-
-      if (state.view === "map") {
-        await ensureKakaoMap();
-        await renderKakaoMarkers();
-      }
+      // 지도 렌더링 (stat 차트 렌더링 제거됨)
+      await ensureKakaoMap();
+      await renderKakaoMarkers();
     } catch (err) {
       console.error(err);
       state.items = [];
       state.mapSummary = null;
       state.mapMarkers = [];
-      renderKPIs();
-      renderAgentChart();
-      renderStatCharts();
       alert(toUserErrorMessage(err, "목록을 불러오지 못했습니다."));
     }
   }
@@ -1199,7 +1084,6 @@
 
     // 맵 이동/줌 완료 시 현재 뷰포트 기준으로 데이터/마커 재동기화
     kakao.maps.event.addListener(state.map, "idle", debounce(async () => {
-      if (state.view !== "map") return;
       if (shouldUseServerMap()) {
         await refreshMapDataMaybe();
       } else {
@@ -1246,7 +1130,6 @@
   }
 
   async function renderKakaoMarkers() {
-    if (state.view !== "map") return;
     if (!state.map || !window.kakao?.maps) return;
 
     clearMapMarkers();
