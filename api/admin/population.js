@@ -12,7 +12,7 @@ const { applyCors } = require('../_lib/cors');
 const { send } = require('../_lib/utils');
 const { hasSupabaseAdminEnv, getEnv } = require('../_lib/supabase-admin');
 
-const MOIS_BASE = 'https://apis.data.go.kr/1741000/stdgPpltnHhStus/getStdgPpltnHhStus';
+const MOIS_BASE = 'https://apis.data.go.kr/1741000/stdgPpltnHhStus';
 const CACHE_TTL_DAYS = 30;
 
 function getMoisApiKey() {
