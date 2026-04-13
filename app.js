@@ -1317,52 +1317,31 @@
     const appraisal = item.appraisalPrice != null ? formatMoneyEok(item.appraisalPrice) : '-';
     const current = item.currentPrice != null ? formatMoneyEok(item.currentPrice) : '-';
     const rate = calcRate(item.appraisalPrice, item.currentPrice, item.raw);
+    const bucket = String(item.sourceBucket || item.source || '').trim();
+    const isAuctionType = (bucket === 'auction' || bucket === 'onbid');
 
     let body = '';
     body += '<div class="mv-detail-addr">' + escapeHtml(item.address || '-') + '</div>';
     body += '<div class="mv-detail-sub">' + escapeHtml(kindLine || '-') + '</div>';
 
-    body += '<div class="mv-detail-section">';
-    body += '<div class="mv-detail-stitle">A. 기본 정보</div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">물건번호</span><span class="mv-detail-rv">' + escapeHtml(item.itemNo || '-') + '</span></div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">구분</span><span class="mv-detail-rv">' + escapeHtml(src.label) + '</span></div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">진행상태</span><span class="mv-detail-rv">' + escapeHtml(item.statusLabel || statusLabel(item.status) || '-') + '</span></div>';
-    body += '</div>';
-
+    // B. 가격 / 면적
     body += '<div class="mv-detail-section">';
     body += '<div class="mv-detail-stitle">B. 가격 / 면적</div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">감정가(매각가)</span><span class="mv-detail-rv">' + escapeHtml(appraisal) + '</span></div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">현재가</span><span class="mv-detail-rv">' + escapeHtml(current) + '</span></div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">비율</span><span class="mv-detail-rv">' + escapeHtml(rate) + '</span></div>';
+    if (isAuctionType) {
+      body += '<div class="mv-detail-row"><span class="mv-detail-rl">감정가(매각가)</span><span class="mv-detail-rv">' + escapeHtml(appraisal) + '</span></div>';
+      body += '<div class="mv-detail-row"><span class="mv-detail-rl">현재가</span><span class="mv-detail-rv">' + escapeHtml(current) + '</span></div>';
+      body += '<div class="mv-detail-row"><span class="mv-detail-rl">비율</span><span class="mv-detail-rv">' + escapeHtml(rate) + '</span></div>';
+    } else {
+      body += '<div class="mv-detail-row"><span class="mv-detail-rl">매매가</span><span class="mv-detail-rv">' + escapeHtml(appraisal) + '</span></div>';
+    }
     body += '<div class="mv-detail-row"><span class="mv-detail-rl">공용면적</span><span class="mv-detail-rv">' + escapeHtml(formatAreaPyeong(item.commonarea)) + '평</span></div>';
     body += '<div class="mv-detail-row"><span class="mv-detail-rl">전용면적</span><span class="mv-detail-rv">' + escapeHtml(formatAreaPyeong(item.exclusivearea)) + '평</span></div>';
     body += '<div class="mv-detail-row"><span class="mv-detail-rl">토지면적</span><span class="mv-detail-rv">' + escapeHtml(formatAreaPyeong(item.sitearea)) + '평</span></div>';
     body += '</div>';
 
-    body += '<div class="mv-detail-section">';
-    body += '<div class="mv-detail-stitle">C. 검토 현황</div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">권리분석</span><span class="mv-detail-rv">' + (item.rightsAnalysis ? '<span class="positive">✓ 완료</span>' : '-') + '</span></div>';
-    body += '<div class="mv-detail-row"><span class="mv-detail-rl">현장실사</span><span class="mv-detail-rv">' + (item.siteInspection ? '<span class="positive">✓ 완료</span>' : '-') + '</span></div>';
-    if (item.opinion) {
-      body += '<div style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.5;word-break:keep-all;">' +
-        '<strong style="color:var(--text)">의견:</strong> ' + escapeHtml(item.opinion) + '</div>';
-    }
-    body += '</div>';
-
-    if (item.latitude != null && item.longitude != null) {
-      const mapLink = buildKakaoMapLink(item);
-      body += '<div class="mv-detail-section">';
-      body += '<div class="mv-detail-stitle">D. 위치</div>';
-      body += '<div class="mv-detail-row"><span class="mv-detail-rl">좌표</span><span class="mv-detail-rv">' + Number(item.latitude).toFixed(5) + ', ' + Number(item.longitude).toFixed(5) + '</span></div>';
-      if (mapLink) {
-        body += '<div style="margin-top:6px;"><a href="' + escapeAttr(mapLink) + '" target="_blank" rel="noopener noreferrer" style="color:#F37022;font-size:11px;font-weight:700;text-decoration:none;">카카오맵에서 보기 →</a></div>';
-      }
-      body += '</div>';
-    }
-
     els.mvDetailBody.innerHTML = body;
 
-    // 가격평가 상세 표시 (비동기)
+    // E. 가격평가 (비동기)
     const Valuation = window.KNSN_VALUATION;
     if (Valuation && item.id) {
       const valWrap = document.createElement('div');
@@ -1386,7 +1365,7 @@
       });
     }
 
-    // 인구 데이터 표시 (비동기)
+    // F. 인구 현황 (비동기)
     const dongName = extractDongFromAddress(item.address);
     if (dongName) {
       const popWrap = document.createElement('div');
@@ -1407,7 +1386,7 @@
         const perHh = hhCount > 0 ? (totalPop / hhCount).toFixed(1) : '-';
         const maleRatio = totalPop > 0 ? ((malePop / totalPop) * 100).toFixed(1) : '-';
         const femaleRatio = totalPop > 0 ? ((femalePop / totalPop) * 100).toFixed(1) : '-';
-        const src = pop.source === 'cache' ? '캐시' : '행안부 API';
+        const popSrc = pop.source === 'cache' ? '캐시' : '행안부 API';
 
         let html = '<div class="mv-detail-stitle">F. 인구 현황 <span style="font-size:9px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">(' + escapeHtml(dongName) + ')</span></div>';
         html += '<div class="mv-detail-row"><span class="mv-detail-rl">총 인구</span><span class="mv-detail-rv">' + fmtN(totalPop) + '명</span></div>';
@@ -1416,7 +1395,6 @@
         html += '<div class="mv-detail-row"><span class="mv-detail-rl">남성</span><span class="mv-detail-rv">' + fmtN(malePop) + '명 (' + escapeHtml(maleRatio) + '%)</span></div>';
         html += '<div class="mv-detail-row"><span class="mv-detail-rl">여성</span><span class="mv-detail-rv">' + fmtN(femalePop) + '명 (' + escapeHtml(femaleRatio) + '%)</span></div>';
 
-        // 인구 막대 시각화
         if (totalPop > 0) {
           const mPct = Math.round((malePop / totalPop) * 100);
           html += '<div style="margin-top:6px;display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line);">';
@@ -1426,14 +1404,14 @@
           html += '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:2px;"><span>남 ' + mPct + '%</span><span>여 ' + (100 - mPct) + '%</span></div>';
         }
 
-        html += '<div style="margin-top:6px;font-size:9px;color:var(--muted);">출처: ' + escapeHtml(src) + ' · ' + escapeHtml(pop.data_date || '') + '</div>';
+        html += '<div style="margin-top:6px;font-size:9px;color:var(--muted);">출처: ' + escapeHtml(popSrc) + ' · ' + escapeHtml(pop.data_date || '') + '</div>';
         popWrap.innerHTML = html;
       }).catch(function() {
         popWrap.innerHTML = '<div class="mv-detail-stitle">F. 인구 현황</div><div style="font-size:12px;color:var(--muted);">인구 정보를 불러올 수 없습니다.</div>';
       });
     }
 
-    // ── G. 반경 배후 분석 섹션 ──
+    // G. 반경 배후 분석
     if (item.latitude != null && item.longitude != null) {
       const raWrap = document.createElement('div');
       raWrap.className = 'mv-detail-section ra-section';
@@ -1441,7 +1419,6 @@
       els.mvDetailBody.appendChild(raWrap);
       bindRadiusAnalysisEvents(raWrap, item);
 
-      // 300m 자동 분석 실행
       setTimeout(function() {
         var defaultBtn = raWrap.querySelector('.ra-radius-btn[data-radius="300"]');
         if (defaultBtn) {
@@ -1450,6 +1427,19 @@
         }
       }, 100);
     }
+
+    // C. 검토 현황 (맨 마지막)
+    const reviewWrap = document.createElement('div');
+    reviewWrap.className = 'mv-detail-section';
+    let reviewHtml = '<div class="mv-detail-stitle">C. 검토 현황</div>';
+    reviewHtml += '<div class="mv-detail-row"><span class="mv-detail-rl">권리분석</span><span class="mv-detail-rv">' + (item.rightsAnalysis ? '<span class="positive">✓ 완료</span>' : '-') + '</span></div>';
+    reviewHtml += '<div class="mv-detail-row"><span class="mv-detail-rl">현장실사</span><span class="mv-detail-rv">' + (item.siteInspection ? '<span class="positive">✓ 완료</span>' : '-') + '</span></div>';
+    if (item.opinion) {
+      reviewHtml += '<div style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.5;word-break:keep-all;">' +
+        '<strong style="color:var(--text)">의견:</strong> ' + escapeHtml(item.opinion) + '</div>';
+    }
+    reviewWrap.innerHTML = reviewHtml;
+    els.mvDetailBody.appendChild(reviewWrap);
 
     els.mvDetail.classList.remove("hidden");
   }
