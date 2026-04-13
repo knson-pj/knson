@@ -289,6 +289,39 @@ module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
   if (req.method !== 'GET') return send(res, 405, { error: 'Method not allowed' });
 
+  // 디버그 테스트 모드: ?test=1&stdgCd=1111014000&ym=202210
+  if (req.query?.test === '1') {
+    const apiKey = getMoisApiKey();
+    const testStdgCd = req.query?.stdgCd || '1111014000';
+    const testYm = req.query?.ym || '202210';
+    const queryParts = [
+      `serviceKey=${apiKey}`,
+      `stdgCd=${testStdgCd}`,
+      `srchFrYm=${testYm}`,
+      `srchToYm=${testYm}`,
+      `lv=4`,
+      `regSeCd=1`,
+      `type=XML`,
+      `numOfRows=10`,
+      `pageNo=1`,
+    ];
+    const url = `${MOIS_BASE}?${queryParts.join('&')}`;
+    const maskedUrl = url.replace(apiKey, apiKey.slice(0, 8) + '***');
+    try {
+      const r = await fetch(url);
+      const text = await r.text();
+      return send(res, 200, {
+        test: true,
+        status: r.status,
+        maskedUrl,
+        responseLength: text.length,
+        responsePreview: text.slice(0, 500),
+      });
+    } catch (err) {
+      return send(res, 200, { test: true, maskedUrl, fetchError: err.message });
+    }
+  }
+
   const dong = String(req.query?.dong || '').trim();
   const stdgCdParam = String(req.query?.stdgCd || '').trim();
   const dongCode = resolveDongCode(dong, stdgCdParam);
