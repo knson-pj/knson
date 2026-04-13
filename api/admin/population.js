@@ -158,44 +158,63 @@ function resolveDongCode(dong, stdgCd) {
 
 // ── 행안부 API 호출 ──
 
-function getLatestYm() {
+function getRecentYmCandidates() {
+  // 최근 3~6개월 전 범위의 후보 목록 반환 (최신순)
+  // 행안부 데이터는 집계 지연이 있으므로 2~3개월 전부터 시도
+  const candidates = [];
   const now = new Date();
-  now.setMonth(now.getMonth() - 1);
-  return String(now.getFullYear()) + String(now.getMonth() + 1).padStart(2, '0');
+  for (let offset = 3; offset <= 8; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const ym = String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0');
+    candidates.push(ym);
+  }
+  return candidates;
 }
 
 async function fetchMoisPopulation(stdgCd) {
   const apiKey = getMoisApiKey();
   if (!apiKey) throw new Error('MOIS_POP_API_KEY 환경변수가 설정되지 않았습니다.');
 
-  const ym = getLatestYm();
-  // serviceKey는 URLSearchParams의 자동 인코딩을 피하기 위해 수동 조립
-  const queryParts = [
-    `serviceKey=${apiKey}`,
-    `stdgCd=${encodeURIComponent(stdgCd)}`,
-    `srchFrYm=${ym}`,
-    `srchToYm=${ym}`,
-    `lv=4`,
-    `regSeCd=1`,
-    `type=XML`,
-    `numOfRows=100`,
-    `pageNo=1`,
-  ];
+  const ymCandidates = getRecentYmCandidates();
+  let lastError = null;
 
-  const url = `${MOIS_BASE}?${queryParts.join('&')}`;
-  const res = await fetch(url);
-  const text = await res.text();
+  for (const ym of ymCandidates) {
+    const queryParts = [
+      `serviceKey=${apiKey}`,
+      `stdgCd=${encodeURIComponent(stdgCd)}`,
+      `srchFrYm=${ym}`,
+      `srchToYm=${ym}`,
+      `lv=4`,
+      `regSeCd=1`,
+      `type=XML`,
+      `numOfRows=100`,
+      `pageNo=1`,
+    ];
 
-  if (!res.ok) {
-    throw new Error(`행안부 API 오류 (${res.status}): ${text.slice(0, 300)}`);
+    const url = `${MOIS_BASE}?${queryParts.join('&')}`;
+    const res = await fetch(url);
+    const text = await res.text();
+
+    if (!res.ok) {
+      lastError = `행안부 API 오류 (${res.status}, ym=${ym}): ${text.slice(0, 200)}`;
+      continue; // 다음 월 시도
+    }
+
+    // 빈 응답 체크
+    if (!text || text.trim().length < 50) {
+      lastError = `빈 응답 (ym=${ym})`;
+      continue;
+    }
+
+    // JSON 시도
+    try {
+      return { format: 'json', data: JSON.parse(text), ym };
+    } catch {}
+    // XML
+    return { format: 'xml', data: text, ym };
   }
 
-  // JSON 시도
-  try {
-    return { format: 'json', data: JSON.parse(text) };
-  } catch {}
-  // XML fallback
-  return { format: 'xml', data: text };
+  throw new Error(lastError || `행안부 API에서 데이터를 받지 못했습니다. (시도: ${ymCandidates.join(', ')})`);
 }
 
 // ── XML 파싱 ──
@@ -305,7 +324,7 @@ module.exports = async function handler(req, res) {
     console.error('population API error:', err);
     return send(res, 500, {
       error: err.message || '인구 데이터 조회 실패',
-      debug: { dong, dongCode, ym: getLatestYm() },
+      debug: { dong, dongCode, ymCandidates: getRecentYmCandidates() },
     });
   }
 };
