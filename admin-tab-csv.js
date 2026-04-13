@@ -234,6 +234,33 @@
       const sourceType = String(els.csvImportSource.value || "auction");
       const csvText = await mod.readCsvFileText(file, sourceType);
 
+      // ── 임대시세 CSV 분기 ──
+      if (sourceType === "rental") {
+        const rawRows = mod.parseCsv(csvText);
+        if (!rawRows.length) throw new Error("유효한 행이 없습니다.");
+
+        // 주소에서 시군구 코드 추출 시도 (첫 행 기준)
+        const firstAddr = String(rawRows[0]?.["주소(통합)"] || rawRows[0]?.address || "").trim();
+        const sigunguCode = mod.inferSigunguCode ? mod.inferSigunguCode(firstAddr) : "";
+
+        const res = await api("/admin/valuation/rental-data", {
+          method: "POST",
+          auth: true,
+          body: { action: "upload-csv", csvRows: rawRows, sigunguCode },
+        });
+
+        const parts = [
+          "임대시세 업로드 완료",
+          `전체: ${res?.total ?? 0}건`,
+          `유효: ${res?.valid ?? 0}건`,
+          `삽입: ${res?.inserted ?? 0}건`,
+        ];
+        if (res?.errors > 0) parts.push(`오류: ${res.errors}건`);
+        showResultBox(els.csvResultBox, parts.join(" / "));
+        return;
+      }
+
+      // ── 기존 매물 CSV (auction / onbid / realtor) ──
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
       if (sb) {
         try { await K.sbSyncLocalSession(); } catch {}
@@ -622,6 +649,33 @@
         headers.forEach((h, idx) => { obj[h] = r[idx] ?? ""; });
         return obj;
       });
+  };
+
+  mod.inferSigunguCode = function inferSigunguCode(address) {
+    const a = String(address || "").replace(/\s+/g, " ").trim();
+    if (!a) return "";
+    // 주요 시군구 코드 매핑 (서울/경기/인천 위주)
+    const map = [
+      [/강남구/, "11680"], [/서초구/, "11650"], [/송파구/, "11710"], [/강동구/, "11740"],
+      [/마포구/, "11440"], [/영등포구/, "11560"], [/용산구/, "11170"], [/성동구/, "11200"],
+      [/광진구/, "11215"], [/동대문구/, "11230"], [/중랑구/, "11260"], [/성북구/, "11290"],
+      [/강북구/, "11305"], [/도봉구/, "11320"], [/노원구/, "11350"], [/은평구/, "11380"],
+      [/서대문구/, "11410"], [/종로구/, "11110"], [/중구/, "11140"], [/동작구/, "11590"],
+      [/관악구/, "11620"], [/금천구/, "11545"], [/구로구/, "11530"], [/양천구/, "11470"],
+      [/강서구/, "11500"], [/종로구/, "11110"],
+      [/분당구/, "41135"], [/수정구/, "41131"], [/중원구/, "41133"],
+      [/수원시/, "41110"], [/용인시/, "41460"], [/고양시/, "41280"],
+      [/성남시/, "41130"], [/화성시/, "41590"], [/안양시/, "41170"],
+      [/부천시/, "41190"], [/안산시/, "41270"], [/남양주시/, "41360"],
+      [/의정부시/, "41150"], [/시흥시/, "41390"], [/파주시/, "41480"],
+      [/김포시/, "41570"], [/광명시/, "41210"], [/하남시/, "41450"],
+      [/군포시/, "41410"], [/오산시/, "41370"], [/이천시/, "41500"],
+      [/인천.*남동구/, "28200"], [/인천.*부평구/, "28237"], [/인천.*연수구/, "28185"],
+    ];
+    for (const [re, code] of map) {
+      if (re.test(a)) return code;
+    }
+    return "";
   };
 
   AdminModules.csvTab = mod;
