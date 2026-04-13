@@ -656,10 +656,19 @@
     let from = 0;
     const safePageSize = Math.max(1, Number(pageSize || 1000));
     while (true) {
-      const { data, error } = await sb.from("properties")
+      let query = sb.from("properties")
         .select("id,global_id,address,latitude,longitude,geocode_status")
-        .eq("geocode_status", statusFilter)
-        .not("address", "is", null)
+        .not("address", "is", null);
+
+      if (statusFilter === "pending") {
+        // pending = geocode_status가 'pending'이거나 NULL이면서 좌표가 없는 물건
+        query = query.or("geocode_status.eq.pending,geocode_status.is.null")
+          .is("latitude", null);
+      } else {
+        query = query.eq("geocode_status", statusFilter);
+      }
+
+      const { data, error } = await query
         .order("date_uploaded", { ascending: false })
         .range(from, from + safePageSize - 1);
       if (error) throw error;
