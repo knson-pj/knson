@@ -50,32 +50,85 @@ function parseNumber(v) {
 }
 
 function normalizeRow(row, sigunguCode) {
-  // CSV 컬럼명 유연 매핑
-  const dong = String(row.dong || row['동'] || row.dong_name || row['법정동'] || row['동이름'] || '').trim();
-  const address = String(row.address || row['주소'] || row['소재지'] || row['도로명주소'] || '').trim();
-  const buildingName = String(row.building_name || row['건물명'] || row['상가명'] || row['빌딩명'] || '').trim();
-  const floor = parseNumber(row.floor || row['층'] || row['해당층']);
-  const area = parseNumber(row.area || row.area_m2 || row['면적'] || row['전용면적'] || row['면적(㎡)'] || row['전용면적(㎡)']);
-  const deposit = parseNumber(row.deposit || row['보증금'] || row['보증금(만원)']);
-  const monthlyRent = parseNumber(row.monthly_rent || row.monthlyRent || row['월세'] || row['월세(만원)'] || row['월임대료']);
-  const direction = String(row.direction || row['방향'] || '').trim();
-  const description = String(row.description || row['설명'] || row['매물설명'] || row['특징'] || '').trim();
-  const articleNo = String(row.article_no || row.articleNo || row['매물번호'] || row['매물No'] || '').trim() || null;
+  // CSV 컬럼명 유연 매핑 — 네이버 부동산 임대 CSV + 수동 입력 모두 지원
+  const pick = (...keys) => {
+    for (const k of keys) {
+      const v = row[k];
+      if (v != null && String(v).trim() !== '') return String(v).trim();
+    }
+    return '';
+  };
+
+  const articleNo = pick('매물ID', 'article_no', 'articleNo', '매물번호', '매물No') || null;
+  const address = pick('주소(통합)', '도로명주소', '지번주소', '주소', 'address', '소재지');
+  const dong = pick('dong', '동', 'dong_name', '법정동', '동이름');
+  const buildingName = pick('building_name', '건물명', '상가명', '빌딩명');
+  const assetType = pick('세부유형', '부동산유형명', '부동산유형', 'asset_type');
+  const floor = pick('해당층', '층', 'floor');
+  const totalFloor = pick('총층', '전체층', 'total_floor');
+  const areaM2 = parseNumber(pick('전용면적(㎡)', '면적(㎡)', '전용면적', 'area_m2', 'area', '면적'));
+  const areaPyeong = parseNumber(pick('전용면적(평)', '전용면적평', 'area_pyeong'));
+  const commonAreaM2 = parseNumber(pick('공급/계약면적(㎡)', '공급면적(㎡)', '공용면적(㎡)', 'common_area_m2'));
+  const commonAreaPy = parseNumber(pick('공급/계약면적(평)', '공급면적(평)', '공용면적(평)', 'common_area_py'));
+  const deposit = parseNumber(pick('가격(표시)', '보증금', 'deposit', '보증금(만원)'));
+  const monthlyRent = parseNumber(pick('월세', '월세(만원)', '월임대료', 'monthly_rent', 'monthlyRent'));
+  const pricePerPy = parseNumber(pick('전용평단가(표시)', 'price_per_py'));
+  const pricePerPyRent = parseNumber(pick('전용평단가(월세)', 'price_per_py_rent'));
+  const description = pick('매물특징', '매물설명', '설명', '특징', 'description');
+  const confirmDate = pick('매물확인일', '확인일자', '날짜', 'confirm_date');
+  const useApproval = pick('사용승인일', 'use_approval');
+  const brokerName = pick('중개사무소명', '중개업소명', '부동산', 'broker_name');
+  const brokerPhone = pick('중개사 유선전화', '유선전화', '대표전화', 'broker_phone');
+  const brokerCell = pick('중개사 휴대폰', '휴대폰번호', '휴대폰', 'broker_cell');
+  const latitude = parseNumber(pick('위도', 'latitude', 'lat'));
+  const longitude = parseNumber(pick('경도', 'longitude', 'lng'));
+
+  // 바로가기(엑셀) 에서 URL 추출
+  let sourceUrl = pick('source_url', 'sourceUrl', '매물URL', 'url');
+  if (!sourceUrl) {
+    const rawLink = pick('바로가기(엑셀)');
+    if (rawLink) {
+      const urlMatch = rawLink.match(/https?:\/\/[^\s"')]+/);
+      if (urlMatch) sourceUrl = urlMatch[0];
+      else if (articleNo) sourceUrl = 'https://fin.land.naver.com/articles/' + articleNo;
+    }
+  }
+
+  // 주소에서 동 이름 추출 (dong이 비어있을 때)
+  let dongName = dong;
+  if (!dongName && address) {
+    const m = address.match(/([가-힣0-9]+동)\b/);
+    if (m) dongName = m[1];
+  }
 
   return {
     article_no: articleNo,
     sigungu_code: sigunguCode || '',
-    dong_name: dong,
-    address: address || (dong + ' ' + buildingName).trim(),
-    building_name: buildingName,
-    floor: floor,
-    area_m2: area,
+    dong_name: dongName,
+    address: address || (dongName + ' ' + buildingName).trim(),
+    building_name: buildingName || null,
+    asset_type: assetType || null,
+    floor: floor || null,
+    total_floor: totalFloor || null,
+    area_m2: areaM2,
+    area_pyeong: areaPyeong,
+    common_area_m2: commonAreaM2,
+    common_area_py: commonAreaPy,
     deposit: deposit,
     monthly_rent: monthlyRent,
+    price_per_py: pricePerPy,
+    price_per_py_rent: pricePerPyRent,
     trade_type: 'B2',
-    direction: direction,
-    description: description,
-    confirm_date: String(row.confirm_date || row['확인일자'] || row['날짜'] || '').trim() || null,
+    direction: pick('방향', 'direction') || null,
+    description: description || null,
+    confirm_date: confirmDate || null,
+    use_approval: useApproval || null,
+    source_url: sourceUrl || null,
+    broker_name: brokerName || null,
+    broker_phone: brokerPhone || null,
+    broker_cell: brokerCell || null,
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
     expired: false,
   };
 }
