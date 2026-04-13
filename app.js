@@ -1624,6 +1624,7 @@
         circleAreaM2: analysisData.circleAreaM2 || 0,
         dongs: analysisData.dongs || [],
         totals: analysisData.totals || null,
+        building: analysisData.building || null,
         timestamp: Date.now(),
       };
 
