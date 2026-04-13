@@ -373,19 +373,21 @@
     if (!bounds) return;
     const sw = bounds.getSouthWest();
     const ne = bounds.getNorthEast();
-    const params = new URLSearchParams();
-    params.set('mode', 'map');
-    params.set('offset', String(Math.max(0, (state.page - 1) * state.pageSize)));
-    params.set('limit', String(Math.max(120, state.pageSize * 6)));
-    params.set('markerLimit', '600');
-    params.set('swLat', String(sw.getLat()));
-    params.set('swLng', String(sw.getLng()));
-    params.set('neLat', String(ne.getLat()));
-    params.set('neLng', String(ne.getLng()));
-    if (state.status) params.set('status', state.status);
-    if (state.keyword) params.set('q', state.keyword);
+    const params = {
+      mode: 'map',
+      offset: String(Math.max(0, (state.page - 1) * state.pageSize)),
+      limit: String(Math.max(120, state.pageSize * 6)),
+      markerLimit: '600',
+      swLat: String(sw.getLat()),
+      swLng: String(sw.getLng()),
+      neLat: String(ne.getLat()),
+      neLng: String(ne.getLng()),
+    };
+    if (state.status) params.status = state.status;
+    if (state.keyword) params.q = state.keyword;
+    if (state.source && state.source !== 'all') params.source = state.source;
 
-    const queryKey = params.toString();
+    const queryKey = new URLSearchParams(params).toString();
     const applyMapPayload = (res) => {
       const items = Array.isArray(res?.items) ? res.items : [];
       const markers = Array.isArray(res?.markers) ? res.markers : [];
@@ -410,7 +412,7 @@
     }
 
     const requestToken = ++state.mapRequestToken;
-    const res = await DataAccess.fetchAdminMapDataViaApi(api, mapParams, { auth: true });
+    const res = await DataAccess.fetchAdminMapDataViaApi(api, params, { auth: true });
     if (requestToken !== state.mapRequestToken) return;
     state.lastMapQueryKey = queryKey;
     state.mapQueryCache.set(queryKey, res || {});
