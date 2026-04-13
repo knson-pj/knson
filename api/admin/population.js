@@ -169,24 +169,25 @@ async function fetchMoisPopulation(stdgCd) {
   if (!apiKey) throw new Error('MOIS_POP_API_KEY 환경변수가 설정되지 않았습니다.');
 
   const ym = getLatestYm();
-  const params = new URLSearchParams({
-    serviceKey: apiKey,
-    stdgCd: stdgCd,
-    srchFrYm: ym,
-    srchToYm: ym,
-    lv: '4',
-    regSeCd: '1',
-    type: 'JSON',
-    numOfRows: '100',
-    pageNo: '1',
-  });
+  // serviceKey는 URLSearchParams의 자동 인코딩을 피하기 위해 수동 조립
+  const queryParts = [
+    `serviceKey=${apiKey}`,
+    `stdgCd=${encodeURIComponent(stdgCd)}`,
+    `srchFrYm=${ym}`,
+    `srchToYm=${ym}`,
+    `lv=4`,
+    `regSeCd=1`,
+    `type=XML`,
+    `numOfRows=100`,
+    `pageNo=1`,
+  ];
 
-  const url = `${MOIS_BASE}?${params.toString()}`;
+  const url = `${MOIS_BASE}?${queryParts.join('&')}`;
   const res = await fetch(url);
   const text = await res.text();
 
   if (!res.ok) {
-    throw new Error(`행안부 API 오류 (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(`행안부 API 오류 (${res.status}): ${text.slice(0, 300)}`);
   }
 
   // JSON 시도
@@ -302,6 +303,9 @@ module.exports = async function handler(req, res) {
     return send(res, 200, { ok: true, source: 'api', data: parsed });
   } catch (err) {
     console.error('population API error:', err);
-    return send(res, 500, { error: err.message || '인구 데이터 조회 실패' });
+    return send(res, 500, {
+      error: err.message || '인구 데이터 조회 실패',
+      debug: { dong, dongCode, ym: getLatestYm() },
+    });
   }
 };
