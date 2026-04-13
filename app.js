@@ -1599,69 +1599,89 @@
     const authHeaders = anonKey ? { 'Authorization': 'Bearer ' + anonKey } : {};
 
     try {
-      // Step 1: Vworld WFS로 반경 내 법정동 목록 조회
+      // Step 1: Vworld 프록시로 반경 내 법정동 목록 조회
       const nearbyUrl = proxyUrl + '?mode=nearbyDong&lat=' + lat + '&lng=' + lng + '&radius=' + radius;
       const nearbyRes = await fetch(nearbyUrl, { headers: authHeaders });
-      if (!nearbyRes.ok) throw new Error('WFS 조회 실패 (' + nearbyRes.status + ')');
+      if (!nearbyRes.ok) throw new Error('법정동 조회 실패 (' + nearbyRes.status + ')');
       const nearbyData = await nearbyRes.json();
 
       let dongList = nearbyData?.dongs || [];
 
-      // WFS 결과가 없으면 역지오코딩으로 폴백
+      // 서버 폴백도 실패 시 프론트엔드 역지오코딩 최종 폴백
       if (!dongList.length) {
         const revUrl = proxyUrl + '?mode=reverseGeo&lat=' + lat + '&lng=' + lng;
         const revRes = await fetch(revUrl, { headers: authHeaders });
         if (revRes.ok) {
           const revData = await revRes.json();
           const revItems = revData?.items || [];
-          // 역지오코딩 결과에서 동 이름 추출 → DONG_CODE_MAP에서 코드 찾기
-          for (const ri of revItems) {
-            const dongName = ri.dong || '';
-            if (dongName && DONG_CODE_MAP[dongName]) {
-              dongList.push({ code: DONG_CODE_MAP[dongName], name: dongName, fullName: ri.fullAddr || dongName });
+          var seen = {};
+          for (var ri = 0; ri < revItems.length; ri++) {
+            var dongName = revItems[ri].eupmyeondong || revItems[ri].dong || '';
+            if (dongName && !seen[dongName]) {
+              seen[dongName] = true;
+              var code = DONG_CODE_MAP[dongName] || '';
+              dongList.push({ code: code, name: dongName, fullName: revItems[ri].fullAddr || dongName });
             }
           }
         }
       }
 
+      // 코드 없는 동은 DONG_CODE_MAP에서 매핑
+      dongList.forEach(function(d) {
+        if (!d.code && d.name && DONG_CODE_MAP[d.name]) {
+          d.code = DONG_CODE_MAP[d.name];
+        }
+      });
+
+      // 코드가 있는 동만 인구 조회 가능
+      var validDongs = dongList.filter(function(d) { return d.code && d.code.length >= 5; });
+
       if (!dongList.length) {
-        resultEl.innerHTML = '<div class="ra-empty">반경 내 행정구역을 찾을 수 없습니다.<br><span style="font-size:10px;color:var(--muted);">해당 지역이 Vworld 커버리지에 포함되지 않을 수 있습니다.</span></div>';
+        resultEl.innerHTML = '<div class="ra-empty">반경 내 행정구역을 찾을 수 없습니다.<br><span style="font-size:10px;color:var(--muted);">해당 지역의 법정동 데이터를 확인할 수 없습니다.</span></div>';
+        return;
+      }
+
+      if (!validDongs.length) {
+        // 동 이름은 있지만 코드 매핑 불가
+        resultEl.innerHTML = '<div class="ra-empty">발견된 행정동: ' + dongList.map(function(d) { return escapeHtml(d.name); }).join(', ') + '<br><span style="font-size:10px;color:var(--muted);">해당 법정동의 코드 매핑이 없어 인구 조회를 할 수 없습니다.</span></div>';
         return;
       }
 
       // 진행 상태 업데이트
-      resultEl.innerHTML = '<div class="ra-loading"><div class="ra-spinner"></div><span>' + dongList.length + '개 행정구역의 인구 데이터를 조회 중...</span></div>';
+      resultEl.innerHTML = '<div class="ra-loading"><div class="ra-spinner"></div><span>' + validDongs.length + '개 행정구역의 인구 데이터를 조회 중...</span></div>';
 
       // Step 2: 인구 데이터 일괄 조회
-      const codes = dongList.map(function(d) { return d.code; });
-      let popResults = [];
+      var codes = validDongs.map(function(d) { return d.code; });
+      var names = validDongs.map(function(d) { return d.name; });
+      var popResults = [];
 
       // batchPopulation POST 호출
-      const batchUrl = proxyUrl + '?mode=batchPopulation';
-      const batchRes = await fetch(batchUrl, {
+      var batchUrl = proxyUrl + '?mode=batchPopulation';
+      var batchRes = await fetch(batchUrl, {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codes: codes }),
+        body: JSON.stringify({ codes: codes, names: names }),
       });
 
       if (batchRes.ok) {
-        const batchData = await batchRes.json();
+        var batchData = await batchRes.json();
         popResults = batchData?.results || [];
       } else {
         // 일괄 실패 시 개별 조회 폴백
-        for (const dong of dongList) {
+        for (var di = 0; di < validDongs.length; di++) {
+          var dong = validDongs[di];
           try {
-            const popUrl = proxyUrl + '?mode=population&stdgCd=' + dong.code;
-            const popRes = await fetch(popUrl, { headers: authHeaders });
+            var popUrl = proxyUrl + '?mode=population&stdgCd=' + dong.code;
+            var popRes = await fetch(popUrl, { headers: authHeaders });
             if (popRes.ok) {
-              const popData = await popRes.json();
+              var popData = await popRes.json();
               if (popData?.data) {
                 popResults.push(popData.data);
               } else {
                 popResults.push({ dong_code: dong.code, dong_name: dong.name, total_pop: 0, household_count: 0, male_pop: 0, female_pop: 0 });
               }
             }
-          } catch {
+          } catch (e) {
             popResults.push({ dong_code: dong.code, dong_name: dong.name, total_pop: 0, household_count: 0, male_pop: 0, female_pop: 0 });
           }
         }
@@ -1669,8 +1689,8 @@
 
       // 동 이름 매핑 보강
       popResults.forEach(function(p, i) {
-        if (!p.dong_name && dongList[i]) p.dong_name = dongList[i].name;
-        if (!p.fullName && dongList[i]) p.fullName = dongList[i].fullName;
+        if (!p.dong_name && validDongs[i]) p.dong_name = validDongs[i].name;
+        if (!p.fullName && validDongs[i]) p.fullName = validDongs[i].fullName;
       });
 
       const analysisResult = {
