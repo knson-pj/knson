@@ -1386,6 +1386,53 @@
       });
     }
 
+    // 인구 데이터 표시 (비동기)
+    const dongName = extractDongFromAddress(item.address);
+    if (dongName) {
+      const popWrap = document.createElement('div');
+      popWrap.className = 'mv-detail-section';
+      popWrap.innerHTML = '<div class="mv-detail-stitle">F. 인구 현황</div><div style="font-size:12px;color:var(--muted);">인구 데이터 조회 중...</div>';
+      els.mvDetailBody.appendChild(popWrap);
+
+      fetchPopulationData(dongName).then(function(pop) {
+        if (!pop) {
+          popWrap.innerHTML = '<div class="mv-detail-stitle">F. 인구 현황</div><div style="font-size:12px;color:var(--muted);">해당 지역의 인구 데이터가 없습니다.</div>';
+          return;
+        }
+        const fmtN = (n) => n != null ? Number(n).toLocaleString() : '-';
+        const totalPop = Number(pop.total_pop || 0);
+        const hhCount = Number(pop.household_count || 0);
+        const malePop = Number(pop.male_pop || 0);
+        const femalePop = Number(pop.female_pop || 0);
+        const perHh = hhCount > 0 ? (totalPop / hhCount).toFixed(1) : '-';
+        const maleRatio = totalPop > 0 ? ((malePop / totalPop) * 100).toFixed(1) : '-';
+        const femaleRatio = totalPop > 0 ? ((femalePop / totalPop) * 100).toFixed(1) : '-';
+        const src = pop.source === 'cache' ? '캐시' : '행안부 API';
+
+        let html = '<div class="mv-detail-stitle">F. 인구 현황 <span style="font-size:9px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">(' + escapeHtml(dongName) + ')</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">총 인구</span><span class="mv-detail-rv">' + fmtN(totalPop) + '명</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">세대수</span><span class="mv-detail-rv">' + fmtN(hhCount) + '세대</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">세대당 인구</span><span class="mv-detail-rv">' + escapeHtml(perHh) + '명</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">남성</span><span class="mv-detail-rv">' + fmtN(malePop) + '명 (' + escapeHtml(maleRatio) + '%)</span></div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">여성</span><span class="mv-detail-rv">' + fmtN(femalePop) + '명 (' + escapeHtml(femaleRatio) + '%)</span></div>';
+
+        // 인구 막대 시각화
+        if (totalPop > 0) {
+          const mPct = Math.round((malePop / totalPop) * 100);
+          html += '<div style="margin-top:6px;display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line);">';
+          html += '<div style="width:' + mPct + '%;background:#59A7FF;"></div>';
+          html += '<div style="width:' + (100 - mPct) + '%;background:#FF7EB3;"></div>';
+          html += '</div>';
+          html += '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:2px;"><span>남 ' + mPct + '%</span><span>여 ' + (100 - mPct) + '%</span></div>';
+        }
+
+        html += '<div style="margin-top:6px;font-size:9px;color:var(--muted);">출처: ' + escapeHtml(src) + ' · ' + escapeHtml(pop.data_date || '') + '</div>';
+        popWrap.innerHTML = html;
+      }).catch(function() {
+        popWrap.innerHTML = '<div class="mv-detail-stitle">F. 인구 현황</div><div style="font-size:12px;color:var(--muted);">인구 정보를 불러올 수 없습니다.</div>';
+      });
+    }
+
     els.mvDetail.classList.remove("hidden");
   }
 
@@ -1430,6 +1477,32 @@
     if (els.mvDetail) els.mvDetail.classList.add("hidden");
     document.querySelectorAll(".mv-marker.is-active").forEach((m) => m.classList.remove("is-active"));
     document.querySelectorAll(".mv-card.is-selected").forEach((c) => c.classList.remove("is-selected"));
+  }
+
+  // ---- 인구 데이터 ----
+  const _popCache = new Map();
+
+  function extractDongFromAddress(address) {
+    const a = String(address || "").trim();
+    if (!a) return "";
+    const m = a.match(/([가-힣0-9]+동)\b/);
+    return m ? m[1] : "";
+  }
+
+  async function fetchPopulationData(dongName) {
+    if (!dongName) return null;
+    if (_popCache.has(dongName)) return _popCache.get(dongName);
+    try {
+      const res = await api(`/admin/population?dong=${encodeURIComponent(dongName)}`, { auth: true });
+      const data = res?.data || null;
+      if (data) {
+        data.source = res?.source || 'api';
+        _popCache.set(dongName, data);
+      }
+      return data;
+    } catch {
+      return null;
+    }
   }
 
   function getKakaoKey() {
