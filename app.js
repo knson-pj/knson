@@ -1616,10 +1616,11 @@
         totals: analysisData.totals || null,
         building: analysisData.building || null,
         radiusBuildings: null,
+        _buildingsPending: true,
         timestamp: Date.now(),
       };
 
-      // 먼저 기본 결과 렌더링 (사용자에게 빠르게 인구 데이터 표시)
+      // 먼저 기본 결과 렌더링 (사용자에게 빠르게 인구 데이터 + 건축물 로딩 표시)
       renderRadiusResult(resultEl, analysisResult, radius);
 
       // 2) 반경 내 실제 건축물 조회 (비동기 후속 호출)
@@ -1638,13 +1639,14 @@
               residentialDetail: bldData.residentialDetail || [],
               buildings: bldData.buildings || [],
             };
-            // 정확한 데이터로 다시 렌더링
-            renderRadiusResult(resultEl, analysisResult, radius);
           }
         }
       } catch (bldErr) {
-        console.warn('buildingsInRadius 호출 실패 (레거시 폴백 유지):', bldErr.message);
+        console.warn('buildingsInRadius 호출 실패:', bldErr.message);
       }
+      // 로딩 완료 — 결과(또는 레거시 폴백)로 다시 렌더링
+      analysisResult._buildingsPending = false;
+      renderRadiusResult(resultEl, analysisResult, radius);
 
       _radiusAnalysisCache.set(cacheKey, analysisResult);
       if (_radiusAnalysisCache.size > 30) {
@@ -1729,6 +1731,7 @@
     // 건축물 분석 — 반경 내 정확한 건물 데이터 (buildingsInRadius) 우선, 없으면 레거시 폴백
     var radiusBuildings = result?.radiusBuildings || null;
     var bld = result?.building || null;
+    var bldPending = result?._buildingsPending;
 
     if (radiusBuildings && radiusBuildings.total > 0) {
       // ── 정확한 반경 내 건축물 분석 ──
@@ -1806,6 +1809,13 @@
         html += '</div>';
       }
 
+      html += '</div>';
+
+    } else if (bldPending) {
+      // ── 건축물 분석 로딩 중 ──
+      html += '<div class="ra-building">';
+      html += '<div class="ra-summary-title">건축물 용도 분석</div>';
+      html += '<div class="ra-loading" style="padding:12px 0;"><div class="ra-spinner"></div><span>반경 내 건축물 조회 중...</span></div>';
       html += '</div>';
 
     } else if (bld && bld.totalBuildings > 0) {
