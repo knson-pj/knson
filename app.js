@@ -1747,7 +1747,7 @@
         html += '<div class="ra-bld-hhld-summary">';
         html += '<div class="ra-bld-hhld-header"><span>배후세대</span><span class="ra-bld-hhld-total">' + fmtN(rbHhld) + ' 세대</span></div>';
         // 주거 유형별 세대수 테이블
-        var rbResTypes = radiusBuildings.residentialDetail || [];
+        var rbResTypes = (radiusBuildings.residentialDetail || []).filter(function(rt) { return rt.households > 0; });
         if (rbResTypes.length > 0) {
           html += '<div class="ra-bld-res-table">';
           html += '<div class="ra-bld-res-header"><span>분류</span><span>세대수(비중)</span></div>';
