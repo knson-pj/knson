@@ -175,23 +175,28 @@
       for (const item of items) {
         const propId = item.id || item.global_id;
         if (!propId) { processed++; continue; }
-        const rawAddr = String(item.address || "").trim();
-        const cleaned = mod.normalizeAddressForGeocode(rawAddr);
-        if (!cleaned) {
-          await mod.saveGeocodeResult(sb, propId, null, "failed");
-          failCount++;
-          processed++;
-          continue;
-        }
-        const coords = await mod.geocodeOneAddress(cleaned);
-        let finalCoords = coords;
-        if (!finalCoords && cleaned !== rawAddr) finalCoords = await mod.geocodeOneAddress(rawAddr);
+        try {
+          const rawAddr = String(item.address || "").trim();
+          const cleaned = mod.normalizeAddressForGeocode(rawAddr);
+          if (!cleaned) {
+            try { await mod.saveGeocodeResult(sb, propId, null, "failed"); } catch(e) { console.warn("save failed:", e.message); }
+            failCount++;
+            processed++;
+            continue;
+          }
+          const coords = await mod.geocodeOneAddress(cleaned);
+          let finalCoords = coords;
+          if (!finalCoords && cleaned !== rawAddr) finalCoords = await mod.geocodeOneAddress(rawAddr);
 
-        if (finalCoords) {
-          await mod.saveGeocodeResult(sb, propId, finalCoords, "ok");
-          okCount++;
-        } else {
-          await mod.saveGeocodeResult(sb, propId, null, "failed");
+          if (finalCoords) {
+            await mod.saveGeocodeResult(sb, propId, finalCoords, "ok");
+            okCount++;
+          } else {
+            try { await mod.saveGeocodeResult(sb, propId, null, "failed"); } catch(e) { console.warn("save failed:", e.message); }
+            failCount++;
+          }
+        } catch (itemErr) {
+          console.warn("geocode item error:", propId, itemErr.message);
           failCount++;
         }
 

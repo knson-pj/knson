@@ -640,15 +640,26 @@
       basePatch.longitude = coords.lng;
     }
     const col = resolvePropertyIdColumn(propertyId);
+
+    // 1차: geocoded_at 포함
     const fullPatch = { ...basePatch, geocoded_at: new Date().toISOString() };
     const { error } = await sb.from("properties").update(fullPatch).eq(col, propertyId);
     if (!error) return true;
-    if (String(error.message || "").includes("geocoded_at")) {
-      const { error: retryErr } = await sb.from("properties").update(basePatch).eq(col, propertyId);
-      if (retryErr) throw retryErr;
-      return true;
+
+    // 2차: geocoded_at 제외
+    console.warn("saveGeocodeResult 1차 실패:", error.message, "→ geocoded_at 제외 재시도");
+    const { error: retryErr } = await sb.from("properties").update(basePatch).eq(col, propertyId);
+    if (!retryErr) return true;
+
+    // 3차: latitude, longitude만 (geocode_status도 없을 수 있으므로)
+    if (coords && status === "ok") {
+      console.warn("saveGeocodeResult 2차 실패:", retryErr.message, "→ 좌표만 저장 재시도");
+      const minPatch = { latitude: coords.lat, longitude: coords.lng };
+      const { error: minErr } = await sb.from("properties").update(minPatch).eq(col, propertyId);
+      if (!minErr) return true;
+      throw minErr;
     }
-    throw error;
+    throw retryErr;
   }
 
   async function fetchGeocodeQueue(sb, { statusFilter = "pending", pageSize = 1000 } = {}) {
