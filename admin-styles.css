@@ -1815,3 +1815,10 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
 }
 .agent-combined-log-author{font-size:12px;font-weight:600;color:var(--text-3);}
 .agent-combined-log-entry-head{column-gap:8px;row-gap:8px;}
+
+/* ── 건축물 DB 수집 관리 탭 ── */
+.bld-dong-grid{display:flex;flex-wrap:wrap;gap:6px;max-height:200px;overflow-y:auto;padding:4px 0;}
+.bld-dong-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:16px;border:1px solid var(--line);background:var(--surface);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;user-select:none;}
+.bld-dong-chip:hover{border-color:color-mix(in srgb, #F37022 40%, var(--line));}
+.bld-dong-chip.is-checked{background:#FFF3E0;border-color:#F37022;color:#E65100;}
+.bld-dong-chip input[type=checkbox]{display:none;}

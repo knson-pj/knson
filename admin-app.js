@@ -716,6 +716,7 @@ function bindEvents() {
           if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { renderAssignmentTable(); }).catch((e)=>handleAsyncError(e,"지역 데이터 로드 실패"));
           if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
           if (key === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
+          if (key === "buildings") { var bldMod = window.KNSN_ADMIN_MODULES?.buildingsTab; if (bldMod && typeof bldMod.init === "function") bldMod.init(); }
         }
       });
     }

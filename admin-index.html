@@ -41,6 +41,7 @@
       </div>
     </div>
     <button class="sidebar-nav-item" data-tab="valuation"><span class="sidebar-nav-icon">📊</span><span class="sidebar-nav-label">가격평가</span></button>
+    <button class="sidebar-nav-item" data-tab="buildings"><span class="sidebar-nav-icon">🏢</span><span class="sidebar-nav-label">건축물 DB</span></button>
   </nav>
   <div class="sidebar-bottom"></div>
 </aside>
@@ -92,6 +93,7 @@
       <button class="tab" data-tab="geocoding">지오 코딩</button>
       <button class="tab" data-tab="workmgmt">업무 관리</button>
       <button class="tab" data-tab="valuation">가격평가</button>
+      <button class="tab" data-tab="buildings">건축물 DB</button>
     </div>
   </div>
   <div class="admin-shell"><main class="admin-main">
@@ -348,6 +350,63 @@
     <section id="tab-valuation" class="panel tab-panel hidden">
     </section>
 
+    <!-- 건축물 DB 수집 관리 -->
+    <section id="tab-buildings" class="panel tab-panel hidden">
+      <div class="panel-header"><h2 class="panel-title">건축물 DB 수집 관리</h2></div>
+      <div class="panel-body">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header"><strong>법정동 선택</strong></div>
+          <div class="card-body">
+            <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <select id="bldRegionSelect" class="input" style="width:140px;"><option value="">시/구 선택</option></select>
+              <button id="bldSelectAll" class="btn btn-ghost btn-sm" type="button">전체선택</button>
+              <button id="bldDeselectAll" class="btn btn-ghost btn-sm" type="button">선택해제</button>
+              <span id="bldSelectedCount" style="font-size:11px;color:var(--muted);">0개 선택</span>
+            </div>
+            <div id="bldDongGrid" class="bld-dong-grid"></div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>수집 실행</strong>
+            <div style="display:flex;gap:6px;">
+              <button id="bldBtnCollect" class="btn btn-primary btn-sm" type="button" disabled>표제부 수집</button>
+              <button id="bldBtnEnrich" class="btn btn-sm" type="button" disabled>전유부+지오코딩</button>
+              <button id="bldBtnStop" class="btn btn-danger btn-sm hidden" type="button">중단</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="bldProgress" class="hidden" style="margin-bottom:8px;">
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
+                <span id="bldProgressLabel">수집 중...</span>
+                <span id="bldProgressPct">0%</span>
+              </div>
+              <div style="height:6px;background:var(--line);border-radius:3px;overflow:hidden;">
+                <div id="bldProgressBar" style="height:100%;background:#F37022;border-radius:3px;width:0%;transition:width .3s;"></div>
+              </div>
+              <div id="bldProgressDetail" style="font-size:10px;color:var(--muted);margin-top:4px;"></div>
+            </div>
+            <div id="bldLog" style="font-size:10px;color:var(--muted);max-height:120px;overflow-y:auto;"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>수집 현황</strong>
+            <button id="bldBtnRefreshStatus" class="btn btn-ghost btn-sm" type="button">새로고침</button>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="table" id="bldStatusTable">
+                <thead><tr><th>법정동</th><th>건물수</th><th>수집건수</th><th>상태</th><th>수집일시</th></tr></thead>
+                <tbody id="bldStatusBody"></tbody>
+              </table>
+              <div id="bldStatusEmpty" class="empty">수집된 법정동이 없습니다.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main></div>
 </div>
 
@@ -394,6 +453,7 @@
 <script src="./admin-tab-dashboard.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-valuation.js?v=20260409-val1"></script>
+<script src="./admin-tab-buildings.js?v=20260414-bld1"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
 <script src="./admin-app.js?v=20260409-val1"></script>
 </body>
