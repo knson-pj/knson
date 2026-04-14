@@ -71,10 +71,15 @@
 
   mod.getGeocodeStats = function getGeocodeStats() {
     const { state } = ctx();
-    const props = state.properties || [];
+    // propertiesFullCache, homeSummarySnapshot, state.properties 순서로 참조
+    const props = (Array.isArray(state.propertiesFullCache) && state.propertiesFullCache.length)
+      ? state.propertiesFullCache
+      : (Array.isArray(state.homeSummarySnapshot) && state.homeSummarySnapshot.length)
+        ? state.homeSummarySnapshot
+        : (state.properties || []);
     let pending = 0, ok = 0, failed = 0;
     for (const p of props) {
-      const st = String(p.geocodeStatus || "").toLowerCase();
+      const st = String(p.geocodeStatus || p.geocode_status || "").toLowerCase();
       const hasCoords = (p.latitude != null && p.longitude != null);
       if (st === "ok" || (hasCoords && st !== "failed" && st !== "pending")) ok++;
       else if (st === "failed") failed++;
