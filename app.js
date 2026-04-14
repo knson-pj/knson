@@ -1616,36 +1616,42 @@
         totals: analysisData.totals || null,
         building: analysisData.building || null,
         radiusBuildings: null,
-        _buildingsPending: true,
+        _buildingsPending: false,
         timestamp: Date.now(),
       };
 
-      // 먼저 기본 결과 렌더링 (사용자에게 빠르게 인구 데이터 + 건축물 로딩 표시)
-      renderRadiusResult(resultEl, analysisResult, radius);
+      // building 데이터를 radiusBuildings 형태로 변환
+      var bldg = analysisData.building;
+      if (bldg && (bldg.totalBuildings || 0) > 0) {
+        var resColorMap = { '아파트': '#4CAF50', '오피스텔': '#FFB74D', '다세대주택': '#42A5F5', '단독주택': '#81C784', '기숙사': '#AB47BC' };
+        var rawDetail = bldg.residentialDetail || [];
+        var mappedDetail = rawDetail.map(function(rd) {
+          var lbl = rd.label || rd.res_type || '';
+          return {
+            label: lbl,
+            color: resColorMap[lbl] || '#A5D6A7',
+            households: rd.households || rd.units || 0,
+            count: rd.count || rd.bld_count || 0,
+            estPop: rd.estPop || rd.est_pop || 0,
+          };
+        }).filter(function(rd) { return rd.households > 0; });
 
-      // 2) 반경 내 실제 건축물 조회 (비동기 후속 호출)
-      try {
-        var bldUrl = proxyUrl + '?mode=buildingsInRadius&lat=' + lat + '&lng=' + lng + '&radius=' + radius;
-        var bldRes = await fetch(bldUrl, { headers: authHeaders });
-        if (bldRes.ok) {
-          var bldData = await bldRes.json();
-          if (bldData?.ok && bldData.total > 0) {
-            analysisResult.radiusBuildings = {
-              total: bldData.total || 0,
-              totalHouseholds: bldData.totalHouseholds || 0,
-              estPopulation: bldData.estPopulation || 0,
-              avgHouseholdSize: bldData.avgHouseholdSize || 2.3,
-              byPurpose: bldData.byPurpose || {},
-              residentialDetail: bldData.residentialDetail || [],
-              buildings: bldData.buildings || [],
-            };
-          }
-        }
-      } catch (bldErr) {
-        console.warn('buildingsInRadius 호출 실패:', bldErr.message);
+        var estHh = bldg.source === 'db'
+          ? (bldg.byPurpose?.residential?.estHhld || bldg.totalHouseholds || 0)
+          : (bldg.byPurpose?.residential?.estHhld || 0);
+
+        analysisResult.radiusBuildings = {
+          total: bldg.totalBuildings || 0,
+          totalHouseholds: estHh,
+          estPopulation: bldg.estPopByBuilding || 0,
+          avgHouseholdSize: bldg.avgHouseholdSize || 2.3,
+          byPurpose: bldg.byPurpose || {},
+          residentialDetail: mappedDetail,
+          buildings: [],
+          source: bldg.source || 'unknown',
+        };
       }
-      // 로딩 완료 — 결과(또는 레거시 폴백)로 다시 렌더링
-      analysisResult._buildingsPending = false;
+
       renderRadiusResult(resultEl, analysisResult, radius);
 
       _radiusAnalysisCache.set(cacheKey, analysisResult);
@@ -1797,14 +1803,16 @@
 
       // 거주 인구(추정)
       var rbEstPop = radiusBuildings.estPopulation || 0;
+      var rbSource = radiusBuildings.source || '';
       if (rbEstPop > 0 || rbHhld > 0) {
         html += '<div class="ra-bld-detail">';
         html += '<div class="mv-detail-row"><span class="mv-detail-rl">반경 내 건축물</span><span class="mv-detail-rv">' + fmtN(rbTotal) + '동</span></div>';
         html += '<div class="mv-detail-row"><span class="mv-detail-rl">반경 내 배후세대</span><span class="mv-detail-rv" style="color:#4CAF50;font-weight:800;">' + fmtN(rbHhld) + '세대</span></div>';
-        html += '<div class="mv-detail-row"><span class="mv-detail-rl">거주 인구(추정)</span><span class="mv-detail-rv" style="color:#F37022;font-weight:800;">' + fmtN(rbEstPop) + '명</span></div>';
-        var rbAvgHh = radiusBuildings.avgHouseholdSize || 0;
-        if (rbAvgHh > 0) {
-          html += '<div style="font-size:9px;color:var(--muted);margin-top:4px;">※ 배후세대 × 평균 가구원수(' + rbAvgHh.toFixed(1) + '명) 기준 추정</div>';
+        html += '<div class="mv-detail-row"><span class="mv-detail-rl">세대 기반 추정인구</span><span class="mv-detail-rv" style="color:#F37022;font-weight:800;">' + fmtN(rbEstPop) + '명</span></div>';
+        if (rbSource === 'db') {
+          html += '<div style="font-size:9px;color:var(--muted);margin-top:4px;">※ 전유부 전용면적 기반 추정 (6~35㎡:1명, 36~69㎡:2명, 70~84㎡:3명, 84㎡↑:4명)</div>';
+        } else {
+          html += '<div style="font-size:9px;color:var(--muted);margin-top:4px;">※ 법정동 전체 데이터에서 면적비례 보정 적용 · 정확도 제한적</div>';
         }
         html += '</div>';
       }
