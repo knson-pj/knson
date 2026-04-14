@@ -2,8 +2,6 @@
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
   const DataAccess = window.KNSN_DATA_ACCESS || null;
-  let _geocodeKakaoReady = null;
-  let _geocoder = null;
 
   function runtime() {
     return window.KNSN_ADMIN_RUNTIME || {};
@@ -14,48 +12,28 @@
     return { rt, state: rt.state || {}, els: rt.els || {}, K: rt.K, isSupabaseMode: rt.isSupabaseMode, utils: rt.utils || {} };
   }
 
-  mod.getKakaoAppKey = function getKakaoAppKey() {
-    const meta = document.querySelector('meta[name="kakao-app-key"]');
+  /** Vworld 프록시 URL 가져오기 */
+  function getVworldProxyUrl() {
+    const meta = document.querySelector('meta[name="vworld-proxy-url"]');
     return String(meta?.getAttribute("content") || "").trim();
-  };
+  }
 
-  mod.loadKakaoMapsSDK = function loadKakaoMapsSDK(appKey) {
-    return new Promise((resolve, reject) => {
-      if (window.kakao?.maps?.services?.Geocoder) return resolve();
-      if (window.kakao?.maps?.load) return window.kakao.maps.load(() => resolve());
-      const s = document.createElement("script");
-      s.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=" + encodeURIComponent(appKey) + "&autoload=false&libraries=services";
-      s.async = true;
-      s.onload = () => {
-        if (!window.kakao?.maps?.load) return reject(new Error("Kakao SDK 로드 실패"));
-        window.kakao.maps.load(() => resolve());
-      };
-      s.onerror = () => reject(new Error("Kakao SDK 네트워크 오류"));
-      document.head.appendChild(s);
-    });
-  };
-
-  mod.ensureKakaoGeocoder = async function ensureKakaoGeocoder() {
-    if (_geocoder) return _geocoder;
-    const appKey = mod.getKakaoAppKey();
-    if (!appKey) throw new Error("카카오 JavaScript 키가 설정되지 않았습니다.");
-    if (!_geocodeKakaoReady) _geocodeKakaoReady = mod.loadKakaoMapsSDK(appKey);
-    await _geocodeKakaoReady;
-    _geocoder = new kakao.maps.services.Geocoder();
-    return _geocoder;
-  };
-
-  mod.geocodeOneAddress = function geocodeOneAddress(geocoder, address) {
-    return new Promise((resolve) => {
-      geocoder.addressSearch(address, (result, status) => {
-        if (status !== kakao.maps.services.Status.OK || !result?.length) return resolve(null);
-        const best = result[0];
-        const lat = Number(best.y);
-        const lng = Number(best.x);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return resolve(null);
-        resolve({ lat, lng });
-      });
-    });
+  /** Vworld 지오코더를 통한 주소 → 좌표 변환 */
+  mod.geocodeOneAddress = async function geocodeOneAddress(address) {
+    const proxyUrl = getVworldProxyUrl();
+    if (!proxyUrl) return null;
+    try {
+      const url = proxyUrl + "?mode=geocode&address=" + encodeURIComponent(address);
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.ok && Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
+        return { lat: data.lat, lng: data.lng };
+      }
+      return null;
+    } catch {
+      return null;
+    }
   };
 
   mod.normalizeAddressForGeocode = function normalizeAddressForGeocode(rawAddress) {
@@ -170,11 +148,9 @@
     const sb = isSupabaseMode() ? K.initSupabase() : null;
     if (!sb) return alert("Supabase 연동이 필요합니다.");
 
-    let geocoder;
-    try {
-      geocoder = await mod.ensureKakaoGeocoder();
-    } catch (err) {
-      alert("카카오 SDK 로드 실패: " + (err.message || "알 수 없는 오류"));
+    const proxyUrl = getVworldProxyUrl();
+    if (!proxyUrl) {
+      alert("Vworld 프록시 URL이 설정되지 않았습니다. (meta[name='vworld-proxy-url'])");
       return;
     }
 
@@ -207,9 +183,9 @@
           processed++;
           continue;
         }
-        const coords = await mod.geocodeOneAddress(geocoder, cleaned);
+        const coords = await mod.geocodeOneAddress(cleaned);
         let finalCoords = coords;
-        if (!finalCoords && cleaned !== rawAddr) finalCoords = await mod.geocodeOneAddress(geocoder, rawAddr);
+        if (!finalCoords && cleaned !== rawAddr) finalCoords = await mod.geocodeOneAddress(rawAddr);
 
         if (finalCoords) {
           await mod.saveGeocodeResult(sb, propId, finalCoords, "ok");
@@ -225,7 +201,7 @@
         if (els.geocodeRunningText) {
           els.geocodeRunningText.textContent = processed + "/" + total + " (성공 " + okCount + ", 실패 " + failCount + ")";
         }
-        if (processed < total) await mod.sleep(150);
+        if (processed < total) await mod.sleep(120);
       }
 
       alert("지오코딩 완료: 총 " + total + "건 중 성공 " + okCount + "건, 실패 " + failCount + "건");
