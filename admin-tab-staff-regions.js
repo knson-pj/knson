@@ -353,7 +353,7 @@
     els.assignStatusBody.appendChild(frag);
   };
 
-  // ── 다중 선택 필터 UI ──
+  // ── 다중 선택 필터 UI (패널을 body에 부착하여 overflow 회피) ──
   const FILTER_DEFS = {
     assignSourceFilter: {
       placeholder: '전체 구분',
@@ -382,61 +382,89 @@
     },
   };
   const _multiSelectState = {};
+  const _multiPanels = [];
+
+  function closeAllPanels() {
+    _multiPanels.forEach(function(ref) { ref.panel.style.display = 'none'; ref.isOpen = false; });
+  }
 
   function buildMultiSelect(container, filterKey, onChange) {
     const def = FILTER_DEFS[filterKey];
     if (!container || !def) return;
     _multiSelectState[filterKey] = new Set();
-    const state = _multiSelectState[filterKey];
+    const selected = _multiSelectState[filterKey];
 
     container.innerHTML = '';
-    container.style.cssText = 'position:relative;display:inline-block;min-width:130px;';
+    container.style.cssText = 'position:relative;display:inline-block;min-width:140px;';
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'select';
-    btn.style.cssText = 'width:100%;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:20px;';
+    btn.style.cssText = 'width:100%;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:7px 28px 7px 10px;font-size:13px;border:1px solid var(--line,#ddd);border-radius:6px;background:var(--surface,#fff);color:var(--text,#333);';
     btn.textContent = def.placeholder;
     container.appendChild(btn);
 
-    const panel = document.createElement('div');
-    panel.style.cssText = 'display:none;position:absolute;top:100%;left:0;z-index:100;background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);padding:6px 0;min-width:100%;max-height:240px;overflow-y:auto;';
-    container.appendChild(panel);
+    const arrow = document.createElement('span');
+    arrow.textContent = '▾';
+    arrow.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:11px;color:var(--muted,#999);';
+    container.appendChild(arrow);
 
-    def.options.forEach((opt) => {
-      const label = document.createElement('label');
-      label.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 12px;cursor:pointer;font-size:12px;white-space:nowrap;';
-      label.addEventListener('mouseenter', () => { label.style.background = 'var(--hover-bg,#f5f5f5)'; });
-      label.addEventListener('mouseleave', () => { label.style.background = ''; });
+    const panel = document.createElement('div');
+    panel.style.cssText = 'display:none;position:fixed;z-index:9999;background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:6px 0;min-width:160px;max-height:260px;overflow-y:auto;';
+    document.body.appendChild(panel);
+
+    const ref = { panel: panel, isOpen: false };
+    _multiPanels.push(ref);
+
+    def.options.forEach(function(opt) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:6px 14px;cursor:pointer;font-size:13px;white-space:nowrap;user-select:none;';
+      row.addEventListener('mouseenter', function() { row.style.background = 'var(--hover-bg,#f5f5f5)'; });
+      row.addEventListener('mouseleave', function() { row.style.background = ''; });
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = opt.value;
-      cb.style.cssText = 'margin:0;';
-      cb.addEventListener('change', () => {
-        if (cb.checked) state.add(opt.value); else state.delete(opt.value);
-        updateBtnText();
+      cb.style.cssText = 'margin:0;flex-shrink:0;';
+      cb.addEventListener('change', function(e) {
+        e.stopPropagation();
+        if (cb.checked) selected.add(opt.value); else selected.delete(opt.value);
+        syncBtnText();
         if (typeof onChange === 'function') onChange();
       });
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(opt.label));
-      panel.appendChild(label);
+      row.appendChild(cb);
+      row.appendChild(document.createTextNode(opt.label));
+      panel.appendChild(row);
     });
 
-    function updateBtnText() {
-      if (!state.size) { btn.textContent = def.placeholder; return; }
-      const labels = def.options.filter((o) => state.has(o.value)).map((o) => o.label);
+    function syncBtnText() {
+      if (!selected.size) { btn.textContent = def.placeholder; return; }
+      const labels = def.options.filter(function(o) { return selected.has(o.value); }).map(function(o) { return o.label; });
       btn.textContent = labels.length <= 2 ? labels.join(', ') : labels.slice(0, 2).join(', ') + ' +' + (labels.length - 2);
     }
 
-    let isOpen = false;
-    btn.addEventListener('click', (e) => {
+    function positionPanel() {
+      const r = btn.getBoundingClientRect();
+      panel.style.top = (r.bottom + 2) + 'px';
+      panel.style.left = r.left + 'px';
+      panel.style.minWidth = Math.max(r.width, 160) + 'px';
+    }
+
+    btn.addEventListener('click', function(e) {
       e.stopPropagation();
-      isOpen = !isOpen;
-      panel.style.display = isOpen ? 'block' : 'none';
+      const wasOpen = ref.isOpen;
+      closeAllPanels();
+      if (!wasOpen) {
+        positionPanel();
+        panel.style.display = 'block';
+        ref.isOpen = true;
+      }
     });
-    document.addEventListener('click', (e) => {
-      if (!container.contains(e.target)) { isOpen = false; panel.style.display = 'none'; }
-    });
+
+    panel.addEventListener('click', function(e) { e.stopPropagation(); });
+  }
+
+  if (!window.__knsnAssignPanelClose) {
+    window.__knsnAssignPanelClose = true;
+    document.addEventListener('click', function() { closeAllPanels(); });
   }
 
   mod.initMultiSelectFilters = function initMultiSelectFilters() {
