@@ -1494,25 +1494,29 @@
     const keywordFields = Array.isArray(options?.keywordFields) ? options.keywordFields : undefined;
     const isFavorite = typeof options?.isFavorite === 'function' ? options.isFavorite : null;
     const todayKey = String(options?.todayKey || '').trim();
+    const toArr = (v) => Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []);
     return list.filter((row) => {
-      const sourceKey = filters.activeCard ?? filters.source ?? '';
-      if (!ignoreKeys.has('activeCard') && !ignoreKeys.has('source') && sourceKey) {
-        if (!matchesSourceSelection(row, sourceKey)) return false;
+      const sourceKeys = toArr(filters.activeCard ?? filters.activeCards ?? filters.source ?? '');
+      if (!ignoreKeys.has('activeCard') && !ignoreKeys.has('source') && sourceKeys.length) {
+        if (!sourceKeys.some((sk) => matchesSourceSelection(row, sk))) return false;
       }
       if (!ignoreKeys.has('status') && filters.status) {
         const status = String(row?.status || '').trim();
         const selected = String(filters.status || '').trim();
         if (status !== selected && !status.includes(selected)) return false;
       }
-      if (!ignoreKeys.has('area') && filters.area) {
+      const areaKeys = toArr(filters.area ?? filters.areas ?? '');
+      if (!ignoreKeys.has('area') && areaKeys.length) {
         const areaValue = row?.exclusivearea ?? row?.exclusive_area ?? row?.exclusiveArea ?? row?._raw?.exclusivearea ?? row?._raw?.exclusive_area;
-        if (!matchesAreaFilter(filters.area, areaValue)) return false;
+        if (!areaKeys.some((ak) => matchesAreaFilter(ak, areaValue))) return false;
       }
-      if (!ignoreKeys.has('priceRange') && filters.priceRange) {
-        if (!matchesPriceRangeFilter(filters.priceRange, row)) return false;
+      const priceKeys = toArr(filters.priceRange ?? filters.priceRanges ?? '');
+      if (!ignoreKeys.has('priceRange') && priceKeys.length) {
+        if (!priceKeys.some((pk) => matchesPriceRangeFilter(pk, row))) return false;
       }
-      if (!ignoreKeys.has('ratio50') && filters.ratio50) {
-        if (!matchesRatioFilter(filters.ratio50, row)) return false;
+      const ratioKeys = toArr(filters.ratio50 ?? filters.ratio50s ?? '');
+      if (!ignoreKeys.has('ratio50') && ratioKeys.length) {
+        if (!ratioKeys.some((rk) => matchesRatioFilter(rk, row))) return false;
       }
       if (!ignoreKeys.has('todayBid') && filters.todayBid) {
         if (!matchesTodayBidFilter(filters.todayBid, row, todayKey)) return false;

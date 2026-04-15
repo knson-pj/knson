@@ -262,12 +262,133 @@
   ]);
 
   function isPlainSourceFilterSelected(value) {
-    if (PropertyRenderers && typeof PropertyRenderers.isPlainSourceFilterSelected === 'function') {
-      return PropertyRenderers.isPlainSourceFilterSelected(value);
+    // 배열 지원: 모든 선택값이 plain이면 true
+    if (Array.isArray(value)) {
+      return value.length > 0 && value.every((v) => {
+        const k = String(v || '').trim();
+        return k === 'realtor_naver' || k === 'realtor_direct' || k === 'general';
+      });
     }
     const key = String(value || '').trim();
     return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
   }
+
+  // ── 전체리스트 다중 선택 필터 ──
+  const PROP_FILTER_DEFS = {
+    propSourceFilter: { placeholder: '구분별 선택 필터', stateKey: 'activeCard', options: SOURCE_FILTER_OPTIONS.filter((o) => o.value) },
+    propAreaFilter: { placeholder: '전체 면적', stateKey: 'area', options: AREA_FILTER_OPTIONS.filter((o) => o.value) },
+    propPriceFilter: { placeholder: '전체 가격', stateKey: 'priceRange', options: PRICE_FILTER_OPTIONS.filter((o) => o.value) },
+    propRatioFilter: { placeholder: '전체 비율', stateKey: 'ratio50', options: RATIO_FILTER_OPTIONS.filter((o) => o.value) },
+  };
+  const _propMultiState = {};
+  const _propMultiPanels = [];
+  const _propMultiCheckboxes = {};
+
+  function closePropPanels() {
+    _propMultiPanels.forEach(function(ref) { ref.panel.style.display = 'none'; ref.isOpen = false; });
+  }
+
+  function buildPropMultiSelect(container, filterKey, onChange) {
+    const def = PROP_FILTER_DEFS[filterKey];
+    if (!container || !def) return;
+    _propMultiState[filterKey] = new Set();
+    _propMultiCheckboxes[filterKey] = [];
+    const selected = _propMultiState[filterKey];
+
+    container.innerHTML = '';
+    container.style.cssText = 'position:relative;display:inline-block;min-width:130px;';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.style.cssText = 'width:100%;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:7px 28px 7px 10px;font-size:13px;border:1px solid var(--line,#ddd);border-radius:6px;background:var(--surface,#fff);color:var(--text,#333);';
+    btn.textContent = def.placeholder;
+    container.appendChild(btn);
+
+    const arrow = document.createElement('span');
+    arrow.textContent = '▾';
+    arrow.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:11px;color:var(--muted,#999);';
+    container.appendChild(arrow);
+
+    const panel = document.createElement('div');
+    panel.style.cssText = 'display:none;position:fixed;z-index:9999;background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:6px 0;min-width:180px;max-height:300px;overflow-y:auto;';
+    document.body.appendChild(panel);
+
+    const ref = { panel: panel, isOpen: false };
+    _propMultiPanels.push(ref);
+
+    def.options.forEach(function(opt) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:6px 14px;cursor:pointer;font-size:13px;white-space:nowrap;user-select:none;';
+      row.addEventListener('mouseenter', function() { row.style.background = 'var(--hover-bg,#f5f5f5)'; });
+      row.addEventListener('mouseleave', function() { row.style.background = ''; });
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = opt.value;
+      cb.style.cssText = 'margin:0;flex-shrink:0;';
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = opt.label;
+      cb.addEventListener('change', function(e) {
+        e.stopPropagation();
+        if (cb.checked) selected.add(opt.value); else selected.delete(opt.value);
+        syncBtnText();
+        if (typeof onChange === 'function') onChange();
+      });
+      row.appendChild(cb);
+      row.appendChild(labelSpan);
+      panel.appendChild(row);
+      _propMultiCheckboxes[filterKey].push({ value: opt.value, cb: cb, labelSpan: labelSpan, baseLabel: opt.label });
+    });
+
+    function syncBtnText() {
+      if (!selected.size) { btn.textContent = def.placeholder; return; }
+      const labels = def.options.filter(function(o) { return selected.has(o.value); }).map(function(o) { return o.label; });
+      btn.textContent = labels.length <= 2 ? labels.join(', ') : labels.slice(0, 2).join(', ') + ' +' + (labels.length - 2);
+    }
+    // 외부에서 label 업데이트 후 버튼 텍스트 갱신용
+    container._syncBtnText = syncBtnText;
+
+    function positionPanel() {
+      const r = btn.getBoundingClientRect();
+      panel.style.top = (r.bottom + 2) + 'px';
+      panel.style.left = r.left + 'px';
+      panel.style.minWidth = Math.max(r.width, 180) + 'px';
+    }
+
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const wasOpen = ref.isOpen;
+      closePropPanels();
+      if (!wasOpen) { positionPanel(); panel.style.display = 'block'; ref.isOpen = true; }
+    });
+    panel.addEventListener('click', function(e) { e.stopPropagation(); });
+  }
+
+  if (!window.__knsnPropPanelClose) {
+    window.__knsnPropPanelClose = true;
+    document.addEventListener('click', function() { closePropPanels(); });
+  }
+
+  let _propFiltersInitialized = false;
+  mod.initPropMultiSelectFilters = function initPropMultiSelectFilters() {
+    if (_propFiltersInitialized) return;
+    _propFiltersInitialized = true;
+    const { state, els, utils } = ctx();
+    const onChange = function() {
+      // 다중 선택값을 state.propertyFilters에 배열로 저장
+      state.propertyFilters.activeCard = [...(_propMultiState.propSourceFilter || [])];
+      state.propertyFilters.area = [...(_propMultiState.propAreaFilter || [])];
+      state.propertyFilters.priceRange = [...(_propMultiState.propPriceFilter || [])];
+      state.propertyFilters.ratio50 = [...(_propMultiState.propRatioFilter || [])];
+      state.propertyPage = 1;
+      if (typeof utils.loadProperties === 'function') {
+        utils.loadProperties({ refreshSummary: false }).catch(function() {});
+      }
+    };
+    buildPropMultiSelect(els.propSourceFilter, 'propSourceFilter', onChange);
+    buildPropMultiSelect(els.propAreaFilter, 'propAreaFilter', onChange);
+    buildPropMultiSelect(els.propPriceFilter, 'propPriceFilter', onChange);
+    buildPropMultiSelect(els.propRatioFilter, 'propRatioFilter', onChange);
+  };
 
   function truncateAddressText(value, maxLength = 30) {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -723,27 +844,28 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
   mod.updatePropertyFilterOptionCounts = function updatePropertyFilterOptionCounts() {
     const { state, els, utils } = ctx();
     const filters = state?.propertyFilters || {};
+    const toArr = (v) => Array.isArray(v) ? v : (v ? [v] : []);
     const hasLocalOverrides = !!(
-      String(filters.activeCard || '').trim() ||
+      toArr(filters.activeCard).length ||
       String(filters.status || '').trim() ||
       String(filters.keyword || '').trim() ||
       String(filters.assignee || '').trim() ||
-      String(filters.area || '').trim() ||
-      String(filters.priceRange || '').trim() ||
-      String(filters.ratio50 || '').trim() ||
+      toArr(filters.area).length ||
+      toArr(filters.priceRange).length ||
+      toArr(filters.ratio50).length ||
       String(state?.propertySort?.key || '').trim()
     );
     const overviewCounts = state?.propertyOverview?.filterCounts || null;
+
+    // 다중 선택 필터 초기화
+    mod.initPropMultiSelectFilters();
+
     if (!Array.isArray(state?.propertiesFullCache) && !Array.isArray(state?.homeSummarySnapshot) && !hasLocalOverrides && overviewCounts) {
-      if (overviewCounts.source) applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, overviewCounts.source, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.area) applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, overviewCounts.area, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.price) applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, overviewCounts.price, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-      if (overviewCounts.ratio) applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, overviewCounts.ratio, (optionDef, count) => formatOptionLabel(optionDef.label, count));
+      if (overviewCounts.source) updatePropMultiCounts('propSourceFilter', overviewCounts.source);
+      if (overviewCounts.area) updatePropMultiCounts('propAreaFilter', overviewCounts.area);
+      if (overviewCounts.price) updatePropMultiCounts('propPriceFilter', overviewCounts.price);
+      if (overviewCounts.ratio) updatePropMultiCounts('propRatioFilter', overviewCounts.ratio);
       renderAssigneeFilterOptions(els.propAssigneeFilter, getPropertyFilterSourceRows(state), state, filters.assignee);
-      if (els.propSourceFilter) els.propSourceFilter.value = String(filters.activeCard || '');
-      if (els.propAreaFilter) els.propAreaFilter.value = String(filters.area || '');
-      if (els.propPriceFilter) els.propPriceFilter.value = String(filters.priceRange || '');
-      if (els.propRatioFilter) els.propRatioFilter.value = String(filters.ratio50 || '');
       return;
     }
 
@@ -753,44 +875,52 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const priceRows = mod.getFilteredProperties({ ignoreKeys: ['priceRange'] });
     const ratioRows = mod.getFilteredProperties({ ignoreKeys: ['ratio50'] });
 
-    const sourceCounts = { '': sourceRows.length, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+    const sourceCounts = { auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     sourceRows.forEach((row) => {
       const bucket = utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function'
         ? utils.PropertyDomain.getSourceBucket(row)
         : (row.sourceType === 'realtor' ? (row.isDirectSubmission ? 'realtor_direct' : 'realtor_naver') : String(row.sourceType || 'general'));
       if (Object.prototype.hasOwnProperty.call(sourceCounts, bucket)) sourceCounts[bucket] += 1;
     });
+    updatePropMultiCounts('propSourceFilter', sourceCounts);
 
-    const areaCounts = { '': areaRows.length, '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 };
+    const areaCounts = {};
     areaRows.forEach((row) => {
       AREA_FILTER_OPTIONS.slice(1).forEach((optionDef) => {
-        if (matchesAreaFilterValue(optionDef.value, row?.exclusivearea)) areaCounts[optionDef.value] += 1;
+        if (matchesAreaFilterValue(optionDef.value, row?.exclusivearea)) areaCounts[optionDef.value] = (areaCounts[optionDef.value] || 0) + 1;
       });
     });
+    updatePropMultiCounts('propAreaFilter', areaCounts);
 
-    const priceCounts = { '': priceRows.length, '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 };
+    const priceCounts = {};
     priceRows.forEach((row) => {
       PRICE_FILTER_OPTIONS.slice(1).forEach((optionDef) => {
-        if (matchesPriceRangeValue(optionDef.value, row)) priceCounts[optionDef.value] += 1;
+        if (matchesPriceRangeValue(optionDef.value, row)) priceCounts[optionDef.value] = (priceCounts[optionDef.value] || 0) + 1;
       });
     });
+    updatePropMultiCounts('propPriceFilter', priceCounts);
 
-    const ratioCounts = { '': ratioRows.length, '50': 0 };
+    const ratioCounts = {};
     ratioRows.forEach((row) => {
-      if (matchesRatioFilterValue('50', row)) ratioCounts['50'] += 1;
+      if (matchesRatioFilterValue('50', row)) ratioCounts['50'] = (ratioCounts['50'] || 0) + 1;
     });
+    updatePropMultiCounts('propRatioFilter', ratioCounts);
 
-    applySelectOptionCounts(els.propSourceFilter, SOURCE_FILTER_OPTIONS, sourceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
     renderAssigneeFilterOptions(els.propAssigneeFilter, assigneeRows, state, state?.propertyFilters?.assignee);
-    applySelectOptionCounts(els.propAreaFilter, AREA_FILTER_OPTIONS, areaCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-    applySelectOptionCounts(els.propPriceFilter, PRICE_FILTER_OPTIONS, priceCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-    applySelectOptionCounts(els.propRatioFilter, RATIO_FILTER_OPTIONS, ratioCounts, (optionDef, count) => formatOptionLabel(optionDef.label, count));
-    if (els.propSourceFilter) els.propSourceFilter.value = String(state?.propertyFilters?.activeCard || '');
-    if (els.propAssigneeFilter) els.propAssigneeFilter.value = String(state?.propertyFilters?.assignee || '');
-    if (els.propAreaFilter) els.propAreaFilter.value = String(state?.propertyFilters?.area || '');
-    if (els.propPriceFilter) els.propPriceFilter.value = String(state?.propertyFilters?.priceRange || '');
-    if (els.propRatioFilter) els.propRatioFilter.value = String(state?.propertyFilters?.ratio50 || '');
   };
+
+  function updatePropMultiCounts(filterKey, countMap) {
+    const checks = _propMultiCheckboxes[filterKey];
+    if (!Array.isArray(checks)) return;
+    checks.forEach(function(item) {
+      const count = Number(countMap[item.value] || 0);
+      item.labelSpan.textContent = item.baseLabel + ' (' + count.toLocaleString('ko-KR') + ')';
+    });
+    // 버튼 텍스트도 갱신 (선택된 항목의 label이 바뀌었으므로)
+    const { els } = ctx();
+    const container = els[filterKey];
+    if (container && typeof container._syncBtnText === 'function') container._syncBtnText();
+  }
 
   mod.getPagedProperties = function getPagedProperties(rows) {
     const { state } = ctx();
@@ -1541,6 +1671,8 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       if (els.aemDelete) els.aemDelete.disabled = false;
     }
   };
+
+  mod._getPropMultiCheckboxes = function(filterKey) { return _propMultiCheckboxes[filterKey] || []; };
 
   AdminModules.propertiesTab = mod;
 })();

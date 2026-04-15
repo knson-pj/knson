@@ -740,24 +740,26 @@ function bindEvents() {
       toggleSelectAllProperties(!!e.target.checked);
     });
 
-    // 요약 카드 클릭 → 필터
+    // 요약 카드 클릭 → 필터 (단일 토글)
     document.querySelectorAll(".summary-card[data-card]").forEach((card) => {
       card.addEventListener("click", () => {
         const key = card.dataset.card || "";
-        const next = state.propertyFilters.activeCard === key ? "" : key; // 같은 카드 재클릭 시 해제
+        const current = Array.isArray(state.propertyFilters.activeCard) ? state.propertyFilters.activeCard : [];
+        const next = current.length === 1 && current[0] === key ? [] : (key ? [key] : []);
         state.propertyFilters.activeCard = next;
+        // 다중 선택 UI 체크 상태 동기화
+        const checks = window.KNSN_ADMIN_MODULES?.propertiesTab?._getPropMultiCheckboxes?.('propSourceFilter');
+        if (Array.isArray(checks)) {
+          checks.forEach(function(item) { item.cb.checked = next.includes(item.value); });
+        }
         syncPropertySourceFilterUi();
         state.propertyPage = 1;
         loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
       });
     });
 
-    if (els.propSourceFilter) els.propSourceFilter.addEventListener("change", (e) => {
-      state.propertyFilters.activeCard = String(e.target.value || "");
-      syncPropertySourceFilterUi();
-      state.propertyPage = 1;
-      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
-    });
+    // propSourceFilter, propAreaFilter, propPriceFilter, propRatioFilter는 다중 선택으로 전환
+    // → admin-tab-properties.js의 initPropMultiSelectFilters()에서 이벤트 바인딩
     if (els.propAssigneeFilter) els.propAssigneeFilter.addEventListener("change", (e) => {
       state.propertyFilters.assignee = String(e.target.value || "");
       state.propertyPage = 1;
@@ -766,21 +768,6 @@ function bindEvents() {
 
     if (els.propStatusFilter) els.propStatusFilter.addEventListener("change", (e) => {
       state.propertyFilters.status = String(e.target.value || "");
-      state.propertyPage = 1;
-      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
-    });
-    if (els.propAreaFilter) els.propAreaFilter.addEventListener("change", (e) => {
-      state.propertyFilters.area = String(e.target.value || "");
-      state.propertyPage = 1;
-      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
-    });
-    if (els.propPriceFilter) els.propPriceFilter.addEventListener("change", (e) => {
-      state.propertyFilters.priceRange = String(e.target.value || "");
-      state.propertyPage = 1;
-      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
-    });
-    if (els.propRatioFilter) els.propRatioFilter.addEventListener("change", (e) => {
-      state.propertyFilters.ratio50 = String(e.target.value || "");
       state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
@@ -869,10 +856,10 @@ function bindEvents() {
   }
 
   function syncPropertySourceFilterUi() {
-    const active = String(state.propertyFilters?.activeCard || "").trim();
-    if (els.propSourceFilter) els.propSourceFilter.value = active;
+    const raw = state.propertyFilters?.activeCard;
+    const arr = Array.isArray(raw) ? raw : (raw ? [raw] : []);
     document.querySelectorAll(".summary-card[data-card]").forEach((card) => {
-      card.classList.toggle("is-active", !!active && card.dataset.card === active);
+      card.classList.toggle("is-active", arr.length === 1 && card.dataset.card === arr[0]);
     });
   }
 
@@ -988,32 +975,36 @@ function bindEvents() {
 
   function hasActivePropertyFilters() {
     const f = state.propertyFilters || {};
+    const toArr = (v) => Array.isArray(v) ? v : (v ? [String(v)] : []);
     return !!(
-      String(f.activeCard || '').trim() ||
+      toArr(f.activeCard).filter(Boolean).length ||
       String(f.status || '').trim() ||
       String(f.assignee || '').trim() ||
       String(f.keyword || '').trim() ||
-      String(f.area || '').trim() ||
-      String(f.priceRange || '').trim() ||
-      String(f.ratio50 || '').trim()
+      toArr(f.area).filter(Boolean).length ||
+      toArr(f.priceRange).filter(Boolean).length ||
+      toArr(f.ratio50).filter(Boolean).length
     );
   }
 
   function hasLocalOnlyPropertyFilters() {
     const f = state.propertyFilters || {};
+    const toArr = (v) => Array.isArray(v) ? v : (v ? [String(v)] : []);
     return !!(
       String(f.assignee || '').trim() ||
       String(f.keyword || '').trim() ||
-      String(f.area || '').trim() ||
-      String(f.priceRange || '').trim() ||
-      String(f.ratio50 || '').trim()
+      toArr(f.area).filter(Boolean).length ||
+      toArr(f.priceRange).filter(Boolean).length ||
+      toArr(f.ratio50).filter(Boolean).length
     );
   }
 
   function getServerBackedPropertyFilters() {
     const f = state.propertyFilters || {};
+    const raw = f.activeCard;
+    const activeCard = Array.isArray(raw) ? (raw.length === 1 ? raw[0] : '') : String(raw || '').trim();
     return {
-      activeCard: String(f.activeCard || '').trim(),
+      activeCard,
       status: String(f.status || '').trim(),
     };
   }
