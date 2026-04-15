@@ -102,7 +102,8 @@
       return next;
     };
 
-    touch('', '담당자별 선택 필터', list.length, -1);
+    const totalCount = Number(state?.propertyTotalCount || 0) > list.length ? Number(state.propertyTotalCount) : list.length;
+    touch('', '담당자별 선택 필터', totalCount, -1);
     touch('__unassigned__', '미배정', 0, -0.8);
 
     (Array.isArray(state?.staff) ? state.staff : []).forEach((staff, index) => {
@@ -119,7 +120,16 @@
 
     // 배정(XX) 집계: 전체 - 미배정
     const unassignedEntry = optionMap.get('__unassigned__');
-    const assignedCount = list.length - (unassignedEntry ? unassignedEntry.count : 0);
+    const localAssignedCount = list.length - (unassignedEntry ? unassignedEntry.count : 0);
+    // 서버 overview에 assignee counts가 있으면 사용
+    const overviewAssigneeCounts = state?.propertyOverview?.filterCounts?.assignee || null;
+    const assignedCount = overviewAssigneeCounts
+      ? (totalCount - Number(overviewAssigneeCounts.unassigned || 0))
+      : localAssignedCount;
+    const unassignedTotalCount = overviewAssigneeCounts
+      ? Number(overviewAssigneeCounts.unassigned || 0)
+      : (unassignedEntry ? unassignedEntry.count : 0);
+    if (unassignedEntry) unassignedEntry.count = unassignedTotalCount;
     touch('__assigned__', '배정', assignedCount, -0.5);
 
     if (current && !optionMap.has(current)) {

@@ -58,8 +58,26 @@
   }
 
   function getAuthHeaders() {
-    const anonKey = document.querySelector('meta[name="supabase-anon-key"]')?.getAttribute("content") || "";
-    return anonKey ? { "Authorization": "Bearer " + anonKey } : {};
+    var K = window.KNSN || {};
+    // Supabase Edge Function은 apikey(anon key) + Authorization(access token) 모두 필요
+    var anonKey = "";
+    try {
+      anonKey = String(localStorage.getItem("knson_supabase_key") || "").trim();
+    } catch (e) {}
+    if (!anonKey) {
+      anonKey = document.querySelector('meta[name="supabase-anon-key"]')?.getAttribute("content") || "";
+    }
+    var session = null;
+    try {
+      var raw = sessionStorage.getItem("knson_bms_session_v1");
+      if (raw) session = JSON.parse(raw);
+    } catch (e) {}
+    var token = String(session?.token || "").trim();
+    var headers = {};
+    if (anonKey) headers["apikey"] = anonKey;
+    if (token) headers["Authorization"] = "Bearer " + token;
+    else if (anonKey) headers["Authorization"] = "Bearer " + anonKey;
+    return headers;
   }
 
   function $(id) { return document.getElementById(id); }
