@@ -62,15 +62,14 @@
     var K = window.KNSN || {};
     var rt = window.KNSN_ADMIN_RUNTIME || {};
 
-    // 1) anon key: Supabase config → localStorage → meta 태그
+    // 1) anon key: Supabase 클라이언트에서 직접 추출 → localStorage → meta 태그
     var anonKey = "";
     try {
       if (typeof K.initSupabase === "function") {
-        // Supabase 클라이언트가 초기화된 경우 config에서 가져옴
-        var cfg = null;
-        if (typeof K.supabaseEnabled === "function" && K.supabaseEnabled()) {
-          // getSupabaseConfig는 내부 함수이므로 localStorage에서 직접 읽음
-          anonKey = String(localStorage.getItem("knson_supabase_key") || "").trim();
+        var sb = K.initSupabase();
+        // Supabase JS v2 클라이언트는 supabaseKey 속성에 anon key 보관
+        if (sb && sb.supabaseKey) {
+          anonKey = String(sb.supabaseKey).trim();
         }
       }
     } catch (e) {}
@@ -80,27 +79,20 @@
     if (!anonKey) {
       anonKey = (document.querySelector('meta[name="supabase-anon-key"]') || {}).content || "";
     }
-    if (anonKey) headers["apikey"] = anonKey;
 
-    // 2) access token: 여러 소스에서 시도
+    // 2) access token: Supabase 세션에서 추출
     var accessToken = "";
-
-    // 2a) Supabase 클라이언트의 현재 세션에서 직접 access_token 추출
-    if (!accessToken && typeof K.sbGetSession === "function") {
+    if (typeof K.sbGetSession === "function") {
       try {
         var sess = await K.sbGetSession();
         accessToken = String(sess?.access_token || "").trim();
       } catch (e) { console.warn("[bld] sbGetSession failed:", e.message); }
     }
-
-    // 2b) sbGetAccessToken (토큰 갱신 포함)
     if (!accessToken && typeof K.sbGetAccessToken === "function") {
       try {
         accessToken = String(await K.sbGetAccessToken() || "").trim();
       } catch (e) { console.warn("[bld] sbGetAccessToken failed:", e.message); }
     }
-
-    // 2c) admin runtime의 앱 세션 토큰 (Supabase JWT와 동일)
     if (!accessToken) {
       try {
         var session = rt.state?.session || null;
@@ -112,9 +104,23 @@
       } catch (e) {}
     }
 
+    // 3) 헤더 구성: apikey는 반드시 필요
+    if (anonKey) headers["apikey"] = anonKey;
     if (accessToken) {
       headers["Authorization"] = "Bearer " + accessToken;
+    } else if (anonKey) {
+      // access token이 없으면 anon key로 anonymous 접근
+      headers["Authorization"] = "Bearer " + anonKey;
     }
+
+    // 디버그: 어떤 토큰이 사용되는지 로깅
+    console.log("[bld] auth:", {
+      hasApikey: !!anonKey,
+      apikeyLen: anonKey.length,
+      hasAccessToken: !!accessToken,
+      accessTokenLen: accessToken.length,
+      source: accessToken ? "session" : (anonKey ? "anonKey" : "none"),
+    });
 
     return headers;
   }
