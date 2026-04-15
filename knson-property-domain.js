@@ -342,7 +342,11 @@
       dateMain: pickFirstText(item && item.dateMain, item && item.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], item && item.bidDate, item && item.bid_date, ""),
       createdAt: pickFirstText(item && item.date, item && item.date_uploaded, item && item.createdAt, item && item.created_at, raw.date, raw.createdAt, raw.date_uploaded, ""),
       assignedAgentId: pickFirstText(item && item.assignedAgentId, item && item.assigneeId, item && item.assignee_id, item && item.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, ""),
-      assignedAgentName: pickFirstText(item && item.assignedAgentName, item && item.assigneeName, item && item.assignee_name, item && item.agentName, item && item.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, ""),
+      assignedAgentName: (function () {
+        var aid = pickFirstText(item && item.assignedAgentId, item && item.assigneeId, item && item.assignee_id, item && item.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, "");
+        if (!aid) return "";
+        return pickFirstText(item && item.assignedAgentName, item && item.assigneeName, item && item.assignee_name, item && item.agentName, item && item.manager, raw.assignedAgentName, raw.assigneeName, raw.assignee_name, "");
+      })(),
       regionGu: pickFirstText(item && item.regionGu, item && item.region_gu, raw.regionGu, raw.region_gu, ""),
       regionDong: pickFirstText(item && item.regionDong, item && item.region_dong, raw.regionDong, raw.region_dong, ""),
       memo: memoText,
