@@ -78,6 +78,7 @@
   function matchesAssigneeFilterValue(state, row, selectedValue) {
     const selected = String(selectedValue || '').trim();
     if (!selected) return true;
+    if (selected === '__assigned__') return getAssigneeFilterMeta(state, row).value !== '__unassigned__';
     return getAssigneeFilterMeta(state, row).value === selected;
   }
 
@@ -115,13 +116,19 @@
       touch(meta.value, meta.label, 1);
     });
 
+    // 배정(XX) 집계: 전체 - 미배정
+    const unassignedEntry = optionMap.get('__unassigned__');
+    const assignedCount = list.length - (unassignedEntry ? unassignedEntry.count : 0);
+    touch('__assigned__', '배정', assignedCount, -0.5);
+
     if (current && !optionMap.has(current)) {
       if (current === '__unassigned__') touch(current, '미배정', 0);
+      else if (current === '__assigned__') touch(current, '배정', assignedCount);
       else touch(current, current.startsWith('name:') ? current.slice(5) : '담당자', 0);
     }
 
     const options = [...optionMap.values()]
-      .filter((item) => item.value === '' || item.count > 0 || item.value === current)
+      .filter((item) => item.value === '' || item.value === '__assigned__' || item.count > 0 || item.value === current)
       .sort((a, b) => {
         if (a.value === '') return -1;
         if (b.value === '') return 1;
@@ -251,7 +258,7 @@
     return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
   }
 
-  function truncateAddressText(value, maxLength = 20) {
+  function truncateAddressText(value, maxLength = 30) {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
     const limit = Number(maxLength || 0);
     if (!text) return '';
@@ -993,7 +1000,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const currentPrice = currentPriceValue ? utils.formatMoneyKRW(currentPriceValue) : '-';
     const rate = utils.formatPercent(p.priceMain, currentPriceValue, p._raw || {});
     const floorText = truncateDisplayText(getFloorDisplayValue(p), 7) || '-';
-    const addressText = truncateAddressText(listView?.address || p.address || '-', 20) || '-';
+    const addressText = truncateAddressText(listView?.address || p.address || '-', 30) || '-';
     const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || '-', 7) || '-';
     const exclusiveText = p.exclusivearea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.exclusivearea)) : '-';
     const commonText = p.commonarea != null ? utils.escapeHtml(utils.formatAreaPyeong(p.commonarea)) : '-';

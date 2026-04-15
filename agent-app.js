@@ -225,7 +225,7 @@
     return key === 'realtor_naver' || key === 'realtor_direct' || key === 'general';
   }
 
-  function truncateAddressText(value, maxLength = 20) {
+  function truncateAddressText(value, maxLength = 30) {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
     const limit = Number(maxLength || 0);
     if (!text) return '';
@@ -1696,7 +1696,7 @@ function renderRow(p) {
   const rate = !usePlainLayout ? (ratioValue >= 0 ? `${Math.round(ratioValue * 100)}%` : calcRate(p.priceMain, p.lowprice)) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
-  const addressText = truncateAddressText(listView?.address || p.address || '-', 20) || '-';
+  const addressText = truncateAddressText(listView?.address || p.address || '-', 30) || '-';
   const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(listView?.floorText || getFloorDisplayValue(p) || "-", 7) || "-";
   const scheduleHtml = !usePlainLayout
