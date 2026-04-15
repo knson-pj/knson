@@ -270,14 +270,15 @@
   };
 
   // ═══════════════════════════════════════════════════════
-  // 물건배정 시스템
+  // 물건 배정 시스템
   // ═══════════════════════════════════════════════════════
 
   const BUCKET_KEYS = ['auction', 'onbid', 'realtor_naver', 'realtor_direct', 'general'];
   const BUCKET_LABELS = { auction: '경매', onbid: '공매', realtor_naver: '네이버중개', realtor_direct: '일반중개', general: '일반' };
 
   function getSourceBucket(utils, p) {
-    if (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function') return utils.PropertyDomain.getSourceBucket(p);
+    var PD = window.KNSN_PROPERTY_DOMAIN;
+    if (PD && typeof PD.getSourceBucket === 'function') return PD.getSourceBucket(p);
     const st = String(p.sourceType || '').trim();
     if (st === 'realtor') return p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver';
     return st || 'general';
@@ -352,14 +353,106 @@
     els.assignStatusBody.appendChild(frag);
   };
 
+  // ── 다중 선택 필터 UI ──
+  const FILTER_DEFS = {
+    assignSourceFilter: {
+      placeholder: '전체 구분',
+      options: [
+        { value: 'auction', label: '경매' }, { value: 'onbid', label: '공매' },
+        { value: 'realtor_naver', label: '네이버중개' }, { value: 'realtor_direct', label: '일반중개' },
+        { value: 'general', label: '일반' },
+      ],
+    },
+    assignAreaFilter: {
+      placeholder: '전체 면적',
+      options: [
+        { value: '0-5', label: '5평 미만' }, { value: '5-10', label: '5~10평' },
+        { value: '10-20', label: '10~20평' }, { value: '20-30', label: '20~30평' },
+        { value: '30-50', label: '30~50평' }, { value: '50-100', label: '50~100평' },
+        { value: '100-', label: '100평 이상' },
+      ],
+    },
+    assignPriceFilter: {
+      placeholder: '전체 가격',
+      options: [
+        { value: '0-1', label: '1억 미만' }, { value: '1-3', label: '1~3억' },
+        { value: '3-5', label: '3~5억' }, { value: '5-10', label: '5~10억' },
+        { value: '10-20', label: '10~20억' }, { value: '20-', label: '20억 이상' },
+      ],
+    },
+  };
+  const _multiSelectState = {};
+
+  function buildMultiSelect(container, filterKey, onChange) {
+    const def = FILTER_DEFS[filterKey];
+    if (!container || !def) return;
+    _multiSelectState[filterKey] = new Set();
+    const state = _multiSelectState[filterKey];
+
+    container.innerHTML = '';
+    container.style.cssText = 'position:relative;display:inline-block;min-width:130px;';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'select';
+    btn.style.cssText = 'width:100%;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:20px;';
+    btn.textContent = def.placeholder;
+    container.appendChild(btn);
+
+    const panel = document.createElement('div');
+    panel.style.cssText = 'display:none;position:absolute;top:100%;left:0;z-index:100;background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);padding:6px 0;min-width:100%;max-height:240px;overflow-y:auto;';
+    container.appendChild(panel);
+
+    def.options.forEach((opt) => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 12px;cursor:pointer;font-size:12px;white-space:nowrap;';
+      label.addEventListener('mouseenter', () => { label.style.background = 'var(--hover-bg,#f5f5f5)'; });
+      label.addEventListener('mouseleave', () => { label.style.background = ''; });
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = opt.value;
+      cb.style.cssText = 'margin:0;';
+      cb.addEventListener('change', () => {
+        if (cb.checked) state.add(opt.value); else state.delete(opt.value);
+        updateBtnText();
+        if (typeof onChange === 'function') onChange();
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(opt.label));
+      panel.appendChild(label);
+    });
+
+    function updateBtnText() {
+      if (!state.size) { btn.textContent = def.placeholder; return; }
+      const labels = def.options.filter((o) => state.has(o.value)).map((o) => o.label);
+      btn.textContent = labels.length <= 2 ? labels.join(', ') : labels.slice(0, 2).join(', ') + ' +' + (labels.length - 2);
+    }
+
+    let isOpen = false;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isOpen = !isOpen;
+      panel.style.display = isOpen ? 'block' : 'none';
+    });
+    document.addEventListener('click', (e) => {
+      if (!container.contains(e.target)) { isOpen = false; panel.style.display = 'none'; }
+    });
+  }
+
+  mod.initMultiSelectFilters = function initMultiSelectFilters() {
+    const { els } = ctx();
+    const onChange = () => mod.renderAssignFilterSummary();
+    buildMultiSelect(els.assignSourceFilter, 'assignSourceFilter', onChange);
+    buildMultiSelect(els.assignAreaFilter, 'assignAreaFilter', onChange);
+    buildMultiSelect(els.assignPriceFilter, 'assignPriceFilter', onChange);
+  };
+
   // B. 배정 물건 조건 설정 + 필터 요약
   function getAssignFilterValues() {
-    const { els } = ctx();
     return {
-      source: String(els.assignSourceFilter?.value || '').trim(),
-      area: String(els.assignAreaFilter?.value || '').trim(),
-      price: String(els.assignPriceFilter?.value || '').trim(),
-      keyword: String(els.assignKeyword?.value || '').trim().toLowerCase(),
+      sources: [...(_multiSelectState.assignSourceFilter || [])],
+      areas: [...(_multiSelectState.assignAreaFilter || [])],
+      prices: [...(_multiSelectState.assignPriceFilter || [])],
     };
   }
 
@@ -392,22 +485,20 @@
     const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
     const filters = getAssignFilterValues();
     return allProps.filter((p) => {
-      // 미배정만
       const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
       if (aid) return false;
-      // 구분 필터
-      if (filters.source) {
+      // 구분 필터 (다중)
+      if (filters.sources.length) {
         const bucket = getSourceBucket(utils, p);
-        if (bucket !== filters.source) return false;
+        if (!filters.sources.includes(bucket)) return false;
       }
-      // 면적 필터
-      if (filters.area && !matchesAreaFilter(filters.area, p.exclusivearea)) return false;
-      // 가격 필터
-      if (filters.price && !matchesPriceFilter(filters.price, p)) return false;
-      // 키워드 필터
-      if (filters.keyword) {
-        const text = String(p.address || '').toLowerCase() + ' ' + String(p.regionGu || '').toLowerCase() + ' ' + String(p.regionDong || '').toLowerCase();
-        if (!text.includes(filters.keyword)) return false;
+      // 면적 필터 (다중)
+      if (filters.areas.length) {
+        if (!filters.areas.some((v) => matchesAreaFilter(v, p.exclusivearea))) return false;
+      }
+      // 가격 필터 (다중)
+      if (filters.prices.length) {
+        if (!filters.prices.some((v) => matchesPriceFilter(v, p))) return false;
       }
       return true;
     });
@@ -454,7 +545,12 @@
   };
 
   // 통합 렌더
+  let _filtersInitialized = false;
   mod.refreshAssignmentView = function refreshAssignmentView() {
+    if (!_filtersInitialized) {
+      mod.initMultiSelectFilters();
+      _filtersInitialized = true;
+    }
     mod.renderAssignmentStatus();
     mod.renderAssignFilterSummary();
   };

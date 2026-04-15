@@ -472,13 +472,12 @@
       staffTableBody: $("#staffTable tbody"),
       staffEmpty: $("#staffEmpty"),
 
-      // property assignment (물건배정)
+      // property assignment (물건 배정)
       assignStatusBody: $("#assignStatusBody"),
       assignStatusEmpty: $("#assignStatusEmpty"),
       assignSourceFilter: $("#assignSourceFilter"),
       assignAreaFilter: $("#assignAreaFilter"),
       assignPriceFilter: $("#assignPriceFilter"),
-      assignKeyword: $("#assignKeyword"),
       assignFilterTotal: $("#assignFilterTotal"),
       assignFilterSummary: $("#assignFilterSummary"),
       btnAutoAssign: $("#btnAutoAssign"),
@@ -721,7 +720,7 @@ function bindEvents() {
             loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
           }
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
-          if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { refreshAssignmentView(); }).catch((e)=>handleAsyncError(e,"물건배정 데이터 로드 실패"));
+          if (key === "regions") { loadStaff().catch(()=>{}); ensureAuxiliaryPropertiesForAdmin().then(() => { refreshAssignmentView(); }).catch((e)=>handleAsyncError(e,"물건 배정 데이터 로드 실패")); }
           if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
           if (key === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
           if (key === "buildings") { var bldMod = window.KNSN_ADMIN_MODULES?.buildingsTab; if (bldMod && typeof bldMod.init === "function") bldMod.init(); }
@@ -811,10 +810,7 @@ function bindEvents() {
       if (state.session?.user?.role !== "admin") return;
       handleAutoAssign().catch((e)=>handleAsyncError(e,"자동 배정 실패"));
     });
-    if (els.assignSourceFilter) els.assignSourceFilter.addEventListener("change", () => refreshAssignmentView());
-    if (els.assignAreaFilter) els.assignAreaFilter.addEventListener("change", () => refreshAssignmentView());
-    if (els.assignPriceFilter) els.assignPriceFilter.addEventListener("change", () => refreshAssignmentView());
-    if (els.assignKeyword) els.assignKeyword.addEventListener("input", debounce(() => refreshAssignmentView(), 200));
+    // 물건 배정 필터 이벤트는 admin-tab-staff-regions.js의 initMultiSelectFilters()에서 바인딩
 
     // property edit modal
     if (els.propertyEditModalAdmin) {
@@ -2684,7 +2680,7 @@ function bindEvents() {
   }
 
   // ---------------------------
-  // Property Assignment (물건배정)
+  // Property Assignment (물건 배정)
   // ---------------------------
   function refreshAssignmentView(...args) {
     return callAdminModule("staffRegions", "refreshAssignmentView", args);
