@@ -2,7 +2,7 @@
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
 
-  // 법정동 목록 (시군구별)
+  // 서울시 25개 구 법정동 목록
   const DONG_LIST = {
     "강남구": [
       { code: "1168010100", name: "역삼동" }, { code: "1168010300", name: "삼성동" },
@@ -10,42 +10,174 @@
       { code: "1168010700", name: "개포동" }, { code: "1168010800", name: "논현동" },
       { code: "1168010900", name: "세곡동" }, { code: "1168011000", name: "압구정동" },
       { code: "1168011100", name: "청담동" }, { code: "1168011200", name: "신사동" },
+      { code: "1168010200", name: "자곡동" }, { code: "1168010400", name: "율현동" },
+      { code: "1168011300", name: "일원동" }, { code: "1168011400", name: "수서동" },
+    ],
+    "강동구": [
+      { code: "1174010100", name: "암사동" }, { code: "1174010200", name: "천호동" },
+      { code: "1174010300", name: "성내동" }, { code: "1174010400", name: "길동" },
+      { code: "1174010500", name: "둔촌동" }, { code: "1174010600", name: "명일동" },
+      { code: "1174010700", name: "고덕동" }, { code: "1174010800", name: "상일동" },
+      { code: "1174010900", name: "강일동" },
+    ],
+    "강북구": [
+      { code: "1130510100", name: "미아동" }, { code: "1130510200", name: "번동" },
+      { code: "1130510300", name: "수유동" }, { code: "1130510400", name: "우이동" },
+      { code: "1130510500", name: "삼양동" }, { code: "1130510600", name: "인수동" },
+    ],
+    "강서구": [
+      { code: "1150010100", name: "염창동" }, { code: "1150010200", name: "등촌동" },
+      { code: "1150010300", name: "화곡동" }, { code: "1150010400", name: "가양동" },
+      { code: "1150010500", name: "마곡동" }, { code: "1150010600", name: "내발산동" },
+      { code: "1150010700", name: "외발산동" }, { code: "1150010800", name: "공항동" },
+      { code: "1150010900", name: "방화동" }, { code: "1150011000", name: "개화동" },
+      { code: "1150011100", name: "과해동" }, { code: "1150011200", name: "오곡동" },
+      { code: "1150011300", name: "오쇠동" },
+    ],
+    "관악구": [
+      { code: "1162010100", name: "봉천동" }, { code: "1162010200", name: "신림동" },
+      { code: "1162010300", name: "남현동" },
+    ],
+    "광진구": [
+      { code: "1121510100", name: "중곡동" }, { code: "1121510200", name: "능동" },
+      { code: "1121510300", name: "구의동" }, { code: "1121510400", name: "광장동" },
+      { code: "1121510500", name: "자양동" }, { code: "1121510600", name: "화양동" },
+      { code: "1121510700", name: "군자동" },
+    ],
+    "구로구": [
+      { code: "1153010100", name: "신도림동" }, { code: "1153010200", name: "구로동" },
+      { code: "1153010300", name: "가리봉동" }, { code: "1153010400", name: "고척동" },
+      { code: "1153010500", name: "개봉동" }, { code: "1153010600", name: "오류동" },
+      { code: "1153010700", name: "궁동" }, { code: "1153010800", name: "온수동" },
+      { code: "1153010900", name: "천왕동" }, { code: "1153011000", name: "항동" },
+    ],
+    "금천구": [
+      { code: "1154510100", name: "가산동" }, { code: "1154510200", name: "독산동" },
+      { code: "1154510300", name: "시흥동" },
+    ],
+    "노원구": [
+      { code: "1135010100", name: "월계동" }, { code: "1135010200", name: "공릉동" },
+      { code: "1135010300", name: "하계동" }, { code: "1135010400", name: "중계동" },
+      { code: "1135010500", name: "상계동" },
+    ],
+    "도봉구": [
+      { code: "1132010100", name: "쌍문동" }, { code: "1132010200", name: "방학동" },
+      { code: "1132010300", name: "창동" }, { code: "1132010400", name: "도봉동" },
+    ],
+    "동대문구": [
+      { code: "1123010100", name: "신설동" }, { code: "1123010200", name: "용두동" },
+      { code: "1123010300", name: "전농동" }, { code: "1123010400", name: "답십리동" },
+      { code: "1123010500", name: "장안동" }, { code: "1123010600", name: "제기동" },
+      { code: "1123010700", name: "청량리동" }, { code: "1123010800", name: "회기동" },
+      { code: "1123010900", name: "휘경동" }, { code: "1123011000", name: "이문동" },
+    ],
+    "동작구": [
+      { code: "1159010100", name: "노량진동" }, { code: "1159010200", name: "상도동" },
+      { code: "1159010300", name: "본동" }, { code: "1159010400", name: "흑석동" },
+      { code: "1159010500", name: "동작동" }, { code: "1159010600", name: "사당동" },
+      { code: "1159010700", name: "대방동" }, { code: "1159010800", name: "신대방동" },
+    ],
+    "마포구": [
+      { code: "1144010100", name: "아현동" }, { code: "1144010200", name: "도화동" },
+      { code: "1144010300", name: "용강동" }, { code: "1144010400", name: "대흥동" },
+      { code: "1144010500", name: "합정동" }, { code: "1144010600", name: "서교동" },
+      { code: "1144010700", name: "상수동" }, { code: "1144010800", name: "망원동" },
+      { code: "1144010900", name: "연남동" }, { code: "1144011000", name: "성산동" },
+      { code: "1144011100", name: "중동" }, { code: "1144011200", name: "상암동" },
+      { code: "1144011300", name: "현석동" }, { code: "1144011400", name: "창전동" },
+    ],
+    "서대문구": [
+      { code: "1141010100", name: "충현동" }, { code: "1141010200", name: "천연동" },
+      { code: "1141010300", name: "북아현동" }, { code: "1141010400", name: "신촌동" },
+      { code: "1141010500", name: "대현동" }, { code: "1141010600", name: "대신동" },
+      { code: "1141010700", name: "연희동" }, { code: "1141010800", name: "홍제동" },
+      { code: "1141010900", name: "홍은동" }, { code: "1141011000", name: "남가좌동" },
+      { code: "1141011100", name: "북가좌동" },
     ],
     "서초구": [
-      { code: "1165010100", name: "서초동" }, { code: "1165010400", name: "반포동" },
-      { code: "1165010500", name: "잠원동" }, { code: "1165010700", name: "방배동" },
-      { code: "1165010800", name: "양재동" }, { code: "1165011000", name: "내곡동" },
+      { code: "1165010100", name: "서초동" }, { code: "1165010200", name: "잠원동" },
+      { code: "1165010300", name: "반포동" }, { code: "1165010400", name: "방배동" },
+      { code: "1165010500", name: "양재동" }, { code: "1165010600", name: "우면동" },
+      { code: "1165010700", name: "원지동" }, { code: "1165010800", name: "내곡동" },
+      { code: "1165010900", name: "염곡동" }, { code: "1165011000", name: "신원동" },
+    ],
+    "성동구": [
+      { code: "1120010100", name: "상왕십리동" }, { code: "1120010200", name: "하왕십리동" },
+      { code: "1120010300", name: "홍익동" }, { code: "1120010400", name: "도선동" },
+      { code: "1120010500", name: "마장동" }, { code: "1120010600", name: "사근동" },
+      { code: "1120010700", name: "행당동" }, { code: "1120010800", name: "응봉동" },
+      { code: "1120010900", name: "금호동" }, { code: "1120011000", name: "옥수동" },
+      { code: "1120011100", name: "성수동" }, { code: "1120011200", name: "송정동" },
+    ],
+    "성북구": [
+      { code: "1129010100", name: "성북동" }, { code: "1129010200", name: "돈암동" },
+      { code: "1129010300", name: "동소문동" }, { code: "1129010400", name: "삼선동" },
+      { code: "1129010500", name: "동선동" }, { code: "1129010600", name: "안암동" },
+      { code: "1129010700", name: "보문동" }, { code: "1129010800", name: "정릉동" },
+      { code: "1129010900", name: "길음동" }, { code: "1129011000", name: "종암동" },
+      { code: "1129011100", name: "하월곡동" }, { code: "1129011200", name: "상월곡동" },
+      { code: "1129011300", name: "장위동" }, { code: "1129011400", name: "석관동" },
     ],
     "송파구": [
       { code: "1171010100", name: "잠실동" }, { code: "1171010200", name: "신천동" },
       { code: "1171010300", name: "가락동" }, { code: "1171010400", name: "석촌동" },
-      { code: "1171010600", name: "문정동" }, { code: "1171010800", name: "방이동" },
-      { code: "1171010900", name: "오금동" },
+      { code: "1171010500", name: "송파동" }, { code: "1171010600", name: "문정동" },
+      { code: "1171010700", name: "풍납동" }, { code: "1171010800", name: "방이동" },
+      { code: "1171010900", name: "오금동" }, { code: "1171011000", name: "거여동" },
+      { code: "1171011100", name: "마천동" }, { code: "1171011200", name: "삼전동" },
+      { code: "1171011300", name: "장지동" }, { code: "1171011400", name: "위례동" },
+    ],
+    "양천구": [
+      { code: "1147010100", name: "신정동" }, { code: "1147010200", name: "목동" },
+      { code: "1147010300", name: "신월동" },
     ],
     "영등포구": [
-      { code: "1156010100", name: "영등포동" }, { code: "1156010400", name: "여의도동" },
-      { code: "1156010500", name: "당산동" }, { code: "1156010800", name: "신길동" },
-    ],
-    "마포구": [
-      { code: "1144010500", name: "합정동" }, { code: "1144010600", name: "서교동" },
-      { code: "1144010700", name: "상수동" }, { code: "1144010800", name: "망원동" },
-      { code: "1144010900", name: "연남동" },
+      { code: "1156010100", name: "영등포동" }, { code: "1156010200", name: "여의도동" },
+      { code: "1156010300", name: "당산동" }, { code: "1156010400", name: "신길동" },
+      { code: "1156010500", name: "대림동" }, { code: "1156010600", name: "도림동" },
+      { code: "1156010700", name: "문래동" }, { code: "1156010800", name: "양평동" },
     ],
     "용산구": [
-      { code: "1117010200", name: "이태원동" }, { code: "1117010300", name: "한남동" },
-      { code: "1117010800", name: "용산동" },
+      { code: "1117010100", name: "후암동" }, { code: "1117010200", name: "용산동" },
+      { code: "1117010300", name: "남영동" }, { code: "1117010400", name: "청파동" },
+      { code: "1117010500", name: "원효로" }, { code: "1117010600", name: "효창동" },
+      { code: "1117010700", name: "이촌동" }, { code: "1117010800", name: "이태원동" },
+      { code: "1117010900", name: "한남동" }, { code: "1117011000", name: "서빙고동" },
+      { code: "1117011100", name: "보광동" }, { code: "1117011200", name: "한강로" },
     ],
-    "성동구": [
-      { code: "1120010800", name: "성수동" }, { code: "1120010100", name: "금호동" },
-      { code: "1120010200", name: "옥수동" },
-    ],
-    "중구": [
-      { code: "1114011200", name: "을지로동" }, { code: "1114011500", name: "명동" },
-      { code: "1114012100", name: "신당동" }, { code: "1114012400", name: "장충동" },
+    "은평구": [
+      { code: "1138010100", name: "수색동" }, { code: "1138010200", name: "녹번동" },
+      { code: "1138010300", name: "불광동" }, { code: "1138010400", name: "갈현동" },
+      { code: "1138010500", name: "구산동" }, { code: "1138010600", name: "대조동" },
+      { code: "1138010700", name: "응암동" }, { code: "1138010800", name: "역촌동" },
+      { code: "1138010900", name: "신사동" }, { code: "1138011000", name: "증산동" },
+      { code: "1138011100", name: "진관동" },
     ],
     "종로구": [
-      { code: "1111011100", name: "종로동" }, { code: "1111012100", name: "인사동" },
-      { code: "1111012500", name: "사직동" }, { code: "1111014000", name: "삼청동" },
+      { code: "1111010100", name: "청운동" }, { code: "1111010400", name: "효자동" },
+      { code: "1111011500", name: "사직동" }, { code: "1111011900", name: "세종로" },
+      { code: "1111012100", name: "삼청동" }, { code: "1111012200", name: "안국동" },
+      { code: "1111012300", name: "화동" }, { code: "1111012600", name: "가회동" },
+      { code: "1111013600", name: "인사동" }, { code: "1111013700", name: "낙원동" },
+      { code: "1111014700", name: "이화동" }, { code: "1111014900", name: "충신동" },
+      { code: "1111015000", name: "동숭동" }, { code: "1111015100", name: "혜화동" },
+      { code: "1111015200", name: "명륜동" }, { code: "1111015300", name: "창신동" },
+      { code: "1111016100", name: "평창동" }, { code: "1111016200", name: "부암동" },
+      { code: "1111016500", name: "구기동" }, { code: "1111015700", name: "교남동" },
+    ],
+    "중구": [
+      { code: "1114010100", name: "무교동" }, { code: "1114010700", name: "소공동" },
+      { code: "1114010800", name: "회현동" }, { code: "1114010900", name: "명동" },
+      { code: "1114011000", name: "충무로" }, { code: "1114011100", name: "필동" },
+      { code: "1114011200", name: "장충동" }, { code: "1114011300", name: "광희동" },
+      { code: "1114011600", name: "을지로동" }, { code: "1114011800", name: "신당동" },
+      { code: "1114011900", name: "약수동" }, { code: "1114012000", name: "청구동" },
+      { code: "1114012100", name: "황학동" }, { code: "1114012200", name: "중림동" },
+    ],
+    "중랑구": [
+      { code: "1126010100", name: "면목동" }, { code: "1126010200", name: "상봉동" },
+      { code: "1126010300", name: "중화동" }, { code: "1126010400", name: "묵동" },
+      { code: "1126010500", name: "망우동" }, { code: "1126010600", name: "신내동" },
     ],
   };
 
@@ -60,17 +192,13 @@
   async function getAuthHeaders() {
     var headers = {};
     var K = window.KNSN || {};
-    var rt = window.KNSN_ADMIN_RUNTIME || {};
 
-    // 1) anon key: Supabase 클라이언트에서 직접 추출 → localStorage → meta 태그
+    // anon key 취득: Supabase 클라이언트 → localStorage → meta 태그
     var anonKey = "";
     try {
       if (typeof K.initSupabase === "function") {
         var sb = K.initSupabase();
-        // Supabase JS v2 클라이언트는 supabaseKey 속성에 anon key 보관
-        if (sb && sb.supabaseKey) {
-          anonKey = String(sb.supabaseKey).trim();
-        }
+        if (sb && sb.supabaseKey) anonKey = String(sb.supabaseKey).trim();
       }
     } catch (e) {}
     if (!anonKey) {
@@ -80,47 +208,11 @@
       anonKey = (document.querySelector('meta[name="supabase-anon-key"]') || {}).content || "";
     }
 
-    // 2) access token: Supabase 세션에서 추출
-    var accessToken = "";
-    if (typeof K.sbGetSession === "function") {
-      try {
-        var sess = await K.sbGetSession();
-        accessToken = String(sess?.access_token || "").trim();
-      } catch (e) { console.warn("[bld] sbGetSession failed:", e.message); }
-    }
-    if (!accessToken && typeof K.sbGetAccessToken === "function") {
-      try {
-        accessToken = String(await K.sbGetAccessToken() || "").trim();
-      } catch (e) { console.warn("[bld] sbGetAccessToken failed:", e.message); }
-    }
-    if (!accessToken) {
-      try {
-        var session = rt.state?.session || null;
-        if (!session) {
-          var raw = sessionStorage.getItem("knson_bms_session_v1");
-          if (raw) session = JSON.parse(raw);
-        }
-        accessToken = String(session?.token || "").trim();
-      } catch (e) {}
-    }
-
-    // 3) 헤더 구성: apikey는 반드시 필요
-    if (anonKey) headers["apikey"] = anonKey;
-    if (accessToken) {
-      headers["Authorization"] = "Bearer " + accessToken;
-    } else if (anonKey) {
-      // access token이 없으면 anon key로 anonymous 접근
+    // Supabase Edge Function 호출 표준 헤더
+    if (anonKey) {
+      headers["apikey"] = anonKey;
       headers["Authorization"] = "Bearer " + anonKey;
     }
-
-    // 디버그: 어떤 토큰이 사용되는지 로깅
-    console.log("[bld] auth:", {
-      hasApikey: !!anonKey,
-      apikeyLen: anonKey.length,
-      hasAccessToken: !!accessToken,
-      accessTokenLen: accessToken.length,
-      source: accessToken ? "session" : (anonKey ? "anonKey" : "none"),
-    });
 
     return headers;
   }
@@ -370,7 +462,7 @@
     // 시군구 셀렉트
     var regionSel = $("bldRegionSelect");
     if (regionSel) {
-      regionSel.innerHTML = '<option value="">전체</option>' +
+      regionSel.innerHTML = '<option value="">▽ 전체 (구 선택)</option>' +
         Object.keys(DONG_LIST).map(function(k) { return '<option value="' + escHtml(k) + '">' + escHtml(k) + '</option>'; }).join("");
       regionSel.addEventListener("change", function() { renderDongGrid(regionSel.value); });
     }
