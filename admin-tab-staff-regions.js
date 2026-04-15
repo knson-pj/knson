@@ -109,7 +109,7 @@
   async function handleStaffRowAction(act, id) {
     const { state, api, utils } = ctx();
     const DataAccess = window.KNSN_DATA_ACCESS;
-    const { renderSummary, hydrateAssignedAgentNames, renderPropertiesTable, setActiveTab } = utils;
+    const { renderSummary, hydrateAssignedAgentNames, renderPropertiesTable, setActiveTab, invalidatePropertyCollections, loadProperties } = utils;
     const row = (Array.isArray(state.staff) ? state.staff : []).find((staff) => String(staff.id) === String(id || ''));
     if (!row) return;
 
@@ -132,12 +132,39 @@
           await api(`/admin/staff?id=${encodeURIComponent(id)}`, { method: 'DELETE', auth: true, body: { id } });
         }
         state.staff = state.staff.filter((staff) => String(staff.id) !== String(id));
+
+        // 삭제된 담당자의 배정 정보를 로컬 물건 캐시에서 클리어
+        const clearAssigneeFromLocalCache = (rows) => {
+          if (!Array.isArray(rows)) return;
+          rows.forEach((p) => {
+            const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
+            if (aid !== String(id)) return;
+            p.assignedAgentId = null;
+            p.assigneeId = null;
+            p.assignedAgentName = null;
+            p.assigneeName = null;
+            if (p._raw && typeof p._raw === 'object') {
+              p._raw.assignee_id = null;
+              p._raw.assignedAgentId = null;
+              p._raw.assignee_name = null;
+              p._raw.assignedAgentName = null;
+            }
+          });
+        };
+        clearAssigneeFromLocalCache(state.properties);
+        clearAssigneeFromLocalCache(state.propertiesFullCache);
+        clearAssigneeFromLocalCache(state.homeSummarySnapshot);
+
         mod.resetStaffForm();
         mod.renderStaffTable();
         mod.renderAssignmentTable();
         renderSummary();
         hydrateAssignedAgentNames();
         renderPropertiesTable();
+
+        // 서버 동기화: 캐시 무효화 후 백그라운드에서 물건 목록 재로드
+        invalidatePropertyCollections();
+        loadProperties({ refreshSummary: true }).catch(() => {});
       } catch (err) {
         console.error(err);
         alert(err.message || '삭제 실패');
@@ -174,7 +201,8 @@
     const DataAccess = window.KNSN_DATA_ACCESS;
     const { normalizeStaff, setFormBusy, renderSummary } = utils;
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
     const id = String(fd.get("id") || "").trim();
     const payload = {
       email: String(fd.get("email") || "").trim(),
@@ -190,7 +218,7 @@
     if (!id && !payload.password) return alert("신규 계정은 초기 비밀번호가 필요합니다.");
 
     try {
-      setFormBusy(e.currentTarget, true);
+      setFormBusy(form, true);
       let saved = null;
       if (id) {
         const res = (DataAccess && typeof DataAccess.updateAdminStaffViaApi === 'function')
@@ -213,7 +241,7 @@
       console.error(err);
       alert(err.message || "저장 실패");
     } finally {
-      setFormBusy(e.currentTarget, false);
+      setFormBusy(form, false);
     }
   };
 
