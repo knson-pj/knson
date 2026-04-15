@@ -58,22 +58,64 @@
   }
 
   async function getAuthHeaders() {
-    var K = window.KNSN || {};
-    // anon key: localStorage 우선, meta 태그 fallback
-    var anonKey = "";
-    try { anonKey = String(localStorage.getItem("knson_supabase_key") || "").trim(); } catch (e) {}
-    if (!anonKey) {
-      anonKey = document.querySelector('meta[name="supabase-anon-key"]')?.getAttribute("content") || "";
-    }
-    // Supabase 클라이언트에서 실시간 access_token 취득
-    var accessToken = "";
-    if (K && typeof K.sbGetAccessToken === "function") {
-      try { accessToken = await K.sbGetAccessToken(); } catch (e) {}
-    }
     var headers = {};
+    var K = window.KNSN || {};
+    var rt = window.KNSN_ADMIN_RUNTIME || {};
+
+    // 1) anon key: Supabase config → localStorage → meta 태그
+    var anonKey = "";
+    try {
+      if (typeof K.initSupabase === "function") {
+        // Supabase 클라이언트가 초기화된 경우 config에서 가져옴
+        var cfg = null;
+        if (typeof K.supabaseEnabled === "function" && K.supabaseEnabled()) {
+          // getSupabaseConfig는 내부 함수이므로 localStorage에서 직접 읽음
+          anonKey = String(localStorage.getItem("knson_supabase_key") || "").trim();
+        }
+      }
+    } catch (e) {}
+    if (!anonKey) {
+      try { anonKey = String(localStorage.getItem("knson_supabase_key") || "").trim(); } catch (e) {}
+    }
+    if (!anonKey) {
+      anonKey = (document.querySelector('meta[name="supabase-anon-key"]') || {}).content || "";
+    }
     if (anonKey) headers["apikey"] = anonKey;
-    if (accessToken) headers["Authorization"] = "Bearer " + accessToken;
-    else if (anonKey) headers["Authorization"] = "Bearer " + anonKey;
+
+    // 2) access token: 여러 소스에서 시도
+    var accessToken = "";
+
+    // 2a) Supabase 클라이언트의 현재 세션에서 직접 access_token 추출
+    if (!accessToken && typeof K.sbGetSession === "function") {
+      try {
+        var sess = await K.sbGetSession();
+        accessToken = String(sess?.access_token || "").trim();
+      } catch (e) { console.warn("[bld] sbGetSession failed:", e.message); }
+    }
+
+    // 2b) sbGetAccessToken (토큰 갱신 포함)
+    if (!accessToken && typeof K.sbGetAccessToken === "function") {
+      try {
+        accessToken = String(await K.sbGetAccessToken() || "").trim();
+      } catch (e) { console.warn("[bld] sbGetAccessToken failed:", e.message); }
+    }
+
+    // 2c) admin runtime의 앱 세션 토큰 (Supabase JWT와 동일)
+    if (!accessToken) {
+      try {
+        var session = rt.state?.session || null;
+        if (!session) {
+          var raw = sessionStorage.getItem("knson_bms_session_v1");
+          if (raw) session = JSON.parse(raw);
+        }
+        accessToken = String(session?.token || "").trim();
+      } catch (e) {}
+    }
+
+    if (accessToken) {
+      headers["Authorization"] = "Bearer " + accessToken;
+    }
+
     return headers;
   }
 
@@ -129,6 +171,13 @@
     if (isRunning) return;
     var dongs = Array.from(selectedDongs);
     if (!dongs.length) return;
+
+    // Supabase 세션 동기화
+    var K = window.KNSN || {};
+    if (typeof K.sbSyncLocalSession === "function") {
+      try { await K.sbSyncLocalSession(); } catch (e) {}
+    }
+
     isRunning = true; shouldStop = false;
     $("bldBtnCollect").disabled = true;
     $("bldBtnEnrich").disabled = true;
@@ -138,6 +187,16 @@
 
     var baseUrl = getProxyUrl();
     var headers = await getAuthHeaders();
+
+    // 인증 사전 검증
+    if (!headers["Authorization"]) {
+      appendLog("❌ 인증 토큰을 가져올 수 없습니다. 다시 로그인 후 시도해 주세요.");
+      isRunning = false;
+      $("bldBtnStop").classList.add("hidden");
+      updateSelectedCount();
+      return;
+    }
+
     var total = dongs.length;
 
     for (var i = 0; i < total; i++) {
@@ -151,6 +210,15 @@
       appendLog(name + " 표제부 수집 시작...");
       try {
         var res = await fetch(baseUrl + "?mode=collect&dongCode=" + code + "&dongName=" + encodeURIComponent(name), { headers: headers });
+        if (res.status === 401) {
+          var errBody = await res.text().catch(function() { return ""; });
+          appendLog(name + " ❌ 인증 실패(401): " + errBody);
+          appendLog("토큰 갱신을 시도합니다...");
+          headers = await getAuthHeaders();
+          if (!headers["Authorization"]) { appendLog("❌ 토큰 갱신 실패. 다시 로그인해 주세요."); break; }
+          // 재시도
+          res = await fetch(baseUrl + "?mode=collect&dongCode=" + code + "&dongName=" + encodeURIComponent(name), { headers: headers });
+        }
         var data = await res.json();
         if (data.ok) {
           appendLog(name + " ✅ " + (data.parcels||0) + "필지 수집 완료");
@@ -204,6 +272,10 @@
     if (isRunning) return;
     var dongs = Array.from(selectedDongs);
     if (!dongs.length) return;
+    var K = window.KNSN || {};
+    if (typeof K.sbSyncLocalSession === "function") {
+      try { await K.sbSyncLocalSession(); } catch (e) {}
+    }
     isRunning = true; shouldStop = false;
     $("bldBtnCollect").disabled = true;
     $("bldBtnEnrich").disabled = true;
@@ -251,6 +323,15 @@
     var headers = await getAuthHeaders();
     try {
       var res = await fetch(baseUrl + "?mode=status", { headers: headers });
+      if (res.status === 401) {
+        // 토큰 갱신 후 재시도
+        var K = window.KNSN || {};
+        if (typeof K.sbSyncLocalSession === "function") {
+          try { await K.sbSyncLocalSession(true); } catch (e) {}
+        }
+        headers = await getAuthHeaders();
+        res = await fetch(baseUrl + "?mode=status", { headers: headers });
+      }
       var data = await res.json();
       renderStatus(data.jobs || []);
     } catch (e) {
@@ -307,8 +388,14 @@
     if ($("bldBtnStop")) $("bldBtnStop").addEventListener("click", function() { shouldStop = true; });
     if ($("bldBtnRefreshStatus")) $("bldBtnRefreshStatus").addEventListener("click", function() { loadStatus(); });
 
-    // 초기 상태 로드
-    loadStatus();
+    // 초기 상태 로드 (세션 동기화 후)
+    (async function() {
+      var K = window.KNSN || {};
+      if (typeof K.sbSyncLocalSession === "function") {
+        try { await K.sbSyncLocalSession(); } catch (e) {}
+      }
+      loadStatus();
+    })();
   };
 
   AdminModules.buildingsTab = mod;
