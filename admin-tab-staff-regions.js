@@ -2,34 +2,6 @@
   const AdminModules = window.KNSN_ADMIN_MODULES = window.KNSN_ADMIN_MODULES || {};
   const mod = {};
 
-  const GU_ADJ = {
-    "강남구": ["서초구", "송파구", "강동구", "성동구"],
-    "서초구": ["강남구", "동작구", "관악구", "용산구", "송파구"],
-    "송파구": ["강남구", "강동구", "광진구", "성동구", "서초구"],
-    "강동구": ["송파구", "강남구", "광진구"],
-    "마포구": ["서대문구", "은평구", "용산구", "영등포구"],
-    "서대문구": ["은평구", "마포구", "종로구", "중구"],
-    "영등포구": ["동작구", "구로구", "양천구", "마포구", "용산구"],
-    "구로구": ["금천구", "양천구", "영등포구"],
-    "양천구": ["강서구", "구로구", "영등포구"],
-    "관악구": ["동작구", "서초구", "금천구"],
-    "동작구": ["용산구", "영등포구", "관악구", "서초구"],
-    "용산구": ["중구", "마포구", "서초구", "동작구", "성동구"],
-    "성동구": ["광진구", "동대문구", "중구", "용산구", "강남구", "송파구"],
-    "광진구": ["성동구", "동대문구", "중랑구", "강동구", "송파구"],
-    "노원구": ["도봉구", "중랑구", "성북구"],
-    "도봉구": ["노원구", "강북구"],
-    "강북구": ["도봉구", "성북구", "종로구"],
-    "성북구": ["강북구", "종로구", "동대문구", "중랑구", "노원구"],
-    "종로구": ["중구", "서대문구", "성북구", "강북구", "은평구"],
-    "중구": ["종로구", "용산구", "성동구", "동대문구", "서대문구"],
-    "동대문구": ["중랑구", "성북구", "성동구", "중구", "광진구"],
-    "중랑구": ["노원구", "동대문구", "광진구", "성북구"],
-    "은평구": ["서대문구", "종로구", "마포구", "강북구"],
-    "강서구": ["양천구"],
-    "금천구": ["관악구", "구로구"],
-  };
-
   function runtime() {
     return window.KNSN_ADMIN_RUNTIME || {};
   }
@@ -49,7 +21,7 @@
       : await api('/admin/staff', { auth: true });
     state.staff = dedupeStaff(res?.items || []);
     mod.renderStaffTable();
-    mod.renderAssignmentTable();
+    mod.refreshAssignmentView();
     renderSummary();
     hydrateAssignedAgentNames();
     renderPropertiesTable();
@@ -157,7 +129,7 @@
 
         mod.resetStaffForm();
         mod.renderStaffTable();
-        mod.renderAssignmentTable();
+        mod.refreshAssignmentView();
         renderSummary();
         hydrateAssignedAgentNames();
         renderPropertiesTable();
@@ -265,10 +237,17 @@
       return "담당자";
     };
 
+    const allProps = utils.getAuxiliaryPropertiesSnapshot ? utils.getAuxiliaryPropertiesSnapshot() : [];
+    const propCountMap = new Map();
+    allProps.forEach((p) => {
+      const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
+      if (aid) propCountMap.set(aid, (propCountMap.get(aid) || 0) + 1);
+    });
+
     const frag = document.createDocumentFragment();
     rows.forEach((staff) => {
       const tr = document.createElement("tr");
-      const assignedCount = Array.isArray(staff.assignedRegions) ? staff.assignedRegions.length : 0;
+      const assignedCount = propCountMap.get(String(staff.id)) || 0;
       tr.innerHTML = `
         <td>${escapeHtml(staff.name || staff.email || "-")}</td>
         <td class="staff-position-cell">${escapeHtml(staff.position || "-")}</td>
@@ -290,227 +269,327 @@
     mod.bindStaffTableActions();
   };
 
-  mod.renderAssignmentTable = function renderAssignmentTable() {
-    const { state, els, utils } = ctx();
-    const { normalizeRole, escapeHtml, escapeAttr } = utils;
-    if (!els.assignmentTableBody || !els.assignmentEmpty) return;
-    els.assignmentTableBody.innerHTML = "";
+  // ═══════════════════════════════════════════════════════
+  // 물건배정 시스템
+  // ═══════════════════════════════════════════════════════
 
-    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
+  const BUCKET_KEYS = ['auction', 'onbid', 'realtor_naver', 'realtor_direct', 'general'];
+  const BUCKET_LABELS = { auction: '경매', onbid: '공매', realtor_naver: '네이버중개', realtor_direct: '일반중개', general: '일반' };
+
+  function getSourceBucket(utils, p) {
+    if (utils.PropertyDomain && typeof utils.PropertyDomain.getSourceBucket === 'function') return utils.PropertyDomain.getSourceBucket(p);
+    const st = String(p.sourceType || '').trim();
+    if (st === 'realtor') return p.isDirectSubmission ? 'realtor_direct' : 'realtor_naver';
+    return st || 'general';
+  }
+
+  function isManaged(p) {
+    return !!String(p.siteInspection || '').trim();
+  }
+
+  function extractGu(p) {
+    const addr = String(p.address || '').trim();
+    const m = addr.match(/(서울|경기|인천|부산|대구|대전|광주|울산|세종|충[남북]|전[남북]|경[남북]|강원|제주)[^\s]*\s+([^\s]*[시군구])/);
+    if (m) return m[2];
+    const m2 = addr.match(/([^\s]*[구군시])/);
+    return m2 ? m2[1] : '기타';
+  }
+
+  // A. 담당자 배정 현황 렌더링
+  mod.renderAssignmentStatus = function renderAssignmentStatus() {
+    const { state, els, utils } = ctx();
+    const { normalizeRole, escapeHtml } = utils;
+    if (!els.assignStatusBody) return;
+
+    const agents = (state.staff || []).filter((s) => normalizeRole(s.role) === 'staff');
     if (!agents.length) {
-      els.assignmentEmpty.classList.remove("hidden");
+      els.assignStatusBody.innerHTML = '';
+      if (els.assignStatusEmpty) els.assignStatusEmpty.classList.remove('hidden');
       return;
     }
-    els.assignmentEmpty.classList.add("hidden");
+    if (els.assignStatusEmpty) els.assignStatusEmpty.classList.add('hidden');
 
-    const regionOptions = mod.getRegionOptionsFromProperties();
+    const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
+
+    // 담당자별 + 구분별 집계
+    const agentStats = new Map();
+    agents.forEach((a) => {
+      const entry = { total: {}, managed: {} };
+      BUCKET_KEYS.forEach((k) => { entry.total[k] = 0; entry.managed[k] = 0; });
+      agentStats.set(String(a.id), entry);
+    });
+
+    allProps.forEach((p) => {
+      const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
+      if (!aid || !agentStats.has(aid)) return;
+      const bucket = getSourceBucket(utils, p);
+      const key = BUCKET_KEYS.includes(bucket) ? bucket : 'general';
+      const entry = agentStats.get(aid);
+      entry.total[key] = (entry.total[key] || 0) + 1;
+      if (isManaged(p)) entry.managed[key] = (entry.managed[key] || 0) + 1;
+    });
+
     const frag = document.createDocumentFragment();
-
-    agents.forEach((agent) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${escapeHtml(agent.name || agent.email || "-")}</td>
-        <td>담당자</td>
-        <td>
-          <select class="assignment-select" data-agent-id="${escapeAttr(agent.id)}" multiple></select>
-        </td>
-      `;
+    agents.forEach((a) => {
+      const entry = agentStats.get(String(a.id));
+      const tr = document.createElement('tr');
+      let totalAll = 0, managedAll = 0;
+      let cells = `<td style="font-weight:600;">${escapeHtml(a.name || a.email || '-')}</td>`;
+      BUCKET_KEYS.forEach((k) => {
+        const t = entry.total[k] || 0;
+        const m = entry.managed[k] || 0;
+        totalAll += t;
+        managedAll += m;
+        const pct = t > 0 ? (m / t * 100).toFixed(1) : '0.0';
+        cells += `<td style="font-size:11px;white-space:nowrap;">${t > 0 ? `<span style="color:var(--brand);">(${pct}%)</span> ${m}/총 ${t}` : '<span style="color:var(--muted);">-</span>'}</td>`;
+      });
+      const allPct = totalAll > 0 ? (managedAll / totalAll * 100).toFixed(1) : '0.0';
+      cells += `<td style="font-size:11px;font-weight:600;white-space:nowrap;">(${allPct}%) ${managedAll}/총 ${totalAll}</td>`;
+      tr.innerHTML = cells;
       frag.appendChild(tr);
     });
-
-    els.assignmentTableBody.appendChild(frag);
-
-    els.assignmentTableBody.querySelectorAll(".assignment-select").forEach((sel) => {
-      const agentId = String(sel.dataset.agentId || "");
-      const agent = agents.find((a) => String(a.id) === agentId);
-      if (!agent) return;
-      regionOptions.forEach((region) => {
-        const opt = document.createElement("option");
-        opt.value = region;
-        opt.textContent = region;
-        opt.selected = Array.isArray(agent.assignedRegions) && agent.assignedRegions.includes(region);
-        sel.appendChild(opt);
-      });
-    });
+    els.assignStatusBody.innerHTML = '';
+    els.assignStatusBody.appendChild(frag);
   };
 
-  mod.getRegionOptionsFromProperties = function getRegionOptionsFromProperties() {
+  // B. 배정 물건 조건 설정 + 필터 요약
+  function getAssignFilterValues() {
+    const { els } = ctx();
+    return {
+      source: String(els.assignSourceFilter?.value || '').trim(),
+      area: String(els.assignAreaFilter?.value || '').trim(),
+      price: String(els.assignPriceFilter?.value || '').trim(),
+      keyword: String(els.assignKeyword?.value || '').trim().toLowerCase(),
+    };
+  }
+
+  function matchesAreaFilter(value, area) {
+    if (!value) return true;
+    const PD = window.KNSN_PROPERTY_DOMAIN;
+    if (PD && typeof PD.matchesAreaFilter === 'function') return PD.matchesAreaFilter(value, area);
+    const [minS, maxS] = String(value).split('-');
+    const min = parseFloat(minS) || 0;
+    const max = maxS ? parseFloat(maxS) : Infinity;
+    const n = Number(area);
+    if (!Number.isFinite(n) || n <= 0) return false;
+    return n >= min && (max === Infinity || n < max);
+  }
+
+  function matchesPriceFilter(value, p) {
+    if (!value) return true;
+    const PD = window.KNSN_PROPERTY_DOMAIN;
+    if (PD && typeof PD.matchesPriceRangeFilter === 'function') return PD.matchesPriceRangeFilter(value, p);
+    const [minS, maxS] = String(value).split('-');
+    const min = (parseFloat(minS) || 0) * 100000000;
+    const max = maxS ? parseFloat(maxS) * 100000000 : Infinity;
+    const price = Number(p.priceMain || 0) || 0;
+    if (!price || price <= 0) return false;
+    return price >= min && (max === Infinity || price < max);
+  }
+
+  function getFilteredUnassignedProperties() {
     const { utils } = ctx();
-    const set = new Set();
-    for (const p of utils.getAuxiliaryPropertiesSnapshot()) {
-      if (p.regionGu) set.add(p.regionGu);
-      if (p.regionDong) set.add(p.regionDong);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
-  };
+    const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
+    const filters = getAssignFilterValues();
+    return allProps.filter((p) => {
+      // 미배정만
+      const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
+      if (aid) return false;
+      // 구분 필터
+      if (filters.source) {
+        const bucket = getSourceBucket(utils, p);
+        if (bucket !== filters.source) return false;
+      }
+      // 면적 필터
+      if (filters.area && !matchesAreaFilter(filters.area, p.exclusivearea)) return false;
+      // 가격 필터
+      if (filters.price && !matchesPriceFilter(filters.price, p)) return false;
+      // 키워드 필터
+      if (filters.keyword) {
+        const text = String(p.address || '').toLowerCase() + ' ' + String(p.regionGu || '').toLowerCase() + ' ' + String(p.regionDong || '').toLowerCase();
+        if (!text.includes(filters.keyword)) return false;
+      }
+      return true;
+    });
+  }
 
-  mod.handleSuggestGrouping = async function handleSuggestGrouping() {
-    const { state, els, utils } = ctx();
-    const { ensureAuxiliaryPropertiesForAdmin, getAuxiliaryPropertiesSnapshot, normalizeRole } = utils;
-    await ensureAuxiliaryPropertiesForAdmin();
-    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
-    if (!agents.length) return alert("담당자 계정을 먼저 등록해 주세요.");
-
-    const requestedCount = Math.max(1, Number(els.agentCountInput.value || 1));
-    const unitMode = els.regionUnitMode.value;
-
-    const grouped = mod.buildAutoRegionGrouping(getAuxiliaryPropertiesSnapshot(), requestedCount, unitMode);
-    state.lastGroupSuggestion = grouped;
-    mod.renderGroupSuggestion(grouped, agents);
-  };
-
-  mod.renderGroupSuggestion = function renderGroupSuggestion(grouped, agents) {
+  mod.renderAssignFilterSummary = function renderAssignFilterSummary() {
     const { els, utils } = ctx();
-    const { escapeHtml } = utils;
-    els.groupSuggestBox.innerHTML = "";
-    if (!grouped || !grouped.groups?.length) {
-      els.groupSuggestBox.innerHTML = `<div class="muted">그룹 제안 결과가 없습니다.</div>`;
+    if (!els.assignFilterSummary) return;
+
+    const filtered = getFilteredUnassignedProperties();
+    if (els.assignFilterTotal) els.assignFilterTotal.textContent = `미배정 ${filtered.length}건`;
+
+    if (!filtered.length) {
+      els.assignFilterSummary.innerHTML = '<span style="color:var(--muted);">조건에 해당하는 미배정 물건이 없습니다.</span>';
       return;
     }
 
-    const info = document.createElement("div");
-    info.className = "hint-box";
-    info.innerHTML = `
-      <div><strong>제안 기준:</strong> ${escapeHtml(grouped.unitLabel)} / 총 지역 ${grouped.totalRegions}개 / 그룹 ${grouped.groups.length}개</div>
-      <div class="muted small">※ 제안 결과는 아래 [배정 저장] 전에 테이블에서 수정 가능합니다.</div>
-    `;
-    els.groupSuggestBox.appendChild(info);
-
-    const frag = document.createDocumentFragment();
-    grouped.groups.forEach((g, idx) => {
-      const card = document.createElement("div");
-      card.className = "group-card";
-      const agentName = agents[idx]?.name || `미지정 그룹 ${idx + 1}`;
-      card.innerHTML = `
-        <h4>그룹 ${idx + 1} (${escapeHtml(agentName)})</h4>
-        <div class="group-chip-wrap">
-          ${g.regions.map((r) => `<span class="group-chip">${escapeHtml(r)}</span>`).join("")}
-        </div>
-      `;
-      frag.appendChild(card);
+    // 구분별 → 지역별 집계
+    const bucketMap = new Map();
+    filtered.forEach((p) => {
+      const bucket = getSourceBucket(utils, p);
+      const key = BUCKET_KEYS.includes(bucket) ? bucket : 'general';
+      if (!bucketMap.has(key)) bucketMap.set(key, new Map());
+      const guMap = bucketMap.get(key);
+      const gu = extractGu(p);
+      guMap.set(gu, (guMap.get(gu) || 0) + 1);
     });
-    els.groupSuggestBox.appendChild(frag);
 
-    const selects = [...els.assignmentTableBody.querySelectorAll(".assignment-select")];
-    selects.forEach((sel, idx) => {
-      const regions = grouped.groups[idx]?.regions || [];
-      [...sel.options].forEach((opt) => {
-        opt.selected = regions.includes(opt.value);
-      });
+    const parts = [];
+    BUCKET_KEYS.forEach((k) => {
+      if (!bucketMap.has(k)) return;
+      const guMap = bucketMap.get(k);
+      const total = [...guMap.values()].reduce((a, b) => a + b, 0);
+      const guParts = [...guMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([gu, cnt]) => `${gu}(${cnt})`)
+        .join(', ');
+      const more = guMap.size > 8 ? ` 외 ${guMap.size - 8}개 지역` : '';
+      parts.push(`<strong>${BUCKET_LABELS[k] || k}(${total})</strong>: ${guParts}${more}`);
     });
+
+    els.assignFilterSummary.innerHTML = parts.join('<br/>');
   };
 
-  mod.handleSaveAssignments = async function handleSaveAssignments() {
-    const { state, els, api, utils } = ctx();
-    const DataAccess = window.KNSN_DATA_ACCESS;
-    const { normalizeRole } = utils;
-    const agents = state.staff.filter((s) => normalizeRole(s.role) === "staff");
-    if (!agents.length) return alert("담당자 계정이 없습니다.");
+  // 통합 렌더
+  mod.refreshAssignmentView = function refreshAssignmentView() {
+    mod.renderAssignmentStatus();
+    mod.renderAssignFilterSummary();
+  };
 
-    const rows = [...els.assignmentTableBody.querySelectorAll(".assignment-select")].map((sel) => ({
-      agentId: sel.dataset.agentId,
-      assignedRegions: [...sel.selectedOptions].map((o) => o.value),
-    }));
+  // C. 자동 물건 배정
+  mod.handleAutoAssign = async function handleAutoAssign() {
+    const { state, els, K, utils } = ctx();
+    const { normalizeRole, getStaffNameById, invalidatePropertyCollections, loadProperties, ensureAuxiliaryPropertiesForAdmin, setAdminLoading } = utils;
+    const DataAccess = window.KNSN_DATA_ACCESS;
+
+    const agents = (state.staff || []).filter((s) => normalizeRole(s.role) === 'staff');
+    if (!agents.length) return alert('담당자 계정을 먼저 등록해 주세요.');
+
+    const filtered = getFilteredUnassignedProperties();
+    if (!filtered.length) return alert('배정할 미배정 물건이 없습니다.');
+
+    if (!confirm(`미배정 ${filtered.length}건을 ${agents.length}명의 담당자에게 자동 배정할까요?`)) return;
+
+    setAdminLoading('autoAssign', true, '물건 자동 배정 중입니다...');
+    if (els.autoAssignStatus) els.autoAssignStatus.textContent = '배정 중...';
 
     try {
-      if (!(DataAccess && typeof DataAccess.saveRegionAssignmentsViaApi === "function")) throw new Error("KNSN_DATA_ACCESS.saveRegionAssignmentsViaApi 를 찾을 수 없습니다.");
-      await DataAccess.saveRegionAssignmentsViaApi(api, rows, { auth: true });
-      await mod.loadStaff();
-      alert("담당자 지역 배정이 저장되었습니다.");
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "배정 저장 실패");
-    }
-  };
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+      if (!sb) throw new Error('Supabase 연동이 필요합니다.');
 
-  mod.buildAutoRegionGrouping = function buildAutoRegionGrouping(properties, agentCount, unitMode) {
-    const { utils } = ctx();
-    const { extractGuDong } = utils;
-    const valid = properties.filter((p) => p.address);
-    const regionsByGu = new Map();
-    for (const p of valid) {
-      const { gu, dong } = extractGuDong(p.address);
-      const rg = p.regionGu || gu;
-      const rd = p.regionDong || dong;
-      if (!rg) continue;
-      if (!regionsByGu.has(rg)) regionsByGu.set(rg, new Set());
-      if (rd) regionsByGu.get(rg).add(rd);
-    }
+      const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
 
-    const guList = [...regionsByGu.keys()].sort((a, b) => a.localeCompare(b, "ko"));
-    const guCount = guList.length;
+      // 담당자별 + 구분별 업무처리율 계산
+      const agentRates = agents.map((a) => {
+        const aid = String(a.id);
+        const rateByBucket = {};
+        BUCKET_KEYS.forEach((k) => {
+          let total = 0, managed = 0;
+          allProps.forEach((p) => {
+            if (String(p.assignedAgentId || p.assigneeId || '').trim() !== aid) return;
+            const bucket = getSourceBucket(utils, p);
+            if ((BUCKET_KEYS.includes(bucket) ? bucket : 'general') !== k) return;
+            total++;
+            if (isManaged(p)) managed++;
+          });
+          rateByBucket[k] = total > 0 ? managed / total : 0.5; // 데이터 없으면 50%
+        });
+        return { agent: a, rateByBucket };
+      });
 
-    let mode = unitMode;
-    if (unitMode === "auto") {
-      mode = agentCount > guCount ? "dong" : "gu";
-    }
+      // 구분별로 미배정 물건 분류
+      const bucketProps = new Map();
+      filtered.forEach((p) => {
+        const bucket = getSourceBucket(utils, p);
+        const key = BUCKET_KEYS.includes(bucket) ? bucket : 'general';
+        if (!bucketProps.has(key)) bucketProps.set(key, []);
+        bucketProps.get(key).push(p);
+      });
 
-    let regionUnits = [];
-    if (mode === "gu") {
-      regionUnits = guList.map((gu) => ({ key: gu, gu, weight: regionsByGu.get(gu)?.size || 1 }));
-    } else {
-      for (const gu of guList) {
-        const dongs = [...(regionsByGu.get(gu) || [])];
-        if (!dongs.length) {
-          regionUnits.push({ key: gu, gu, weight: 1 });
-          continue;
+      // 구분별로 업무처리율에 비례하여 배분
+      const assignments = []; // { propId, agentId, agentName }
+      for (const [bucket, props] of bucketProps.entries()) {
+        // 가중치 계산 (처리율 높을수록 더 많이)
+        const weights = agentRates.map((ar) => {
+          const rate = ar.rateByBucket[bucket] || 0.1;
+          return Math.max(rate, 0.1); // 최소 10%
+        });
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+        // 가중 라운드로빈 배분
+        const agentCounts = weights.map((w) => Math.floor(props.length * w / totalWeight));
+        let remainder = props.length - agentCounts.reduce((a, b) => a + b, 0);
+        // 나머지를 가중치 높은 순으로 배분
+        const sortedIdx = weights.map((w, i) => ({ i, w })).sort((a, b) => b.w - a.w);
+        for (let r = 0; r < remainder; r++) {
+          agentCounts[sortedIdx[r % sortedIdx.length].i]++;
         }
-        dongs.sort((a, b) => a.localeCompare(b, "ko")).forEach((dong) => {
-          regionUnits.push({ key: dong, gu, weight: 1 });
+
+        let idx = 0;
+        agentRates.forEach((ar, ai) => {
+          const cnt = agentCounts[ai];
+          for (let c = 0; c < cnt && idx < props.length; c++, idx++) {
+            const p = props[idx];
+            assignments.push({
+              propId: String(p.id || p.globalId || '').trim(),
+              agentId: String(ar.agent.id),
+              agentName: String(ar.agent.name || ar.agent.email || ''),
+            });
+          }
         });
       }
-    }
 
-    const groups = Array.from({ length: Math.max(1, agentCount) }, (_, i) => ({ idx: i, regions: [], guSet: new Set(), totalWeight: 0 }));
+      // DB 업데이트
+      let okCount = 0, failCount = 0;
+      for (const a of assignments) {
+        if (!a.propId) { failCount++; continue; }
+        try {
+          if (DataAccess && typeof DataAccess.updatePropertyRowResilient === 'function') {
+            await DataAccess.updatePropertyRowResilient(sb, a.propId, { assignee_id: a.agentId, assignee_name: a.agentName });
+          } else {
+            await sb.from('properties').update({ assignee_id: a.agentId, assignee_name: a.agentName }).eq('id', a.propId);
+          }
+          okCount++;
+        } catch (e) {
+          console.warn('assign failed:', a.propId, e.message);
+          failCount++;
+        }
+        if (els.autoAssignStatus) els.autoAssignStatus.textContent = `${okCount + failCount}/${assignments.length} 처리 중...`;
+      }
 
-    if (mode === "gu") {
-      regionUnits = mod.sortGuUnitsByAdjacency(regionUnits);
-    } else {
-      regionUnits.sort((a, b) => {
-        if (a.gu !== b.gu) return a.gu.localeCompare(b.gu, "ko");
-        return a.key.localeCompare(b.key, "ko");
+      // 결과 표시
+      const resultParts = [`배정 완료: ${okCount}건 성공`];
+      if (failCount > 0) resultParts.push(`${failCount}건 실패`);
+
+      // 담당자별 배정 결과 요약
+      const agentSummary = new Map();
+      assignments.forEach((a) => {
+        const name = a.agentName || a.agentId;
+        agentSummary.set(name, (agentSummary.get(name) || 0) + 1);
       });
+      const summaryText = [...agentSummary.entries()].map(([name, cnt]) => `${name}: ${cnt}건`).join(', ');
+      resultParts.push(summaryText);
+
+      if (els.autoAssignResult) {
+        els.autoAssignResult.innerHTML = `<div class="hint-box" style="margin-top:8px;">${resultParts.join(' / ')}</div>`;
+      }
+      if (els.autoAssignStatus) els.autoAssignStatus.textContent = '';
+
+      // 데이터 새로고침
+      invalidatePropertyCollections();
+      await ensureAuxiliaryPropertiesForAdmin({ forceRefresh: true });
+      await loadProperties({ refreshSummary: true });
+      mod.refreshAssignmentView();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || '자동 배정 실패');
+      if (els.autoAssignStatus) els.autoAssignStatus.textContent = '';
+    } finally {
+      setAdminLoading('autoAssign', false);
     }
-
-    for (const unit of regionUnits) {
-      const target = groups.slice().sort((g1, g2) => {
-        if (g1.totalWeight !== g2.totalWeight) return g1.totalWeight - g2.totalWeight;
-        const p1 = g1.guSet.has(unit.gu) ? -1 : 0;
-        const p2 = g2.guSet.has(unit.gu) ? -1 : 0;
-        if (p1 !== p2) return p1 - p2;
-        return g1.idx - g2.idx;
-      })[0];
-
-      target.regions.push(unit.key);
-      target.totalWeight += unit.weight || 1;
-      if (unit.gu) target.guSet.add(unit.gu);
-    }
-
-    return {
-      unit: mode,
-      unitLabel: mode === "gu" ? "구 단위" : "동 단위",
-      totalRegions: regionUnits.length,
-      groups: groups.map((g) => ({ regions: g.regions.sort((a, b) => a.localeCompare(b, "ko")), totalWeight: g.totalWeight })),
-    };
-  };
-
-  mod.sortGuUnitsByAdjacency = function sortGuUnitsByAdjacency(units) {
-    const left = units.slice();
-    if (!left.length) return left;
-
-    const result = [];
-    left.sort((a, b) => (b.weight || 1) - (a.weight || 1));
-    result.push(left.shift());
-
-    while (left.length) {
-      const last = result[result.length - 1];
-      const adj = GU_ADJ[last.gu] || [];
-      let idx = left.findIndex((u) => adj.includes(u.gu));
-      if (idx < 0) idx = 0;
-      result.push(left.splice(idx, 1)[0]);
-    }
-
-    return result;
   };
 
   AdminModules.staffRegions = mod;

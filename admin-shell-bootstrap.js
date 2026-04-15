@@ -6,7 +6,7 @@
     properties: '전체 현황',
     csv: '물건 등록',
     staff: '등록 관리',
-    regions: '담당 지역 설정',
+    regions: '물건배정',
     geocoding: '지오 코딩',
     workmgmt: '업무 관리',
     buildings: '건축물대장 API → DB 저장',

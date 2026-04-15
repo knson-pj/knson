@@ -472,14 +472,18 @@
       staffTableBody: $("#staffTable tbody"),
       staffEmpty: $("#staffEmpty"),
 
-      // regions
-      agentCountInput: $("#agentCountInput"),
-      regionUnitMode: $("#regionUnitMode"),
-      btnSuggestGrouping: $("#btnSuggestGrouping"),
-      btnSaveAssignments: $("#btnSaveAssignments"),
-      groupSuggestBox: $("#groupSuggestBox"),
-      assignmentTableBody: $("#assignmentTable tbody"),
-      assignmentEmpty: $("#assignmentEmpty"),
+      // property assignment (물건배정)
+      assignStatusBody: $("#assignStatusBody"),
+      assignStatusEmpty: $("#assignStatusEmpty"),
+      assignSourceFilter: $("#assignSourceFilter"),
+      assignAreaFilter: $("#assignAreaFilter"),
+      assignPriceFilter: $("#assignPriceFilter"),
+      assignKeyword: $("#assignKeyword"),
+      assignFilterTotal: $("#assignFilterTotal"),
+      assignFilterSummary: $("#assignFilterSummary"),
+      btnAutoAssign: $("#btnAutoAssign"),
+      autoAssignStatus: $("#autoAssignStatus"),
+      autoAssignResult: $("#autoAssignResult"),
 
       // property edit modal
       propertyEditModalAdmin: $("#propertyEditModalAdmin"),
@@ -717,7 +721,7 @@ function bindEvents() {
             loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
           }
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
-          if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { renderAssignmentTable(); }).catch((e)=>handleAsyncError(e,"지역 데이터 로드 실패"));
+          if (key === "regions") ensureAuxiliaryPropertiesForAdmin().then(() => { refreshAssignmentView(); }).catch((e)=>handleAsyncError(e,"물건배정 데이터 로드 실패"));
           if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
           if (key === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
           if (key === "buildings") { var bldMod = window.KNSN_ADMIN_MODULES?.buildingsTab; if (bldMod && typeof bldMod.init === "function") bldMod.init(); }
@@ -803,14 +807,14 @@ function bindEvents() {
       resetStaffForm();
     });
 
-    if (els.btnSuggestGrouping) els.btnSuggestGrouping.addEventListener("click", () => {
+    if (els.btnAutoAssign) els.btnAutoAssign.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return;
-      handleSuggestGrouping();
+      handleAutoAssign().catch((e)=>handleAsyncError(e,"자동 배정 실패"));
     });
-    if (els.btnSaveAssignments) els.btnSaveAssignments.addEventListener("click", () => {
-      if (state.session?.user?.role !== "admin") return;
-      handleSaveAssignments();
-    });
+    if (els.assignSourceFilter) els.assignSourceFilter.addEventListener("change", () => refreshAssignmentView());
+    if (els.assignAreaFilter) els.assignAreaFilter.addEventListener("change", () => refreshAssignmentView());
+    if (els.assignPriceFilter) els.assignPriceFilter.addEventListener("change", () => refreshAssignmentView());
+    if (els.assignKeyword) els.assignKeyword.addEventListener("input", debounce(() => refreshAssignmentView(), 200));
 
     // property edit modal
     if (els.propertyEditModalAdmin) {
@@ -1729,7 +1733,7 @@ function bindEvents() {
   function renderAll() {
     renderPropertiesTable();
     renderStaffTable();
-    renderAssignmentTable();
+    refreshAssignmentView();
     renderSummary();
   }
 
@@ -2676,11 +2680,18 @@ function bindEvents() {
     return callAdminModule("staffRegions", "renderStaffTable", args);
   }
   function renderAssignmentTable(...args) {
-    return callAdminModule("staffRegions", "renderAssignmentTable", args);
+    return callAdminModule("staffRegions", "renderAssignmentStatus", args);
   }
 
   // ---------------------------
-  // CSV Import (Properties)
+  // Property Assignment (물건배정)
+  // ---------------------------
+  function refreshAssignmentView(...args) {
+    return callAdminModule("staffRegions", "refreshAssignmentView", args);
+  }
+  async function handleAutoAssign(...args) {
+    return callAdminModule("staffRegions", "handleAutoAssign", args);
+  }
   // ---------------------------
   async function handleCsvUpload(...args) {
     return callAdminModule("csvTab", "handleCsvUpload", args);
@@ -2698,36 +2709,6 @@ function bindEvents() {
     return callAdminModule("csvTab", "upsertPropertiesResilient", args);
   }
 
-  // ---------------------------
-  // Region Assignments  // ---------------------------
-  // Region Assignments
-
-  // ---------------------------
-  function getRegionOptionsFromProperties(...args) {
-    return callAdminModule("staffRegions", "getRegionOptionsFromProperties", args);
-  }
-  async function handleSuggestGrouping(...args) {
-    return callAdminModule("staffRegions", "handleSuggestGrouping", args);
-  }
-  function renderGroupSuggestion(...args) {
-    return callAdminModule("staffRegions", "renderGroupSuggestion", args);
-  }
-  async function handleSaveAssignments(...args) {
-    return callAdminModule("staffRegions", "handleSaveAssignments", args);
-  }
-
-  /**
-   * 자동 그룹핑 휴리스틱 (초기 버전)
-   * - 주소 기반으로 구/동 추출된 값을 사용
-   * - auto 모드에서 X > 구개수 이면 동 단위로 전환
-   * - 같은 구 우선 배치 + (가능하면) 인접 구 함께 배치
-   */
-  function buildAutoRegionGrouping(...args) {
-    return callAdminModule("staffRegions", "buildAutoRegionGrouping", args);
-  }
-function sortGuUnitsByAdjacency(...args) {
-    return callAdminModule("staffRegions", "sortGuUnitsByAdjacency", args);
-  }
   function readCsvFileText(...args) {
     return callAdminModule("csvTab", "readCsvFileText", args);
   }
