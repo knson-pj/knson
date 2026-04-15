@@ -347,7 +347,7 @@
       regions: els.tabRegions,
       geocoding: els.tabGeocoding,
       workmgmt: els.tabWorkmgmt,
-      valuation: els.tabValuation,
+      buildings: els.tabBuildings,
     };
     const active = panelMap[next] ? next : 'home';
     state.activeTab = active;
@@ -365,11 +365,6 @@
 
     if (active === 'properties') {
       syncPropertySourceFilterUi();
-    }
-
-    // 가격평가 탭 초기화
-    if (active === 'valuation' && window.KNSN_VALUATION_ADMIN) {
-      window.KNSN_VALUATION_ADMIN.initValuationTab(els.tabValuation);
     }
 
     try {
@@ -517,8 +512,8 @@
       geocodeListBody: $("#geocodeListBody"),
       geocodeListEmpty: $("#geocodeListEmpty"),
 
-      // valuation tab
-      tabValuation: $("#tab-valuation"),
+      // buildings tab
+      tabBuildings: $("#tab-buildings"),
 
       // new property modal
       btnNewProperty: $("#btnNewProperty"),
@@ -643,6 +638,15 @@
     if (els.adminLoadingLabel) els.adminLoadingLabel.textContent = currentText;
     els.adminLoadingOverlay.classList.toggle("hidden", !visible);
     els.adminLoadingOverlay.setAttribute("aria-busy", visible ? "true" : "false");
+  }
+
+  function setPropertyFiltersLoading(loading) {
+    const filterEls = [els.propSourceFilter, els.propAssigneeFilter, els.propAreaFilter, els.propPriceFilter, els.propRatioFilter];
+    filterEls.forEach((el) => {
+      if (!el) return;
+      el.style.opacity = loading ? '0.5' : '';
+      el.style.pointerEvents = loading ? 'none' : '';
+    });
   }
 
   function handleAsyncError(err, fallbackMsg = "요청 처리 중 오류가 발생했습니다.") {
@@ -1467,6 +1471,7 @@ function bindEvents() {
       : "물건 리스트를 불러오는 중입니다.";
 
     if (!silent) setAdminLoading("properties", true, loadingText);
+    if (!silent) setPropertyFiltersLoading(true);
     try {
       // Supabase가 설정되어 있으면 Supabase DB를 우선 사용합니다.
       const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
@@ -1562,6 +1567,7 @@ function bindEvents() {
     if (state.activeTab === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
     } finally {
       if (!silent) setAdminLoading("properties", false);
+      if (!silent) setPropertyFiltersLoading(false);
     }
   }
 

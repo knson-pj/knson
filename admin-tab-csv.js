@@ -226,10 +226,12 @@
       loadProperties,
       setGlobalMsg,
       goLoginPage,
+      setAdminLoading,
     } = utils;
     try {
       const file = els.csvFileInput.files?.[0];
       if (!file) return alert("CSV 파일을 선택해 주세요.");
+      setAdminLoading("csvUpload", true, "CSV 업로드 중입니다...");
 
       const sourceType = String(els.csvImportSource.value || "auction");
       const csvText = await mod.readCsvFileText(file, sourceType);
@@ -355,6 +357,8 @@
         goLoginPage(true);
       }
       showResultBox(els.csvResultBox, `업로드 실패: ${err.message}`, true);
+    } finally {
+      setAdminLoading("csvUpload", false);
     }
   };
 

@@ -103,6 +103,7 @@
     };
 
     touch('', '담당자별 선택 필터', list.length, -1);
+    touch('__unassigned__', '미배정', 0, -0.8);
 
     (Array.isArray(state?.staff) ? state.staff : []).forEach((staff, index) => {
       const id = String(staff?.id || '').trim();
@@ -128,7 +129,7 @@
     }
 
     const options = [...optionMap.values()]
-      .filter((item) => item.value === '' || item.value === '__assigned__' || item.count > 0 || item.value === current)
+      .filter((item) => item.value === '' || item.value === '__assigned__' || item.value === '__unassigned__' || item.count > 0 || item.value === current)
       .sort((a, b) => {
         if (a.value === '') return -1;
         if (b.value === '') return 1;
@@ -964,7 +965,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     ? Math.max(1, Math.ceil(Number(state.propertyTotalCount || 0) / state.propertyPageSize))
     : Math.max(1, Math.ceil(rows.length / state.propertyPageSize));
   const displayRows = pageMode ? rows : mod.getPagedProperties(rows).rows;
-  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.sourceType);
+  const usePlainLayout = isPlainSourceFilterSelected(state?.propertyFilters?.activeCard);
 
   renderPropertiesTableHeader(usePlainLayout);
   if (!els.propertiesTableBody) return;

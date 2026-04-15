@@ -9,6 +9,7 @@
     regions: '담당 지역 설정',
     geocoding: '지오 코딩',
     workmgmt: '업무 관리',
+    buildings: '건축물 DB',
   };
 
   function runtime() {
