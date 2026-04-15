@@ -57,25 +57,22 @@
     return document.querySelector('meta[name="vworld-proxy-url"]')?.getAttribute("content")?.replace("vworld-proxy", "building-collector") || "";
   }
 
-  function getAuthHeaders() {
+  async function getAuthHeaders() {
     var K = window.KNSN || {};
-    // Supabase Edge Function은 apikey(anon key) + Authorization(access token) 모두 필요
+    // anon key: localStorage 우선, meta 태그 fallback
     var anonKey = "";
-    try {
-      anonKey = String(localStorage.getItem("knson_supabase_key") || "").trim();
-    } catch (e) {}
+    try { anonKey = String(localStorage.getItem("knson_supabase_key") || "").trim(); } catch (e) {}
     if (!anonKey) {
       anonKey = document.querySelector('meta[name="supabase-anon-key"]')?.getAttribute("content") || "";
     }
-    var session = null;
-    try {
-      var raw = sessionStorage.getItem("knson_bms_session_v1");
-      if (raw) session = JSON.parse(raw);
-    } catch (e) {}
-    var token = String(session?.token || "").trim();
+    // Supabase 클라이언트에서 실시간 access_token 취득
+    var accessToken = "";
+    if (K && typeof K.sbGetAccessToken === "function") {
+      try { accessToken = await K.sbGetAccessToken(); } catch (e) {}
+    }
     var headers = {};
     if (anonKey) headers["apikey"] = anonKey;
-    if (token) headers["Authorization"] = "Bearer " + token;
+    if (accessToken) headers["Authorization"] = "Bearer " + accessToken;
     else if (anonKey) headers["Authorization"] = "Bearer " + anonKey;
     return headers;
   }
@@ -140,7 +137,7 @@
     $("bldLog").innerHTML = "";
 
     var baseUrl = getProxyUrl();
-    var headers = getAuthHeaders();
+    var headers = await getAuthHeaders();
     var total = dongs.length;
 
     for (var i = 0; i < total; i++) {
@@ -215,7 +212,7 @@
     $("bldLog").innerHTML = "";
 
     var baseUrl = getProxyUrl();
-    var headers = getAuthHeaders();
+    var headers = await getAuthHeaders();
 
     for (var j = 0; j < dongs.length; j++) {
       if (shouldStop) break;
@@ -251,7 +248,7 @@
   // ── 상태 테이블 ──
   async function loadStatus() {
     var baseUrl = getProxyUrl();
-    var headers = getAuthHeaders();
+    var headers = await getAuthHeaders();
     try {
       var res = await fetch(baseUrl + "?mode=status", { headers: headers });
       var data = await res.json();
