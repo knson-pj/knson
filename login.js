@@ -123,6 +123,18 @@
 
       const platformRole = normalizeRole(session?.user?.role);
       if (platformRole === "staff" || platformRole === "agent") {
+        // 담당자는 플랫폼 접근 금지 — Supabase 세션을 즉시 정리해서 F5 우회 차단
+        try {
+          if (sbEnabled && K && typeof K.sbHardSignOut === "function") await K.sbHardSignOut();
+          else if (sbEnabled && K && typeof K.sbSignOut === "function") await K.sbSignOut();
+        } catch {}
+        try {
+          if (Shared && typeof Shared.clearSession === "function") Shared.clearSession();
+          else {
+            sessionStorage.removeItem(SESSION_KEY);
+            try { localStorage.removeItem(SESSION_KEY); } catch {}
+          }
+        } catch {}
         throw new Error("담당자는 <strong>임직원 시스템 로그인</strong>을 이용해주세요.");
       }
 

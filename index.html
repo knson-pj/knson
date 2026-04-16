@@ -32,6 +32,12 @@
           location.replace('./login.html?next=' + encodeURIComponent('./index.html'));
           return;
         }
+        // 담당자/staff 계정은 플랫폼(index.html) 접근 불가 — 임직원 시스템으로 강제 이동
+        var role = String(s.user.role || '').trim().toLowerCase();
+        if (role === 'staff' || role === 'agent') {
+          location.replace('./agent-index.html');
+          return;
+        }
       } catch(e) {
         location.replace('./login.html?next=' + encodeURIComponent('./index.html'));
         return;
