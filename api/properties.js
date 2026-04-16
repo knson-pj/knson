@@ -493,6 +493,7 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
     item_no: input.item_no ?? input.itemNo,
     source_type: normalizedSourceType,
     assignee_id: input.assignee_id ?? input.assigneeId,
+    assignee_name: input.assignee_name ?? input.assigneeName,
     submitter_type: normalizedSubmitterType,
     address: input.address != null ? String(input.address || '').trim() : undefined,
     asset_type: input.asset_type ?? input.assetType,
@@ -533,6 +534,7 @@ function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName
 
   if (role === 'staff') {
     if (!isPatch || row.assignee_id === undefined) row.assignee_id = userId || row.assignee_id || null;
+    if (!isPatch || row.assignee_name === undefined) row.assignee_name = userName || row.assignee_name || '';
     if (row.raw && typeof row.raw === 'object') {
       row.raw.assigneeId = userId || row.raw.assigneeId || '';
       row.raw.assignedAgentId = userId || row.raw.assignedAgentId || '';
@@ -639,7 +641,17 @@ async function handleSupabaseWrite(req, res) {
       if (patch.raw.submitter_type === undefined) patch.raw.submitter_type = currentSubmitterType;
       if (patch.raw.submitterType === undefined) patch.raw.submitterType = currentSubmitterType;
     }
-    if (ctx.role === 'staff') delete patch.assignee_id;
+    if (patch.assignee_id !== undefined) {
+      const aid = patch.assignee_id;
+      const aname = patch.assignee_name || '';
+      patch.raw.assigneeId = aid || '';
+      patch.raw.assignee_id = aid || '';
+      patch.raw.assignedAgentId = aid || '';
+      patch.raw.assigneeName = aname;
+      patch.raw.assignee_name = aname;
+      patch.raw.assignedAgentName = aname;
+    }
+    if (ctx.role === 'staff') { delete patch.assignee_id; delete patch.assignee_name; }
 
     const col = targetId.includes(':') ? 'global_id' : 'id';
     const rows = await supabasePropertyWriteWithRetry(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
