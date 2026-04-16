@@ -1016,6 +1016,7 @@
         ? item.assignedRegions
         : (Array.isArray(item?.assigned_regions) ? item.assigned_regions : []),
       createdAt: item?.createdAt || item?.created_at || "",
+      lastSignInAt: item?.lastSignInAt || item?.last_sign_in_at || "",
     };
   }
 

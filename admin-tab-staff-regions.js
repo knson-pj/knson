@@ -244,12 +244,26 @@
       if (aid) propCountMap.set(aid, (propCountMap.get(aid) || 0) + 1);
     });
 
+    // 로그인 중 판정: last_sign_in_at이 현재 기준 1시간 이내 (Supabase 기본 JWT 만료)
+    const LOGIN_WINDOW_MS = 60 * 60 * 1000;
+    const nowTs = Date.now();
+    const isStaffLoggedIn = (staff) => {
+      const ts = Date.parse(staff?.lastSignInAt || '');
+      if (!Number.isFinite(ts)) return false;
+      return (nowTs - ts) <= LOGIN_WINDOW_MS;
+    };
+
     const frag = document.createDocumentFragment();
     rows.forEach((staff) => {
       const tr = document.createElement("tr");
       const assignedCount = propCountMap.get(String(staff.id)) || 0;
+      const loggedIn = isStaffLoggedIn(staff);
+      const chipClass = loggedIn ? 'staff-login-chip is-online' : 'staff-login-chip is-offline';
+      const chipHtml = `<span class="${chipClass}" title="${loggedIn ? '로그인 중' : '로그아웃 상태'}">Log-in</span>`;
+      const nameCell = `<span class="staff-name-wrap">${escapeHtml(staff.name || staff.email || "-")} ${chipHtml}</span>`;
       tr.innerHTML = `
-        <td>${escapeHtml(staff.name || staff.email || "-")}</td>
+        <td>${nameCell}</td>
+        <td class="staff-email-cell">${escapeHtml(staff.email || "-")}</td>
         <td class="staff-position-cell">${escapeHtml(staff.position || "-")}</td>
         <td class="staff-phone-cell">${escapeHtml(staff.phone || "-")}</td>
         <td class="staff-role-cell">${escapeHtml(roleLabelOf(staff.role))}</td>
