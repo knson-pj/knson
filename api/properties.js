@@ -654,45 +654,12 @@ async function handleSupabaseWrite(req, res) {
     if (ctx.role === 'staff') { delete patch.assignee_id; delete patch.assignee_name; }
 
     const col = targetId.includes(':') ? 'global_id' : 'id';
-    console.log('[KNSN-API-PATCH] request', JSON.stringify({
-      targetId,
-      col,
-      role: ctx.role,
-      userId: ctx.userId,
-      patchKeys: Object.keys(patch || {}),
-      patchPreview: {
-        item_no: patch.item_no,
-        address: patch.address,
-        asset_type: patch.asset_type,
-        exclusive_area: patch.exclusive_area,
-        common_area: patch.common_area,
-        site_area: patch.site_area,
-        use_approval: patch.use_approval,
-        status: patch.status,
-        date_main: patch.date_main,
-        assignee_id: patch.assignee_id,
-        source_type: patch.source_type,
-      },
-      rawKeys: patch.raw ? Object.keys(patch.raw) : null,
-    }));
     const rows = await supabasePropertyWriteWithRetry(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
       json: patch,
     });
     const item = Array.isArray(rows) ? (rows[0] || null) : rows;
-    console.log('[KNSN-API-PATCH] response', JSON.stringify({
-      rowCount: Array.isArray(rows) ? rows.length : (rows ? 1 : 0),
-      itemPreview: item ? {
-        id: item.id,
-        item_no: item.item_no,
-        address: item.address,
-        asset_type: item.asset_type,
-        exclusive_area: item.exclusive_area,
-        common_area: item.common_area,
-        status: item.status,
-      } : null,
-    }));
 
     let activityLogError = '';
     let activityLoggedCount = 0;
