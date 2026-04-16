@@ -1754,6 +1754,7 @@ function renderRow(p) {
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
   const addressText = truncateAddressText(listView?.address || p.address || '-', 30) || '-';
+  const fullAddress = String(listView?.address || p.address || '').trim();
   const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
   const floorText = truncateDisplayText(listView?.floorText || getFloorDisplayValue(p) || "-", 7) || "-";
   const scheduleHtml = !usePlainLayout
@@ -1793,7 +1794,7 @@ function renderRow(p) {
     usePlainLayout
       ? "<td>" + _itemNoHtml + "</td>" +
         '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
-        '<td class="text-cell">' + esc(addressText) + "</td>" +
+        '<td class="text-cell" title="' + escAttr(fullAddress) + '">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
         "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +
@@ -1807,7 +1808,7 @@ function renderRow(p) {
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + _itemNoHtml + "</td>" +
         '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
-        '<td class="text-cell">' + esc(addressText) + "</td>" +
+        '<td class="text-cell" title="' + escAttr(fullAddress) + '">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
         "<td>" + (p.exclusivearea != null ? fmtArea(p.exclusivearea) : "-") + "</td>" +

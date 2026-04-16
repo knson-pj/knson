@@ -719,7 +719,13 @@ function bindEvents() {
           if (key === "properties" && (prevTab !== "properties" || !Array.isArray(state.properties) || !state.properties.length || state.propertyMode !== "page")) {
             loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
           }
-          if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
+          if (key === "staff") {
+            loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
+            // 배정 물건수 카운팅을 위해 전체 물건 스냅샷도 확보
+            ensureAuxiliaryPropertiesForAdmin()
+              .then(() => { renderStaffTable(); })
+              .catch((e) => handleAsyncError(e, "물건 스냅샷 로드 실패"));
+          }
           if (key === "regions") { loadStaff().catch(()=>{}); ensureAuxiliaryPropertiesForAdmin().then(() => { refreshAssignmentView(); }).catch((e)=>handleAsyncError(e,"물건 배정 데이터 로드 실패")); }
           if (key === "geocoding") {
             // 탭 진입 시 카운팅(대기/완료/실패) 로드 동안 로딩 오버레이 표시

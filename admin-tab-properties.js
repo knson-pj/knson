@@ -295,6 +295,16 @@
     _propMultiState[filterKey] = new Set();
     _propMultiCheckboxes[filterKey] = [];
     const selected = _propMultiState[filterKey];
+    let _autoCloseTimer = null;
+
+    // 사용자가 체크를 멈춘 뒤 잠시 후 패널을 자동으로 닫음 (연속 체크는 유지)
+    function scheduleAutoClose() {
+      if (_autoCloseTimer) { clearTimeout(_autoCloseTimer); _autoCloseTimer = null; }
+      _autoCloseTimer = setTimeout(function() {
+        _autoCloseTimer = null;
+        if (ref && ref.isOpen) { panel.style.display = 'none'; ref.isOpen = false; }
+      }, 450);
+    }
 
     container.innerHTML = '';
     container.style.cssText = 'position:relative;display:inline-block;min-width:130px;';
@@ -336,6 +346,7 @@
       });
       syncBtnText();
       if (typeof onChange === 'function') onChange();
+      scheduleAutoClose();
     });
     allRow.appendChild(allCb);
     allRow.appendChild(allLabelSpan);
@@ -363,6 +374,7 @@
         allCb.indeterminate = checkedCount > 0 && checkedCount < list.length;
         syncBtnText();
         if (typeof onChange === 'function') onChange();
+        scheduleAutoClose();
       });
       row.appendChild(cb);
       row.appendChild(labelSpan);
@@ -387,6 +399,7 @@
 
     btn.addEventListener('click', function(e) {
       e.stopPropagation();
+      if (_autoCloseTimer) { clearTimeout(_autoCloseTimer); _autoCloseTimer = null; }
       const wasOpen = ref.isOpen;
       closePropPanels();
       if (!wasOpen) { positionPanel(); panel.style.display = 'block'; ref.isOpen = true; }
@@ -1241,12 +1254,13 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     const opinionHtml = renderDetailIndicator('opinion', p.opinion, utils);
     const inspectionHtml = renderDetailIndicator('inspection', p.siteInspection, utils);
     const assigneeText = utils.escapeHtml((p.assignedAgentName || getStaffNameByIdLocal(state, p.assignedAgentId)) || '미배정');
+    const fullAddress = String(listView?.address || p.address || '').trim();
     tr.innerHTML = usePlainLayout
       ? `
       <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
       <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
       <td>${(p.sourceUrl || p.source_url) ? '<a href="' + utils.escapeAttr(p.sourceUrl || p.source_url) + '" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">' + utils.escapeHtml(listView?.itemNo || p.itemNo || '-') + '</a>' : utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
-      <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
+      <td class="text-cell"><button type="button" class="address-trigger" title="${utils.escapeAttr(fullAddress)}">${utils.escapeHtml(addressText)}</button></td>
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
       <td>${exclusiveText}</td>
@@ -1263,7 +1277,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
       <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
       <td>${(p.sourceUrl || p.source_url) ? '<a href="' + utils.escapeAttr(p.sourceUrl || p.source_url) + '" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">' + utils.escapeHtml(listView?.itemNo || p.itemNo || '-') + '</a>' : utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
-      <td class="text-cell"><button type="button" class="address-trigger">${utils.escapeHtml(addressText)}</button></td>
+      <td class="text-cell"><button type="button" class="address-trigger" title="${utils.escapeAttr(fullAddress)}">${utils.escapeHtml(addressText)}</button></td>
       <td>${utils.escapeHtml(assetTypeText)}</td>
       <td>${utils.escapeHtml(String(floorText))}</td>
       <td>${exclusiveText}</td>
