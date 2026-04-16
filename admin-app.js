@@ -752,6 +752,7 @@ function bindEvents() {
         if (Array.isArray(checks)) {
           checks.forEach(function(item) { item.cb.checked = next.includes(item.value); });
         }
+        window.KNSN_ADMIN_MODULES?.propertiesTab?._syncPropMultiAllCheckbox?.('propSourceFilter');
         syncPropertySourceFilterUi();
         state.propertyPage = 1;
         loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));

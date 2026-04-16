@@ -283,6 +283,7 @@
   const _propMultiState = {};
   const _propMultiPanels = [];
   const _propMultiCheckboxes = {};
+  const _propMultiAllCheckboxes = {};
 
   function closePropPanels() {
     _propMultiPanels.forEach(function(ref) { ref.panel.style.display = 'none'; ref.isOpen = false; });
@@ -316,6 +317,31 @@
     const ref = { panel: panel, isOpen: false };
     _propMultiPanels.push(ref);
 
+    // "전체 선택" 행
+    const allRow = document.createElement('label');
+    allRow.style.cssText = 'display:flex;align-items:center;gap:7px;padding:6px 14px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;user-select:none;border-bottom:1px solid var(--line,#e5e5e5);margin-bottom:2px;';
+    allRow.addEventListener('mouseenter', function() { allRow.style.background = 'var(--hover-bg,#f5f5f5)'; });
+    allRow.addEventListener('mouseleave', function() { allRow.style.background = ''; });
+    const allCb = document.createElement('input');
+    allCb.type = 'checkbox';
+    allCb.style.cssText = 'margin:0;flex-shrink:0;';
+    const allLabelSpan = document.createElement('span');
+    allLabelSpan.textContent = '전체 선택';
+    allCb.addEventListener('change', function(e) {
+      e.stopPropagation();
+      const checkAll = !!allCb.checked;
+      (_propMultiCheckboxes[filterKey] || []).forEach(function(item) {
+        item.cb.checked = checkAll;
+        if (checkAll) selected.add(item.value); else selected.delete(item.value);
+      });
+      syncBtnText();
+      if (typeof onChange === 'function') onChange();
+    });
+    allRow.appendChild(allCb);
+    allRow.appendChild(allLabelSpan);
+    panel.appendChild(allRow);
+    _propMultiAllCheckboxes[filterKey] = allCb;
+
     def.options.forEach(function(opt) {
       const row = document.createElement('label');
       row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:6px 14px;cursor:pointer;font-size:13px;white-space:nowrap;user-select:none;';
@@ -330,6 +356,11 @@
       cb.addEventListener('change', function(e) {
         e.stopPropagation();
         if (cb.checked) selected.add(opt.value); else selected.delete(opt.value);
+        // 전체 선택 체크박스 상태 동기화
+        const list = _propMultiCheckboxes[filterKey] || [];
+        const checkedCount = list.filter(function(x) { return x.cb.checked; }).length;
+        allCb.checked = list.length > 0 && checkedCount === list.length;
+        allCb.indeterminate = checkedCount > 0 && checkedCount < list.length;
         syncBtnText();
         if (typeof onChange === 'function') onChange();
       });
@@ -1069,7 +1100,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
   }
 
   mod.deleteSelectedProperties = async function deleteSelectedProperties() {
-    const { state, K, api, utils } = ctx();
+    const { state, els, K, api, utils } = ctx();
     const ids = [...state.selectedPropertyIds].filter(Boolean);
     if (!ids.length) {
       alert('삭제할 물건을 먼저 선택해 주세요.');
@@ -1077,16 +1108,36 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     }
     if (!window.confirm(`선택한 ${ids.length}건의 물건을 삭제할까요?`)) return;
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    if (sb) {
-      await deletePropertiesWithSupabase(sb, ids);
-    } else if (DataAccess && typeof DataAccess.deletePropertiesViaAdminApi === 'function') {
-      await DataAccess.deletePropertiesViaAdminApi(api, ids, { auth: true });
-    } else {
-      await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
+    let deleteError = null;
+    try {
+      if (sb) {
+        await deletePropertiesWithSupabase(sb, ids);
+      } else if (DataAccess && typeof DataAccess.deletePropertiesViaAdminApi === 'function') {
+        await DataAccess.deletePropertiesViaAdminApi(api, ids, { auth: true });
+      } else {
+        await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
+      }
+    } catch (err) {
+      deleteError = err;
+      console.error('deleteSelectedProperties failed', err);
     }
+    // 성공/실패 무관하게 UI 상태는 항상 초기화 (선택 해제 + 캐시 무효화 + 재조회)
     state.selectedPropertyIds.clear();
+    try {
+      document.querySelectorAll('.prop-row-check:checked').forEach((cb) => { cb.checked = false; });
+      document.querySelectorAll('tr.row-selected').forEach((tr) => tr.classList.remove('row-selected'));
+      if (els && els.propSelectAll) { els.propSelectAll.checked = false; els.propSelectAll.indeterminate = false; }
+    } catch {}
     utils.invalidatePropertyCollections();
-    await utils.loadProperties();
+    try {
+      await utils.loadProperties({ refreshSummary: true, forceRefreshFull: true });
+    } catch (err) {
+      console.error('loadProperties after delete failed', err);
+    }
+    mod.updatePropertySelectionControls();
+    if (deleteError) {
+      alert('일부 항목 삭제에 실패했습니다: ' + (deleteError.message || '알 수 없는 오류'));
+    }
   };
 
   mod.deleteAllProperties = async function deleteAllProperties() {
@@ -1688,6 +1739,14 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   };
 
   mod._getPropMultiCheckboxes = function(filterKey) { return _propMultiCheckboxes[filterKey] || []; };
+  mod._syncPropMultiAllCheckbox = function(filterKey) {
+    const list = _propMultiCheckboxes[filterKey] || [];
+    const all = _propMultiAllCheckboxes[filterKey];
+    if (!all) return;
+    const checkedCount = list.filter(function(x) { return x.cb.checked; }).length;
+    all.checked = list.length > 0 && checkedCount === list.length;
+    all.indeterminate = checkedCount > 0 && checkedCount < list.length;
+  };
 
   AdminModules.propertiesTab = mod;
 })();
