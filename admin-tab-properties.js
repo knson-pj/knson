@@ -1630,9 +1630,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     try {
       if (els.aemSave) els.aemSave.disabled = true;
       setAemMsg(els, '');
-      console.log('[KNSN-SAVE] start', { targetId, isAdmin, patch: JSON.parse(JSON.stringify(patch)) });
       const saveResponse = await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
-      console.log('[KNSN-SAVE] response', saveResponse);
 
       // ── 1차: 서버 응답의 최신 row로 state.properties 즉시 갱신 ──
       // 서버 → DB 반영은 즉시지만, 클라이언트의 후속 SELECT(Supabase)는 replica 지연으로
@@ -1681,7 +1679,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { state, K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-    console.log('[KNSN-UPDATE] entry', { targetId, isAdmin, hasSupabase: !!sb, role: state.session?.user?.role });
     const currentRawForLog = utils.mergePropertyRaw(item, patch);
     const regContext = utils.buildRegisterLogContext(isAdmin ? '관리자 수정' : '담당자 수정', { user: state.session?.user });
     const mergedLogRow = typeof utils.buildRegistrationDbRowForExisting === 'function'
@@ -1719,7 +1716,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
     // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.
     if (!isAdmin && sb) {
-      console.log('[KNSN-UPDATE] branch: staff-supabase-direct');
       const dbPatch = {
         item_no: patch.itemNo,
         source_type: patch.sourceType,
@@ -1754,15 +1750,10 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     }
 
     // 실제 서버 구현은 /api/properties 한 곳에서 PATCH { targetId, patch }를 받는다.
-    console.log('[KNSN-UPDATE] branch: admin-server-api', { payload: JSON.parse(JSON.stringify(payload)) });
     if (DataAccess && typeof DataAccess.updatePropertyViaApi === 'function') {
-      const apiResp = await DataAccess.updatePropertyViaApi(api, targetId, payload, { auth: true });
-      console.log('[KNSN-UPDATE] api response', apiResp);
-      return apiResp;
+      return await DataAccess.updatePropertyViaApi(api, targetId, payload, { auth: true });
     } else {
-      const apiResp = await api('/properties', { method: 'PATCH', auth: true, body: { targetId, patch: payload } });
-      console.log('[KNSN-UPDATE] api response (fallback)', apiResp);
-      return apiResp;
+      return await api('/properties', { method: 'PATCH', auth: true, body: { targetId, patch: payload } });
     }
   };
 

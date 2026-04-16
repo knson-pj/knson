@@ -257,12 +257,27 @@
     const g = (window.supabase && typeof window.supabase.createClient === "function") ? window.supabase : null;
     if (!g) return null;
 
+    // PostgREST/Supabase 응답이 브라우저 HTTP 캐시(ETag/304)로 stale data 를 반환하는 현상을 막는다.
+    // PATCH 직후 SELECT 에서 이전 값이 오는 문제의 근본 원인.
+    const noCacheFetch = (input, init = {}) => {
+      const next = { ...init };
+      next.cache = 'no-store';
+      const headers = new Headers(init.headers || {});
+      if (!headers.has('cache-control')) headers.set('cache-control', 'no-cache');
+      if (!headers.has('pragma')) headers.set('pragma', 'no-cache');
+      next.headers = headers;
+      return window.fetch(input, next);
+    };
+
     _sb = g.createClient(cfg.url, cfg.anonKey, {
       auth: {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
         storage: SESSION_STORE || undefined,
+      },
+      global: {
+        fetch: noCacheFetch,
       },
     });
 
