@@ -662,6 +662,7 @@ function buildSupabasePropertyPatch(body = {}) {
     item_no: body.item_no ?? body.itemNo,
     source_type: body.source_type ?? body.sourceType,
     assignee_id: body.assignee_id ?? body.assigneeId,
+    assignee_name: body.assignee_name ?? body.assigneeName,
     submitter_type: body.submitter_type ?? body.submitterType,
     address: body.address,
     asset_type: body.asset_type ?? body.assetType,
@@ -822,6 +823,22 @@ module.exports = async function handler(req, res) {
       if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
 
       const patch = buildSupabasePropertyPatch(body);
+      if (patch.assignee_id !== undefined) {
+        const aid = patch.assignee_id;
+        const aname = patch.assignee_name || '';
+        if (!patch.raw || typeof patch.raw !== 'object') {
+          const col0 = targetId.includes(':') ? 'global_id' : 'id';
+          const cur = await supabaseRest(`/rest/v1/properties?select=raw&${col0}=eq.${encodeURIComponent(targetId)}&limit=1`);
+          const curRow = Array.isArray(cur) ? cur[0] : cur;
+          patch.raw = (curRow?.raw && typeof curRow.raw === 'object') ? { ...curRow.raw } : {};
+        }
+        patch.raw.assigneeId = aid || '';
+        patch.raw.assignee_id = aid || '';
+        patch.raw.assignedAgentId = aid || '';
+        patch.raw.assigneeName = aname;
+        patch.raw.assignee_name = aname;
+        patch.raw.assignedAgentName = aname;
+      }
       const col = targetId.includes(':') ? 'global_id' : 'id';
       const rows = await supabaseRest(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
         method: 'PATCH',
