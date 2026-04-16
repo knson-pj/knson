@@ -26,16 +26,32 @@
   }
 
   function extractGroundFloorFromRoom(text) {
-    const src = normalizeCompactText(text);
+    const raw = String(text || "");
+    // 1차: 원본 공백/구분자 보존 상태에서 호수 패턴 매칭 (정확도 우선)
+    //     경계 문자: 공백, 탭, 또는 "제"
+    const rawMatch = raw.match(/(?:^|[\s,(]|제)(\d{3,5})호(?:$|[^0-9])/u);
+    if (rawMatch) return normalizeFloorDigits(rawMatch[1]);
+
+    // 2차: 공백 제거 후 fallback — 단 하이픈/마이너스 직후의 숫자는 지번의 일부이므로 제외
+    const src = normalizeCompactText(raw);
     if (!src) return "";
-    const match = src.match(/(?:^|[^0-9A-Za-z가-힣])(\d{3,5})호(?:$|[^0-9])/u)
+    // 앞 경계가 숫자/영문/한글/하이픈이 아닌 경우에만 매칭 (하이픈 뒤 붙은 지번 배제)
+    const match = src.match(/(?:^|[^0-9A-Za-z가-힣\-])(\d{3,5})호(?:$|[^0-9])/u)
       || src.match(/제(\d{3,5})호/u);
     if (!match) return "";
     return normalizeFloorDigits(match[1]);
   }
 
   function extractBasementFloorFromRoom(text) {
-    const src = normalizeCompactText(text);
+    const raw = String(text || "");
+    // 1차: 원본 보존 상태에서 매칭
+    const rawMatch = raw.match(/(?:^|[\s,(]|제)(?:[Bb]|비)(\d{1,5})호?(?:$|[^0-9])/u);
+    if (rawMatch) {
+      const floorDigits = normalizeFloorDigits(rawMatch[1]);
+      return floorDigits ? `B${floorDigits}` : "";
+    }
+    // 2차: 공백 제거 fallback
+    const src = normalizeCompactText(raw);
     if (!src) return "";
     const match = src.match(/(?:제)?[Bb](\d{1,5})호?/u)
       || src.match(/(?:제)?비(\d{1,5})호?/u);
@@ -63,7 +79,8 @@
         || compact.match(/(?:^|[^가-힣A-Za-z0-9])지(\d+)(?:$|[^0-9])/u);
       if (match) return `B${Number(match[1])}`;
 
-      const basementRoomFloor = extractBasementFloorFromRoom(compact);
+      // 호수 기반 추출은 원본(공백 보존) 텍스트 사용 — 지번과 호수 경계 감지를 위해
+      const basementRoomFloor = extractBasementFloorFromRoom(text);
       if (basementRoomFloor) return basementRoomFloor;
     }
 
@@ -76,7 +93,8 @@
         || compact.match(/(\d+)층/u);
       if (match) return String(Number(match[1]));
 
-      const roomFloor = extractGroundFloorFromRoom(compact);
+      // 호수 기반 추출은 원본(공백 보존) 텍스트 사용 — 지번과 호수 경계 감지를 위해
+      const roomFloor = extractGroundFloorFromRoom(text);
       if (roomFloor) return roomFloor;
     }
 
