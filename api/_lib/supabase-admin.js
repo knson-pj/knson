@@ -288,6 +288,7 @@ function normalizeStaffItem({ profile, user }) {
     role: mergeRoles(extractRoleCandidate(user), profile?.role) || 'staff',
     assignedRegions: pickAssignedRegionsFromUser(user),
     createdAt: profile?.created_at || user?.created_at || '',
+    lastSignInAt: user?.last_sign_in_at || '',
   };
 }
 
