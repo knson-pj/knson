@@ -143,7 +143,7 @@
 
   mod.runGeocoding = async function runGeocoding(retryFailed) {
     const { state, els, K, isSupabaseMode, utils } = ctx();
-    const { invalidatePropertyCollections, ensureAuxiliaryPropertiesForAdmin, loadProperties, setAdminLoading } = utils;
+    const { invalidatePropertyCollections, ensureAuxiliaryPropertiesForAdmin, loadProperties } = utils;
     if (state.geocodeRunning) return;
     const sb = isSupabaseMode() ? K.initSupabase() : null;
     if (!sb) return alert("Supabase 연동이 필요합니다.");
@@ -158,7 +158,7 @@
     mod.updateGeocodeStatusBar();
     if (els.geocodeProgress) els.geocodeProgress.classList.remove("hidden");
     if (els.geocodeRunningText) els.geocodeRunningText.classList.remove("hidden");
-    setAdminLoading("geocoding", true, "지오코딩 실행 중입니다...");
+    // 실행 중에는 로딩 오버레이를 띄우지 않음 — progress bar + running text 로 충분히 진행상황이 보임
 
     try {
       const statusFilter = retryFailed ? "failed" : "pending";
@@ -219,7 +219,6 @@
       alert(err?.message || "지오코딩 중 오류가 발생했습니다.");
     } finally {
       state.geocodeRunning = false;
-      setAdminLoading("geocoding", false);
       if (els.geocodeProgress) els.geocodeProgress.classList.add("hidden");
       if (els.geocodeRunningText) els.geocodeRunningText.classList.add("hidden");
       if (els.geocodeProgressBar) els.geocodeProgressBar.style.width = "0%";

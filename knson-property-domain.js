@@ -528,6 +528,13 @@
   function normalizeCompareValue(field, value, options = {}) {
     if (value === null || value === undefined) return "";
     const numericFields = new Set(options.numericFields || []);
+    // 면적 필드: UI가 소수점 2자리로 표시하므로 비교도 2자리 반올림 (false-positive 방지)
+    const roundedNumericFields = new Set(["commonArea", "exclusiveArea", "siteArea"]);
+    if (roundedNumericFields.has(field)) {
+      const num = toNullableNumber(value);
+      if (num == null || !Number.isFinite(num)) return "";
+      return String(Math.round(num * 100) / 100);
+    }
     if (numericFields.has(field)) {
       const num = toNullableNumber(value);
       return num == null || !Number.isFinite(num) ? "" : String(num);

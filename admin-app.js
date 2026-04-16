@@ -721,7 +721,14 @@ function bindEvents() {
           }
           if (key === "staff") loadStaff().catch((e)=>handleAsyncError(e,"담당자 로드 실패"));
           if (key === "regions") { loadStaff().catch(()=>{}); ensureAuxiliaryPropertiesForAdmin().then(() => { refreshAssignmentView(); }).catch((e)=>handleAsyncError(e,"물건 배정 데이터 로드 실패")); }
-          if (key === "geocoding") ensureAuxiliaryPropertiesForAdmin().then(() => { updateGeocodeStatusBar(); }).catch((e)=>handleAsyncError(e,"지오코딩 데이터 로드 실패"));
+          if (key === "geocoding") {
+            // 탭 진입 시 카운팅(대기/완료/실패) 로드 동안 로딩 오버레이 표시
+            setAdminLoading("geocoding", true, "지오코딩 현황을 불러오는 중입니다.");
+            ensureAuxiliaryPropertiesForAdmin()
+              .then(() => { updateGeocodeStatusBar(); })
+              .catch((e) => handleAsyncError(e, "지오코딩 데이터 로드 실패"))
+              .finally(() => { setAdminLoading("geocoding", false); });
+          }
           if (key === "workmgmt") refreshWorkMgmt().catch((e)=>handleAsyncError(e,"업무 관리 로드 실패"));
           if (key === "buildings") { var bldMod = window.KNSN_ADMIN_MODULES?.buildingsTab; if (bldMod && typeof bldMod.init === "function") bldMod.init(); }
         }
