@@ -123,7 +123,7 @@
 
       const platformRole = normalizeRole(session?.user?.role);
       if (platformRole === "staff" || platformRole === "agent") {
-        throw new Error("담당자 계정은 '임직원 시스템 로그인'을 이용해 주세요.");
+        throw new Error("담당자는 <strong>임직원 시스템 로그인</strong>을 이용해주세요.");
       }
 
       location.replace("./index.html");
@@ -159,10 +159,26 @@
 
   function setMsg(msg, type = "error") {
     if (!msgEl) return;
-    msgEl.textContent = msg || "";
-    msgEl.classList.toggle("show", !!msg);
-    msgEl.classList.toggle("is-warning", !!msg && type === "warning");
-    msgEl.classList.toggle("is-error", !!msg && type !== "warning");
+    const text = String(msg || "");
+    if (!text) {
+      msgEl.textContent = "";
+      msgEl.classList.remove("show", "is-warning", "is-error");
+      return;
+    }
+    // XSS 방지: 먼저 전체 escape → 허용된 태그(<strong>)만 복원
+    const escaped = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+    const html = escaped
+      .replace(/&lt;strong&gt;/g, "<strong>")
+      .replace(/&lt;\/strong&gt;/g, "</strong>");
+    msgEl.innerHTML = html;
+    msgEl.classList.toggle("show", true);
+    msgEl.classList.toggle("is-warning", type === "warning");
+    msgEl.classList.toggle("is-error", type !== "warning");
   }
 
   async function getExistingSession() {

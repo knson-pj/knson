@@ -444,12 +444,31 @@
       address = pick("소재지", "주소", "address", "물건명");
       status = pick("물건상태", "상태", "status");
       priceMain = toNum(pick("감정가(원)", "감정가", "priceMain"));
-      lowprice = toNum(pick("최저입찰가(원)", "최저가", "lowprice")) || null;
-      assetType = pick("용도", "부동산유형", "assetType");
-      dateMain = toISO(pick("입찰마감일시", "입찰마감", "dateMain")) || pick("입찰마감일시", "입찰마감", "dateMain") || null;
+      // #5 최저입찰가 → 현재가격(lowprice)
+      lowprice = toNum(pick("최저입찰가(원)", "최저입찰가", "최저가", "lowprice")) || null;
+      // #4 종별 → 유형(assetType)
+      assetType = pick("종별", "용도", "부동산유형", "assetType");
+      // #3 입찰기간(년월일만, 시간 제외) → 주요일정(dateMain)
+      const bidPeriodRaw = pick("입찰기간", "입찰마감일시", "입찰마감", "dateMain");
+      // 구간 구분자: ~, 전각 대시(–,—), " - "(공백+하이픈+공백). 단독 "-"는 날짜 내부(2026-05-12)에 쓰이므로 제외.
+      const bidPeriodFirst = String(bidPeriodRaw || "").split(/\s*~\s*|\s+[\u2013\u2014]\s+|\s+-\s+/)[0].trim();
+      const bidDateOnly = bidPeriodFirst.match(/\d{4}[-./]\d{1,2}[-./]\d{1,2}/);
+      const bidPeriodDatePart = bidDateOnly ? bidDateOnly[0] : bidPeriodFirst.replace(/\s+\d{1,2}:\d{2}(:\d{2})?$/, "").trim();
+      dateMain = toISO(bidPeriodDatePart) || bidPeriodDatePart || null;
       memo = detailText;
-      const bM2 = pick("건물 면적(㎡)", "건물 면적(m²)", "건물 면적(m2)", "건물면적(㎡)");
-      const tM2 = pick("토지 면적(㎡)", "토지 면적(m²)", "토지 면적(m2)", "토지면적(㎡)");
+      // #2 면적 — 기존 분할 컬럼 우선, 없으면 단일 "면적" 컬럼에서 건물/토지 분리
+      let bM2 = pick("건물 면적(㎡)", "건물 면적(m²)", "건물 면적(m2)", "건물면적(㎡)", "건물면적");
+      let tM2 = pick("토지 면적(㎡)", "토지 면적(m²)", "토지 면적(m2)", "토지면적(㎡)", "토지면적");
+      if (!bM2 || !tM2) {
+        const areaText = pick("면적", "면적(㎡)", "면적(m²)", "면적(m2)");
+        if (areaText) {
+          // "토지 123.45㎡" / "건물 67.89㎡" 패턴 매칭
+          const tMatch = areaText.match(/토지\s*([0-9.,]+)\s*(?:㎡|m²|m2|제곱미터)?/i);
+          const bMatch = areaText.match(/건물\s*([0-9.,]+)\s*(?:㎡|m²|m2|제곱미터)?/i);
+          if (!tM2 && tMatch) tM2 = tMatch[1];
+          if (!bM2 && bMatch) bM2 = bMatch[1];
+        }
+      }
       if (bM2) exclusiveArea = m2ToPyeong(bM2);
       if (tM2) siteArea = m2ToPyeong(tM2);
       floor = extractFloorLabelFromTexts(itemName, detailText, address, memo);
