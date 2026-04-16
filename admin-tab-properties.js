@@ -406,7 +406,7 @@
       ? `
         <th class="check-col"><label class="check-wrap"><input id="propSelectAll" type="checkbox" /></label></th>
         <th>구분</th><th>물건번호</th><th>주소</th><th>유형</th><th>층수</th><th>전용면적(평)</th>
-        <th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th><th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th>
+        <th>계약면적(평)</th><th>토지면적(평)</th><th>사용승인</th><th class="sortable-th" data-prop-sort="priceMain">감정가(매각가)</th>
         <th>담당자</th><th>현장실사</th><th>등록일</th>
       `
       : `

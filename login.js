@@ -71,11 +71,11 @@
 
   btnAdminLogin?.addEventListener("click", () => {
     setMode("admin");
-    form?.requestSubmit?.();
   });
 
   btnLogin?.addEventListener("click", () => {
     setMode("platform");
+    form?.requestSubmit?.();
   });
 
   form?.addEventListener("submit", async (e) => {
@@ -121,12 +121,17 @@
         throw new Error("관리자시스템은 관리자 또는 담당자 계정만 로그인할 수 있습니다.");
       }
 
+      const platformRole = normalizeRole(session?.user?.role);
+      if (platformRole === "staff" || platformRole === "agent") {
+        throw new Error("담당자 계정은 '임직원 시스템 로그인'을 이용해 주세요.");
+      }
+
       location.replace("./index.html");
     } catch (err) {
       setMsg(err?.message || "로그인에 실패했습니다.", "error");
     } finally {
       setBusy(false, mode);
-      setMode("platform");
+      setMode("admin");
     }
   });
 

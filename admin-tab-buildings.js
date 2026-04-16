@@ -331,12 +331,17 @@
     // enrich 자동 실행
     if (!shouldStop) {
       appendLog("── 전유부+지오코딩 보충 시작 ──");
+      $("bldProgressBar").style.width = "0%";
+      $("bldProgressPct").textContent = "0%";
+      $("bldProgressDetail").textContent = "";
       for (var j = 0; j < dongs.length; j++) {
         if (shouldStop) break;
         var code2 = dongs[j];
         var name2 = findDongName(code2);
         var enrichDone = false;
         var enrichRound = 0;
+        $("bldProgressPct").textContent = Math.round(((j+1)/dongs.length)*100) + "%";
+        $("bldProgressBar").style.width = Math.round(((j+1)/dongs.length)*100) + "%";
         while (!enrichDone && !shouldStop && enrichRound < 100) {
           enrichRound++;
           $("bldProgressLabel").textContent = "보충: " + name2 + " (라운드 " + enrichRound + ")";

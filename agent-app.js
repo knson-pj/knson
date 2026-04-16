@@ -168,6 +168,7 @@
     },
     page: 1,
     pageSize: 30,
+    propertySort: { key: '', direction: 'desc' },
     editingProperty: null,
     dailyReport: {
       dateKey: "",
@@ -240,16 +241,72 @@
       ? `
         <th class="fav-col"></th>
         <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th>
-        <th>층수</th><th>전용면적(평)</th><th>공용면적(평)</th><th>토지면적(평)</th><th>사용승인</th>
-        <th>감정가(매각가)</th><th>진행상태</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
+        <th>층수</th><th>전용면적(평)</th><th>계약면적(평)</th><th>토지면적(평)</th><th>사용승인</th>
+        <th class="sortable-th" data-agent-sort="priceMain">감정가(매각가)</th><th>진행상태</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
       `
       : `
         <th class="fav-col"></th>
         <th>물건번호</th><th>구분</th><th>주소</th><th>유형</th>
         <th>층수</th><th>전용면적(평)</th>
-        <th>감정가(매각가)</th><th>현재가격</th><th>비율</th>
+        <th class="sortable-th" data-agent-sort="priceMain">감정가(매각가)</th><th class="sortable-th" data-agent-sort="currentPrice">현재가격</th><th class="sortable-th" data-agent-sort="ratio">비율</th>
         <th>주요일정</th><th>진행상태</th><th>담당자 의견</th><th>현장실사</th><th>등록일</th>
       `;
+    bindAgentSortHeaders();
+  }
+
+  function getAgentSortValue(row, sortKey) {
+    if (sortKey === 'priceMain') return Number(row?.priceMain || 0) || 0;
+    if (sortKey === 'currentPrice') return Number(row?.lowprice ?? row?.priceMain ?? 0) || 0;
+    if (sortKey === 'ratio') {
+      var base = Number(row?.priceMain || 0) || 0;
+      var cur = Number(row?.lowprice ?? row?.priceMain ?? 0) || 0;
+      return base > 0 ? cur / base : 0;
+    }
+    return 0;
+  }
+
+  function applyAgentPropertySort(rows) {
+    var sortKey = String(state.propertySort?.key || '').trim();
+    if (!sortKey) return rows;
+    var dir = String(state.propertySort?.direction || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+    var sorted = rows.slice();
+    sorted.sort(function(a, b) {
+      var av = getAgentSortValue(a, sortKey);
+      var bv = getAgentSortValue(b, sortKey);
+      if (bv === av) return 0;
+      return (bv > av ? 1 : -1) * dir;
+    });
+    return sorted;
+  }
+
+  function bindAgentSortHeaders() {
+    var headers = document.querySelectorAll('[data-agent-sort]');
+    headers.forEach(function(th) {
+      if (th.dataset.boundAgSort === '1') return;
+      th.dataset.boundAgSort = '1';
+      th.addEventListener('click', function() {
+        var key = String(th.dataset.agentSort || '').trim();
+        if (!key) return;
+        var prev = state.propertySort || {};
+        if (prev.key === key) {
+          state.propertySort = { key: key, direction: prev.direction === 'desc' ? 'asc' : 'desc' };
+        } else {
+          state.propertySort = { key: key, direction: 'desc' };
+        }
+        headers.forEach(function(node) {
+          var isMe = node === th;
+          node.classList.toggle('is-active', isMe);
+          node.classList.toggle('sort-asc', isMe && state.propertySort.direction === 'asc');
+        });
+        state.page = 1;
+        renderTable();
+      });
+    });
+    headers.forEach(function(node) {
+      var isMe = node.dataset.agentSort === String(state.propertySort?.key || '');
+      node.classList.toggle('is-active', isMe);
+      node.classList.toggle('sort-asc', isMe && String(state.propertySort?.direction || '') === 'asc');
+    });
   }
 
   // ── Init ──
@@ -1097,7 +1154,7 @@
     assetType: "세부유형",
     floor: "층수",
     totalfloor: "총층",
-    commonArea: "공용면적",
+    commonArea: "계약면적",
     exclusiveArea: "전용면적",
     siteArea: "토지면적",
     useapproval: "사용승인일",
@@ -1649,7 +1706,7 @@
     if (!els.agTableBody) return;
     renderAgentPropertiesHead(isPlainSourceFilterSelected(state.filters?.activeCard));
     updateFilterOptionCounts();
-    const rows = getFilteredProps();
+    const rows = applyAgentPropertySort(getFilteredProps());
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
     if (state.page > totalPages) state.page = totalPages;
     const start = (state.page - 1) * state.pageSize;

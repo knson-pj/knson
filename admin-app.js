@@ -1747,7 +1747,7 @@ function bindEvents() {
     assetType: "세부유형",
     floor: "층수",
     totalfloor: "총층",
-    commonArea: "공용면적",
+    commonArea: "계약면적",
     exclusiveArea: "전용면적",
     siteArea: "토지면적",
     useapproval: "사용승인일",
