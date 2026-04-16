@@ -521,8 +521,17 @@
       th.addEventListener('click', async () => {
         const key = String(th.dataset.propSort || '').trim();
         if (!key) return;
-        state.propertySort = { key, direction: 'desc' };
-        headers.forEach((node) => node.classList.toggle('is-active', node === th));
+        const prev = state.propertySort || {};
+        if (prev.key === key) {
+          state.propertySort = { key, direction: prev.direction === 'desc' ? 'asc' : 'desc' };
+        } else {
+          state.propertySort = { key, direction: 'desc' };
+        }
+        headers.forEach((node) => {
+          const isMe = node === th;
+          node.classList.toggle('is-active', isMe);
+          node.classList.toggle('sort-asc', isMe && state.propertySort.direction === 'asc');
+        });
         state.propertyPage = 1;
         try {
           if (state.propertyMode === 'page') {
@@ -535,7 +544,11 @@
         }
       });
     });
-    headers.forEach((node) => node.classList.toggle('is-active', node.dataset.propSort === String(state?.propertySort?.key || '')));
+    headers.forEach((node) => {
+      const isMe = node.dataset.propSort === String(state?.propertySort?.key || '');
+      node.classList.toggle('is-active', isMe);
+      node.classList.toggle('sort-asc', isMe && String(state?.propertySort?.direction || '') === 'asc');
+    });
   }
 
   function formatModalAreaValue(sourceType, value) {
@@ -1479,6 +1492,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       sourceBucket: sourceBucketValue || null,
       isDirectSubmission: sourceBucketValue === 'realtor_direct',
       assigneeId: readStr('assigneeId') || null,
+      assigneeName: (function() { var aid = readStr('assigneeId'); return aid ? (getStaffNameByIdLocal(state, aid) || (typeof utils.getStaffNameById === 'function' ? utils.getStaffNameById(aid) : '') || '') : ''; })(),
       submitterType: submitterTypeValue || null,
       submitterDisplayType: submitterDisplayValue || null,
       registeredByAdmin: submitterDisplayValue === 'admin',
@@ -1596,6 +1610,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
         item_no: patch.itemNo,
         source_type: patch.sourceType,
         assignee_id: patch.assigneeId,
+        assignee_name: patch.assigneeName || '',
         submitter_type: patch.submitterType,
         address: patch.address,
         asset_type: patch.assetType,
