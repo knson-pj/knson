@@ -1630,14 +1630,43 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     try {
       if (els.aemSave) els.aemSave.disabled = true;
       setAemMsg(els, '');
-      await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
-      // 저장 후 즉시 캐시 무효화 + 전체 재조회를 await 하여 UI에 최신 데이터가 반영되게 함
-      try { utils.invalidatePropertyCollections?.(); } catch {}
+      console.log('[KNSN-SAVE] start', { targetId, isAdmin, patch: JSON.parse(JSON.stringify(patch)) });
+      const saveResponse = await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
+      console.log('[KNSN-SAVE] response', saveResponse);
+
+      // ── 1차: 서버 응답의 최신 row로 state.properties 즉시 갱신 ──
+      // 서버 → DB 반영은 즉시지만, 클라이언트의 후속 SELECT(Supabase)는 replica 지연으로
+      // 잠깐 stale data를 반환할 수 있음. 서버 응답을 사용해 UI를 먼저 업데이트.
       try {
-        await utils.loadProperties?.({ refreshSummary: state.activeTab === 'home', forceRefreshFull: true, silent: true });
-      } catch (refreshErr) {
-        console.warn('properties refresh after save failed', refreshErr);
+        const updatedItem = saveResponse?.item || null;
+        if (updatedItem && Array.isArray(state.properties)) {
+          const normalizeFn = typeof utils.normalizeProperty === 'function' ? utils.normalizeProperty : null;
+          const normalized = normalizeFn ? normalizeFn(updatedItem) : updatedItem;
+          const idx = state.properties.findIndex((p) =>
+            String(p.id || '') === String(normalized.id || targetId) ||
+            String(p.globalId || '') === String(normalized.globalId || normalized.global_id || targetId)
+          );
+          if (idx >= 0) state.properties[idx] = normalized;
+          // 캐시도 동기화
+          if (Array.isArray(state.propertiesFullCache)) {
+            const cIdx = state.propertiesFullCache.findIndex((p) =>
+              String(p.id || '') === String(normalized.id || targetId) ||
+              String(p.globalId || '') === String(normalized.globalId || normalized.global_id || targetId)
+            );
+            if (cIdx >= 0) state.propertiesFullCache[cIdx] = normalized;
+          }
+          mod.renderPropertiesTable();
+        }
+      } catch (applyErr) {
+        console.warn('apply server response to state failed', applyErr);
       }
+
+      // ── 2차: 백그라운드에서 전체 재조회 (summary 등 다른 파생 데이터도 갱신) ──
+      try { utils.invalidatePropertyCollections?.(); } catch {}
+      Promise.resolve()
+        .then(() => utils.loadProperties?.({ refreshSummary: state.activeTab === 'home', forceRefreshFull: true, silent: true }))
+        .catch((err) => console.warn('properties refresh after save failed', err));
+
       setAemMsg(els, '');
       mod.closePropertyEditModal();
       flashAdminSaveNotice(utils, '저장되었습니다.', 1500);
@@ -1652,6 +1681,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { state, K, api, utils } = ctx();
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+    console.log('[KNSN-UPDATE] entry', { targetId, isAdmin, hasSupabase: !!sb, role: state.session?.user?.role });
     const currentRawForLog = utils.mergePropertyRaw(item, patch);
     const regContext = utils.buildRegisterLogContext(isAdmin ? '관리자 수정' : '담당자 수정', { user: state.session?.user });
     const mergedLogRow = typeof utils.buildRegistrationDbRowForExisting === 'function'
@@ -1689,6 +1719,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
     // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.
     if (!isAdmin && sb) {
+      console.log('[KNSN-UPDATE] branch: staff-supabase-direct');
       const dbPatch = {
         item_no: patch.itemNo,
         source_type: patch.sourceType,
@@ -1719,14 +1750,19 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       };
       Object.keys(dbPatch).forEach((k) => dbPatch[k] === undefined && delete dbPatch[k]);
       await utils.updatePropertyRowResilient(sb, targetId, dbPatch);
-      return;
+      return { ok: true };
     }
 
     // 실제 서버 구현은 /api/properties 한 곳에서 PATCH { targetId, patch }를 받는다.
+    console.log('[KNSN-UPDATE] branch: admin-server-api', { payload: JSON.parse(JSON.stringify(payload)) });
     if (DataAccess && typeof DataAccess.updatePropertyViaApi === 'function') {
-      await DataAccess.updatePropertyViaApi(api, targetId, payload, { auth: true });
+      const apiResp = await DataAccess.updatePropertyViaApi(api, targetId, payload, { auth: true });
+      console.log('[KNSN-UPDATE] api response', apiResp);
+      return apiResp;
     } else {
-      await api('/properties', { method: 'PATCH', auth: true, body: { targetId, patch: payload } });
+      const apiResp = await api('/properties', { method: 'PATCH', auth: true, body: { targetId, patch: payload } });
+      console.log('[KNSN-UPDATE] api response (fallback)', apiResp);
+      return apiResp;
     }
   };
 
