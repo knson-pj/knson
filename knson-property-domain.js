@@ -511,12 +511,31 @@
     return true;
   }
 
+  function extractDateOnlyForCompare(value) {
+    if (value === null || value === undefined) return "";
+    const text = String(value).trim();
+    if (!text) return "";
+    const m = text.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+    if (m) {
+      const y = m[1];
+      const mo = String(m[2]).padStart(2, "0");
+      const d = String(m[3]).padStart(2, "0");
+      return `${y}-${mo}-${d}`;
+    }
+    return text;
+  }
+
   function normalizeCompareValue(field, value, options = {}) {
     if (value === null || value === undefined) return "";
     const numericFields = new Set(options.numericFields || []);
     if (numericFields.has(field)) {
       const num = toNullableNumber(value);
       return num == null || !Number.isFinite(num) ? "" : String(num);
+    }
+    // 날짜 필드: 년월일 부분만 비교 (타임존/시간 포맷 차이로 인한 false-positive 방지)
+    const dateFields = new Set(["dateMain", "useapproval"]);
+    if (dateFields.has(field)) {
+      return extractDateOnlyForCompare(value);
     }
     return String(value).trim().replace(/\s+/g, " ");
   }
@@ -532,6 +551,11 @@
     if (numericFields.has(field)) {
       if (num == null || !Number.isFinite(num)) return "";
       return Number.isInteger(num) ? String(num) : String(num).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    }
+    const dateFields = new Set(["dateMain", "useapproval"]);
+    if (dateFields.has(field)) {
+      const dateOnly = extractDateOnlyForCompare(value);
+      return dateOnly || String(value).trim();
     }
     return String(value).trim();
   }

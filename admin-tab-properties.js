@@ -838,7 +838,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const refreshSummary = !!options.refreshSummary;
     try { utils.invalidatePropertyCollections?.(); } catch {}
     Promise.resolve()
-.then(() => utils.loadProperties?.({ refreshSummary, silent: true }))
+      .then(() => utils.loadProperties?.({ refreshSummary, forceRefreshFull: true, silent: true }))
       .catch((err) => console.warn('properties refresh failed', err));
   }
 
@@ -1631,10 +1631,16 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       if (els.aemSave) els.aemSave.disabled = true;
       setAemMsg(els, '');
       await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
+      // 저장 후 즉시 캐시 무효화 + 전체 재조회를 await 하여 UI에 최신 데이터가 반영되게 함
+      try { utils.invalidatePropertyCollections?.(); } catch {}
+      try {
+        await utils.loadProperties?.({ refreshSummary: state.activeTab === 'home', forceRefreshFull: true, silent: true });
+      } catch (refreshErr) {
+        console.warn('properties refresh after save failed', refreshErr);
+      }
       setAemMsg(els, '');
       mod.closePropertyEditModal();
       flashAdminSaveNotice(utils, '저장되었습니다.', 1500);
-      window.setTimeout(() => refreshPropertiesInBackground(state, utils, { refreshSummary: state.activeTab === 'home' }), 100);
     } catch (err) {
       console.error(err);
       setAemMsg(els, err?.message || '저장 실패');

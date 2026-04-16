@@ -673,14 +673,14 @@ html[data-theme="dark"] .table td{border-bottom-color:var(--gray-200);}
   user-select:none;
 }
 .staff-login-chip.is-online{
-  background:rgba(57,255,20,0.14);
-  color:#27ff5a;
-  box-shadow:0 0 0 1px rgba(57,255,20,0.35) inset, 0 0 6px rgba(57,255,20,0.25);
+  background:rgba(132,180,120,0.18);
+  color:#5b8a4f;
+  box-shadow:0 0 0 1px rgba(132,180,120,0.4) inset;
 }
 .staff-login-chip.is-offline{
-  background:rgba(220,220,220,0.18);
-  color:#d4d4d4;
-  box-shadow:0 0 0 1px rgba(220,220,220,0.3) inset, 0 0 5px rgba(220,220,220,0.15);
+  background:rgba(200,200,200,0.14);
+  color:#9aa0a6;
+  box-shadow:0 0 0 1px rgba(200,200,200,0.3) inset;
 }
 
 .inline-btn-row{justify-content:flex-start;flex-wrap:nowrap;}
