@@ -656,6 +656,49 @@ async function handleSupabaseWrite(req, res) {
     }
     if (ctx.role === 'staff') { delete patch.assignee_id; delete patch.assignee_name; }
 
+    // ── registrationLog 의 false-positive change 최종 필터링 ──
+    // 면적 필드: 소수점 정밀도 차이(20.116250... vs 20.12) 로 인한 거짓 변경 제거
+    // 날짜 필드: 타임존/시간 포맷 차이(2026-05-14T00:00:00+00:00 vs 2026-05-14) 로 인한 거짓 변경 제거
+    if (patch.raw && Array.isArray(patch.raw.registrationLog)) {
+      const extractDateOnly = (v) => {
+        if (v == null) return '';
+        const s = String(v).trim();
+        if (!s) return '';
+        const m = s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+        if (!m) return s;
+        return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+      };
+      const roundArea = (v) => {
+        const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/,/g, '').trim());
+        if (!Number.isFinite(n)) return null;
+        return Math.round(n * 100) / 100;
+      };
+      const AREA_FIELDS = new Set(['commonArea', 'exclusiveArea', 'siteArea']);
+      const DATE_FIELDS = new Set(['dateMain', 'useapproval']);
+      patch.raw.registrationLog = patch.raw.registrationLog.reduce((acc, entry) => {
+        if (!entry || typeof entry !== 'object') { acc.push(entry); return acc; }
+        if (entry.type !== 'changed' || !Array.isArray(entry.changes)) { acc.push(entry); return acc; }
+        const filtered = entry.changes.filter((change) => {
+          if (!change || typeof change !== 'object') return true;
+          const f = String(change.field || '');
+          if (AREA_FIELDS.has(f)) {
+            const b = roundArea(change.before);
+            const a = roundArea(change.after);
+            if (b !== null && a !== null && b === a) return false;
+          }
+          if (DATE_FIELDS.has(f)) {
+            const b = extractDateOnly(change.before);
+            const a = extractDateOnly(change.after);
+            if (b && a && b === a) return false;
+          }
+          return true;
+        });
+        if (!filtered.length) return acc; // 엔트리 전체 제거
+        acc.push({ ...entry, changes: filtered });
+        return acc;
+      }, []);
+    }
+
     const col = targetId.includes(':') ? 'global_id' : 'id';
     const rows = await supabasePropertyWriteWithRetry(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
       method: 'PATCH',
