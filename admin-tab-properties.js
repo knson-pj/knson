@@ -448,6 +448,12 @@
       `;
     const selectAll = headRow.querySelector('#propSelectAll');
     if (selectAll) {
+      // 이전에 ctx()로 캐싱된 els.propSelectAll이 detached DOM을 가리킬 수 있으므로
+      // 매 렌더마다 live DOM 참조로 갱신해서 다른 모듈이 동기화 가능하도록 함
+      try {
+        const rt = runtime();
+        if (rt && rt.els) rt.els.propSelectAll = selectAll;
+      } catch {}
       selectAll.checked = false;
       selectAll.addEventListener('change', (e) => {
         const checked = !!e.target.checked;
@@ -460,6 +466,7 @@
           else state.selectedPropertyIds.delete(id);
           node.closest('tr')?.classList.toggle('row-selected', checked);
         });
+        mod.updatePropertySelectionControls();
       });
     }
   }
@@ -1062,14 +1069,17 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const rows = state.propertyMode === 'page' ? (state.properties || []) : mod.getPagedProperties(mod.getFilteredProperties()).rows;
     const ids = rows.map((p) => String(p.id || p.globalId || '').trim()).filter(Boolean);
     const selectedVisible = ids.filter((id) => state.selectedPropertyIds.has(id));
-    if (els.propSelectAll) {
-      els.propSelectAll.checked = ids.length > 0 && selectedVisible.length === ids.length;
-      els.propSelectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < ids.length;
+    // live DOM 참조로 조회 — 헤더 재렌더 후 els.propSelectAll이 stale일 수 있음
+    const selectAllEl = document.getElementById('propSelectAll') || els.propSelectAll;
+    if (selectAllEl) {
+      selectAllEl.checked = ids.length > 0 && selectedVisible.length === ids.length;
+      selectAllEl.indeterminate = selectedVisible.length > 0 && selectedVisible.length < ids.length;
     }
-    if (els.btnDeleteSelectedProperties) {
+    const btnDelEl = document.getElementById('btnDeleteSelectedProperties') || els.btnDeleteSelectedProperties;
+    if (btnDelEl) {
       const cnt = state.selectedPropertyIds.size;
-      els.btnDeleteSelectedProperties.disabled = cnt === 0;
-      els.btnDeleteSelectedProperties.textContent = cnt > 0 ? `선택 삭제 (${cnt})` : '선택 삭제';
+      btnDelEl.disabled = cnt === 0;
+      btnDelEl.textContent = cnt > 0 ? `선택 삭제 (${cnt})` : '선택 삭제';
     }
   };
 
@@ -1107,6 +1117,11 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       return;
     }
     if (!window.confirm(`선택한 ${ids.length}건의 물건을 삭제할까요?`)) return;
+
+    // 삭제 중복 호출 방지 — 버튼 자체를 임시 비활성화
+    const btnEl = document.getElementById('btnDeleteSelectedProperties') || (els && els.btnDeleteSelectedProperties);
+    if (btnEl) btnEl.disabled = true;
+
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     let deleteError = null;
     try {
@@ -1121,20 +1136,31 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       deleteError = err;
       console.error('deleteSelectedProperties failed', err);
     }
-    // 성공/실패 무관하게 UI 상태는 항상 초기화 (선택 해제 + 캐시 무효화 + 재조회)
+
+    // ── 삭제 호출 직후 UI/상태 즉시 초기화 (loadProperties 대기 전) ──
     state.selectedPropertyIds.clear();
     try {
-      document.querySelectorAll('.prop-row-check:checked').forEach((cb) => { cb.checked = false; });
+      document.querySelectorAll('.prop-row-check').forEach((cb) => { cb.checked = false; });
       document.querySelectorAll('tr.row-selected').forEach((tr) => tr.classList.remove('row-selected'));
-      if (els && els.propSelectAll) { els.propSelectAll.checked = false; els.propSelectAll.indeterminate = false; }
+      const selectAllEl = document.getElementById('propSelectAll');
+      if (selectAllEl) { selectAllEl.checked = false; selectAllEl.indeterminate = false; }
     } catch {}
+    // 버튼 상태 즉시 복구
+    if (btnEl) {
+      btnEl.disabled = true; // 선택된 것 없으므로 여전히 disabled — 사용자가 새로 선택하면 활성화됨
+      btnEl.textContent = '선택 삭제';
+    }
+
     utils.invalidatePropertyCollections();
     try {
       await utils.loadProperties({ refreshSummary: true, forceRefreshFull: true });
     } catch (err) {
       console.error('loadProperties after delete failed', err);
     }
+
+    // ── 재조회 후 최종 UI 동기화 ──
     mod.updatePropertySelectionControls();
+
     if (deleteError) {
       alert('일부 항목 삭제에 실패했습니다: ' + (deleteError.message || '알 수 없는 오류'));
     }
