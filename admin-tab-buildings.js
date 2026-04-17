@@ -403,15 +403,24 @@
 
     grid.innerHTML = dongs.map(function(d) {
       var checked = selectedDongs.has(d.code) ? "checked" : "";
-      return '<label class="bld-dong-chip' + (checked ? ' is-checked' : '') + '">' +
-        '<input type="checkbox" value="' + d.code + '" data-name="' + escHtml(d.name) + '" ' + checked + ' />' +
+      // 인라인 스타일로 외부 CSS 유무와 무관하게 칩 모양 보장
+      var baseStyle = "display:inline-flex;align-items:center;gap:4px;padding:4px 10px;margin:2px;border-radius:16px;border:1px solid var(--line,#E5E7EB);background:var(--surface,#fff);font-size:11px;font-weight:600;cursor:pointer;user-select:none;";
+      var activeStyle = "background:#FFF3E0;border-color:#F37022;color:#E65100;";
+      var style = baseStyle + (checked ? activeStyle : "");
+      return '<label class="bld-dong-chip' + (checked ? ' is-checked' : '') + '" style="' + style + '">' +
+        '<input type="checkbox" value="' + d.code + '" data-name="' + escHtml(d.name) + '" ' + checked + ' style="display:none;" />' +
         '<span>' + escHtml(d.name) + '</span></label>';
     }).join("");
     // 이벤트
     grid.querySelectorAll("input[type=checkbox]").forEach(function(cb) {
       cb.addEventListener("change", function() {
         if (cb.checked) selectedDongs.add(cb.value); else selectedDongs.delete(cb.value);
-        cb.parentElement.classList.toggle("is-checked", cb.checked);
+        var label = cb.parentElement;
+        label.classList.toggle("is-checked", cb.checked);
+        // 인라인 스타일 갱신
+        var baseStyle = "display:inline-flex;align-items:center;gap:4px;padding:4px 10px;margin:2px;border-radius:16px;border:1px solid var(--line,#E5E7EB);background:var(--surface,#fff);font-size:11px;font-weight:600;cursor:pointer;user-select:none;";
+        var activeStyle = "background:#FFF3E0;border-color:#F37022;color:#E65100;";
+        label.setAttribute("style", baseStyle + (cb.checked ? activeStyle : ""));
         updateSelectedCount();
       });
     });
@@ -1068,14 +1077,20 @@
     var sidoSel = $("bldSidoSelect");
     var regionSel = $("bldRegionSelect");
 
-    // 시/도 옵션: 서울이 기본, 나머지는 lazy fetch 후 채움
+    // 전국 17개 시/도 — 데이터 로드 여부와 무관하게 드롭다운에는 항상 노출
+    var SIDO_ALL = [
+      "서울특별시","부산광역시","대구광역시","인천광역시","광주광역시",
+      "대전광역시","울산광역시","세종특별자치시","경기도","충청북도",
+      "충청남도","전라남도","경상북도","경상남도","제주특별자치도",
+      "강원특별자치도","전북특별자치도"
+    ];
+
     function populateSidoSelect() {
       if (!sidoSel) return;
       var currentValue = sidoSel.value;
-      var sidos = Object.keys(DONG_LIST_BY_SIDO);
       sidoSel.innerHTML = '<option value="">▽ 시/도 선택</option>' +
-        sidos.map(function(s) { return '<option value="' + escHtml(s) + '">' + escHtml(s) + '</option>'; }).join("");
-      if (currentValue && sidos.indexOf(currentValue) >= 0) sidoSel.value = currentValue;
+        SIDO_ALL.map(function(s) { return '<option value="' + escHtml(s) + '">' + escHtml(s) + '</option>'; }).join("");
+      if (currentValue && SIDO_ALL.indexOf(currentValue) >= 0) sidoSel.value = currentValue;
     }
 
     function populateRegionSelect() {
@@ -1090,23 +1105,29 @@
       sidoSel.addEventListener("change", async function() {
         var sido = sidoSel.value || "";
         if (!sido) {
-          // 빈 선택: 아무것도 안 함
           switchSido("");
           populateRegionSelect();
           renderDongGrid("");
           return;
         }
+        // 서울 외 시도 선택 시: full JSON 이 아직 안 로드됐으면 lazy fetch
         if (sido !== "서울특별시" && !FULL_LIST_LOADED) {
-          // 서울 외 시도 처음 선택 시 full JSON 로드
           appendLog("전국 법정동 데이터를 로드하는 중...");
           await ensureFullSidoList();
-          populateSidoSelect();
-          sidoSel.value = sido;
+          if (!FULL_LIST_LOADED) {
+            appendLog("❌ 전국 법정동 데이터 로드 실패 — dong-list-full.json 을 확인하세요");
+            // 로드 실패 시 서울로 복귀
+            sidoSel.value = "서울특별시";
+            switchSido("서울특별시");
+            populateRegionSelect();
+            renderDongGrid("");
+            return;
+          }
           appendLog("전국 법정동 데이터 로드 완료");
         }
         switchSido(sido);
         populateRegionSelect();
-        renderDongGrid("");  // 구를 다시 골라야 동이 보임
+        renderDongGrid("");
       });
     }
 
