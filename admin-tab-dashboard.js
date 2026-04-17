@@ -37,9 +37,13 @@
 
   function getTodayDateKey(baseDate) {
     const d = baseDate ? new Date(baseDate) : new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
+    if (Number.isNaN(d.getTime())) return '';
+    // KST(UTC+9) 기준으로 환산 (서버와 동기화)
+    const kstMs = d.getTime() + 9 * 60 * 60 * 1000;
+    const kst = new Date(kstMs);
+    const yyyy = kst.getUTCFullYear();
+    const mm = String(kst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(kst.getUTCDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   }
 
