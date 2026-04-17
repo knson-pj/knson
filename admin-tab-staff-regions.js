@@ -8,7 +8,7 @@
 
   function ctx() {
     const rt = runtime();
-    return { rt, state: rt.state || {}, els: rt.els || {}, api: rt.adminApi, utils: rt.utils || {} };
+    return { rt, state: rt.state || {}, els: rt.els || {}, api: rt.adminApi, utils: rt.utils || {}, K: rt.K || window.KNSN || null };
   }
 
   mod.loadStaff = async function loadStaff() {
