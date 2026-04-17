@@ -981,67 +981,90 @@
     }
   }
 
+  // 엔드포인트 한글 라벨 + 일일 한도 (각 10,000 독립)
+  var ENDPOINT_LABELS = {
+    "getBrTitleInfo":            { label: "표제부",       quota: 10000 },
+    "getBrExposPubuseAreaInfo":  { label: "전유+공용면적",  quota: 10000 },
+    "getBrBasisOulnInfo":        { label: "기본개요",     quota: 10000 },
+    "getBrFlrOulnInfo":          { label: "층별개요",     quota: 10000 },
+    "getBrExposInfo":            { label: "전유부",       quota: 10000 },
+    "getBrRecapTitleInfo":       { label: "총괄표제부",   quota: 10000 },
+    "getBrAtchJibunInfo":        { label: "부속지번",     quota: 10000 },
+    "getBrJijiguInfo":           { label: "지역지구구역", quota: 10000 },
+    "getBrWclfInfo":             { label: "오수정화시설", quota: 10000 },
+    "getBrHsprcInfo":            { label: "공시가격",     quota: 10000 },
+    "vworld_geocode":            { label: "지오코딩",     quota: 40000 }
+  };
+
+  // 엔드포인트 표시 순서 (자주 사용 순)
+  var ENDPOINT_ORDER = [
+    "getBrTitleInfo","getBrExposPubuseAreaInfo","vworld_geocode",
+    "getBrRecapTitleInfo","getBrAtchJibunInfo",
+    "getBrFlrOulnInfo","getBrJijiguInfo","getBrWclfInfo","getBrHsprcInfo",
+    "getBrBasisOulnInfo","getBrExposInfo"
+  ];
+
   function renderUsage(summary) {
-    // summary: null | {today_date, today_count, today_success, today_error, today_remaining, today_percent, today_by_endpoint, recent_days, total_recent}
     var $date = $("bldUsageDate");
-    var $count = $("bldUsageCount");
-    var $pct = $("bldUsagePct");
-    var $bar = $("bldUsageBar");
-    var $success = $("bldUsageSuccess");
-    var $error = $("bldUsageError");
-    var $remaining = $("bldUsageRemaining");
     var $endpoints = $("bldUsageEndpoints");
     var $recent = $("bldUsageRecent");
 
-    if (!summary) {
-      if ($date) $date.textContent = new Date().toLocaleDateString("ko-KR");
-      if ($count) $count.textContent = "0";
-      if ($pct) $pct.textContent = "0%";
-      if ($bar) $bar.style.width = "0%";
-      if ($success) $success.textContent = "0";
-      if ($error) $error.textContent = "0";
-      if ($remaining) $remaining.textContent = "10,000";
-      if ($endpoints) $endpoints.innerHTML = '<span style="color:var(--muted);">아직 API 호출 기록이 없습니다.</span>';
-      if ($recent) $recent.innerHTML = "";
-      return;
-    }
+    // 레거시 바·숫자 요소 (사용하지 않음 — 남아있으면 숨김 처리)
+    ["bldUsageCount","bldUsagePct","bldUsageBar","bldUsageSuccess","bldUsageError","bldUsageRemaining"].forEach(function(id){
+      var el = $(id); if (!el) return;
+      var parent = el.closest && el.closest(".usage-legacy-line");
+      if (parent) parent.style.display = "none";
+    });
 
-    var todayCount = Number(summary.today_count || 0);
-    var todayPct = Number(summary.today_percent || 0);
-    var todaySuccess = Number(summary.today_success || 0);
-    var todayError = Number(summary.today_error || 0);
-    var todayRemaining = Number(summary.today_remaining || 10000);
+    if ($date) $date.textContent = summary && summary.today_date ? summary.today_date : new Date().toISOString().slice(0,10);
 
-    if ($date) $date.textContent = summary.today_date || new Date().toISOString().slice(0,10);
-    if ($count) $count.textContent = todayCount.toLocaleString("ko-KR");
-    if ($pct) $pct.textContent = todayPct.toFixed(1) + "%";
-    if ($bar) {
-      $bar.style.width = Math.min(todayPct, 100) + "%";
-      // 80% 이상이면 붉은색, 60% 이상이면 주황, 그 외 초록
-      if (todayPct >= 80) {
-        $bar.style.background = "linear-gradient(90deg,#F44336,#E57373)";
-      } else if (todayPct >= 60) {
-        $bar.style.background = "linear-gradient(90deg,#FF9800,#FFB74D)";
-      } else {
-        $bar.style.background = "linear-gradient(90deg,#4CAF50,#8BC34A)";
-      }
-    }
-    if ($success) $success.textContent = todaySuccess.toLocaleString("ko-KR");
-    if ($error) $error.textContent = todayError.toLocaleString("ko-KR");
-    if ($remaining) $remaining.textContent = todayRemaining.toLocaleString("ko-KR");
-
-    // 엔드포인트별 사용량 — 관리 페이지에서는 숨김 (정보 과다)
+    // ── 엔드포인트별 카드 그리드 ──
     if ($endpoints) {
-      $endpoints.innerHTML = "";
-      $endpoints.style.display = "none";
+      $endpoints.style.display = "";
+      var byEp = (summary && summary.today_by_endpoint) || {};
+      var bySuccessEp = (summary && summary.today_success_by_endpoint) || {};  // optional (Edge Function 에 있으면 사용)
+      var byErrorEp = (summary && summary.today_error_by_endpoint) || {};
+
+      var cards = ENDPOINT_ORDER.map(function(ep) {
+        var meta = ENDPOINT_LABELS[ep] || { label: ep, quota: 10000 };
+        var used = Number(byEp[ep] || 0);
+        var quota = meta.quota;
+        var pct = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
+        var remaining = Math.max(0, quota - used);
+
+        // 색상: 80%+ 빨강, 60%+ 주황, 호출 0 은 회색, 나머지 초록
+        var barColor = "#E5E7EB", barFg = "#9CA3AF";
+        if (used === 0) { barColor = "#E5E7EB"; barFg = "#9CA3AF"; }
+        else if (pct >= 80) { barColor = "#F44336"; barFg = "#B91C1C"; }
+        else if (pct >= 60) { barColor = "#FF9800"; barFg = "#B45309"; }
+        else                { barColor = "#4CAF50"; barFg = "#15803D"; }
+
+        return '<div style="padding:8px 10px;border:1px solid var(--line,#E5E7EB);border-radius:6px;background:var(--surface,#fff);">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+            '<div>' +
+              '<span style="font-weight:700;font-size:11px;color:var(--text);">' + escHtml(meta.label) + '</span>' +
+              '<span style="font-size:9px;color:var(--muted);margin-left:4px;">' + escHtml(ep) + '</span>' +
+            '</div>' +
+            '<span style="font-size:11px;font-weight:700;color:' + barFg + ';">' + pct + '%</span>' +
+          '</div>' +
+          '<div style="background:#F3F4F6;height:6px;border-radius:3px;overflow:hidden;margin-bottom:4px;">' +
+            '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';transition:width .3s;"></div>' +
+          '</div>' +
+          '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);">' +
+            '<span>' + used.toLocaleString("ko-KR") + ' / ' + quota.toLocaleString("ko-KR") + '</span>' +
+            '<span>잔여 ' + remaining.toLocaleString("ko-KR") + '</span>' +
+          '</div>' +
+        '</div>';
+      }).join("");
+
+      $endpoints.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">' + cards + '</div>';
     }
 
-    // 최근 7일 추이 — 항상 7칸 고정폭, 데이터 없는 날은 투명 자리 채움
+    // ── 최근 7일 추이 ──
     if ($recent) {
-      var recent = Array.isArray(summary.recent_days) ? summary.recent_days : [];
-      var totalRecent = Number(summary.total_recent || 0);
+      var recent = Array.isArray(summary && summary.recent_days) ? summary.recent_days : [];
+      var totalRecent = Number(summary && summary.total_recent || 0);
 
-      // 최근 7일 날짜 배열 생성 (오늘 포함)
       var days7 = [];
       var base = new Date();
       for (var di = 6; di >= 0; di--) {
@@ -1052,16 +1075,19 @@
         days7.push(ymd);
       }
 
-      // recent 배열을 {date: count} 맵으로
       var byDate = {};
       recent.forEach(function(r){ byDate[r.date] = Number(r.count || 0); });
 
-      $recent.innerHTML = '<div style="margin-bottom:4px;font-weight:700;color:var(--text);">최근 7일 (총 ' + totalRecent.toLocaleString("ko-KR") + '건)</div>' +
+      // 7일 막대: quota 는 "가장 많이 쓴 단일 엔드포인트 기준"이 아니라 합산이므로
+      // 각 엔드포인트당 10,000 * 엔드포인트 수 로 가정하긴 애매함. 일단 가장 큰 값 기준 정규화.
+      var maxInWeek = Math.max(1, Math.max.apply(null, days7.map(function(y){ return Number(byDate[y]||0); })));
+
+      $recent.innerHTML = '<div style="margin-bottom:4px;font-weight:700;color:var(--text);font-size:11px;">최근 7일 (총 ' + totalRecent.toLocaleString("ko-KR") + '건)</div>' +
         '<div style="display:flex;gap:2px;align-items:flex-end;height:36px;">' +
         days7.map(function(ymd) {
           var cnt = Number(byDate[ymd] || 0);
-          var h = cnt > 0 ? Math.max(2, Math.min(36, (cnt / 10000) * 36)) : 0;
-          var color = cnt >= 8000 ? "#F44336" : cnt >= 6000 ? "#FF9800" : cnt > 0 ? "#4CAF50" : "transparent";
+          var h = cnt > 0 ? Math.max(2, Math.round((cnt / maxInWeek) * 32)) : 0;
+          var color = cnt > 0 ? "#4CAF50" : "transparent";
           var datestr = ymd.slice(5);
           return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;" title="' + escHtml(ymd) + ': ' + cnt.toLocaleString("ko-KR") + '건">' +
             '<div style="width:100%;background:' + color + ';height:' + h + 'px;border-radius:2px 2px 0 0;"></div>' +

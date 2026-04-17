@@ -365,40 +365,33 @@
       <div class="panel-header"><h2 class="panel-title">건축물대장 API → DB 저장 시스템</h2></div>
       <div class="panel-body">
         <div class="card" style="margin-bottom:16px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>지역 선택</strong>
+            <span style="font-size:10px;color:var(--muted);">전국 17개 시/도 · 252개 시/군/구 · 5,066개 법정동 지원</span>
+          </div>
           <div class="card-body">
             <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <label style="font-size:10px;color:var(--muted);font-weight:600;">시/도</label>
               <select id="bldSidoSelect" class="input" style="width:140px;"><option value="">▽ 시/도 선택</option></select>
+              <label style="font-size:10px;color:var(--muted);font-weight:600;margin-left:8px;">시/군/구</label>
               <select id="bldRegionSelect" class="input" style="width:160px;"><option value="">▽ 시/군/구 선택</option></select>
+              <span style="width:1px;height:20px;background:var(--line);margin:0 4px;"></span>
               <button id="bldSelectAll" class="btn btn-ghost btn-sm" type="button">전체선택</button>
               <button id="bldDeselectAll" class="btn btn-ghost btn-sm" type="button">선택해제</button>
-              <span id="bldSelectedCount" style="font-size:11px;color:var(--muted);">0개 선택</span>
+              <span id="bldSelectedCount" style="font-size:11px;color:var(--muted);font-weight:600;">0개 선택</span>
             </div>
             <div id="bldDongGrid" class="bld-dong-grid" style="display:flex;flex-wrap:wrap;gap:4px;max-height:200px;overflow-y:auto;padding:4px 0;"></div>
           </div>
         </div>
-        <!-- 건축HUB API 사용량 -->
+        <!-- 건축HUB API 사용량 (엔드포인트별 일일 한도) -->
         <div class="card" style="margin-bottom:16px;">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <strong>건축HUB API 사용량 <span style="font-size:10px;color:var(--muted);font-weight:400;">(일일 한도 10,000건)</span></strong>
+            <strong>건축HUB API 사용량 <span style="font-size:10px;color:var(--muted);font-weight:400;">(엔드포인트별 일일 한도 10,000건 · 오늘 <span id="bldUsageDate">-</span>)</span></strong>
             <button id="bldBtnRefreshUsage" class="btn btn-ghost btn-sm" type="button">새로고침</button>
           </div>
           <div class="card-body">
-            <div id="bldUsageCurrent" style="margin-bottom:10px;">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-                <span style="font-size:11px;color:var(--muted);">오늘 사용량 (<span id="bldUsageDate">-</span>)</span>
-                <span style="font-size:11px;color:var(--muted);"><span id="bldUsageCount" style="font-weight:700;color:var(--text);font-size:14px;">-</span> / 10,000건 (<span id="bldUsagePct">-</span>)</span>
-              </div>
-              <div style="height:10px;background:var(--line);border-radius:5px;overflow:hidden;">
-                <div id="bldUsageBar" style="height:100%;background:linear-gradient(90deg,#4CAF50,#8BC34A);border-radius:5px;width:0%;transition:width .3s;"></div>
-              </div>
-              <div id="bldUsageDetail" style="font-size:10px;color:var(--muted);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;">
-                <span>성공: <b id="bldUsageSuccess">-</b></span>
-                <span>실패: <b id="bldUsageError">-</b></span>
-                <span>남은 한도: <b id="bldUsageRemaining">-</b></span>
-              </div>
-            </div>
-            <div id="bldUsageEndpoints" style="font-size:10px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px;"></div>
-            <div id="bldUsageRecent" style="font-size:10px;color:var(--muted);margin-top:8px;"></div>
+            <div id="bldUsageEndpoints"></div>
+            <div id="bldUsageRecent" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);"></div>
           </div>
         </div>
 
@@ -514,7 +507,7 @@
 <script src="./admin-tab-properties.js?v=20260406-layoutfix1"></script>
 <script src="./admin-tab-dashboard.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
-<script src="./admin-tab-buildings.js?v=20260417-bld9-sido17"></script>
+<script src="./admin-tab-buildings.js?v=20260417-bld10-usage"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
 <script src="./admin-app.js?v=20260409-val1"></script>
 </body>
