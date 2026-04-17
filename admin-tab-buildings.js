@@ -262,7 +262,8 @@
     var ids = [
       "bldBtnCollect", "bldBtnEnrich",
       "bldBtnEnrichV2", "bldBtnCollectAtch",
-      "bldBtnEnrichRecap", "bldBtnEnrichExtras", "bldBtnEnrichPrice"
+      "bldBtnEnrichRecap", "bldBtnEnrichExtras", "bldBtnEnrichPrice",
+      "bldBtnBatchAll"
     ];
     for (var i = 0; i < ids.length; i++) {
       var b = $(ids[i]);
@@ -557,6 +558,137 @@
     loadUsage();  // 사용량 카드 갱신
   }
 
+  // ── 일괄 실행 ──
+  // 체크박스로 선택된 모드들을 선택된 동들에 대해 순차 실행
+  // 실행 순서: collect → enrich_v2 → collect_atch → enrich_recap → enrich_extras → enrich_price
+  async function runBatchAll() {
+    if (isRunning) return;
+    var dongs = Array.from(selectedDongs);
+    if (!dongs.length) return;
+
+    // 체크된 모드 수집
+    var sequence = [
+      { id: "bldBatchOpt_collect",       mode: "collect",       label: "표제부",         isCollect: true },
+      { id: "bldBatchOpt_enrich_v2",     mode: "enrich_v2",     label: "전유부+공용면적", isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
+      { id: "bldBatchOpt_collect_atch",  mode: "collect_atch",  label: "부속지번",       isV4: true, opts: { limitPerCall: 20, maxRounds: 50 } },
+      { id: "bldBatchOpt_enrich_recap",  mode: "enrich_recap",  label: "총괄표제부",     isV4: true, opts: { limitPerCall: 10, maxRounds: 30 } },
+      { id: "bldBatchOpt_enrich_extras", mode: "enrich_extras", label: "층별·지역·오수", isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
+      { id: "bldBatchOpt_enrich_price",  mode: "enrich_price",  label: "공시가격",       isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
+    ];
+    var selected = sequence.filter(function(s) {
+      var cb = $(s.id);
+      return cb && cb.checked;
+    });
+    if (!selected.length) {
+      alert("일괄 실행할 모드를 한 개 이상 선택해주세요.");
+      return;
+    }
+
+    // 사용자 확인
+    var msg = "선택된 동 " + dongs.length + "개 × 모드 " + selected.length + "개를 순차 실행합니다.\n\n" +
+              "순서: " + selected.map(function(s){ return s.label; }).join(" → ") + "\n\n" +
+              "API 호출이 대량 발생합니다. 사용량 한도를 확인했나요?\n\n계속하시겠습니까?";
+    if (!confirm(msg)) return;
+
+    appendLog("══════════════════════════════════════");
+    appendLog("🚀 일괄 실행 시작: 동 " + dongs.length + "개 × 모드 " + selected.length + "개");
+    appendLog("순서: " + selected.map(function(s){ return s.label; }).join(" → "));
+    appendLog("══════════════════════════════════════");
+
+    for (var si = 0; si < selected.length; si++) {
+      if (shouldStop) { appendLog("⛔ 일괄 실행 중단됨"); break; }
+      var step = selected[si];
+      appendLog("── [" + (si+1) + "/" + selected.length + "] " + step.label + " 시작 ──");
+
+      try {
+        if (step.isCollect) {
+          // collect 는 기존 runCollect 재사용 — 다만 그 함수는 자체 UI 초기화를 하므로 await 하고 끝나길 기다림
+          await runCollect();
+        } else if (step.isV4) {
+          await runEnrichV4(step.mode, step.label, step.opts);
+        }
+      } catch (e) {
+        appendLog("❌ " + step.label + " 예외: " + (e && e.message));
+      }
+
+      // 한 모드 끝나면 isRunning 이 풀렸지만, 다음 모드 실행을 위해 재설정 필요
+      if (si < selected.length - 1 && !shouldStop) {
+        // 잠깐 대기 (API rate 보호)
+        await new Promise(function(r) { setTimeout(r, 1000); });
+      }
+    }
+
+    appendLog("══════════════════════════════════════");
+    appendLog("✅ 일괄 실행 전체 완료");
+    appendLog("══════════════════════════════════════");
+    loadStatus();
+    loadUsage();
+  }
+
+  // ── 수집 잡 정리 (buildings 에 없는 동 제거) ──
+  async function runCleanOrphanedJobs() {
+    if (isRunning) return;
+    if (!confirm("buildings 테이블에 없는 동의 수집 잡 기록을 제거합니다.\n실제 건물 데이터는 그대로 유지됩니다.\n\n계속하시겠습니까?")) return;
+
+    var K = window.KNSN || {};
+    if (typeof K.sbSyncLocalSession === "function") {
+      try { await K.sbSyncLocalSession(); } catch (e) {}
+    }
+    var baseUrl = getProxyUrl();
+    var headers = await getAuthHeaders();
+    try {
+      var res = await fetch(baseUrl + "?mode=reset_jobs&scope=orphaned", { headers: headers });
+      if (res.status === 401) {
+        if (typeof K.sbSyncLocalSession === "function") {
+          try { await K.sbSyncLocalSession(true); } catch (e) {}
+        }
+        headers = await getAuthHeaders();
+        res = await fetch(baseUrl + "?mode=reset_jobs&scope=orphaned", { headers: headers });
+      }
+      var data = await res.json();
+      if (data.error) {
+        alert("정리 실패: " + data.error);
+        return;
+      }
+      appendLog("🧹 잡 정리 완료: " + (data.deleted || 0) + "개 제거, " + (data.kept || 0) + "개 유지");
+      loadStatus();
+    } catch (e) {
+      alert("정리 실패: " + (e && e.message));
+    }
+  }
+
+  // ── 수집 잡 전체 초기화 ──
+  async function runResetAllJobs() {
+    if (isRunning) return;
+    if (!confirm("⚠️ 수집 잡 기록을 모두 삭제합니다.\n실제 건물 데이터(buildings)는 그대로 유지됩니다.\n\n정말 계속하시겠습니까?")) return;
+
+    var K = window.KNSN || {};
+    if (typeof K.sbSyncLocalSession === "function") {
+      try { await K.sbSyncLocalSession(); } catch (e) {}
+    }
+    var baseUrl = getProxyUrl();
+    var headers = await getAuthHeaders();
+    try {
+      var res = await fetch(baseUrl + "?mode=reset_jobs&scope=all", { headers: headers });
+      if (res.status === 401) {
+        if (typeof K.sbSyncLocalSession === "function") {
+          try { await K.sbSyncLocalSession(true); } catch (e) {}
+        }
+        headers = await getAuthHeaders();
+        res = await fetch(baseUrl + "?mode=reset_jobs&scope=all", { headers: headers });
+      }
+      var data = await res.json();
+      if (data.error) {
+        alert("초기화 실패: " + data.error);
+        return;
+      }
+      appendLog("🗑 잡 전체 초기화 완료");
+      loadStatus();
+    } catch (e) {
+      alert("초기화 실패: " + (e && e.message));
+    }
+  }
+
   // ── 상태 테이블 ──
   async function loadStatus() {
     var baseUrl = getProxyUrl();
@@ -758,6 +890,13 @@
     if ($("bldBtnEnrichPrice")) $("bldBtnEnrichPrice").addEventListener("click", function() {
       runEnrichV4("enrich_price", "공시가격", { limitPerCall: 10, maxRounds: 100 });
     });
+
+    // 일괄 실행
+    if ($("bldBtnBatchAll")) $("bldBtnBatchAll").addEventListener("click", function() { runBatchAll(); });
+
+    // 잡 정리 / 전체 초기화
+    if ($("bldBtnCleanJobs")) $("bldBtnCleanJobs").addEventListener("click", function() { runCleanOrphanedJobs(); });
+    if ($("bldBtnResetJobs")) $("bldBtnResetJobs").addEventListener("click", function() { runResetAllJobs(); });
 
     // 초기 상태 로드 (세션 동기화 후)
     (async function() {
