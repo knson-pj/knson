@@ -311,6 +311,8 @@
         }
       : { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
     let geoPending = overview && !hasSnapshotRows ? Number(overview?.geoPending || 0) : 0;
+    // 디버그: 어느 경로로 진입했는지 표시
+    try { console.log('[Dashboard 진입 경로]', { hasSnapshotRows, propsLength: (props||[]).length, hasOverview: !!overview, overviewToday: overview?.today, dateKey }); } catch {}
     if (hasSnapshotRows) {
       todayParts.total = 0;
       todayParts.auction = 0;
@@ -319,10 +321,24 @@
       todayParts.realtor_direct = 0;
       todayParts.general = 0;
       geoPending = 0;
+      // ── 디버그 진단: 진짜 createdAt 분포 확인 (콘솔에서 확인 가능) ──
+      let dbg = { total: 0, hadCreatedAt: 0, parsedOk: 0, todayMatch: 0, sample: [] };
       for (const item of Array.isArray(props) ? props : []) {
-        // DB 의 created_at (실제 INSERT 시점) 을 최우선. 그 다음 애플리케이션 레이어의 createdAt, 마지막으로 raw.firstRegisteredAt.
-        const rawCreatedAt = item?._raw?.created_at || item?.createdAt || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
+        dbg.total += 1;
+        // DB 의 created_at (실제 INSERT 시점) 을 최우선.
+        // _raw 가 Supabase row 자체이므로 _raw.created_at 이 진짜 값.
+        const rawCreatedAt = item?._raw?.created_at
+                          || item?.createdAt
+                          || item?._raw?.created_at_utc
+                          || item?._raw?.raw?.firstRegisteredAt
+                          || item?._raw?.raw?.createdAt
+                          || item?._raw?.date_uploaded
+                          || '';
+        if (rawCreatedAt) dbg.hadCreatedAt += 1;
+        if (parseDate(rawCreatedAt)) dbg.parsedOk += 1;
+        if (dbg.sample.length < 3 && rawCreatedAt) dbg.sample.push({ id: item?.id, createdAt: rawCreatedAt, source: item?.sourceType });
         if (sameDay(rawCreatedAt, dateKey)) {
+          dbg.todayMatch += 1;
           todayParts.total += 1;
           const sourceKey = String(item?.sourceType || '').trim();
           if (sourceKey === 'auction') todayParts.auction += 1;
@@ -340,6 +356,8 @@
         const address = String(item?.address || item?._raw?.address || '').trim();
         if (!hasCoords && address && status !== 'failed' && status !== 'ok') geoPending += 1;
       }
+      // 콘솔에 진단 출력 (사용자가 F12 로 확인 가능)
+      try { console.log('[Dashboard today 진단]', { dateKey, ...dbg, todayParts }); } catch {}
     }
     if (els.sumTodayTotal) els.sumTodayTotal.textContent = fmt(todayParts.total);
     if (els.sumTodayAuction) els.sumTodayAuction.textContent = fmt(todayParts.auction);
