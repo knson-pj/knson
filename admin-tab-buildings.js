@@ -461,13 +461,15 @@
     updateSelectedCount();
     appendLog("── 표제부 수집 " + (shouldStop ? "중단" : "완료") + " ──");
     if (!shouldStop) {
-      appendLog("💡 다음 단계: [전유부+공용면적] 또는 [전유부+지오코딩] 버튼, 혹은 [🚀 일괄 실행] 사용");
+      appendLog("💡 다음 단계: [전유부+공용면적] → [지오코딩] 순서 권장, 혹은 [🚀 일괄 실행] 사용");
     }
     loadStatus();
     loadUsage();
   }
 
-  // ── enrich만 실행 ──
+  // ── 지오코딩 (주소 → 좌표) ──
+  // v3 'enrich' 에 포함되어 있던 전유부 합계 로직은 v4 'enrich_v2' 가 더 완전하게 커버함.
+  // 이 버튼은 순수 지오코딩만 수행 (mode=geocode).
   async function runEnrichOnly() {
     if (isRunning) return;
     var dongs = Array.from(selectedDongs);
@@ -477,33 +479,46 @@
       try { await K.sbSyncLocalSession(); } catch (e) {}
     }
     isRunning = true; shouldStop = false;
-    $("bldBtnCollect").disabled = true;
-    $("bldBtnEnrich").disabled = true;
+    updateSelectedCount();  // 모든 버튼 disable
     $("bldBtnStop").classList.remove("hidden");
     $("bldProgress").classList.remove("hidden");
     $("bldLog").innerHTML = "";
+    appendLog("── 지오코딩 시작 (동 " + dongs.length + "개) ──");
 
     var baseUrl = getProxyUrl();
     var headers = await getAuthHeaders();
 
     for (var j = 0; j < dongs.length; j++) {
-      if (shouldStop) break;
+      if (shouldStop) { appendLog("⛔ 중단됨"); break; }
       var code = dongs[j];
       var name = findDongName(code);
-      var enrichDone = false;
-      var enrichRound = 0;
-      while (!enrichDone && !shouldStop && enrichRound < 100) {
-        enrichRound++;
-        $("bldProgressLabel").textContent = "보충: " + name + " (" + enrichRound + "회)";
+      var done = false;
+      var round = 0;
+      var totalGeo = 0;
+      while (!done && !shouldStop && round < 100) {
+        round++;
+        $("bldProgressLabel").textContent = "지오코딩: " + name + " (라운드 " + round + ")";
         $("bldProgressPct").textContent = Math.round(((j+1)/dongs.length)*100) + "%";
         try {
-          var eres = await fetch(baseUrl + "?mode=enrich&dongCode=" + code + "&limit=20", { headers: headers });
-          var edata = await eres.json();
-          if (edata.done) { enrichDone = true; appendLog(name + " 보충 완료 ✅"); }
-          else { $("bldProgressDetail").textContent = "enriched=" + (edata.enriched||0) + " remaining=" + (edata.remainingResidential||0); }
-        } catch (e) { appendLog(name + " 보충 오류: " + e.message); enrichDone = true; }
+          var res = await fetch(baseUrl + "?mode=geocode&dongCode=" + code + "&limit=50", { headers: headers });
+          if (res.status === 401) {
+            if (typeof K.sbSyncLocalSession === "function") { try { await K.sbSyncLocalSession(true); } catch {} }
+            headers = await getAuthHeaders();
+            res = await fetch(baseUrl + "?mode=geocode&dongCode=" + code + "&limit=50", { headers: headers });
+          }
+          var data = await res.json();
+          if (data.error) { appendLog(name + " 오류: " + data.error); done = true; break; }
+          totalGeo += (data.geocoded || 0);
+          $("bldProgressDetail").textContent = "geocoded=" + totalGeo + " remaining=" + (data.remaining || 0);
+          if (data.done === true) { done = true; appendLog(name + " 지오코딩 완료 ✅ (geocoded=" + totalGeo + ")"); }
+          else if ((data.processed || 0) === 0) { done = true; appendLog(name + " 처리할 항목 없음"); }
+        } catch (e) {
+          appendLog(name + " 지오코딩 오류: " + e.message);
+          done = true;
+        }
       }
     }
+    appendLog("── 지오코딩 " + (shouldStop ? "중단" : "완료") + " ──");
     isRunning = false;
     $("bldBtnStop").classList.add("hidden");
     updateSelectedCount();
@@ -659,6 +674,7 @@
     var sequence = [
       { id: "bldBatchOpt_collect",       mode: "collect",       label: "표제부",         isCollect: true },
       { id: "bldBatchOpt_enrich_v2",     mode: "enrich_v2",     label: "전유부+공용면적", isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
+      { id: "bldBatchOpt_geocode",       mode: "geocode",       label: "지오코딩",       isGeo: true },
       { id: "bldBatchOpt_collect_atch",  mode: "collect_atch",  label: "부속지번",       isV4: true, opts: { limitPerCall: 20, maxRounds: 50 } },
       { id: "bldBatchOpt_enrich_recap",  mode: "enrich_recap",  label: "총괄표제부",     isV4: true, opts: { limitPerCall: 10, maxRounds: 30 } },
       { id: "bldBatchOpt_enrich_extras", mode: "enrich_extras", label: "층별·지역·오수", isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
@@ -693,6 +709,9 @@
         if (step.isCollect) {
           // collect 는 기존 runCollect 재사용 — 다만 그 함수는 자체 UI 초기화를 하므로 await 하고 끝나길 기다림
           await runCollect();
+        } else if (step.isGeo) {
+          // 지오코딩은 runEnrichOnly (내부는 mode=geocode 루프) 재사용
+          await runEnrichOnly();
         } else if (step.isV4) {
           await runEnrichV4(step.mode, step.label, step.opts);
         }
@@ -807,15 +826,46 @@
     if (!jobs.length) { tbody.innerHTML = ""; if (empty) empty.classList.remove("hidden"); return; }
     if (empty) empty.classList.add("hidden");
     tbody.innerHTML = jobs.map(function(j) {
-      var statusBadge = j.status === "done" || j.status === "collected"
-        ? '<span style="color:#4CAF50;font-weight:700;">' + escHtml(j.status) + '</span>'
-        : '<span style="color:#FF9800;">' + escHtml(j.status || "pending") + '</span>';
+      // 모드별 진행 칩 렌더링
+      var titleCnt    = Number(j.title_count      || 0);
+      var v2Cnt       = Number(j.enrich_v2_count  || 0);
+      var geoCnt      = Number(j.geocode_count    || 0);
+      var atchCnt     = Number(j.atch_count       || 0);
+      var recapCnt    = Number(j.recap_count      || 0);
+      var extrasCnt   = Number(j.extras_count     || 0);
+      var priceCnt    = Number(j.price_count      || 0);
+      var totalBld    = Number(j.total_buildings  || titleCnt || 0);
+
+      // 칩 생성 헬퍼: 수집률(%)에 따라 색상 구분
+      function chip(label, n, denom) {
+        var bg = "#E5E7EB", fg = "#6B7280";  // 회색 (미수집)
+        if (n > 0 && denom > 0) {
+          var pct = Math.round((n / denom) * 100);
+          if (pct >= 95)      { bg = "#DCFCE7"; fg = "#15803D"; }  // 녹색 (완료)
+          else if (pct >= 50) { bg = "#FEF9C3"; fg = "#A16207"; }  // 노랑 (진행중)
+          else                { bg = "#FEE2E2"; fg = "#B91C1C"; }  // 빨강 (미흡)
+        }
+        var title = denom > 0 ? (n + "/" + denom) : String(n);
+        return '<span title="' + escHtml(title) + '" style="display:inline-block;padding:1px 6px;margin:1px;border-radius:10px;font-size:9px;font-weight:600;background:' + bg + ';color:' + fg + ';">' + escHtml(label) + ' ' + n + '</span>';
+      }
+
+      var chips =
+        chip("표제부",    titleCnt,  totalBld) +
+        chip("전유부",    v2Cnt,     titleCnt) +
+        chip("지오코딩",  geoCnt,    titleCnt) +
+        chip("부속지번",  atchCnt,   titleCnt) +
+        chip("총괄",      recapCnt,  0) +
+        chip("층별등",    extrasCnt, titleCnt) +
+        chip("공시가",    priceCnt,  0);
+
+      var lastMode = j.last_mode ? '<span style="font-size:10px;color:var(--muted);">(' + escHtml(j.last_mode) + ')</span>' : '';
+
       return '<tr>' +
         '<td>' + escHtml(j.dong_name || j.dong_code) + '</td>' +
-        '<td>' + (j.total_buildings || 0) + '</td>' +
-        '<td>' + (j.collected_buildings || 0) + '</td>' +
-        '<td>' + statusBadge + '</td>' +
-        '<td style="font-size:10px;">' + fmtDate(j.finished_at) + '</td>' +
+        '<td>' + totalBld + '</td>' +
+        '<td style="line-height:1.8;">' + chips + '</td>' +
+        '<td>' + lastMode + '</td>' +
+        '<td style="font-size:10px;">' + fmtDate(j.last_run_at || j.finished_at) + '</td>' +
         '</tr>';
     }).join("");
   }

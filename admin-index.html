@@ -407,7 +407,7 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
               <span style="font-size:10px;color:var(--muted);font-weight:600;margin-right:2px;">기본:</span>
               <button id="bldBtnCollect" class="btn btn-primary btn-sm" type="button" disabled>표제부 수집</button>
-              <button id="bldBtnEnrich" class="btn btn-sm" type="button" disabled>전유부+지오코딩</button>
+              <button id="bldBtnEnrich" class="btn btn-sm" type="button" disabled title="주소 → 좌표 변환 (Vworld API)">지오코딩</button>
               <span style="width:1px;height:20px;background:var(--line);margin:0 4px;"></span>
               <span style="font-size:10px;color:var(--muted);font-weight:600;margin-right:2px;">v4 확장:</span>
               <button id="bldBtnEnrichV2" class="btn btn-sm" type="button" disabled title="전유부+공용면적 수집 → building_units 저장, 전용률 자동 계산">전유부+공용면적</button>
@@ -425,7 +425,8 @@
               <span style="font-weight:700;color:var(--text);">🚀 일괄 실행:</span>
               <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_collect" checked /> 표제부</label>
               <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_enrich_v2" checked /> 전유부+공용면적</label>
-              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_collect_atch" checked /> 부속지번</label>
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_geocode" checked /> 지오코딩</label>
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_collect_atch" /> 부속지번</label>
               <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_enrich_recap" /> 총괄표제부</label>
               <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_enrich_extras" /> 층별·지역·오수</label>
               <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="bldBatchOpt_enrich_price" /> 공시가격</label>
@@ -457,7 +458,7 @@
           <div class="card-body">
             <div class="table-wrap">
               <table class="table" id="bldStatusTable">
-                <thead><tr><th>법정동</th><th>건물수</th><th>수집건수</th><th>상태</th><th>수집일시</th></tr></thead>
+                <thead><tr><th>법정동</th><th>건물수</th><th>진행 상태 (모드별)</th><th>마지막 모드</th><th>마지막 실행</th></tr></thead>
                 <tbody id="bldStatusBody"></tbody>
               </table>
               <div id="bldStatusEmpty" class="empty">수집된 법정동이 없습니다.</div>
@@ -512,7 +513,7 @@
 <script src="./admin-tab-properties.js?v=20260406-layoutfix1"></script>
 <script src="./admin-tab-dashboard.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
-<script src="./admin-tab-buildings.js?v=20260417-bld6-single"></script>
+<script src="./admin-tab-buildings.js?v=20260417-bld7-breakdown"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
 <script src="./admin-app.js?v=20260409-val1"></script>
 </body>
