@@ -402,11 +402,20 @@
         </div>
 
         <div class="card" style="margin-bottom:16px;">
-          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
             <strong>수집 실행</strong>
-            <div style="display:flex;gap:6px;">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+              <span style="font-size:10px;color:var(--muted);font-weight:600;margin-right:2px;">기본:</span>
               <button id="bldBtnCollect" class="btn btn-primary btn-sm" type="button" disabled>표제부 수집</button>
               <button id="bldBtnEnrich" class="btn btn-sm" type="button" disabled>전유부+지오코딩</button>
+              <span style="width:1px;height:20px;background:var(--line);margin:0 4px;"></span>
+              <span style="font-size:10px;color:var(--muted);font-weight:600;margin-right:2px;">v4 확장:</span>
+              <button id="bldBtnEnrichV2" class="btn btn-sm" type="button" disabled title="전유부+공용면적 수집 → building_units 저장, 전용률 자동 계산">전유부+공용면적</button>
+              <button id="bldBtnCollectAtch" class="btn btn-sm" type="button" disabled title="부속지번 수집 → 지번 합필 건물 중복감지용">부속지번</button>
+              <button id="bldBtnEnrichRecap" class="btn btn-sm" type="button" disabled title="총괄표제부 수집 → 단지 전체 요약">총괄표제부</button>
+              <button id="bldBtnEnrichExtras" class="btn btn-sm" type="button" disabled title="층별개요+지역지구구역+오수정화시설">층별·지역·오수</button>
+              <button id="bldBtnEnrichPrice" class="btn btn-sm" type="button" disabled title="공시가격 수집 (주거용)">공시가격</button>
+              <span style="width:1px;height:20px;background:var(--line);margin:0 4px;"></span>
               <button id="bldBtnStop" class="btn btn-danger btn-sm hidden" type="button">중단</button>
             </div>
           </div>
@@ -487,7 +496,7 @@
 <script src="./admin-tab-properties.js?v=20260406-layoutfix1"></script>
 <script src="./admin-tab-dashboard.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
-<script src="./admin-tab-buildings.js?v=20260417-bld2"></script>
+<script src="./admin-tab-buildings.js?v=20260417-bld3"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
 <script src="./admin-app.js?v=20260409-val1"></script>
 </body>

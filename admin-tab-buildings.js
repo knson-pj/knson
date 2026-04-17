@@ -258,10 +258,16 @@
   function updateSelectedCount() {
     var el = $("bldSelectedCount");
     if (el) el.textContent = selectedDongs.size + "개 선택";
-    var btnCollect = $("bldBtnCollect");
-    var btnEnrich = $("bldBtnEnrich");
-    if (btnCollect) btnCollect.disabled = selectedDongs.size === 0 || isRunning;
-    if (btnEnrich) btnEnrich.disabled = selectedDongs.size === 0 || isRunning;
+    var disabled = selectedDongs.size === 0 || isRunning;
+    var ids = [
+      "bldBtnCollect", "bldBtnEnrich",
+      "bldBtnEnrichV2", "bldBtnCollectAtch",
+      "bldBtnEnrichRecap", "bldBtnEnrichExtras", "bldBtnEnrichPrice"
+    ];
+    for (var i = 0; i < ids.length; i++) {
+      var b = $(ids[i]);
+      if (b) b.disabled = disabled;
+    }
   }
 
   // ── 수집 실행 ──
@@ -368,6 +374,7 @@
     updateSelectedCount();
     appendLog("── 수집 작업 " + (shouldStop ? "중단" : "완료") + " ──");
     loadStatus();
+    loadUsage();
   }
 
   // ── enrich만 실행 ──
@@ -411,6 +418,7 @@
     $("bldBtnStop").classList.add("hidden");
     updateSelectedCount();
     loadStatus();
+    loadUsage();
   }
 
   function findDongName(code) {
@@ -418,6 +426,135 @@
       for (var d of DONG_LIST[region]) { if (d.code === code) return d.name; }
     }
     return code;
+  }
+
+  // ── v4 확장 모드 제네릭 실행 ──
+  // mode: "enrich_v2" | "collect_atch" | "enrich_recap" | "enrich_extras" | "enrich_price"
+  // label: 사용자 노출용 한글 라벨
+  async function runEnrichV4(mode, label, opts) {
+    if (isRunning) return;
+    var dongs = Array.from(selectedDongs);
+    if (!dongs.length) return;
+
+    opts = opts || {};
+    var limitPerCall = opts.limitPerCall || 15;   // 한 번 호출에 처리할 건물 수
+    var maxRounds = opts.maxRounds || 50;          // 동당 최대 반복 호출
+    var sleepBetween = opts.sleepBetween || 300;   // ms
+    var doneWhenProcessedZero = opts.doneWhenProcessedZero !== false;  // 기본 true
+
+    var K = window.KNSN || {};
+    if (typeof K.sbSyncLocalSession === "function") {
+      try { await K.sbSyncLocalSession(); } catch (e) {}
+    }
+
+    isRunning = true; shouldStop = false;
+    updateSelectedCount();  // 모든 버튼 disable
+    $("bldBtnStop").classList.remove("hidden");
+    $("bldProgress").classList.remove("hidden");
+    $("bldLog").innerHTML = "";
+    appendLog("── " + label + " 시작 (동 " + dongs.length + "개) ──");
+
+    var baseUrl = getProxyUrl();
+    var headers = await getAuthHeaders();
+
+    var totalDongProcessed = 0;
+    var grandTotals = { processed: 0, inserted: 0, enriched: 0, geocoded: 0 };
+
+    for (var j = 0; j < dongs.length; j++) {
+      if (shouldStop) { appendLog("⛔ 중단됨"); break; }
+      var code = dongs[j];
+      var name = findDongName(code);
+
+      var done = false;
+      var round = 0;
+      var dongTotals = { processed: 0, inserted: 0, enriched: 0, geocoded: 0 };
+
+      while (!done && !shouldStop && round < maxRounds) {
+        round++;
+        $("bldProgressLabel").textContent = label + ": " + name + " (라운드 " + round + ")";
+        $("bldProgressPct").textContent = Math.round(((j) / dongs.length) * 100) + "%";
+
+        try {
+          var url = baseUrl + "?mode=" + encodeURIComponent(mode) +
+                    "&dongCode=" + encodeURIComponent(code) +
+                    "&limit=" + limitPerCall;
+          var res = await fetch(url, { headers: headers });
+
+          // 401 → 세션 갱신 후 재시도
+          if (res.status === 401) {
+            if (typeof K.sbSyncLocalSession === "function") {
+              try { await K.sbSyncLocalSession(true); } catch (e) {}
+            }
+            headers = await getAuthHeaders();
+            res = await fetch(url, { headers: headers });
+          }
+
+          var data = await res.json();
+
+          if (data && data.error) {
+            appendLog(name + " " + label + " 오류: " + data.error);
+            done = true;
+            break;
+          }
+
+          // 통계 누적
+          var processed = Number(data.processed || 0);
+          var inserted = Number(data.inserted || data.unitsInserted || 0);
+          var enriched = Number(data.enriched || 0);
+          var geocoded = Number(data.geocoded || 0);
+          dongTotals.processed += processed;
+          dongTotals.inserted += inserted;
+          dongTotals.enriched += enriched;
+          dongTotals.geocoded += geocoded;
+
+          $("bldProgressDetail").textContent =
+            "processed=" + dongTotals.processed +
+            " inserted=" + dongTotals.inserted +
+            (dongTotals.enriched ? " enriched=" + dongTotals.enriched : "") +
+            (dongTotals.geocoded ? " geocoded=" + dongTotals.geocoded : "");
+
+          // 종료 조건
+          if (data.done === true) {
+            done = true;
+          } else if (doneWhenProcessedZero && processed === 0 && inserted === 0 && enriched === 0) {
+            // 더 이상 처리할 대상 없음
+            done = true;
+          }
+        } catch (e) {
+          appendLog(name + " " + label + " 네트워크 오류: " + e.message);
+          done = true;
+        }
+
+        if (sleepBetween > 0 && !done) {
+          await new Promise(function(r) { setTimeout(r, sleepBetween); });
+        }
+      }
+
+      appendLog(name + " " + label + " 완료 · processed=" + dongTotals.processed +
+                " inserted=" + dongTotals.inserted +
+                (dongTotals.enriched ? " enriched=" + dongTotals.enriched : "") +
+                (dongTotals.geocoded ? " geocoded=" + dongTotals.geocoded : ""));
+      grandTotals.processed += dongTotals.processed;
+      grandTotals.inserted += dongTotals.inserted;
+      grandTotals.enriched += dongTotals.enriched;
+      grandTotals.geocoded += dongTotals.geocoded;
+      totalDongProcessed++;
+    }
+
+    $("bldProgressLabel").textContent = label + " 완료";
+    $("bldProgressPct").textContent = "100%";
+    $("bldProgressDetail").textContent =
+      "동 " + totalDongProcessed + "개 · processed=" + grandTotals.processed +
+      " inserted=" + grandTotals.inserted +
+      (grandTotals.enriched ? " enriched=" + grandTotals.enriched : "") +
+      (grandTotals.geocoded ? " geocoded=" + grandTotals.geocoded : "");
+    appendLog("── " + label + " 전체 완료 ✅ ──");
+
+    isRunning = false;
+    $("bldBtnStop").classList.add("hidden");
+    updateSelectedCount();
+    loadStatus();
+    loadUsage();  // 사용량 카드 갱신
   }
 
   // ── 상태 테이블 ──
@@ -604,6 +741,23 @@
     if ($("bldBtnStop")) $("bldBtnStop").addEventListener("click", function() { shouldStop = true; });
     if ($("bldBtnRefreshStatus")) $("bldBtnRefreshStatus").addEventListener("click", function() { loadStatus(); });
     if ($("bldBtnRefreshUsage")) $("bldBtnRefreshUsage").addEventListener("click", function() { loadUsage(); });
+
+    // v4 확장 모드 버튼
+    if ($("bldBtnEnrichV2")) $("bldBtnEnrichV2").addEventListener("click", function() {
+      runEnrichV4("enrich_v2", "전유부+공용면적", { limitPerCall: 10, maxRounds: 100 });
+    });
+    if ($("bldBtnCollectAtch")) $("bldBtnCollectAtch").addEventListener("click", function() {
+      runEnrichV4("collect_atch", "부속지번", { limitPerCall: 20, maxRounds: 50 });
+    });
+    if ($("bldBtnEnrichRecap")) $("bldBtnEnrichRecap").addEventListener("click", function() {
+      runEnrichV4("enrich_recap", "총괄표제부", { limitPerCall: 10, maxRounds: 30 });
+    });
+    if ($("bldBtnEnrichExtras")) $("bldBtnEnrichExtras").addEventListener("click", function() {
+      runEnrichV4("enrich_extras", "층별·지역·오수", { limitPerCall: 10, maxRounds: 100 });
+    });
+    if ($("bldBtnEnrichPrice")) $("bldBtnEnrichPrice").addEventListener("click", function() {
+      runEnrichV4("enrich_price", "공시가격", { limitPerCall: 10, maxRounds: 100 });
+    });
 
     // 초기 상태 로드 (세션 동기화 후)
     (async function() {
