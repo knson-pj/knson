@@ -320,7 +320,8 @@
       todayParts.general = 0;
       geoPending = 0;
       for (const item of Array.isArray(props) ? props : []) {
-        const rawCreatedAt = item?.createdAt || item?._raw?.created_at || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
+        // DB 의 created_at (실제 INSERT 시점) 을 최우선. 그 다음 애플리케이션 레이어의 createdAt, 마지막으로 raw.firstRegisteredAt.
+        const rawCreatedAt = item?._raw?.created_at || item?.createdAt || item?._raw?.raw?.firstRegisteredAt || item?._raw?.raw?.createdAt || '';
         if (sameDay(rawCreatedAt, dateKey)) {
           todayParts.total += 1;
           const sourceKey = String(item?.sourceType || '').trim();

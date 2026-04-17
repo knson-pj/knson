@@ -340,7 +340,7 @@
       commonarea: toNullableNumber(item && (item.commonarea ?? item.common_area ?? item.commonArea ?? raw.commonarea ?? raw.commonArea ?? raw["공용면적(평)"] ?? raw["공급/계약면적(평)"] ?? raw["공급면적(평)"])),
       sitearea: toNullableNumber(item && (item.sitearea ?? item.site_area ?? item.siteArea ?? raw.sitearea ?? raw.siteArea ?? raw["토지면적(평)"])),
       dateMain: pickFirstText(item && item.dateMain, item && item.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], item && item.bidDate, item && item.bid_date, ""),
-      createdAt: pickFirstText(item && item.date, item && item.date_uploaded, item && item.createdAt, item && item.created_at, raw.date, raw.createdAt, raw.date_uploaded, ""),
+      createdAt: pickFirstText(item && item.created_at, item && item.createdAt, item && item.date_uploaded, item && item.date, raw.createdAt, raw.date_uploaded, raw.date, ""),
       assignedAgentId: pickFirstText(item && item.assignedAgentId, item && item.assigneeId, item && item.assignee_id, item && item.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, ""),
       assignedAgentName: (function () {
         var aid = pickFirstText(item && item.assignedAgentId, item && item.assigneeId, item && item.assignee_id, item && item.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, "");
