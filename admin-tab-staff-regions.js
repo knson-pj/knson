@@ -775,138 +775,222 @@
     mod.renderAssignFilterSummary();
   };
 
-  // C. 자동 물건 배정
-  mod.handleAutoAssign = async function handleAutoAssign() {
-    const { state, els, K, utils } = ctx();
-    const { normalizeRole, getStaffNameById, invalidatePropertyCollections, loadProperties, ensureAuxiliaryPropertiesForAdmin, setAdminLoading } = utils;
-    const DataAccess = window.KNSN_DATA_ACCESS;
+  // ═══════════════════════════════════════════════════════
+  // C. 자동 물건 배정 (미리보기 모달 + 서버 API + 배치 이력)
+  // ═══════════════════════════════════════════════════════
+
+  function escapeForHtml(v) {
+    return String(v ?? '')
+      .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  }
+
+  // 미배정 물건 + 담당자 조합으로 assignments 계산 (실제 UPDATE 전 미리보기에도 사용)
+  function computeAssignments() {
+    const { state, utils } = ctx();
+    const normalizeRole = utils.normalizeRole || function(r) { return String(r || '').trim().toLowerCase(); };
 
     const allAgents = (state.staff || []).filter((s) => normalizeRole(s.role) === 'staff');
-    if (!allAgents.length) return alert('담당자 계정을 먼저 등록해 주세요.');
+    if (!allAgents.length) return { error: '담당자 계정을 먼저 등록해 주세요.' };
 
-    // 담당자 필터가 활성화돼 있으면 선택된 담당자에게만 배정
     const filterAgentIds = [...(_multiSelectState.assignAgentFilter || [])];
     const agents = filterAgentIds.length
       ? allAgents.filter((a) => filterAgentIds.includes(String(a.id)))
       : allAgents;
-    if (!agents.length) return alert('선택한 담당자가 없습니다. 담당자 필터를 다시 확인해 주세요.');
+    if (!agents.length) return { error: '선택한 담당자가 없습니다. 담당자 필터를 다시 확인해 주세요.' };
 
     const filtered = getFilteredUnassignedProperties();
-    if (!filtered.length) return alert('배정할 미배정 물건이 없습니다.');
+    if (!filtered.length) return { error: '배정할 미배정 물건이 없습니다.' };
 
-    const limitedNote = filterAgentIds.length ? ` (선택 담당자 ${agents.length}명에게만)` : '';
-    if (!confirm(`미배정 ${filtered.length}건을 ${agents.length}명의 담당자에게 자동 배정할까요?${limitedNote}`)) return;
+    const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
 
-    setAdminLoading('autoAssign', true, '물건 자동 배정 중입니다...');
-    if (els.autoAssignStatus) els.autoAssignStatus.textContent = '배정 중...';
+    // 담당자별 + 구분별 업무처리율 계산 (기존 로직 보존)
+    const agentRates = agents.map((a) => {
+      const aid = String(a.id);
+      const rateByBucket = {};
+      BUCKET_KEYS.forEach((k) => {
+        let total = 0, managed = 0;
+        allProps.forEach((p) => {
+          if (String(p.assignedAgentId || p.assigneeId || '').trim() !== aid) return;
+          const bucket = getSourceBucket(utils, p);
+          if ((BUCKET_KEYS.includes(bucket) ? bucket : 'general') !== k) return;
+          total++;
+          if (isManaged(p)) managed++;
+        });
+        rateByBucket[k] = total > 0 ? managed / total : 0.5;
+      });
+      return { agent: a, rateByBucket };
+    });
+
+    // 구분별로 미배정 물건 분류
+    const bucketProps = new Map();
+    filtered.forEach((p) => {
+      const bucket = getSourceBucket(utils, p);
+      const key = BUCKET_KEYS.includes(bucket) ? bucket : 'general';
+      if (!bucketProps.has(key)) bucketProps.set(key, []);
+      bucketProps.get(key).push(p);
+    });
+
+    // 구분별 업무처리율 가중 라운드로빈 배분
+    const assignments = [];
+    for (const [bucket, props] of bucketProps.entries()) {
+      const weights = agentRates.map((ar) => Math.max(ar.rateByBucket[bucket] || 0.1, 0.1));
+      const totalWeight = weights.reduce((a, b) => a + b, 0);
+      const agentCounts = weights.map((w) => Math.floor(props.length * w / totalWeight));
+      let remainder = props.length - agentCounts.reduce((a, b) => a + b, 0);
+      const sortedIdx = weights.map((w, i) => ({ i, w })).sort((a, b) => b.w - a.w);
+      for (let r = 0; r < remainder; r++) agentCounts[sortedIdx[r % sortedIdx.length].i]++;
+
+      let idx = 0;
+      agentRates.forEach((ar, ai) => {
+        const cnt = agentCounts[ai];
+        for (let c = 0; c < cnt && idx < props.length; c++, idx++) {
+          const p = props[idx];
+          assignments.push({
+            propertyId: String(p.id || p.globalId || '').trim(),
+            agentId: String(ar.agent.id),
+            agentName: String(ar.agent.name || ar.agent.email || ''),
+          });
+        }
+      });
+    }
+
+    // 담당자별 집계
+    const agentSummary = {};
+    assignments.forEach((a) => {
+      if (!agentSummary[a.agentId]) agentSummary[a.agentId] = { name: a.agentName, count: 0 };
+      agentSummary[a.agentId].count += 1;
+    });
+
+    return {
+      assignments,
+      agents,
+      filterAgentIds,
+      filtered,
+      agentSummary,
+      filterSnapshot: { ...getAssignFilterValues() },
+    };
+  }
+
+  // ── 미리보기 모달 ──
+  function showPreviewModal(plan, onConfirm) {
+    const { els } = ctx();
+    if (!els.assignPreviewModal) {
+      // 모달 DOM 없으면 기존 confirm 으로 fallback
+      const ok = confirm(`미배정 ${plan.assignments.length}건을 ${plan.agents.length}명에게 자동 배정할까요?`);
+      if (ok) onConfirm();
+      return;
+    }
+    // Summary
+    const total = plan.assignments.length;
+    const agentCount = plan.agents.length;
+    els.assignPreviewSummary.innerHTML =
+      `<div style="font-weight:600;font-size:14px;margin-bottom:4px;">총 ${total}건을 ${agentCount}명에게 배정합니다.</div>`
+      + `<div style="color:var(--text-secondary,#666);font-size:12px;">실행 후 '배정 이력' 섹션에서 언제든 되돌릴 수 있습니다 (3주 이내).</div>`;
+
+    // 담당자별 배분
+    const sorted = Object.entries(plan.agentSummary).sort((a, b) => b[1].count - a[1].count);
+    els.assignPreviewAgents.innerHTML = sorted.map(([aid, info]) => {
+      const pct = total > 0 ? Math.round(info.count / total * 100) : 0;
+      return `<div style="display:flex;justify-content:space-between;padding:3px 0;">`
+        + `<span>${escapeForHtml(info.name || aid)}</span>`
+        + `<span style="font-weight:600;">${info.count}건 <span style="color:var(--muted,#999);font-size:11px;font-weight:400;">(${pct}%)</span></span>`
+        + `</div>`;
+    }).join('');
+
+    // 필터 요약
+    const fs = plan.filterSnapshot;
+    const pieces = [];
+    if (fs.sidos.length)    pieces.push(`시/도: ${fs.sidos.join(', ')}`);
+    if (fs.gus.length)      pieces.push(`시/군/구: ${fs.gus.join(', ')}`);
+    if (fs.dongs.length)    pieces.push(`동: ${fs.dongs.join(', ')}`);
+    if (fs.sources.length)  pieces.push(`구분: ${fs.sources.join(', ')}`);
+    if (fs.areas.length)    pieces.push(`면적: ${fs.areas.join(', ')}`);
+    if (fs.prices.length)   pieces.push(`가격: ${fs.prices.join(', ')}`);
+    if (fs.agentIds.length) pieces.push(`담당자 한정: ${agentCount}명`);
+    els.assignPreviewFilters.innerHTML = pieces.length
+      ? `<strong>적용된 필터</strong><br/>${pieces.map(escapeForHtml).join('<br/>')}`
+      : `<strong>적용된 필터</strong><br/><span style="color:var(--muted,#999);">필터 없음 (전체)</span>`;
+
+    // 모달 오픈
+    els.assignPreviewModal.classList.remove('hidden');
+    els.assignPreviewModal.style.display = 'block';
+
+    // 닫기 핸들러 (중복 방지: clone 으로 교체)
+    const modal = els.assignPreviewModal;
+    const closeModal = () => {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    };
+    modal.querySelectorAll('[data-assign-preview-close]').forEach((el) => {
+      const c = el.cloneNode(true);
+      el.parentNode.replaceChild(c, el);
+      c.addEventListener('click', closeModal);
+    });
+    const confirmBtn = els.btnAssignPreviewConfirm;
+    if (confirmBtn) {
+      const newBtn = confirmBtn.cloneNode(true);
+      confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+      els.btnAssignPreviewConfirm = newBtn;
+      newBtn.addEventListener('click', () => {
+        closeModal();
+        onConfirm();
+      });
+    }
+  }
+
+  // ── 메인: 자동 배정 실행 ──
+  mod.handleAutoAssign = async function handleAutoAssign() {
+    const plan = computeAssignments();
+    if (plan.error) return alert(plan.error);
+
+    showPreviewModal(plan, async () => {
+      await executeAutoAssign(plan);
+    });
+  };
+
+  async function executeAutoAssign(plan) {
+    const { els, api, utils } = ctx();
+    const { invalidatePropertyCollections, loadProperties, ensureAuxiliaryPropertiesForAdmin, setAdminLoading } = utils;
+
+    setAdminLoading('autoAssign', true, `${plan.assignments.length}건 자동 배정 중입니다...`);
+    if (els.autoAssignStatus) els.autoAssignStatus.textContent = '서버 전송 중...';
 
     try {
-      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
-      if (!sb) throw new Error('Supabase 연동이 필요합니다.');
-
-      const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
-
-      // 담당자별 + 구분별 업무처리율 계산
-      const agentRates = agents.map((a) => {
-        const aid = String(a.id);
-        const rateByBucket = {};
-        BUCKET_KEYS.forEach((k) => {
-          let total = 0, managed = 0;
-          allProps.forEach((p) => {
-            if (String(p.assignedAgentId || p.assigneeId || '').trim() !== aid) return;
-            const bucket = getSourceBucket(utils, p);
-            if ((BUCKET_KEYS.includes(bucket) ? bucket : 'general') !== k) return;
-            total++;
-            if (isManaged(p)) managed++;
-          });
-          rateByBucket[k] = total > 0 ? managed / total : 0.5; // 데이터 없으면 50%
-        });
-        return { agent: a, rateByBucket };
+      const resp = await api('/admin/assignment-batches', {
+        method: 'POST',
+        auth: true,
+        body: {
+          assignments: plan.assignments,
+          filterSnapshot: plan.filterSnapshot,
+          agentSummary: plan.agentSummary,
+        },
       });
 
-      // 구분별로 미배정 물건 분류
-      const bucketProps = new Map();
-      filtered.forEach((p) => {
-        const bucket = getSourceBucket(utils, p);
-        const key = BUCKET_KEYS.includes(bucket) ? bucket : 'general';
-        if (!bucketProps.has(key)) bucketProps.set(key, []);
-        bucketProps.get(key).push(p);
-      });
-
-      // 구분별로 업무처리율에 비례하여 배분
-      const assignments = []; // { propId, agentId, agentName }
-      for (const [bucket, props] of bucketProps.entries()) {
-        // 가중치 계산 (처리율 높을수록 더 많이)
-        const weights = agentRates.map((ar) => {
-          const rate = ar.rateByBucket[bucket] || 0.1;
-          return Math.max(rate, 0.1); // 최소 10%
-        });
-        const totalWeight = weights.reduce((a, b) => a + b, 0);
-
-        // 가중 라운드로빈 배분
-        const agentCounts = weights.map((w) => Math.floor(props.length * w / totalWeight));
-        let remainder = props.length - agentCounts.reduce((a, b) => a + b, 0);
-        // 나머지를 가중치 높은 순으로 배분
-        const sortedIdx = weights.map((w, i) => ({ i, w })).sort((a, b) => b.w - a.w);
-        for (let r = 0; r < remainder; r++) {
-          agentCounts[sortedIdx[r % sortedIdx.length].i]++;
-        }
-
-        let idx = 0;
-        agentRates.forEach((ar, ai) => {
-          const cnt = agentCounts[ai];
-          for (let c = 0; c < cnt && idx < props.length; c++, idx++) {
-            const p = props[idx];
-            assignments.push({
-              propId: String(p.id || p.globalId || '').trim(),
-              agentId: String(ar.agent.id),
-              agentName: String(ar.agent.name || ar.agent.email || ''),
-            });
-          }
-        });
+      if (!resp?.ok || !resp?.batch) {
+        throw new Error(resp?.message || '배정 응답이 올바르지 않습니다.');
       }
 
-      // DB 업데이트
-      let okCount = 0, failCount = 0;
-      for (const a of assignments) {
-        if (!a.propId) { failCount++; continue; }
-        try {
-          if (DataAccess && typeof DataAccess.updatePropertyRowResilient === 'function') {
-            await DataAccess.updatePropertyRowResilient(sb, a.propId, { assignee_id: a.agentId, assignee_name: a.agentName });
-          } else {
-            await sb.from('properties').update({ assignee_id: a.agentId, assignee_name: a.agentName }).eq('id', a.propId);
-          }
-          okCount++;
-        } catch (e) {
-          console.warn('assign failed:', a.propId, e.message);
-          failCount++;
-        }
-        if (els.autoAssignStatus) els.autoAssignStatus.textContent = `${okCount + failCount}/${assignments.length} 처리 중...`;
-      }
-
-      // 결과 표시
-      const resultParts = [`배정 완료: ${okCount}건 성공`];
-      if (failCount > 0) resultParts.push(`${failCount}건 실패`);
-
-      // 담당자별 배정 결과 요약
-      const agentSummary = new Map();
-      assignments.forEach((a) => {
-        const name = a.agentName || a.agentId;
-        agentSummary.set(name, (agentSummary.get(name) || 0) + 1);
-      });
-      const summaryText = [...agentSummary.entries()].map(([name, cnt]) => `${name}: ${cnt}건`).join(', ');
-      resultParts.push(summaryText);
+      const b = resp.batch;
+      const parts = [`배정 완료: ${b.propertiesUpdated}건 성공`];
+      if (b.propertiesFailed > 0) parts.push(`${b.propertiesFailed}건 실패`);
+      const summaryText = Object.entries(plan.agentSummary)
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([_, info]) => `${info.name}: ${info.count}건`)
+        .join(', ');
+      parts.push(summaryText);
 
       if (els.autoAssignResult) {
-        els.autoAssignResult.innerHTML = `<div class="hint-box" style="margin-top:8px;">${resultParts.join(' / ')}</div>`;
+        els.autoAssignResult.innerHTML = `<div class="hint-box" style="margin-top:8px;">${escapeForHtml(parts.join(' / '))} <span style="color:var(--muted,#999);font-size:11px;">(배정 이력에 저장됨 · 되돌릴 수 있음)</span></div>`;
       }
       if (els.autoAssignStatus) els.autoAssignStatus.textContent = '';
 
-      // 데이터 새로고침
+      // 새로고침
       invalidatePropertyCollections();
       await ensureAuxiliaryPropertiesForAdmin({ forceRefresh: true });
       await loadProperties({ refreshSummary: true });
       mod.refreshAssignmentView();
+      mod.loadAssignmentHistory();
     } catch (err) {
       console.error(err);
       alert(err.message || '자동 배정 실패');
@@ -914,7 +998,238 @@
     } finally {
       setAdminLoading('autoAssign', false);
     }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // D. 배정 이력 (로드, 렌더, 롤백)
+  // ═══════════════════════════════════════════════════════
+  let _assignHistoryCache = [];
+
+  mod.loadAssignmentHistory = async function loadAssignmentHistory() {
+    const { els, api } = ctx();
+    if (!els.assignHistoryList) return;
+    try {
+      const resp = await api('/admin/assignment-batches', { auth: true });
+      _assignHistoryCache = Array.isArray(resp?.batches) ? resp.batches : [];
+      renderAssignHistoryList();
+    } catch (err) {
+      console.error('[loadAssignmentHistory] failed:', err);
+      els.assignHistoryList.innerHTML = `<div class="hint-box" style="color:var(--danger,#dc2626);">배정 이력을 불러오지 못했습니다: ${escapeForHtml(err.message || '')}</div>`;
+    }
   };
+
+  function formatDateTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    // KST 변환
+    const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    const y = kst.getUTCFullYear();
+    const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(kst.getUTCDate()).padStart(2, '0');
+    const hh = String(kst.getUTCHours()).padStart(2, '0');
+    const mi = String(kst.getUTCMinutes()).padStart(2, '0');
+    return `${y}-${m}-${dd} ${hh}:${mi}`;
+  }
+
+  function renderAssignHistoryList() {
+    const { els } = ctx();
+    if (!els.assignHistoryList) return;
+    const batches = _assignHistoryCache;
+    if (!batches.length) {
+      els.assignHistoryList.innerHTML = '';
+      if (els.assignHistoryEmpty) els.assignHistoryEmpty.classList.remove('hidden');
+      return;
+    }
+    if (els.assignHistoryEmpty) els.assignHistoryEmpty.classList.add('hidden');
+
+    const html = batches.map((b) => renderBatchCard(b)).join('');
+    els.assignHistoryList.innerHTML = html;
+    bindBatchCardActions();
+  }
+
+  function renderBatchCard(b) {
+    const id = escapeForHtml(b.id);
+    const when = formatDateTime(b.created_at);
+    const who = escapeForHtml(b.created_by_name || '-');
+    const total = Number(b.total_count || 0);
+    const fs = b.filter_snapshot || {};
+    const agentSummary = b.agent_summary || {};
+
+    // 필터 요약 (한 줄)
+    const fpieces = [];
+    if (Array.isArray(fs.sidos) && fs.sidos.length) fpieces.push(fs.sidos.join(','));
+    if (Array.isArray(fs.gus) && fs.gus.length)     fpieces.push(fs.gus.slice(0, 3).join(',') + (fs.gus.length > 3 ? ` 외${fs.gus.length-3}` : ''));
+    if (Array.isArray(fs.sources) && fs.sources.length) fpieces.push(fs.sources.join(','));
+    if (Array.isArray(fs.areas) && fs.areas.length) fpieces.push('면적:' + fs.areas.length);
+    if (Array.isArray(fs.prices) && fs.prices.length) fpieces.push('가격:' + fs.prices.length);
+    const filterSummary = fpieces.length ? escapeForHtml(fpieces.join(' · ')) : '<span style="color:var(--muted,#999);">필터 없음</span>';
+
+    // 담당자별 집계 (롤백된 것 표시용)
+    const agents = Object.entries(agentSummary);
+    const agentCells = agents.map(([aid, info]) => {
+      const name = escapeForHtml(info.name || aid);
+      const cnt = Number(info.count || 0);
+      return `<span style="display:inline-block;margin-right:8px;"><strong>${name}</strong>: ${cnt}건</span>`;
+    }).join('');
+
+    // 상태 배지
+    let statusBadge = '';
+    if (b.status === 'rolled_back') {
+      statusBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:600;">전체 롤백됨</span>`;
+    } else if (b.status === 'partial') {
+      statusBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#b45309;font-size:11px;font-weight:600;">부분 롤백</span>`;
+    } else {
+      statusBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#166534;font-size:11px;font-weight:600;">활성</span>`;
+    }
+
+    // 액션 버튼
+    let actions = '';
+    if (b.status !== 'rolled_back') {
+      actions = `
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-ghost btn-sm" data-batch-agent-rollback="${id}">담당자별 롤백 ▾</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-batch-full-rollback="${id}">전체 되돌리기</button>
+        </div>
+      `;
+    } else if (b.rolled_back_at) {
+      actions = `<span style="font-size:11px;color:var(--muted,#999);">롤백 시각: ${escapeForHtml(formatDateTime(b.rolled_back_at))}</span>`;
+    }
+
+    return `
+      <div class="assign-batch-card" style="border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:12px;margin-bottom:8px;background:var(--surface,#fff);" data-batch-id="${id}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1 1 300px;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <strong style="font-size:13px;">${escapeForHtml(when)}</strong>
+              ${statusBadge}
+              <span style="color:var(--muted,#999);font-size:11px;">· 실행: ${who}</span>
+            </div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${total}건</div>
+            <div style="font-size:12px;color:var(--text-secondary,#666);margin-bottom:4px;">${agentCells}</div>
+            <div style="font-size:11px;color:var(--muted,#999);">필터: ${filterSummary}</div>
+          </div>
+          <div style="flex:0 0 auto;">${actions}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindBatchCardActions() {
+    const { els } = ctx();
+    if (!els.assignHistoryList) return;
+    els.assignHistoryList.querySelectorAll('[data-batch-full-rollback]').forEach((btn) => {
+      btn.addEventListener('click', () => handleBatchRollback(btn.dataset.batchFullRollback, null));
+    });
+    els.assignHistoryList.querySelectorAll('[data-batch-agent-rollback]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showAgentRollbackMenu(btn);
+      });
+    });
+  }
+
+  function showAgentRollbackMenu(anchorBtn) {
+    const batchId = anchorBtn.dataset.batchAgentRollback;
+    const batch = _assignHistoryCache.find((b) => b.id === batchId);
+    if (!batch) return;
+    const agents = Object.entries(batch.agent_summary || {});
+    if (!agents.length) { alert('담당자 정보가 없습니다.'); return; }
+
+    // 기존 메뉴 제거
+    document.querySelectorAll('.__agent-rollback-menu').forEach((el) => el.remove());
+
+    const menu = document.createElement('div');
+    menu.className = '__agent-rollback-menu';
+    menu.style.cssText = 'position:fixed;z-index:9999;background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:6px 0;min-width:200px;max-height:280px;overflow-y:auto;';
+
+    agents.forEach(([aid, info]) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.style.cssText = 'display:block;width:100%;text-align:left;padding:7px 14px;border:0;background:transparent;cursor:pointer;font-size:13px;white-space:nowrap;';
+      row.addEventListener('mouseenter', () => { row.style.background = 'var(--hover-bg,#f5f5f5)'; });
+      row.addEventListener('mouseleave', () => { row.style.background = ''; });
+      row.innerHTML = `<strong>${escapeForHtml(info.name || aid)}</strong> <span style="color:var(--muted,#999);font-size:11px;">${info.count}건 되돌리기</span>`;
+      row.addEventListener('click', () => {
+        menu.remove();
+        handleBatchRollback(batchId, [aid]);
+      });
+      menu.appendChild(row);
+    });
+
+    document.body.appendChild(menu);
+    const r = anchorBtn.getBoundingClientRect();
+    menu.style.top = (r.bottom + 2) + 'px';
+    menu.style.left = r.left + 'px';
+
+    const closeOnOutside = (e) => {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeOnOutside);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeOnOutside), 0);
+  }
+
+  async function handleBatchRollback(batchId, agentIds) {
+    const { api, utils } = ctx();
+    const { invalidatePropertyCollections, loadProperties, ensureAuxiliaryPropertiesForAdmin, setAdminLoading } = utils;
+    const batch = _assignHistoryCache.find((b) => b.id === batchId);
+    if (!batch) return;
+
+    let confirmMsg;
+    if (agentIds && agentIds.length) {
+      const agentNames = agentIds.map((aid) => (batch.agent_summary?.[aid]?.name || aid)).join(', ');
+      const targetCount = agentIds.reduce((sum, aid) => sum + Number(batch.agent_summary?.[aid]?.count || 0), 0);
+      confirmMsg = `"${agentNames}" 담당자의 배정 ${targetCount}건을 되돌립니다. 진행할까요?`;
+    } else {
+      confirmMsg = `이 배치의 모든 배정(총 ${batch.total_count}건)을 되돌립니다. 진행할까요?`;
+    }
+    if (!confirm(confirmMsg)) return;
+
+    setAdminLoading('autoAssign', true, '배정 되돌리는 중입니다...');
+    try {
+      const resp = await api(`/admin/assignment-batches?id=${encodeURIComponent(batchId)}&action=rollback`, {
+        method: 'POST',
+        auth: true,
+        body: agentIds && agentIds.length ? { agentIds } : {},
+      });
+      if (!resp?.ok) throw new Error(resp?.message || '롤백 응답이 올바르지 않습니다.');
+      const r = resp.rollback || {};
+      alert(`되돌리기 완료: ${r.restoredOk || 0}건 복구${r.restoredFail ? ` · ${r.restoredFail}건 실패` : ''}`);
+
+      // 새로고침
+      invalidatePropertyCollections();
+      await ensureAuxiliaryPropertiesForAdmin({ forceRefresh: true });
+      await loadProperties({ refreshSummary: true });
+      mod.refreshAssignmentView();
+      await mod.loadAssignmentHistory();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || '롤백 실패');
+    } finally {
+      setAdminLoading('autoAssign', false);
+    }
+  }
+
+  // 새로고침 버튼 바인딩 (한 번만)
+  if (!window.__knsnBatchHistoryBound) {
+    window.__knsnBatchHistoryBound = true;
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('btnAssignHistoryRefresh');
+      if (btn) btn.addEventListener('click', () => { mod.loadAssignmentHistory(); });
+    });
+    // 이미 DOMContentLoaded 끝난 경우 대비
+    if (document.readyState !== 'loading') {
+      setTimeout(() => {
+        const btn = document.getElementById('btnAssignHistoryRefresh');
+        if (btn && !btn.__bound) {
+          btn.__bound = true;
+          btn.addEventListener('click', () => { mod.loadAssignmentHistory(); });
+        }
+      }, 0);
+    }
+  }
 
   AdminModules.staffRegions = mod;
 })();

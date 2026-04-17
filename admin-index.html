@@ -314,7 +314,39 @@
         </div>
         <div id="autoAssignResult"></div>
       </div>
+
+      <!-- D. 배정 이력 (최근 3주) -->
+      <div class="sub-card" style="margin-top:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-weight:700;">배정 이력 <span style="font-weight:400;color:var(--muted);font-size:12px;">(최근 3주, 3주 경과 시 자동 삭제)</span></div>
+          <button id="btnAssignHistoryRefresh" class="btn btn-ghost btn-sm" type="button">새로고침</button>
+        </div>
+        <div id="assignHistoryList"></div>
+        <div id="assignHistoryEmpty" class="empty hidden">최근 배정 이력이 없습니다.</div>
+      </div>
     </section>
+
+    <!-- 자동배정 미리보기 모달 -->
+    <div id="assignPreviewModal" class="modal hidden" style="display:none;">
+      <div class="modal-backdrop" data-assign-preview-close></div>
+      <div class="modal-card modal-card-sm" style="width:min(560px,calc(100% - 24px));">
+        <div class="modal-header">
+          <h3>자동 배정 미리보기</h3>
+          <button type="button" class="icon-btn" data-assign-preview-close aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body">
+          <div id="assignPreviewSummary" style="font-size:13px;line-height:1.6;"></div>
+          <div style="border-top:1px solid var(--border,#e5e7eb);padding-top:10px;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px;">담당자별 배분</div>
+            <div id="assignPreviewAgents" style="font-size:13px;line-height:1.8;"></div>
+          </div>
+          <div id="assignPreviewFilters" style="border-top:1px solid var(--border,#e5e7eb);padding-top:10px;font-size:12px;color:var(--text-secondary,#666);line-height:1.6;"></div>
+          <div class="modal-actions" style="margin-top:4px;">
+            <button type="button" class="btn btn-primary" id="btnAssignPreviewConfirm">확인 · 배정 실행</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- 지오 코딩 -->
     <section id="tab-geocoding" class="panel tab-panel hidden">
@@ -507,7 +539,7 @@
 <script src="./knson-data-access.js?v=20260404-photo2"></script>
 
 <script src="./knson-property-photos.js?v=20260404-photo2"></script>
-<script src="./admin-tab-staff-regions.js?v=20260417-assignfilters-kfix"></script>
+<script src="./admin-tab-staff-regions.js?v=20260417-batches"></script>
 <script src="./admin-tab-csv.js?v=20260406-csvbroker1"></script>
 <script src="./admin-tab-geocoding.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-properties.js?v=20260406-layoutfix1"></script>
@@ -515,6 +547,6 @@
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-buildings.js?v=20260417-bld11-binchip"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
-<script src="./admin-app.js?v=20260409-val1"></script>
+<script src="./admin-app.js?v=20260417-batches"></script>
 </body>
 </html>

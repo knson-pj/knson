@@ -488,6 +488,18 @@
       autoAssignStatus: $("#autoAssignStatus"),
       autoAssignResult: $("#autoAssignResult"),
 
+      // assignment batch history (배정 이력)
+      assignHistoryList: $("#assignHistoryList"),
+      assignHistoryEmpty: $("#assignHistoryEmpty"),
+      btnAssignHistoryRefresh: $("#btnAssignHistoryRefresh"),
+
+      // auto-assign preview modal
+      assignPreviewModal: $("#assignPreviewModal"),
+      assignPreviewSummary: $("#assignPreviewSummary"),
+      assignPreviewAgents: $("#assignPreviewAgents"),
+      assignPreviewFilters: $("#assignPreviewFilters"),
+      btnAssignPreviewConfirm: $("#btnAssignPreviewConfirm"),
+
       // property edit modal
       propertyEditModalAdmin: $("#propertyEditModalAdmin"),
       aemClose: $("#aemClose"),
@@ -730,7 +742,15 @@ function bindEvents() {
               .then(() => { renderStaffTable(); })
               .catch((e) => handleAsyncError(e, "물건 스냅샷 로드 실패"));
           }
-          if (key === "regions") { loadStaff().catch(()=>{}); ensureAuxiliaryPropertiesForAdmin().then(() => { refreshAssignmentView(); }).catch((e)=>handleAsyncError(e,"물건 배정 데이터 로드 실패")); }
+          if (key === "regions") {
+            loadStaff().catch(()=>{});
+            ensureAuxiliaryPropertiesForAdmin().then(() => { refreshAssignmentView(); }).catch((e)=>handleAsyncError(e,"물건 배정 데이터 로드 실패"));
+            // 배정 이력도 같이 로드
+            try {
+              const mod = (window.KNSN_ADMIN_MODULES && window.KNSN_ADMIN_MODULES.staffRegions) || null;
+              if (mod && typeof mod.loadAssignmentHistory === 'function') mod.loadAssignmentHistory().catch(()=>{});
+            } catch (_) {}
+          }
           if (key === "geocoding") {
             // 탭 진입 시 카운팅(대기/완료/실패) 로드 동안 로딩 오버레이 표시
             setAdminLoading("geocoding", true, "지오코딩 현황을 불러오는 중입니다.");
