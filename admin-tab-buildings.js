@@ -450,45 +450,19 @@
       }
     }
 
-    // enrich 자동 실행
-    if (!shouldStop) {
-      appendLog("── 전유부+지오코딩 보충 시작 ──");
-      $("bldProgressBar").style.width = "0%";
-      $("bldProgressPct").textContent = "0%";
-      $("bldProgressDetail").textContent = "";
-      for (var j = 0; j < dongs.length; j++) {
-        if (shouldStop) break;
-        var code2 = dongs[j];
-        var name2 = findDongName(code2);
-        var enrichDone = false;
-        var enrichRound = 0;
-        $("bldProgressPct").textContent = Math.round(((j+1)/dongs.length)*100) + "%";
-        $("bldProgressBar").style.width = Math.round(((j+1)/dongs.length)*100) + "%";
-        while (!enrichDone && !shouldStop && enrichRound < 100) {
-          enrichRound++;
-          $("bldProgressLabel").textContent = "보충: " + name2 + " (라운드 " + enrichRound + ")";
-          try {
-            var eres = await fetch(baseUrl + "?mode=enrich&dongCode=" + code2 + "&limit=20", { headers: headers });
-            var edata = await eres.json();
-            if (edata.done) {
-              enrichDone = true;
-              appendLog(name2 + " 보충 완료 ✅");
-            } else {
-              $("bldProgressDetail").textContent = "enriched=" + (edata.enriched||0) + " geocoded=" + (edata.geocoded||0) + " remaining=" + (edata.remainingResidential||0);
-            }
-          } catch (e) {
-            appendLog(name2 + " 보충 오류: " + e.message);
-            enrichDone = true;
-          }
-        }
-      }
-    }
+    // v3 에는 표제부 수집 직후 자동으로 enrich (전유부+지오코딩) 이 실행되었습니다.
+    // v4/v5 부터는 버튼별 단일 책임 원칙으로, [표제부 수집] 은 표제부만 합니다.
+    // 이어서 보충이 필요하면 [전유부+지오코딩] 버튼을 눌러주세요.
+    // 또는 상단의 [🚀 일괄 실행] 바에서 원하는 모드를 체크 후 [선택 모드 일괄 실행] 하시면 됩니다.
 
     isRunning = false;
     $("bldBtnStop").classList.add("hidden");
-    $("bldProgressLabel").textContent = shouldStop ? "중단됨" : "완료";
+    $("bldProgressLabel").textContent = shouldStop ? "중단됨" : "표제부 수집 완료";
     updateSelectedCount();
-    appendLog("── 수집 작업 " + (shouldStop ? "중단" : "완료") + " ──");
+    appendLog("── 표제부 수집 " + (shouldStop ? "중단" : "완료") + " ──");
+    if (!shouldStop) {
+      appendLog("💡 다음 단계: [전유부+공용면적] 또는 [전유부+지오코딩] 버튼, 혹은 [🚀 일괄 실행] 사용");
+    }
     loadStatus();
     loadUsage();
   }
