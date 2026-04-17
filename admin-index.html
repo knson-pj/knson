@@ -375,6 +375,32 @@
             <div id="bldDongGrid" class="bld-dong-grid"></div>
           </div>
         </div>
+        <!-- 건축HUB API 사용량 -->
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>건축HUB API 사용량 <span style="font-size:10px;color:var(--muted);font-weight:400;">(일일 한도 10,000건)</span></strong>
+            <button id="bldBtnRefreshUsage" class="btn btn-ghost btn-sm" type="button">새로고침</button>
+          </div>
+          <div class="card-body">
+            <div id="bldUsageCurrent" style="margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+                <span style="font-size:11px;color:var(--muted);">오늘 사용량 (<span id="bldUsageDate">-</span>)</span>
+                <span style="font-size:11px;color:var(--muted);"><span id="bldUsageCount" style="font-weight:700;color:var(--text);font-size:14px;">-</span> / 10,000건 (<span id="bldUsagePct">-</span>)</span>
+              </div>
+              <div style="height:10px;background:var(--line);border-radius:5px;overflow:hidden;">
+                <div id="bldUsageBar" style="height:100%;background:linear-gradient(90deg,#4CAF50,#8BC34A);border-radius:5px;width:0%;transition:width .3s;"></div>
+              </div>
+              <div id="bldUsageDetail" style="font-size:10px;color:var(--muted);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;">
+                <span>성공: <b id="bldUsageSuccess">-</b></span>
+                <span>실패: <b id="bldUsageError">-</b></span>
+                <span>남은 한도: <b id="bldUsageRemaining">-</b></span>
+              </div>
+            </div>
+            <div id="bldUsageEndpoints" style="font-size:10px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px;"></div>
+            <div id="bldUsageRecent" style="font-size:10px;color:var(--muted);margin-top:8px;"></div>
+          </div>
+        </div>
+
         <div class="card" style="margin-bottom:16px;">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
             <strong>수집 실행</strong>
@@ -461,7 +487,7 @@
 <script src="./admin-tab-properties.js?v=20260406-layoutfix1"></script>
 <script src="./admin-tab-dashboard.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
-<script src="./admin-tab-buildings.js?v=20260414-bld1"></script>
+<script src="./admin-tab-buildings.js?v=20260417-bld2"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
 <script src="./admin-app.js?v=20260409-val1"></script>
 </body>

@@ -462,6 +462,119 @@
     }).join("");
   }
 
+  // ── API 사용량 ──
+  async function loadUsage() {
+    var baseUrl = getProxyUrl();
+    if (!baseUrl) return;
+    var headers = await getAuthHeaders();
+    try {
+      var res = await fetch(baseUrl + "?mode=usage&days=7&quota=10000", { headers: headers });
+      if (res.status === 401) {
+        var K = window.KNSN || {};
+        if (typeof K.sbSyncLocalSession === "function") {
+          try { await K.sbSyncLocalSession(true); } catch (e) {}
+        }
+        headers = await getAuthHeaders();
+        res = await fetch(baseUrl + "?mode=usage&days=7&quota=10000", { headers: headers });
+      }
+      var data = await res.json();
+      renderUsage(data && data.summary);
+    } catch (e) {
+      console.warn("usage load failed:", e && e.message);
+    }
+  }
+
+  function renderUsage(summary) {
+    // summary: null | {today_date, today_count, today_success, today_error, today_remaining, today_percent, today_by_endpoint, recent_days, total_recent}
+    var $date = $("bldUsageDate");
+    var $count = $("bldUsageCount");
+    var $pct = $("bldUsagePct");
+    var $bar = $("bldUsageBar");
+    var $success = $("bldUsageSuccess");
+    var $error = $("bldUsageError");
+    var $remaining = $("bldUsageRemaining");
+    var $endpoints = $("bldUsageEndpoints");
+    var $recent = $("bldUsageRecent");
+
+    if (!summary) {
+      if ($date) $date.textContent = new Date().toLocaleDateString("ko-KR");
+      if ($count) $count.textContent = "0";
+      if ($pct) $pct.textContent = "0%";
+      if ($bar) $bar.style.width = "0%";
+      if ($success) $success.textContent = "0";
+      if ($error) $error.textContent = "0";
+      if ($remaining) $remaining.textContent = "10,000";
+      if ($endpoints) $endpoints.innerHTML = '<span style="color:var(--muted);">아직 API 호출 기록이 없습니다.</span>';
+      if ($recent) $recent.innerHTML = "";
+      return;
+    }
+
+    var todayCount = Number(summary.today_count || 0);
+    var todayPct = Number(summary.today_percent || 0);
+    var todaySuccess = Number(summary.today_success || 0);
+    var todayError = Number(summary.today_error || 0);
+    var todayRemaining = Number(summary.today_remaining || 10000);
+
+    if ($date) $date.textContent = summary.today_date || new Date().toISOString().slice(0,10);
+    if ($count) $count.textContent = todayCount.toLocaleString("ko-KR");
+    if ($pct) $pct.textContent = todayPct.toFixed(1) + "%";
+    if ($bar) {
+      $bar.style.width = Math.min(todayPct, 100) + "%";
+      // 80% 이상이면 붉은색, 60% 이상이면 주황, 그 외 초록
+      if (todayPct >= 80) {
+        $bar.style.background = "linear-gradient(90deg,#F44336,#E57373)";
+      } else if (todayPct >= 60) {
+        $bar.style.background = "linear-gradient(90deg,#FF9800,#FFB74D)";
+      } else {
+        $bar.style.background = "linear-gradient(90deg,#4CAF50,#8BC34A)";
+      }
+    }
+    if ($success) $success.textContent = todaySuccess.toLocaleString("ko-KR");
+    if ($error) $error.textContent = todayError.toLocaleString("ko-KR");
+    if ($remaining) $remaining.textContent = todayRemaining.toLocaleString("ko-KR");
+
+    // 엔드포인트별 사용량
+    if ($endpoints) {
+      var by = summary.today_by_endpoint || {};
+      var keys = Object.keys(by).sort(function(a,b){ return (by[b]||0) - (by[a]||0); });
+      if (!keys.length) {
+        $endpoints.innerHTML = '<span style="color:var(--muted);">오늘 아직 API 호출이 없습니다.</span>';
+      } else {
+        $endpoints.innerHTML = '<div style="margin-bottom:4px;font-weight:700;color:var(--text);">엔드포인트별 호출</div>' +
+          keys.map(function(k) {
+            var cnt = by[k] || 0;
+            var label = escHtml(k);
+            return '<div style="display:flex;justify-content:space-between;padding:2px 0;">' +
+              '<span>' + label + '</span><span><b>' + cnt.toLocaleString("ko-KR") + '</b></span>' +
+              '</div>';
+          }).join("");
+      }
+    }
+
+    // 최근 7일 추이
+    if ($recent) {
+      var recent = Array.isArray(summary.recent_days) ? summary.recent_days : [];
+      if (!recent.length) {
+        $recent.innerHTML = "";
+      } else {
+        var totalRecent = Number(summary.total_recent || 0);
+        $recent.innerHTML = '<div style="margin-bottom:4px;font-weight:700;color:var(--text);">최근 7일 (총 ' + totalRecent.toLocaleString("ko-KR") + '건)</div>' +
+          '<div style="display:flex;gap:2px;align-items:flex-end;height:36px;">' +
+          recent.slice().reverse().map(function(d) {
+            var cnt = Number(d.count || 0);
+            var h = Math.max(2, Math.min(36, (cnt / 10000) * 36));
+            var color = cnt >= 8000 ? "#F44336" : cnt >= 6000 ? "#FF9800" : "#4CAF50";
+            var datestr = String(d.date || "").slice(5);
+            return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;" title="' + escHtml(d.date) + ': ' + cnt.toLocaleString("ko-KR") + '건">' +
+              '<div style="width:100%;background:' + color + ';height:' + h + 'px;border-radius:2px 2px 0 0;"></div>' +
+              '<div style="font-size:8px;white-space:nowrap;">' + escHtml(datestr) + '</div>' +
+              '</div>';
+          }).join("") +
+          '</div>';
+      }
+    }
+  }
+
   // ── 초기화 ──
   mod.init = function init() {
     // 시군구 셀렉트
@@ -490,6 +603,7 @@
     if ($("bldBtnEnrich")) $("bldBtnEnrich").addEventListener("click", function() { runEnrichOnly(); });
     if ($("bldBtnStop")) $("bldBtnStop").addEventListener("click", function() { shouldStop = true; });
     if ($("bldBtnRefreshStatus")) $("bldBtnRefreshStatus").addEventListener("click", function() { loadStatus(); });
+    if ($("bldBtnRefreshUsage")) $("bldBtnRefreshUsage").addEventListener("click", function() { loadUsage(); });
 
     // 초기 상태 로드 (세션 동기화 후)
     (async function() {
@@ -498,6 +612,7 @@
         try { await K.sbSyncLocalSession(); } catch (e) {}
       }
       loadStatus();
+      loadUsage();
     })();
   };
 
