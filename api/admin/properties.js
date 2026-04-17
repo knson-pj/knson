@@ -146,6 +146,15 @@ async function fetchSupabaseOverviewCountsExact() {
   };
 
   const base = '/rest/v1/properties?select=id';
+
+  // KST(Asia/Seoul) 기준 "오늘" 구간을 서버가 UTC여도 정확히 계산.
+  // startIso/endIso 는 UTC ISO(Z)로 변환된 KST 0시~24시.
+  // PostgREST 는 동일 컬럼 필터 중복 시 AND 로 결합되므로
+  // created_at=gte.{start}&created_at=lt.{end} 로 오늘 범위를 제한.
+  const { startIso, endIso } = getKstTodayRangeIso();
+  const todayFilter = `&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}`;
+  const realtorDirectOr = `or=${encodeURIComponent('(source_url.is.null,source_url.eq.)')}`;
+
   const [
     total,
     auction,
@@ -154,18 +163,33 @@ async function fetchSupabaseOverviewCountsExact() {
     realtorTotal,
     realtorDirect,
     geoPending,
+    todayTotal,
+    todayAuction,
+    todayOnbid,
+    todayGeneral,
+    todayRealtorTotal,
+    todayRealtorDirect,
   ] = await Promise.all([
     countSafe(base),
     countSafe(`${base}&source_type=eq.auction`),
     countSafe(`${base}&source_type=eq.onbid`),
     countSafe(`${base}&source_type=eq.general`),
     countSafe(`${base}&source_type=eq.realtor`),
-    countSafe(`${base}&source_type=eq.realtor&or=${encodeURIComponent('(source_url.is.null,source_url.eq.)')}`),
+    countSafe(`${base}&source_type=eq.realtor&${realtorDirectOr}`),
     fetchSupabaseGeoPendingCount(),
+    countSafe(`${base}${todayFilter}`),
+    countSafe(`${base}&source_type=eq.auction${todayFilter}`),
+    countSafe(`${base}&source_type=eq.onbid${todayFilter}`),
+    countSafe(`${base}&source_type=eq.general${todayFilter}`),
+    countSafe(`${base}&source_type=eq.realtor${todayFilter}`),
+    countSafe(`${base}&source_type=eq.realtor&${realtorDirectOr}${todayFilter}`),
   ]);
 
   const realtor_naver = Math.max(0, Number(realtorTotal || 0) - Number(realtorDirect || 0));
   const realtor_direct = Math.max(0, Number(realtorDirect || 0));
+  const today_realtor_total = Number(todayRealtorTotal || 0);
+  const today_realtor_direct = Math.max(0, Number(todayRealtorDirect || 0));
+  const today_realtor_naver = Math.max(0, today_realtor_total - today_realtor_direct);
 
   return {
     summary: {
@@ -177,13 +201,13 @@ async function fetchSupabaseOverviewCountsExact() {
       general: Number(general || 0),
     },
     today: {
-      total: 0,
-      auction: 0,
-      onbid: 0,
-      realtor: 0,
-      realtor_naver: 0,
-      realtor_direct: 0,
-      general: 0,
+      total: Number(todayTotal || 0),
+      auction: Number(todayAuction || 0),
+      onbid: Number(todayOnbid || 0),
+      realtor: today_realtor_total,
+      realtor_naver: today_realtor_naver,
+      realtor_direct: today_realtor_direct,
+      general: Number(todayGeneral || 0),
     },
     geoPending: Number(geoPending || 0),
     filterCounts: {
@@ -204,6 +228,7 @@ async function fetchSupabaseOverviewCountsExact() {
     accurate: true,
     scanCount: 0,
     source: 'supabase_exact_head_count',
+    kstRange: { start: startIso, end: endIso },
   };
 }
 
@@ -280,17 +305,20 @@ function getAreaFilterMatch(value, area) {
 function sameDay(dateLike, dateKey) {
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return false;
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  // KST(UTC+9) 기준 날짜 비교 (서버가 UTC 런타임이어도 정확)
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const yyyy = kst.getUTCFullYear();
+  const mm = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(kst.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}` === dateKey;
 }
 
 function getTodayKey() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  // KST(UTC+9) 기준 오늘 날짜 키 (서버가 UTC 런타임이어도 정확)
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const yyyy = kst.getUTCFullYear();
+  const mm = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(kst.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
