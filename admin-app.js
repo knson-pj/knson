@@ -475,9 +475,13 @@
       // property assignment (물건 배정)
       assignStatusBody: $("#assignStatusBody"),
       assignStatusEmpty: $("#assignStatusEmpty"),
+      assignSidoFilter: $("#assignSidoFilter"),
+      assignGuFilter: $("#assignGuFilter"),
+      assignDongFilter: $("#assignDongFilter"),
       assignSourceFilter: $("#assignSourceFilter"),
       assignAreaFilter: $("#assignAreaFilter"),
       assignPriceFilter: $("#assignPriceFilter"),
+      assignAgentFilter: $("#assignAgentFilter"),
       assignFilterTotal: $("#assignFilterTotal"),
       assignFilterSummary: $("#assignFilterSummary"),
       btnAutoAssign: $("#btnAutoAssign"),

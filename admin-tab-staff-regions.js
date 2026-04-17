@@ -316,10 +316,20 @@
     const { normalizeRole, escapeHtml } = utils;
     if (!els.assignStatusBody) return;
 
-    const agents = (state.staff || []).filter((s) => normalizeRole(s.role) === 'staff');
+    const allAgents = (state.staff || []).filter((s) => normalizeRole(s.role) === 'staff');
+    // 담당자 필터가 있으면 선택된 담당자만 표시
+    const filterAgentIds = [...(_multiSelectState.assignAgentFilter || [])];
+    const agents = filterAgentIds.length
+      ? allAgents.filter(function(a) { return filterAgentIds.includes(String(a.id)); })
+      : allAgents;
     if (!agents.length) {
       els.assignStatusBody.innerHTML = '';
-      if (els.assignStatusEmpty) els.assignStatusEmpty.classList.remove('hidden');
+      if (els.assignStatusEmpty) {
+        els.assignStatusEmpty.classList.remove('hidden');
+        els.assignStatusEmpty.textContent = allAgents.length
+          ? '선택한 담당자가 없습니다. (담당자 필터에서 선택해 주세요.)'
+          : '담당자 계정을 먼저 등록해 주세요.';
+      }
       return;
     }
     if (els.assignStatusEmpty) els.assignStatusEmpty.classList.add('hidden');
@@ -368,7 +378,56 @@
   };
 
   // ── 다중 선택 필터 UI (패널을 body에 부착하여 overflow 회피) ──
+  // 시/도 표준 정렬 순서 (실제 데이터에 존재하는 것만 옵션으로 노출)
+  const SIDO_ORDER = ['서울','부산','대구','인천','광주','대전','울산','세종','경기','강원','충북','충남','전북','전남','경북','경남','제주'];
+  const SIDO_NORMALIZE = {
+    '서울특별시':'서울','부산광역시':'부산','대구광역시':'대구','인천광역시':'인천',
+    '광주광역시':'광주','대전광역시':'대전','울산광역시':'울산','세종특별자치시':'세종',
+    '경기도':'경기','강원특별자치도':'강원','강원도':'강원',
+    '충청북도':'충북','충청남도':'충남',
+    '전북특별자치도':'전북','전라북도':'전북','전라남도':'전남',
+    '경상북도':'경북','경상남도':'경남','제주특별자치도':'제주',
+    // 약식
+    '서울':'서울','부산':'부산','대구':'대구','인천':'인천','광주':'광주','대전':'대전',
+    '울산':'울산','세종':'세종','경기':'경기','강원':'강원','충북':'충북','충남':'충남',
+    '전북':'전북','전남':'전남','경북':'경북','경남':'경남','제주':'제주',
+  };
+
+  // 주소 → { sido, gu, dong } 추출
+  // gu 는 가능한 한 ~구를 우선, 없으면 ~시/~군 (도지역의 단일 시 또는 군)
+  // 광역시 + ~구 의 경우: '서울 강남구 역삼동' → { 서울, 강남구, 역삼동 }
+  // 도 + ~시 + ~구 의 경우: '경기 수원시 영통구 영통동' → { 경기, 영통구, 영통동 } (수원시는 생략)
+  // 도 + ~시 (구 없음) 경우: '경기 김포시 사우동' → { 경기, 김포시, 사우동 }
+  function extractRegion(p) {
+    const addr = String(p?.address || '').trim();
+    if (!addr) return { sido: '', gu: '', dong: '' };
+    const tokens = addr.split(/\s+/);
+    if (!tokens.length) return { sido: '', gu: '', dong: '' };
+    let sido = '';
+    let i = 0;
+    if (SIDO_NORMALIZE[tokens[0]]) {
+      sido = SIDO_NORMALIZE[tokens[0]];
+      i = 1;
+    }
+    // ~구 우선 검색 (i ~ i+2 범위)
+    let gu = '';
+    for (let j = i; j < Math.min(tokens.length, i + 3); j++) {
+      if (/[가-힣]+구$/.test(tokens[j])) { gu = tokens[j]; i = j + 1; break; }
+    }
+    if (!gu) {
+      for (let j = i; j < Math.min(tokens.length, i + 2); j++) {
+        if (/[가-힣]+(시|군)$/.test(tokens[j])) { gu = tokens[j]; i = j + 1; break; }
+      }
+    }
+    let dong = '';
+    if (tokens[i] && /[가-힣\d·]+(동|읍|면|리)$/.test(tokens[i])) dong = tokens[i];
+    return { sido, gu, dong };
+  }
+
   const FILTER_DEFS = {
+    assignSidoFilter:   { placeholder: '전체 시/도',   options: [] }, // dynamic
+    assignGuFilter:     { placeholder: '전체 시/군/구', options: [] }, // dynamic
+    assignDongFilter:   { placeholder: '전체 동',     options: [] }, // dynamic
     assignSourceFilter: {
       placeholder: '전체 구분',
       options: [
@@ -394,9 +453,11 @@
         { value: '10-20', label: '10~20억' }, { value: '20-', label: '20억 이상' },
       ],
     },
+    assignAgentFilter:  { placeholder: '전체 담당자', options: [] }, // dynamic
   };
   const _multiSelectState = {};
   const _multiPanels = [];
+  const _multiInstances = {}; // { [filterKey]: { panel, btn, syncBtnText, renderOptions, def, selected } }
 
   function closeAllPanels() {
     _multiPanels.forEach(function(ref) { ref.panel.style.display = 'none'; ref.isOpen = false; });
@@ -404,7 +465,7 @@
 
   function buildMultiSelect(container, filterKey, onChange) {
     const def = FILTER_DEFS[filterKey];
-    if (!container || !def) return;
+    if (!container || !def) return null;
     _multiSelectState[filterKey] = new Set();
     const selected = _multiSelectState[filterKey];
 
@@ -429,29 +490,54 @@
     const ref = { panel: panel, isOpen: false };
     _multiPanels.push(ref);
 
-    def.options.forEach(function(opt) {
-      const row = document.createElement('label');
-      row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:6px 14px;cursor:pointer;font-size:13px;white-space:nowrap;user-select:none;';
-      row.addEventListener('mouseenter', function() { row.style.background = 'var(--hover-bg,#f5f5f5)'; });
-      row.addEventListener('mouseleave', function() { row.style.background = ''; });
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = opt.value;
-      cb.style.cssText = 'margin:0;flex-shrink:0;';
-      cb.addEventListener('change', function(e) {
-        e.stopPropagation();
-        if (cb.checked) selected.add(opt.value); else selected.delete(opt.value);
-        syncBtnText();
-        if (typeof onChange === 'function') onChange();
+    let currentOptions = Array.isArray(def.options) ? def.options.slice() : [];
+
+    function renderOptionsInternal(options) {
+      currentOptions = Array.isArray(options) ? options.slice() : [];
+      // 새 옵션에 없는 선택은 정리 (cascading 시 stale 제거)
+      const validValues = new Set(currentOptions.map(function(o) { return String(o.value); }));
+      Array.from(selected).forEach(function(v) {
+        if (!validValues.has(String(v))) selected.delete(v);
       });
-      row.appendChild(cb);
-      row.appendChild(document.createTextNode(opt.label));
-      panel.appendChild(row);
-    });
+      panel.innerHTML = '';
+      if (!currentOptions.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:10px 14px;color:var(--muted,#999);font-size:12px;white-space:nowrap;';
+        empty.textContent = '옵션 없음';
+        panel.appendChild(empty);
+        syncBtnText();
+        return;
+      }
+      currentOptions.forEach(function(opt) {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:6px 14px;cursor:pointer;font-size:13px;white-space:nowrap;user-select:none;';
+        row.addEventListener('mouseenter', function() { row.style.background = 'var(--hover-bg,#f5f5f5)'; });
+        row.addEventListener('mouseleave', function() { row.style.background = ''; });
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = String(opt.value);
+        cb.checked = selected.has(String(opt.value));
+        cb.style.cssText = 'margin:0;flex-shrink:0;';
+        cb.addEventListener('change', function(e) {
+          e.stopPropagation();
+          if (cb.checked) selected.add(String(opt.value)); else selected.delete(String(opt.value));
+          syncBtnText();
+          if (typeof onChange === 'function') onChange();
+        });
+        row.appendChild(cb);
+        row.appendChild(document.createTextNode(opt.label));
+        panel.appendChild(row);
+      });
+      syncBtnText();
+    }
 
     function syncBtnText() {
       if (!selected.size) { btn.textContent = def.placeholder; return; }
-      const labels = def.options.filter(function(o) { return selected.has(o.value); }).map(function(o) { return o.label; });
+      const labels = currentOptions.filter(function(o) { return selected.has(String(o.value)); }).map(function(o) { return o.label; });
+      if (!labels.length) {
+        btn.textContent = selected.size + '개 선택';
+        return;
+      }
       btn.textContent = labels.length <= 2 ? labels.join(', ') : labels.slice(0, 2).join(', ') + ' +' + (labels.length - 2);
     }
 
@@ -474,6 +560,18 @@
     });
 
     panel.addEventListener('click', function(e) { e.stopPropagation(); });
+
+    renderOptionsInternal(currentOptions);
+
+    const inst = { ref: ref, def: def, selected: selected, renderOptions: renderOptionsInternal, syncBtnText: syncBtnText, btn: btn, panel: panel };
+    _multiInstances[filterKey] = inst;
+    return inst;
+  }
+
+  function rebuildMultiSelectOptions(filterKey, newOptions) {
+    const inst = _multiInstances[filterKey];
+    if (!inst) return;
+    inst.renderOptions(newOptions || []);
   }
 
   if (!window.__knsnAssignPanelClose) {
@@ -481,20 +579,88 @@
     document.addEventListener('click', function() { closeAllPanels(); });
   }
 
+  // ── 동적 옵션 갱신 (시/도→구→동 cascading + 담당자) ──
+  function getAllUnassignedRaw() {
+    const { utils } = ctx();
+    const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
+    return allProps.filter(function(p) {
+      const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
+      return !aid;
+    });
+  }
+
+  function refreshRegionOptions() {
+    const unassigned = getAllUnassignedRaw();
+    const sidoSet = new Set();
+    const regions = [];
+    for (const p of unassigned) {
+      const r = extractRegion(p);
+      regions.push(r);
+      if (r.sido) sidoSet.add(r.sido);
+    }
+    // 시/도 옵션: SIDO_ORDER 기준 정렬 + 데이터에 존재하는 것만
+    const sidoOptions = SIDO_ORDER.filter(function(s) { return sidoSet.has(s); }).map(function(s) { return { value: s, label: s }; });
+    rebuildMultiSelectOptions('assignSidoFilter', sidoOptions);
+
+    const selectedSidos = _multiSelectState.assignSidoFilter || new Set();
+    const guSet = new Set();
+    for (const r of regions) {
+      if (selectedSidos.size && !selectedSidos.has(r.sido)) continue;
+      if (r.gu) guSet.add(r.gu);
+    }
+    const guOptions = Array.from(guSet).sort(function(a, b) { return a.localeCompare(b, 'ko'); }).map(function(g) { return { value: g, label: g }; });
+    rebuildMultiSelectOptions('assignGuFilter', guOptions);
+
+    const selectedGus = _multiSelectState.assignGuFilter || new Set();
+    const dongSet = new Set();
+    for (const r of regions) {
+      if (selectedSidos.size && !selectedSidos.has(r.sido)) continue;
+      if (selectedGus.size && !selectedGus.has(r.gu)) continue;
+      if (r.dong) dongSet.add(r.dong);
+    }
+    const dongOptions = Array.from(dongSet).sort(function(a, b) { return a.localeCompare(b, 'ko'); }).map(function(d) { return { value: d, label: d }; });
+    rebuildMultiSelectOptions('assignDongFilter', dongOptions);
+  }
+
+  function refreshAgentOptions() {
+    const { state, utils } = ctx();
+    const normalizeRole = utils.normalizeRole || function(r) { return String(r || '').trim().toLowerCase(); };
+    const agents = (state.staff || []).filter(function(s) { return normalizeRole(s.role) === 'staff'; });
+    const opts = agents.map(function(a) {
+      const label = String(a.name || a.email || '').trim() || ('#' + a.id);
+      return { value: String(a.id), label: label };
+    });
+    rebuildMultiSelectOptions('assignAgentFilter', opts);
+  }
+
   mod.initMultiSelectFilters = function initMultiSelectFilters() {
     const { els } = ctx();
-    const onChange = () => mod.renderAssignFilterSummary();
+    const onChange = function() { mod.renderAssignFilterSummary(); };
+    // 지역 cascading: 시/도 → 구 → 동
+    buildMultiSelect(els.assignSidoFilter,   'assignSidoFilter',   function() { refreshRegionOptions(); onChange(); });
+    buildMultiSelect(els.assignGuFilter,     'assignGuFilter',     function() { refreshRegionOptions(); onChange(); });
+    buildMultiSelect(els.assignDongFilter,   'assignDongFilter',   onChange);
+    // 기존 3개
     buildMultiSelect(els.assignSourceFilter, 'assignSourceFilter', onChange);
-    buildMultiSelect(els.assignAreaFilter, 'assignAreaFilter', onChange);
-    buildMultiSelect(els.assignPriceFilter, 'assignPriceFilter', onChange);
+    buildMultiSelect(els.assignAreaFilter,   'assignAreaFilter',   onChange);
+    buildMultiSelect(els.assignPriceFilter,  'assignPriceFilter',  onChange);
+    // 담당자 (선택 시 배정현황 표 + 자동배정 대상도 한정)
+    buildMultiSelect(els.assignAgentFilter,  'assignAgentFilter',  function() { mod.renderAssignmentStatus(); onChange(); });
+    // 동적 옵션 초기 채움
+    refreshRegionOptions();
+    refreshAgentOptions();
   };
 
   // B. 배정 물건 조건 설정 + 필터 요약
   function getAssignFilterValues() {
     return {
-      sources: [...(_multiSelectState.assignSourceFilter || [])],
-      areas: [...(_multiSelectState.assignAreaFilter || [])],
-      prices: [...(_multiSelectState.assignPriceFilter || [])],
+      sidos:    [...(_multiSelectState.assignSidoFilter   || [])],
+      gus:      [...(_multiSelectState.assignGuFilter     || [])],
+      dongs:    [...(_multiSelectState.assignDongFilter   || [])],
+      sources:  [...(_multiSelectState.assignSourceFilter || [])],
+      areas:    [...(_multiSelectState.assignAreaFilter   || [])],
+      prices:   [...(_multiSelectState.assignPriceFilter  || [])],
+      agentIds: [...(_multiSelectState.assignAgentFilter  || [])],
     };
   }
 
@@ -523,12 +689,10 @@
   }
 
   function getFilteredUnassignedProperties() {
-    const { utils } = ctx();
-    const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
     const filters = getAssignFilterValues();
-    return allProps.filter((p) => {
-      const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
-      if (aid) return false;
+    const needRegion = filters.sidos.length || filters.gus.length || filters.dongs.length;
+    return getAllUnassignedRaw().filter(function(p) {
+      const { utils } = ctx();
       // 구분 필터 (다중)
       if (filters.sources.length) {
         const bucket = getSourceBucket(utils, p);
@@ -536,12 +700,21 @@
       }
       // 면적 필터 (다중)
       if (filters.areas.length) {
-        if (!filters.areas.some((v) => matchesAreaFilter(v, p.exclusivearea))) return false;
+        if (!filters.areas.some(function(v) { return matchesAreaFilter(v, p.exclusivearea); })) return false;
       }
       // 가격 필터 (다중)
       if (filters.prices.length) {
-        if (!filters.prices.some((v) => matchesPriceFilter(v, p))) return false;
+        if (!filters.prices.some(function(v) { return matchesPriceFilter(v, p); })) return false;
       }
+      // 지역 필터 (시/도/구/동, 다중)
+      if (needRegion) {
+        const r = extractRegion(p);
+        if (filters.sidos.length && !filters.sidos.includes(r.sido)) return false;
+        if (filters.gus.length   && !filters.gus.includes(r.gu))     return false;
+        if (filters.dongs.length && !filters.dongs.includes(r.dong)) return false;
+      }
+      // 담당자 필터는 미배정 물건 필터링에는 적용하지 않음
+      // (배정 대상 담당자 한정용 — 자동배정/배정현황표에서 적용)
       return true;
     });
   }
@@ -592,6 +765,11 @@
     if (!_filtersInitialized) {
       mod.initMultiSelectFilters();
       _filtersInitialized = true;
+    } else {
+      // 데이터/담당자 변경 반영: 시/도·구·동·담당자 옵션 재갱신
+      // (cascading 시 stale 선택은 renderOptions 내부에서 자동 정리됨)
+      try { refreshRegionOptions(); } catch (_) {}
+      try { refreshAgentOptions(); } catch (_) {}
     }
     mod.renderAssignmentStatus();
     mod.renderAssignFilterSummary();
@@ -603,13 +781,21 @@
     const { normalizeRole, getStaffNameById, invalidatePropertyCollections, loadProperties, ensureAuxiliaryPropertiesForAdmin, setAdminLoading } = utils;
     const DataAccess = window.KNSN_DATA_ACCESS;
 
-    const agents = (state.staff || []).filter((s) => normalizeRole(s.role) === 'staff');
-    if (!agents.length) return alert('담당자 계정을 먼저 등록해 주세요.');
+    const allAgents = (state.staff || []).filter((s) => normalizeRole(s.role) === 'staff');
+    if (!allAgents.length) return alert('담당자 계정을 먼저 등록해 주세요.');
+
+    // 담당자 필터가 활성화돼 있으면 선택된 담당자에게만 배정
+    const filterAgentIds = [...(_multiSelectState.assignAgentFilter || [])];
+    const agents = filterAgentIds.length
+      ? allAgents.filter((a) => filterAgentIds.includes(String(a.id)))
+      : allAgents;
+    if (!agents.length) return alert('선택한 담당자가 없습니다. 담당자 필터를 다시 확인해 주세요.');
 
     const filtered = getFilteredUnassignedProperties();
     if (!filtered.length) return alert('배정할 미배정 물건이 없습니다.');
 
-    if (!confirm(`미배정 ${filtered.length}건을 ${agents.length}명의 담당자에게 자동 배정할까요?`)) return;
+    const limitedNote = filterAgentIds.length ? ` (선택 담당자 ${agents.length}명에게만)` : '';
+    if (!confirm(`미배정 ${filtered.length}건을 ${agents.length}명의 담당자에게 자동 배정할까요?${limitedNote}`)) return;
 
     setAdminLoading('autoAssign', true, '물건 자동 배정 중입니다...');
     if (els.autoAssignStatus) els.autoAssignStatus.textContent = '배정 중...';

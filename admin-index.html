@@ -292,10 +292,16 @@
       <!-- B. 배정 물건 조건 설정 -->
       <div class="sub-card" style="margin-bottom:16px;">
         <div style="font-weight:700;margin-bottom:10px;">배정 물건 조건 설정 <span id="assignFilterTotal" style="font-weight:400;color:var(--muted);font-size:12px;"></span></div>
-        <div class="toolbar toolbar-admin-properties toolbar-admin-properties--inline-actions" style="margin-bottom:10px;">
+        <div class="assign-filter-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+          <div id="assignSidoFilter" class="assign-multi-select" data-placeholder="전체 시/도"></div>
+          <div id="assignGuFilter" class="assign-multi-select" data-placeholder="전체 시/군/구"></div>
+          <div id="assignDongFilter" class="assign-multi-select" data-placeholder="전체 동"></div>
+          <span style="width:1px;height:20px;background:var(--line,#ddd);margin:0 2px;"></span>
           <div id="assignSourceFilter" class="assign-multi-select" data-placeholder="전체 구분"></div>
           <div id="assignAreaFilter" class="assign-multi-select" data-placeholder="전체 면적"></div>
           <div id="assignPriceFilter" class="assign-multi-select" data-placeholder="전체 가격"></div>
+          <span style="width:1px;height:20px;background:var(--line,#ddd);margin:0 2px;"></span>
+          <div id="assignAgentFilter" class="assign-multi-select" data-placeholder="전체 담당자"></div>
         </div>
         <div id="assignFilterSummary" style="font-size:12px;line-height:1.8;color:var(--text-secondary);"></div>
       </div>
@@ -501,7 +507,7 @@
 <script src="./knson-data-access.js?v=20260404-photo2"></script>
 
 <script src="./knson-property-photos.js?v=20260404-photo2"></script>
-<script src="./admin-tab-staff-regions.js?v=20260326-staff2"></script>
+<script src="./admin-tab-staff-regions.js?v=20260417-assignfilters"></script>
 <script src="./admin-tab-csv.js?v=20260406-csvbroker1"></script>
 <script src="./admin-tab-geocoding.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-properties.js?v=20260406-layoutfix1"></script>
