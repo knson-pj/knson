@@ -920,16 +920,24 @@
       var priceCnt    = Number(j.price_count      || 0);
       var totalBld    = Number(j.total_buildings  || titleCnt || 0);
 
-      // 칩 생성 헬퍼: 수집률(%)에 따라 색상 구분
+      // 칩 생성 헬퍼
+      //   denom > 0  : 비율 기반 색상 (회색→빨강→노랑→녹색)
+      //   denom = 0  : binary 모드 (0 이면 회색, 1+ 이면 녹색)
       function chip(label, n, denom) {
         var bg = "#E5E7EB", fg = "#6B7280";  // 회색 (미수집)
-        if (n > 0 && denom > 0) {
-          var pct = Math.round((n / denom) * 100);
-          if (pct >= 95)      { bg = "#DCFCE7"; fg = "#15803D"; }  // 녹색 (완료)
-          else if (pct >= 50) { bg = "#FEF9C3"; fg = "#A16207"; }  // 노랑 (진행중)
-          else                { bg = "#FEE2E2"; fg = "#B91C1C"; }  // 빨강 (미흡)
+        if (denom > 0) {
+          // 비율 기반
+          if (n > 0) {
+            var pct = Math.round((n / denom) * 100);
+            if (pct >= 95)      { bg = "#DCFCE7"; fg = "#15803D"; }  // 녹색 (완료)
+            else if (pct >= 50) { bg = "#FEF9C3"; fg = "#A16207"; }  // 노랑 (진행중)
+            else                { bg = "#FEE2E2"; fg = "#B91C1C"; }  // 빨강 (미흡)
+          }
+        } else {
+          // binary 모드: n > 0 이면 녹색 (있음), 0 이면 회색 (없음)
+          if (n > 0) { bg = "#DCFCE7"; fg = "#15803D"; }
         }
-        var title = denom > 0 ? (n + "/" + denom) : String(n);
+        var title = denom > 0 ? (n + "/" + denom) : (n > 0 ? ("수집됨: " + n + "건") : "미수집");
         return '<span title="' + escHtml(title) + '" style="display:inline-block;padding:1px 6px;margin:1px;border-radius:10px;font-size:9px;font-weight:600;background:' + bg + ';color:' + fg + ';">' + escHtml(label) + ' ' + n + '</span>';
       }
 
