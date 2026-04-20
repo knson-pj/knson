@@ -1970,3 +1970,72 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
   .page-agent .agent-mobile-menu-btn svg{width:20px;height:20px;}
   .page-agent .admin-sidebar{width:270px;}
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   담당자 페이지 — Phase 2: 홈(대시보드) 화면 모바일 디테일
+   ════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px){
+  /* 대시보드 헤딩 */
+  .page-agent .admin-page-heading{font-size:20px;margin-bottom:14px;}
+  .page-agent .admin-page-heading-sm{font-size:16px;margin-bottom:12px;}
+
+  /* "전체 관리 물건" 카드 */
+  .page-agent .admin-home-overview{gap:14px;padding:18px 16px;border-radius:16px;}
+  .page-agent .admin-home-overview-copy h3{font-size:16px;margin-bottom:6px;}
+  .page-agent .admin-home-overview-sub{font-size:13px;margin-top:4px;}
+  .page-agent .highlight-number{font-size:52px;line-height:1;}
+  .page-agent .admin-home-divider{margin:4px 0;}
+
+  /* 구분별 그리드: 5열 → 2열 */
+  .page-agent .admin-home-source-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    gap:14px 12px;
+  }
+  .page-agent .admin-home-source-item{gap:6px;}
+  .page-agent .admin-home-source-head{gap:10px;align-items:center;}
+
+  /* 배지(원형) 크기 축소 — 모바일은 공간이 금 */
+  .page-agent .admin-home-source-badge{
+    width:36px;height:36px;font-size:15px;flex-shrink:0;
+  }
+
+  /* label + 숫자 영역: 줄바꿈 방지 */
+  .page-agent .admin-home-source-copy{gap:0;min-width:0;flex:1 1 auto;}
+  .page-agent .admin-home-source-label{
+    font-size:12px;line-height:1.25;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .page-agent .admin-home-source-copy strong{font-size:16px;line-height:1.2;}
+
+  /* 프로그레스 바 높이 축소 */
+  .page-agent .admin-home-progress{height:6px;}
+
+  /* "오늘의 배정 물건" 블록 */
+  .page-agent .admin-home-updates-block{margin-top:4px;}
+  .page-agent .admin-home-updates-grid{grid-template-columns:1fr !important;gap:12px;}
+  .page-agent .admin-home-updates-main{padding:16px;border-radius:16px;}
+  .page-agent .admin-mini-label{font-size:13px;}
+  .page-agent .admin-mini-number{font-size:40px;line-height:1;margin-top:4px;}
+  .page-agent .admin-home-updates-list{gap:6px;margin-top:10px;}
+  .page-agent .admin-home-updates-row{font-size:13px;padding:6px 0;}
+  .page-agent .admin-home-updates-row strong{font-size:14px;}
+  .page-agent .admin-home-updates-footnote{font-size:11px;margin-top:8px;}
+
+  /* 담당자 홈 페이지 간 간격 */
+  .page-agent .admin-home-page{gap:14px;}
+
+  /* card-unit 기본 패딩 축소 */
+  .page-agent .card-unit{padding:18px 16px;border-radius:16px;}
+}
+
+@media (max-width: 430px){
+  /* 초소형 폰: 배지/폰트 한 단계 더 축소 */
+  .page-agent .admin-home-overview{padding:16px 14px;}
+  .page-agent .highlight-number{font-size:46px;}
+  .page-agent .admin-home-source-grid{gap:12px 10px;}
+  .page-agent .admin-home-source-badge{width:32px;height:32px;font-size:13px;}
+  .page-agent .admin-home-source-head{gap:8px;}
+  .page-agent .admin-home-source-label{font-size:11px;}
+  .page-agent .admin-home-source-copy strong{font-size:15px;}
+  .page-agent .admin-mini-number{font-size:36px;}
+}
