@@ -3424,21 +3424,13 @@ function renderPagination(totalPages) {
     }
 
     const anchorLL = sch_getLatLng(anchor);
-    const anchorLabel = sch_getBucketLabel(anchor);
-    const anchorCls = sch_getBucketClass(anchor);
+    // 기준 물건 카드는 상단 지도에서 ★ 마커로 충분히 식별되므로 헤더 카드는 생략.
+    // 타이틀만 표시. 단, 기준 좌표가 없으면 안내 배지를 덧붙임.
     headEl.innerHTML = `
-      <div style="padding:10px 12px;border-radius:8px;background:linear-gradient(135deg,var(--brand-soft,#fff7ed),transparent);border:1px solid var(--brand,#ea580c);margin-bottom:10px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-          <span style="font-size:10px;font-weight:700;color:var(--brand,#ea580c);">기준 물건</span>
-          <span class="workmgmt-chip ${anchorCls}" style="font-size:10px;padding:2px 6px;">${anchorLabel}</span>
-          ${anchorLL ? '' : '<span style="font-size:10px;color:#b45309;">⚠ 좌표 없음 — 거리 계산 불가</span>'}
-        </div>
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">${esc(String(anchor.address || '-'))}</div>
-        <div style="font-size:11px;color:var(--muted,#666);">
-          ${esc([anchor.assetType, anchor.exclusivearea ? fmtArea(anchor.exclusivearea) + '평' : '', formatEok(anchor.priceMain) !== '-' ? formatEok(anchor.priceMain) : ''].filter(Boolean).join(' · '))}
-        </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <div style="font-weight:600;font-size:13px;">주변 방문 동선 (거리순)</div>
+        ${anchorLL ? '' : '<span style="font-size:10px;color:#b45309;">⚠ 기준 물건 좌표 없음 — 거리 계산 불가</span>'}
       </div>
-      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">주변 방문 동선 (거리순)</div>
     `;
 
     if (!anchorLL) {

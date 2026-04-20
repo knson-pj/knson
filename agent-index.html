@@ -232,17 +232,6 @@
     <!-- ── 오늘의 스케쥴링 ── -->
     <section id="ag-view-schedule" class="ag-view hidden">
       <section class="panel">
-        <div class="panel-title-row" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
-          <div>
-            <h2 style="margin:0;font-size:17px;">오늘의 스케쥴링</h2>
-            <p style="margin:4px 0 0;font-size:12px;color:var(--muted,#999);">기준 물건을 선택하면, 주변 이동 동선 기반으로 방문 순서를 제안합니다.</p>
-          </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none;">
-            <input type="checkbox" id="schAnchorShowAll" style="margin:0;" />
-            전체 보기 <span style="color:var(--muted,#999);font-size:11px;">(중개·일반도 기준으로 선택 가능)</span>
-          </label>
-        </div>
-
         <!-- 지도 영역 (기준 물건 + 체크된 주변 물건 표시) -->
         <div class="sub-card" style="margin-bottom:16px;padding:0;overflow:hidden;">
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border,#e5e7eb);">
@@ -260,20 +249,26 @@
         <div class="schedule-layout" style="display:grid;grid-template-columns:minmax(260px,0.8fr) minmax(0,1.2fr);gap:16px;align-items:start;">
           <!-- 좌: 기준 물건 후보 -->
           <div class="sub-card" style="min-height:320px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-              <strong style="font-size:14px;">기준 물건 선택</strong>
-              <span id="schAnchorCount" style="font-size:11px;color:var(--muted,#999);"></span>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:baseline;gap:8px;min-width:0;">
+                <strong style="font-size:14px;">기준 물건 선택</strong>
+                <span id="schAnchorCount" style="font-size:11px;color:var(--muted,#999);white-space:nowrap;"></span>
+              </div>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none;white-space:nowrap;">
+                <input type="checkbox" id="schAnchorShowAll" style="margin:0;" />
+                전체 보기
+              </label>
             </div>
             <div id="schAnchorList" style="display:flex;flex-direction:column;gap:8px;max-height:600px;overflow-y:auto;"></div>
             <div id="schAnchorEmpty" class="empty hidden" style="padding:24px;text-align:center;color:var(--muted,#999);font-size:13px;">배정받은 기준 물건(경매/공매)이 없습니다.</div>
           </div>
 
-          <!-- 우: 선택된 기준 정보 + 동선 제안 -->
+          <!-- 우: 주변 방문 동선 -->
           <div class="sub-card" style="min-height:320px;">
             <div id="schSelectedHead" style="margin-bottom:12px;">
               <div style="font-size:13px;color:var(--muted,#999);">기준 물건을 선택하세요.</div>
             </div>
-            <div id="schNearbyList" style="display:flex;flex-direction:column;gap:8px;"></div>
+            <div id="schNearbyList" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;"></div>
             <div id="schNearbyEmpty" class="empty hidden" style="padding:24px;text-align:center;color:var(--muted,#999);font-size:13px;">주변 방문 대상 물건이 없습니다.</div>
             <!-- 페이지네이션 -->
             <div id="schNearbyPagination" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border,#e5e7eb);justify-content:center;align-items:center;gap:4px;flex-wrap:wrap;"></div>
@@ -303,7 +298,7 @@
 <script src="./knson-property-renderers.js?v=20260403-photo1"></script>
 <script src="./knson-data-access.js?v=20260404-photo2"></script>
 <script src="./knson-property-photos.js?v=20260404-photo2"></script>
-<script src="./agent-app.js?v=20260420-schedule-v2"></script>
+<script src="./agent-app.js?v=20260420-schedule-v3"></script>
 
 <script>
 (function(){
