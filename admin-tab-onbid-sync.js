@@ -62,9 +62,20 @@
     els.onbidSyncResult.style.color = isError ? 'var(--danger, #dc2626)' : 'var(--text, #111827)';
   }
 
+  let _stopRequested = false;
+
   // ─────────────────────────────────────────────────────────────
-  // Edge Function 호출
+  // Edge Function 호출 (1회)
   // ─────────────────────────────────────────────────────────────
+  async function invokeOnce(sb, maxItems, triggeredBy) {
+    const { data, error } = await sb.functions.invoke('onbid-sync', {
+      body: { triggeredBy, maxItems },
+    });
+    if (error) throw new Error(error?.message || 'Edge Function 호출 실패');
+    if (!data || data.ok !== true) throw new Error(data?.message || '동기화 실패');
+    return data;
+  }
+
   mod.runOnbidSync = async function runOnbidSync() {
     const { state, els, K } = ctx();
     if (!K || typeof K.supabaseEnabled !== 'function' || !K.supabaseEnabled()) {
@@ -81,60 +92,88 @@
       return;
     }
 
-    const maxItemsRaw = Number(els.onbidSyncMaxItems?.value) || 500;
-    const maxItems = Math.min(2000, Math.max(1, Math.floor(maxItemsRaw)));
+    const maxItemsRaw = Number(els.onbidSyncMaxItems?.value) || 30;
+    const maxItems = Math.min(500, Math.max(1, Math.floor(maxItemsRaw)));
+    const autoLoop = !!els.onbidSyncAutoLoop?.checked;
 
+    _stopRequested = false;
     if (els.btnOnbidSyncStart) els.btnOnbidSyncStart.disabled = true;
-    setStatus(`동기화 중... (최대 ${maxItems}건, 1건당 120ms + API 응답시간 소요)`, false);
-    setResult('');
+    if (els.btnOnbidSyncStop) els.btnOnbidSyncStop.classList.remove('hidden');
 
-    const startedAt = Date.now();
+    let totalTarget = 0;
+    let totalSuccess = 0;
+    let totalNodata = 0;
+    let totalError = 0;
+    let totalUpdated = 0;
+    let iter = 0;
+    const errorSamples = [];
+
     try {
-      // Supabase JS SDK 의 functions.invoke 는 자동으로 Bearer 토큰 첨부
-      const { data, error } = await sb.functions.invoke('onbid-sync', {
-        body: {
-          triggeredBy: 'manual',
-          maxItems,
-        },
-      });
+      while (true) {
+        iter++;
+        setStatus(
+          autoLoop
+            ? `자동 반복 ${iter}회차 · ${maxItems}건씩 처리 중...`
+            : `동기화 중... (${maxItems}건)`,
+          false,
+        );
 
-      if (error) {
-        // Edge Function 호출 자체 실패 (네트워크/권한/배포상태)
-        throw new Error(error?.message || 'Edge Function 호출 실패');
-      }
-      if (!data || data.ok !== true) {
-        throw new Error(data?.message || '동기화 실패');
+        let data;
+        try {
+          data = await invokeOnce(sb, maxItems, autoLoop ? 'manual_autoloop' : 'manual');
+        } catch (err) {
+          throw err;  // 아래 catch 에서 처리
+        }
+
+        totalTarget += Number(data.targetCount || 0);
+        totalSuccess += Number(data.successCount || 0);
+        totalNodata += Number(data.nodataCount || 0);
+        totalError += Number(data.errorCount || 0);
+        totalUpdated += Number(data.updatedCount || 0);
+        if (Array.isArray(data.errors)) {
+          for (const e of data.errors) {
+            if (errorSamples.length < 10) errorSamples.push(e);
+          }
+        }
+
+        // 중간 결과 표시
+        const summaryLines = [
+          `[${iter}회차] 대상 ${data.targetCount} · 갱신 ${data.updatedCount} · 결과없음 ${data.nodataCount} · 오류 ${data.errorCount}`,
+          `[누적] 대상 ${totalTarget} · 갱신 ${totalUpdated} · 결과없음 ${totalNodata} · 오류 ${totalError}`,
+        ];
+        setResult(summaryLines.join('\n'), totalError > 0);
+
+        // 중단 조건
+        if (!autoLoop) break;
+        if (_stopRequested) { setStatus('사용자 중지', false); break; }
+        if (Number(data.targetCount || 0) === 0) { setStatus('처리할 건이 더 없습니다', false); break; }
+        if (data.abortedByTimeout) { /* 계속 진행 가능 */ }
+
+        // 다음 반복 전에 500ms 대기 (서버 부하 방지)
+        await new Promise((r) => setTimeout(r, 500));
       }
 
-      const durationTxt = fmtDuration(data.durationMs ?? (Date.now() - startedAt));
-      let summary = [
-        `대상 ${fmtNumber(data.targetCount)}건`,
-        `갱신 ${fmtNumber(data.updatedCount)}건`,
-        `결과없음 ${fmtNumber(data.nodataCount)}건`,
-        `오류 ${fmtNumber(data.errorCount)}건`,
-        `소요 ${durationTxt}`,
-      ].join(' · ');
-      if (data.abortedByTimeout) {
-        summary += ` · 시간 한도로 ${fmtNumber(data.remaining)}건 남음 (다시 실행하면 이어서 처리)`;
-      }
-      setStatus('동기화 완료', false);
-      setResult(summary, data.errorCount > 0);
+      const finalSummary = [
+        `완료 — ${iter}회차 수행`,
+        `대상 ${totalTarget} · 갱신 ${totalUpdated} · 결과없음 ${totalNodata} · 오류 ${totalError}`,
+      ].join('\n');
 
-      // 에러 샘플 있으면 추가로 표시
-      if (Array.isArray(data.errors) && data.errors.length) {
-        const sample = data.errors.slice(0, 3).map((e) => {
+      if (errorSamples.length) {
+        const sample = errorSamples.slice(0, 5).map((e) => {
           if (e?.error) return `${e.itemNo}: ${e.error}`;
           if (e?.code) return `${e.itemNo}: [${e.code}] ${e.msg || ''}`;
           if (e?.updateError) return `${e.itemNo}: DB ${e.updateError}`;
           return JSON.stringify(e);
-        }).join(' / ');
-        setResult(summary + '\n에러 샘플: ' + sample, true);
+        }).join('\n');
+        setResult(finalSummary + '\n\n에러 샘플:\n' + sample, totalError > 0);
+      } else {
+        setResult(finalSummary, false);
       }
 
-      // 이력 새로고침
-      mod.loadOnbidSyncLogs().catch(() => {});
+      setStatus('완료', false);
 
-      // 물건 리스트 무효화 (result_status 변경됨)
+      // 이력 새로고침 + 물건 리스트 무효화
+      mod.loadOnbidSyncLogs().catch(() => {});
       const { utils } = ctx();
       if (typeof utils.invalidatePropertyCollections === 'function') {
         utils.invalidatePropertyCollections();
@@ -144,8 +183,6 @@
       const msg = String(err?.message || err);
 
       // Supabase JS 의 FunctionsFetchError 는 context 에 상세 정보 포함
-      //   - err.context?.status 로 HTTP 상태 확인 가능
-      //   - err.context?.res 에 원본 Response
       let detail = '';
       try {
         if (err?.context) {
@@ -154,28 +191,20 @@
           if (err.context.responseText) {
             detail += `\n응답: ${String(err.context.responseText).slice(0, 300)}`;
           } else if (typeof err.context.text === 'function') {
-            // 대안: Response 객체에서 직접 읽기 시도
             const respText = await err.context.text().catch(() => '');
             if (respText) detail += `\n응답: ${String(respText).slice(0, 300)}`;
           }
         }
       } catch {}
 
-      // 가능한 원인 힌트
       const hints = [];
       if (/failed to send|failed to fetch|network/i.test(msg)) {
-        hints.push('Edge Function 이 시작 중 오류로 죽었을 수 있습니다 (import 실패/런타임 에러)');
-        hints.push('Supabase 대시보드 → Edge Functions → onbid-sync → Logs 확인');
+        hints.push('타임아웃 가능성 높음 — 한 번에 처리 건수를 줄여보세요 (예: 30건)');
+        hints.push('Edge Function Logs 확인 (대시보드 → Edge Functions → onbid-sync → Logs)');
       }
-      if (/401|unauthorized/i.test(msg + detail)) {
-        hints.push('로그인 토큰이 만료됐을 수 있습니다. 로그아웃 → 재로그인 시도');
-      }
-      if (/403|forbidden/i.test(msg + detail)) {
-        hints.push('app_metadata.role = "admin" 설정 확인 필요');
-      }
-      if (/500/i.test(msg + detail) || /ONBID_SERVICE_KEY/i.test(detail)) {
-        hints.push('ONBID_SERVICE_KEY 시크릿 설정 확인 (supabase secrets set)');
-      }
+      if (/401|unauthorized/i.test(msg + detail)) hints.push('재로그인 필요');
+      if (/403|forbidden/i.test(msg + detail)) hints.push('app_metadata.role = "admin" 확인');
+      if (/500/i.test(msg + detail) || /ONBID_SERVICE_KEY/i.test(detail)) hints.push('ONBID_SERVICE_KEY 시크릿 확인');
 
       setStatus('동기화 실패', true);
       setResult(
@@ -183,8 +212,20 @@
         true,
       );
     } finally {
+      _stopRequested = false;
       if (els.btnOnbidSyncStart) els.btnOnbidSyncStart.disabled = false;
+      if (els.btnOnbidSyncStop) els.btnOnbidSyncStop.classList.add('hidden');
     }
+  };
+
+  mod.stopOnbidSync = function stopOnbidSync() {
+    _stopRequested = true;
+    const { els } = ctx();
+    setStatus('중지 요청됨, 현재 회차 완료 후 중단됩니다...', false);
+    if (els.btnOnbidSyncStop) els.btnOnbidSyncStop.disabled = true;
+    setTimeout(() => {
+      if (els.btnOnbidSyncStop) els.btnOnbidSyncStop.disabled = false;
+    }, 300);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -341,6 +382,12 @@
       els.btnOnbidSyncStart.dataset.bound = '1';
       els.btnOnbidSyncStart.addEventListener('click', () => {
         mod.runOnbidSync().catch((e) => console.error(e));
+      });
+    }
+    if (els.btnOnbidSyncStop && !els.btnOnbidSyncStop.dataset.bound) {
+      els.btnOnbidSyncStop.dataset.bound = '1';
+      els.btnOnbidSyncStop.addEventListener('click', () => {
+        mod.stopOnbidSync();
       });
     }
     if (els.btnOnbidSyncRefreshLogs && !els.btnOnbidSyncRefreshLogs.dataset.bound) {
