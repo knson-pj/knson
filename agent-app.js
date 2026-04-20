@@ -698,20 +698,62 @@
 
 
   function getSubmitterDisplayLabel(itemOrRow = null) {
-    const raw = itemOrRow?._raw?.raw && typeof itemOrRow._raw.raw === 'object' ? itemOrRow._raw.raw : (itemOrRow?._raw || {});
-    if (raw?.registeredByAdmin) return '관리자';
-    if (raw?.registeredByAgent) return '담당자';
-    // 레거시 fallback: 플래그 없는 기존 레코드는 registrationLog 첫 엔트리의 actorRole 로 판별
-    // (이 fallback 덕분에 이미 업로드된 CSV 건도 배포 즉시 '관리자' 로 올바르게 표시됨)
-    const logs = Array.isArray(raw?.registrationLog) ? raw.registrationLog : [];
-    const firstCreated = logs.find((e) => e && e.type === 'created');
-    const logRole = String(firstCreated?.actorRole || '').trim().toLowerCase();
-    if (logRole === 'admin') return '관리자';
-    if (logRole === 'staff' || logRole === 'agent') return '담당자';
+    if (!itemOrRow) return '소유자/일반';
+    // raw 가 저장된 여러 가능한 위치 모두 체크 (경매/공매/중개 경로별로 다를 수 있음)
+    const candidateContainers = [
+      itemOrRow?._raw?.raw,  // 일반 케이스
+      itemOrRow?._raw,        // raw 중첩 없는 경우
+      itemOrRow?.raw,         // 최상위 raw
+      itemOrRow,              // 직접 item 객체
+    ].filter((c) => c && typeof c === 'object');
+
+    // 1순위: 명시적 플래그 (신규 업로드부터 자동 부착됨)
+    for (const c of candidateContainers) {
+      if (c.registeredByAdmin === true) return '관리자';
+      if (c.registeredByAgent === true) return '담당자';
+    }
+
+    // 2순위: registrationLog 의 첫 created 엔트리 actorRole (레거시 호환)
+    for (const c of candidateContainers) {
+      const logs = Array.isArray(c.registrationLog) ? c.registrationLog : null;
+      if (!logs) continue;
+      const firstCreated = logs.find((e) => e && e.type === 'created');
+      const logRole = String(firstCreated?.actorRole || '').trim().toLowerCase();
+      if (logRole === 'admin') return '관리자';
+      if (logRole === 'staff' || logRole === 'agent') return '담당자';
+    }
+
+    // 3순위: 등록 경로 (registrationLog.route) 로 추론.
+    //   registrationLog 가 오래전에 쌓여서 actorRole 이 빈 경우를 구제.
+    //   "CSV 업로드" 문자열이 포함된 route 는 관리자 업로드로 간주.
+    for (const c of candidateContainers) {
+      const logs = Array.isArray(c.registrationLog) ? c.registrationLog : null;
+      if (!logs) continue;
+      const firstCreated = logs.find((e) => e && e.type === 'created');
+      const route = String(firstCreated?.route || '').trim();
+      if (route.includes('CSV') || route.includes('csv') || route.includes('업로드')) return '관리자';
+    }
+
+    // 4순위: submitter_type 기반 (공인중개사 vs 소유자/일반)
     const submitterType = String(
-      itemOrRow?.submitterType || itemOrRow?.submitter_type || raw?.submitter_type || raw?.submitterType || ''
+      itemOrRow?.submitterType || itemOrRow?.submitter_type
+      || candidateContainers.find((c) => c.submitter_type || c.submitterType)?.submitter_type
+      || candidateContainers.find((c) => c.submitter_type || c.submitterType)?.submitterType
+      || ''
     ).trim().toLowerCase();
-    return submitterType === 'realtor' ? '공인중개사' : '소유자/일반';
+    if (submitterType === 'realtor') return '공인중개사';
+
+    // 5순위: 경매/공매 구분이면 대부분 관리자 업로드.
+    //   (경매/공매는 담당자가 수동 등록하는 케이스가 드물고, CSV 업로드 외 진입 경로가 사실상 없음)
+    const sourceType = String(
+      itemOrRow?.sourceType || itemOrRow?.source_type
+      || candidateContainers.find((c) => c.source_type || c.sourceType)?.source_type
+      || candidateContainers.find((c) => c.source_type || c.sourceType)?.sourceType
+      || ''
+    ).trim().toLowerCase();
+    if (sourceType === 'auction' || sourceType === 'onbid') return '관리자';
+
+    return '소유자/일반';
   }
 
 
