@@ -2085,9 +2085,9 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
   .page-agent .toolbar.toolbar-agent-properties #btnNewProperty{grid-column:1 / -1;}
 
   /* ── 테이블 → 카드 변환 ── 
-     table / thead / tbody / tr / td 를 모두 block 으로 바꾸고
-     tr 자체가 카드가 되도록 재구성.
-     thead 는 숨김. */
+     JS 가 모바일에선 renderRow 안에서 .ag-row-mobile tr 에 단일 td.ag-card-td 를
+     생성하고 그 안에 카드 내부 div 들을 렌더함. CSS 는 테이블 구조를 flatten 하고
+     카드 내부 스타일만 지정. */
   .page-agent .agent-list-table-wrap{
     border:none;box-shadow:none;background:transparent;overflow:visible;padding:0;
   }
@@ -2096,89 +2096,73 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
   }
   .page-agent #agPropertiesTable thead{display:none;}
   .page-agent #agPropertiesTable tbody{display:flex;flex-direction:column;gap:10px;}
-  .page-agent #agPropertiesTable tbody tr{
-    display:grid;
-    grid-template-columns:auto 1fr auto;
-    grid-template-areas:
-      "fav kind date"
-      "addr addr addr"
-      "meta meta meta"
-      "more more more";
-    gap:6px 10px;
+  .page-agent #agPropertiesTable tbody tr.ag-row-mobile{
+    display:block;
+    padding:0;
+    background:transparent;border:none;box-shadow:none;
+  }
+  .page-agent #agPropertiesTable tbody tr.ag-row-mobile > td.ag-card-td{
+    display:block;
+    padding:0;border:none;background:transparent;
+  }
+
+  /* 카드 본체 */
+  .page-agent .ag-card{
+    display:flex;flex-direction:column;gap:6px;
     padding:12px 14px;
     background:var(--surface,#fff);
     border:1px solid var(--border,#e5e7eb);
     border-radius:12px;
     box-shadow:0 1px 2px rgba(0,0,0,.03);
     cursor:pointer;
+    transition:border-color .15s,box-shadow .15s;
   }
-  .page-agent #agPropertiesTable tbody tr:hover,
-  .page-agent #agPropertiesTable tbody tr:active{
+  .page-agent .ag-card:active{
     border-color:var(--brand,#ea580c);
     box-shadow:0 2px 8px rgba(234,88,12,.08);
   }
-  .page-agent #agPropertiesTable td{
-    display:block;
-    padding:0;
-    border:none;
-    font-size:13px;
-    line-height:1.4;
-    color:var(--text,#111);
-    background:transparent;
-  }
 
-  /* ── 공통 앞부분 (두 레이아웃 동일: 1~7번째 td) ── 
-     1:fav  2:물건번호  3:구분  4:주소  5:유형  6:층수  7:전용면적 */
-  .page-agent #agPropertiesTable tbody td:nth-child(1){grid-area:fav;align-self:center;}
-  .page-agent #agPropertiesTable tbody td:nth-child(2){
-    grid-area:date;font-size:11px;color:var(--muted,#888);text-align:right;white-space:nowrap;align-self:center;
+  /* 카드 상단: ★ [구분칩] ... #물건번호 */
+  .page-agent .ag-card-head{
+    display:flex;align-items:center;gap:8px;
   }
-  .page-agent #agPropertiesTable tbody td:nth-child(2)::before{content:"#";color:var(--muted,#ccc);margin-right:2px;}
-  .page-agent #agPropertiesTable tbody td:nth-child(3){grid-area:kind;align-self:center;}
-  .page-agent #agPropertiesTable tbody td:nth-child(4){
-    grid-area:addr;font-size:14px;font-weight:700;line-height:1.35;word-break:break-all;
+  .page-agent .ag-card-head .btn-fav{
+    font-size:18px;padding:0;width:26px;height:26px;background:transparent;border:none;cursor:pointer;color:#ccc;
+    display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
   }
-  /* 유형·층수·면적: 같은 "meta" 영역에 inline 으로 나열 */
-  .page-agent #agPropertiesTable tbody td:nth-child(5),
-  .page-agent #agPropertiesTable tbody td:nth-child(6),
-  .page-agent #agPropertiesTable tbody td:nth-child(7){
-    grid-area:meta;display:inline;font-size:12px;color:var(--muted,#666);
-  }
-  .page-agent #agPropertiesTable tbody td:nth-child(6)::before{content:" · ";color:var(--muted,#ccc);}
-  .page-agent #agPropertiesTable tbody td:nth-child(7)::before{content:" · ";color:var(--muted,#ccc);}
-  .page-agent #agPropertiesTable tbody td:nth-child(7)::after{content:"평";}
-
-  /* ── 뒷부분 (두 레이아웃 순서 다름: 8~15번째 td) ── 
-     구분자 " · " 붙여 한 블록에 모두 표시. "-" 또는 빈 값은 시각적으로 덜 튐. */
-  .page-agent #agPropertiesTable tbody td:nth-child(n+8){
-    grid-area:more;display:inline;font-size:11.5px;color:var(--text-2,#555);
-    padding-top:6px;border-top:1px dashed var(--border,#e5e7eb);margin-top:2px;
-  }
-  /* 첫 번째 more (8번) 만 border-top; 나머지는 같은 grid-area 에 inline 으로 붙음 */
-  .page-agent #agPropertiesTable tbody td:nth-child(n+9){
-    border-top:none;padding-top:0;margin-top:0;
-  }
-  .page-agent #agPropertiesTable tbody td:nth-child(n+9)::before{content:" · ";color:var(--muted,#ccc);}
-
-  /* fav 버튼 */
-  .page-agent #agPropertiesTable tbody .btn-fav{
-    font-size:18px;padding:0;width:28px;height:28px;background:transparent;border:none;cursor:pointer;color:var(--muted,#ccc);
-  }
-  .page-agent #agPropertiesTable tbody .btn-fav.is-active{color:#f59e0b;}
-  .page-agent #agPropertiesTable tbody .fav-col{padding:0;margin:0;}
-
-  /* 구분 chip */
-  .page-agent #agPropertiesTable tbody .kind-text{
+  .page-agent .ag-card-head .btn-fav.is-active{color:#f59e0b;}
+  .page-agent .ag-card-head .kind-text{
     display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;
   }
+  .page-agent .ag-card-head .ag-card-itemno{
+    margin-left:auto;font-size:11px;color:var(--muted,#888);white-space:nowrap;
+  }
+  .page-agent .ag-card-head .ag-card-itemno a{color:inherit;text-decoration:none;}
 
-  /* 일정 셀 안의 multi-line 축소 */
-  .page-agent #agPropertiesTable tbody .schedule-cell{display:inline;}
-  .page-agent #agPropertiesTable tbody .schedule-cell br{display:none;}
+  /* 주소 (강조) */
+  .page-agent .ag-card-addr{
+    font-size:14px;font-weight:700;line-height:1.35;color:var(--text,#111);word-break:break-all;
+  }
 
-  /* 카드 내부 링크 (물건번호) */
-  .page-agent #agPropertiesTable tbody .item-no-link{
-    color:inherit;text-decoration:none;
+  /* 메타: 유형 · 층수 · 평 */
+  .page-agent .ag-card-meta{
+    font-size:12px;color:var(--muted,#666);line-height:1.4;
+  }
+
+  /* 가격 정보: 감정가 · 현재가 · 비율 */
+  .page-agent .ag-card-price{
+    font-size:13px;font-weight:600;color:var(--text,#111);line-height:1.4;
+  }
+
+  /* 일정/상태 */
+  .page-agent .ag-card-tail{
+    font-size:11.5px;color:var(--text-2,#555);line-height:1.4;
+  }
+
+  /* 푸터: 의견·실사·등록일 (상단 구분선) */
+  .page-agent .ag-card-footer{
+    font-size:11px;color:var(--muted,#888);
+    padding-top:6px;border-top:1px dashed var(--border,#e5e7eb);margin-top:2px;
   }
 
   /* 페이지네이션 모바일 정리 */

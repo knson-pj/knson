@@ -315,6 +315,20 @@
     configureFormNumericUx(els.newPropertyForm, { decimalNames: ["commonarea", "exclusivearea", "sitearea"], amountNames: ["priceMain"] });
     bindEvents();
     setupChrome();
+    // 모바일/데스크톱 경계(768px) 교차 시 테이블 재렌더 (카드 ↔ 테이블 전환)
+    let _lastMobile = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 768px)').matches : false;
+    let _rerenderT = null;
+    window.addEventListener('resize', function(){
+      if (_rerenderT) clearTimeout(_rerenderT);
+      _rerenderT = setTimeout(function(){
+        const nowMobile = window.matchMedia('(max-width: 768px)').matches;
+        if (nowMobile !== _lastMobile) {
+          _lastMobile = nowMobile;
+          if (typeof renderTable === 'function') { try { renderTable(); } catch(_){} }
+        }
+      }, 180);
+    });
     ensureLoginThenLoad();
   }
 
@@ -1768,6 +1782,72 @@ function renderRow(p) {
   const siteText = (listView?.siteAreaValue != null ? fmtArea(listView.siteAreaValue) : (p.sitearea != null ? fmtArea(p.sitearea) : "-"));
   const useapprovalText = formatDate(listView?.useApprovalValue || p.useapproval || p._raw?.useapproval || p._raw?.use_approval || p._raw?.useApproval || "") || "-";
 
+  // ── 모바일(≤768px): 단일 td 에 카드 레이아웃 HTML 을 넣는 방식 ──
+  // CSS 만으로 15개 td 를 의미 있는 카드로 재배치하기 어려워 JS 에서 분기.
+  const isMobile = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 768px)').matches;
+
+  if (isMobile) {
+    tr.classList.add('ag-row-mobile');
+    const favTd = document.createElement('td');
+    favTd.className = 'ag-card-td';
+    favTd.setAttribute('colspan', '15');
+
+    // 카드 내부 정보 블록들 구성 (값 있는 것만)
+    const exclusiveArea = p.exclusivearea != null ? fmtArea(p.exclusivearea) : null;
+    const metaParts = [assetTypeText, floorText, exclusiveArea ? exclusiveArea + '평' : null].filter((v) => v && v !== '-');
+    const priceParts = [];
+    if (appraisal && appraisal !== '-') priceParts.push('감정가 ' + appraisal);
+    if (current)  priceParts.push('현재가 ' + current);
+    if (rate)     priceParts.push(rate);
+    const tailParts = [];
+    if (scheduleHtml && scheduleHtml !== '-') tailParts.push('📅 ' + scheduleHtml);
+    if (statusLabel && statusLabel !== '-') tailParts.push(statusLabel);
+    const footerParts = [];
+    if (opinionText) footerParts.push('의견 ' + opinionText);
+    if (p.siteInspection) footerParts.push('실사 ✓');
+    if (createdAtText && createdAtText !== '-') footerParts.push('등록 ' + createdAtText);
+
+    const _srcUrl = p.sourceUrl || p.source_url || '';
+    const _itemNoHtml = _srcUrl
+      ? '<a href="' + esc(_srcUrl) + '" target="_blank" rel="noopener" class="item-no-link">' + esc(p.itemNo || "-") + '</a>'
+      : esc(p.itemNo || "-");
+
+    favTd.innerHTML = `
+      <div class="ag-card">
+        <div class="ag-card-head">
+          <button type="button" class="btn-fav${isFav ? ' is-active' : ''}" title="${isFav ? '관심 해제' : '관심 등록'}">${isFav ? '★' : '☆'}</button>
+          <span class="kind-text ${kindClass}">${esc(kindLabel)}</span>
+          <span class="ag-card-itemno">#${_itemNoHtml}</span>
+        </div>
+        <div class="ag-card-addr">${esc(addressText)}</div>
+        ${metaParts.length ? `<div class="ag-card-meta">${metaParts.map(esc).join(' · ')}</div>` : ''}
+        ${priceParts.length ? `<div class="ag-card-price">${priceParts.map(esc).join('  ·  ')}</div>` : ''}
+        ${tailParts.length ? `<div class="ag-card-tail">${tailParts.join(' · ')}</div>` : ''}
+        ${footerParts.length ? `<div class="ag-card-footer">${footerParts.map(esc).join(' · ')}</div>` : ''}
+      </div>
+    `;
+    tr.appendChild(favTd);
+
+    // 관심 버튼: 이벤트 바인딩
+    const favBtnM = favTd.querySelector('.btn-fav');
+    if (favBtnM) {
+      favBtnM.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(p.id);
+        const nowFav = state.favorites.has(p.id);
+        favBtnM.textContent = nowFav ? '★' : '☆';
+        favBtnM.title = nowFav ? '관심 해제' : '관심 등록';
+        favBtnM.classList.toggle('is-active', nowFav);
+        if (state.filters.favOnly) { state.page = 1; renderTable(); }
+      });
+    }
+    tr.addEventListener("click", () => openEditModal(p));
+    tr.querySelectorAll(".item-no-link").forEach((a) => a.addEventListener("click", (e) => e.stopPropagation()));
+    return tr;
+  }
+
+  // ── 데스크톱: 기존 15-컬럼 테이블 로직 그대로 ──
   const favTd = document.createElement("td");
   favTd.className = "fav-col";
   const favBtn = document.createElement("button");
