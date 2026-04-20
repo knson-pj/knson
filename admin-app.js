@@ -180,6 +180,8 @@
       area: "",         // "0-5" | "5-10" | ... | "50-"
       priceRange: "",   // "0-1" | "1-3" | ... | "20-"  (억 단위)
       ratio50: "",      // "50" = 50% 이하 (경매/공매만)
+      todayBid: false,  // 오늘 주요일정 물건만 (D 버튼)
+      favOnly: false,   // 담당자들이 ★로 선택한 물건만 (★ 버튼)
     },
     lastGroupSuggestion: null,
     selectedPropertyIds: new Set(),
@@ -194,6 +196,7 @@
     propertiesFullCache: null,
     propertySort: { key: '', direction: 'desc' },
     geocodeRunning: false,
+    allFavoritePropertyIds: new Set(),  // 모든 담당자의 ★ property_id 집합 (관리자용)
   };
 
   const els = {};
@@ -454,6 +457,8 @@
       propPriceFilter: $("#propPriceFilter"),
       propRatioFilter: $("#propRatioFilter"),
       propKeyword: $("#propKeyword"),
+      propFavFilter: $("#propFavFilter"),
+      propDayFilter: $("#propDayFilter"),
       propertiesTableBody: $("#propertiesTable tbody"),
       propertiesEmpty: $("#propertiesEmpty"),
       adminPropertiesPagination: $("#adminPropertiesPagination"),
@@ -815,6 +820,27 @@ function bindEvents() {
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     }, 150));
 
+    // ★ 버튼: 담당자들이 즐겨찾기(★) 한 물건만 보기
+    if (els.propFavFilter) els.propFavFilter.addEventListener("click", async () => {
+      const turningOn = !state.propertyFilters.favOnly;
+      state.propertyFilters.favOnly = turningOn;
+      els.propFavFilter.classList.toggle("is-active", state.propertyFilters.favOnly);
+      state.propertyPage = 1;
+      // 켜질 때 최신 즐겨찾기 목록 동기화 (다른 담당자의 ★ 변경 반영)
+      if (turningOn) {
+        try { await loadAllFavoritePropertyIds(); } catch (e) { console.warn('favorites load failed', e); }
+      }
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+    });
+
+    // D 버튼: 주요일정이 오늘인 경매/공매 물건만 보기
+    if (els.propDayFilter) els.propDayFilter.addEventListener("click", () => {
+      state.propertyFilters.todayBid = !state.propertyFilters.todayBid;
+      els.propDayFilter.classList.toggle("is-active", state.propertyFilters.todayBid);
+      state.propertyPage = 1;
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+    });
+
     // CSV import (관리자만)
     if (els.btnCsvUpload) els.btnCsvUpload.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
@@ -1021,7 +1047,9 @@ function bindEvents() {
       String(f.keyword || '').trim() ||
       toArr(f.area).filter(Boolean).length ||
       toArr(f.priceRange).filter(Boolean).length ||
-      toArr(f.ratio50).filter(Boolean).length
+      toArr(f.ratio50).filter(Boolean).length ||
+      !!f.todayBid ||
+      !!f.favOnly
     );
   }
 
@@ -1033,7 +1061,9 @@ function bindEvents() {
       String(f.keyword || '').trim() ||
       toArr(f.area).filter(Boolean).length ||
       toArr(f.priceRange).filter(Boolean).length ||
-      toArr(f.ratio50).filter(Boolean).length
+      toArr(f.ratio50).filter(Boolean).length ||
+      !!f.todayBid ||   // D 버튼: dateMain 매칭은 DB select 에 필터 없음 → 로컬 처리
+      !!f.favOnly       // ★ 버튼: user_favorites 조인 없음 → 로컬 처리
     );
   }
 
@@ -1049,6 +1079,21 @@ function bindEvents() {
 
   function shouldUseFullPropertyDataset() {
     return hasLocalOnlyPropertyFilters();
+  }
+
+  // 모든 담당자의 ★ property_id 집합을 조회해 state.allFavoritePropertyIds 에 캐시.
+  // 관리자 페이지의 ★ 필터 (favOnly) 에서 사용.
+  async function loadAllFavoritePropertyIds() {
+    try {
+      const res = await api('/admin/properties?mode=all_favorites', { auth: true });
+      const ids = Array.isArray(res?.propertyIds) ? res.propertyIds : [];
+      state.allFavoritePropertyIds = new Set(ids.map((v) => String(v || '')).filter(Boolean));
+      return state.allFavoritePropertyIds;
+    } catch (err) {
+      console.warn('loadAllFavoritePropertyIds failed', err);
+      // 실패해도 기존 캐시 유지
+      return state.allFavoritePropertyIds || new Set();
+    }
   }
 
   async function fetchPropertiesPageLight(sb, page, pageSize, { isAdmin, uid }) {

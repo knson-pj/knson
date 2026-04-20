@@ -696,6 +696,17 @@
   }
 
   function getTodayDateKeyLocal() {
+    // KST 기준 YYYY-MM-DD (담당자 페이지의 getTodayDateKey 와 일관)
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date());
+      const y = parts.find((p) => p.type === 'year')?.value || '';
+      const m = parts.find((p) => p.type === 'month')?.value || '';
+      const d = parts.find((p) => p.type === 'day')?.value || '';
+      if (y && m && d) return `${y}-${m}-${d}`;
+    } catch {}
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
@@ -897,6 +908,12 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
             'itemNo', 'address', 'assetType', 'floor', 'totalfloor', 'siteInspection', 'opinion', 'regionGu', 'regionDong', 'status',
             (item) => item.assignedAgentName || getStaffNameByIdLocal(state, item.assignedAgentId),
           ],
+          todayKey: (typeof window.KNSN_TODAY_KEY === 'function') ? window.KNSN_TODAY_KEY() : getTodayDateKeyLocal(),
+          isFavorite: (row) => {
+            const favs = state?.allFavoritePropertyIds;
+            if (!(favs instanceof Set) || !favs.size) return false;
+            return favs.has(String(row?.id || ''));
+          },
         })
       : baseRows;
     const assigneeFiltered = (ignoreKeys.includes('assignee') || !String(filters.assignee || '').trim())

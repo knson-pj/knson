@@ -132,7 +132,8 @@
     return FAVS_KEY_PREFIX + uid;
   }
 
-  function loadFavorites() {
+  // localStorage 캐시 (초기 표시용, 진실은 DB)
+  function loadFavoritesCache() {
     try {
       const raw = localStorage.getItem(getFavsKey());
       const arr = raw ? JSON.parse(raw) : [];
@@ -140,16 +141,95 @@
     } catch { return new Set(); }
   }
 
-  function saveFavorites() {
+  function saveFavoritesCache() {
     try {
       localStorage.setItem(getFavsKey(), JSON.stringify([...state.favorites]));
     } catch {}
   }
 
+  // 최초 로드: localStorage 우선 (즉시 UI), DB 에서 동기화 (뒤에서)
+  function loadFavorites() {
+    return loadFavoritesCache();
+  }
+
+  // DB 에서 ★ 목록 조회 → state.favorites 갱신
+  async function syncFavoritesFromDb() {
+    try {
+      const sb = isSupabaseMode() ? K.initSupabase() : null;
+      if (!sb) return false;
+      const uid = String(state.session?.user?.id || "").trim();
+      if (!uid) return false;
+      const { data, error } = await sb
+        .from('user_favorites')
+        .select('property_id')
+        .eq('user_id', uid);
+      if (error) { console.warn('favorites load failed', error); return false; }
+      const ids = new Set((Array.isArray(data) ? data : []).map((r) => String(r.property_id || '')).filter(Boolean));
+      state.favorites = ids;
+      saveFavoritesCache();
+      return true;
+    } catch (e) {
+      console.warn('syncFavoritesFromDb error', e);
+      return false;
+    }
+  }
+
+  // localStorage → DB 1회 마이그레이션 (최초 1번만)
+  async function migrateLocalFavoritesToDb() {
+    try {
+      const migKey = 'knson_favs_migrated_v1_' + (state.session?.user?.id || state.session?.user?.email || 'guest');
+      if (localStorage.getItem(migKey) === '1') return;
+      const sb = isSupabaseMode() ? K.initSupabase() : null;
+      if (!sb) return;
+      const uid = String(state.session?.user?.id || "").trim();
+      if (!uid) return;
+      const local = loadFavoritesCache();
+      if (!local.size) { localStorage.setItem(migKey, '1'); return; }
+      const rows = [...local].map((pid) => ({ user_id: uid, property_id: String(pid) }));
+      // upsert (이미 있는 건 무시)
+      const { error } = await sb.from('user_favorites').upsert(rows, { onConflict: 'user_id,property_id', ignoreDuplicates: true });
+      if (!error) localStorage.setItem(migKey, '1');
+    } catch (e) {
+      console.warn('migrateLocalFavoritesToDb error', e);
+    }
+  }
+
+  // ★ 토글: DB upsert/delete + 낙관적 UI 업데이트
   function toggleFavorite(id) {
-    if (state.favorites.has(id)) state.favorites.delete(id);
-    else state.favorites.add(id);
-    saveFavorites();
+    const pid = String(id || '').trim();
+    if (!pid) return;
+    const willAdd = !state.favorites.has(pid);
+    // 1) 낙관적 UI 업데이트
+    if (willAdd) state.favorites.add(pid);
+    else state.favorites.delete(pid);
+    saveFavoritesCache();
+    // 2) DB 동기화 (비동기, 실패 시 롤백)
+    (async () => {
+      try {
+        const sb = isSupabaseMode() ? K.initSupabase() : null;
+        if (!sb) return;
+        const uid = String(state.session?.user?.id || "").trim();
+        if (!uid) return;
+        if (willAdd) {
+          const { error } = await sb.from('user_favorites')
+            .upsert({ user_id: uid, property_id: pid }, { onConflict: 'user_id,property_id', ignoreDuplicates: true });
+          if (error) throw error;
+        } else {
+          const { error } = await sb.from('user_favorites')
+            .delete()
+            .eq('user_id', uid)
+            .eq('property_id', pid);
+          if (error) throw error;
+        }
+      } catch (e) {
+        console.warn('toggleFavorite DB sync failed, rolling back', e);
+        // 롤백
+        if (willAdd) state.favorites.delete(pid);
+        else state.favorites.add(pid);
+        saveFavoritesCache();
+        try { renderTable(); } catch {}
+      }
+    })();
   }
 
   const state = {
@@ -1160,6 +1240,17 @@
     state.favorites = loadFavorites();
 
     await loadProperties();
+
+    // DB 에서 최신 favorites 동기화 (비동기, 실패해도 무시)
+    //   1) localStorage 에 있고 DB 에 없던 건 DB 에 업로드 (1회성 마이그레이션)
+    //   2) DB 에서 최신 목록 내려받아 UI 반영
+    (async () => {
+      try {
+        await migrateLocalFavoritesToDb();
+        const synced = await syncFavoritesFromDb();
+        if (synced) { try { renderTable(); } catch {} }
+      } catch (e) { console.warn('favorites sync error', e); }
+    })();
   }
 
   function renderSessionUI() {
@@ -1785,7 +1876,24 @@
 
     els.agTableBody.innerHTML = "";
     if (!paged.length) {
-      if (els.agEmpty) els.agEmpty.classList.remove("hidden");
+      if (els.agEmpty) {
+        // 필터 상태에 따라 메시지 다르게 표시 (D 버튼이 왜 비어있는지 사용자가 바로 알 수 있도록)
+        const f = state.filters || {};
+        const activeFilters = [];
+        if (f.todayBid) activeFilters.push('당일 입찰기일(D)');
+        if (f.favOnly) activeFilters.push('관심물건(★)');
+        if (f.keyword) activeFilters.push(`검색어 "${String(f.keyword).trim()}"`);
+        if (f.activeCard && f.activeCard !== 'all' && f.activeCard !== '') activeFilters.push('구분 필터');
+        if (f.area) activeFilters.push('면적 필터');
+        if (f.priceRange) activeFilters.push('가격 필터');
+        if (f.ratio50) activeFilters.push('비율 필터');
+        if (activeFilters.length) {
+          els.agEmpty.textContent = `조건에 맞는 물건이 없습니다. (적용 필터: ${activeFilters.join(', ')})`;
+        } else {
+          els.agEmpty.textContent = '배정된 물건이 없습니다.';
+        }
+        els.agEmpty.classList.remove("hidden");
+      }
       renderPagination(0);
       return;
     }

@@ -729,6 +729,29 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     const url = new URL(req.url, 'http://localhost');
     const mode = String(url.searchParams.get('mode') || '').trim().toLowerCase();
+    if (mode === 'all_favorites') {
+      // 모든 담당자의 ★ property_id 집합 (관리자용 ★ 필터링)
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      try {
+        if (!hasSupabaseAdminEnv()) {
+          return send(res, 200, { ok: true, propertyIds: [] });
+        }
+        const data = await supabaseRest('/rest/v1/user_favorites?select=property_id');
+        const set = new Set();
+        if (Array.isArray(data)) {
+          for (const r of data) {
+            const pid = String(r?.property_id || '').trim();
+            if (pid) set.add(pid);
+          }
+        }
+        return send(res, 200, { ok: true, propertyIds: [...set] });
+      } catch (err) {
+        return send(res, err?.status || 500, {
+          ok: false,
+          message: err?.message || '관심물건 목록을 불러오지 못했습니다.',
+        });
+      }
+    }
     if (mode === 'map') {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       res.setHeader('Pragma', 'no-cache');
