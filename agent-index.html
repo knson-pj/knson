@@ -32,6 +32,7 @@
       </button>
       <div class="sidebar-group-items">
         <button class="sidebar-nav-item sidebar-nav-sub" data-view="dailyreport"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">일일 업무 일지</span></button>
+        <button class="sidebar-nav-item sidebar-nav-sub" data-view="schedule"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">오늘의 스케쥴링</span></button>
       </div>
     </div>
   </nav>
@@ -227,6 +228,44 @@
       </section>
     </section>
 
+    <!-- ── 오늘의 스케쥴링 ── -->
+    <section id="ag-view-schedule" class="ag-view hidden">
+      <section class="panel">
+        <div class="panel-title-row" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+          <div>
+            <h2 style="margin:0;font-size:17px;">오늘의 스케쥴링</h2>
+            <p style="margin:4px 0 0;font-size:12px;color:var(--muted,#999);">기준 물건을 선택하면, 주변 이동 동선 기반으로 방문 순서를 제안합니다.</p>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none;">
+            <input type="checkbox" id="schAnchorShowAll" style="margin:0;" />
+            전체 보기 <span style="color:var(--muted,#999);font-size:11px;">(중개·일반도 기준으로 선택 가능)</span>
+          </label>
+        </div>
+
+        <!-- 2열: 좌(기준 후보 카드) / 우(동선 제안) -->
+        <div class="schedule-layout" style="display:grid;grid-template-columns:minmax(260px,0.8fr) minmax(0,1.2fr);gap:16px;align-items:start;">
+          <!-- 좌: 기준 물건 후보 -->
+          <div class="sub-card" style="min-height:320px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <strong style="font-size:14px;">기준 물건 선택</strong>
+              <span id="schAnchorCount" style="font-size:11px;color:var(--muted,#999);"></span>
+            </div>
+            <div id="schAnchorList" style="display:flex;flex-direction:column;gap:8px;max-height:600px;overflow-y:auto;"></div>
+            <div id="schAnchorEmpty" class="empty hidden" style="padding:24px;text-align:center;color:var(--muted,#999);font-size:13px;">배정받은 기준 물건(경매/공매)이 없습니다.</div>
+          </div>
+
+          <!-- 우: 선택된 기준 정보 + 동선 제안 -->
+          <div class="sub-card" style="min-height:320px;">
+            <div id="schSelectedHead" style="margin-bottom:12px;">
+              <div style="font-size:13px;color:var(--muted,#999);">기준 물건을 선택하세요.</div>
+            </div>
+            <div id="schNearbyList" style="display:flex;flex-direction:column;gap:8px;"></div>
+            <div id="schNearbyEmpty" class="empty hidden" style="padding:24px;text-align:center;color:var(--muted,#999);font-size:13px;">주변 방문 대상 물건이 없습니다.</div>
+          </div>
+        </div>
+      </section>
+    </section>
+
   </main></div>
 </div>
 
@@ -246,11 +285,11 @@
 <script src="./knson-property-renderers.js?v=20260403-photo1"></script>
 <script src="./knson-data-access.js?v=20260404-photo2"></script>
 <script src="./knson-property-photos.js?v=20260404-photo2"></script>
-<script src="./agent-app.js?v=20260406-loggroup1"></script>
+<script src="./agent-app.js?v=20260420-schedule"></script>
 
 <script>
 (function(){
-  var TITLES={home:'홈',list:'',dailyreport:''};
+  var TITLES={home:'홈',list:'',dailyreport:'',schedule:'오늘의 스케쥴링'};
   document.querySelectorAll('.sidebar-group-btn').forEach(function(btn){
     var items=btn.closest('.sidebar-group').querySelector('.sidebar-group-items');
     items.style.maxHeight='0';
@@ -269,6 +308,7 @@
     if(active){var grp=active.closest('.sidebar-group');if(grp){var gb=grp.querySelector('.sidebar-group-btn'),gi=grp.querySelector('.sidebar-group-items');if(gb && gi && !gb.classList.contains('is-open')){gb.classList.add('is-open');gb.querySelector('.sidebar-group-arrow').textContent='∧';gi.style.maxHeight=gi.scrollHeight+'px';}}}
     if(titleEl){ titleEl.textContent = Object.prototype.hasOwnProperty.call(TITLES, viewName) ? TITLES[viewName] : ''; }
     if(viewName==='dailyreport' && typeof window.refreshAgentDailyReportView==='function'){window.refreshAgentDailyReportView();}
+    if(viewName==='schedule' && typeof window.refreshAgentScheduleView==='function'){window.refreshAgentScheduleView();}
   }
 
   document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(item){

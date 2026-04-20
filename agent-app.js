@@ -3231,6 +3231,298 @@ function renderPagination(totalPages) {
     window.refreshAgentDailyReportView = function(){ refreshAgentDailyReportView({ force:true }); };
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // 오늘의 스케쥴링 (Schedule)
+  // - 기준 물건(경매/공매, 또는 '전체 보기' 시 전체)을 선택하면
+  //   해당 물건 좌표 기준으로 나머지 배정 물건을 거리순 나열
+  // ═══════════════════════════════════════════════════════════════
+  const _scheduleState = {
+    selectedAnchorId: null,
+    showAll: false,
+  };
+
+  function sch_toFiniteNumber(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  function sch_getLatLng(p) {
+    const lat = sch_toFiniteNumber(p?.latitude ?? p?.lat);
+    const lng = sch_toFiniteNumber(p?.longitude ?? p?.lng);
+    if (lat === null || lng === null) return null;
+    return { lat, lng };
+  }
+  // Haversine 공식 → 단위: 미터 (도보 거리 표시용이라 정확도 필요)
+  function sch_haversineMeters(a, b) {
+    const R = 6371000; // 지구 반지름 m
+    const toRad = (deg) => deg * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const la1 = toRad(a.lat);
+    const la2 = toRad(b.lat);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function sch_formatDistance(meters) {
+    if (!Number.isFinite(meters)) return '-';
+    if (meters < 1000) return Math.round(meters) + ' m';
+    return (meters / 1000).toFixed(meters < 10000 ? 2 : 1).replace(/\.0+$/, '') + ' km';
+  }
+
+  function sch_getBucket(p) {
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function') {
+      return PropertyDomain.getSourceBucket(p);
+    }
+    const st = String(p?.sourceType || p?.source_type || '').trim();
+    if (st === 'realtor') return p?.isDirectSubmission ? 'realtor_direct' : 'realtor_naver';
+    return st || 'general';
+  }
+
+  function sch_getBucketLabel(p) {
+    const b = sch_getBucket(p);
+    return ({
+      auction: '경매', onbid: '공매',
+      realtor_naver: '네이버중개', realtor_direct: '일반중개',
+      general: '일반',
+    })[b] || '일반';
+  }
+
+  function sch_getBucketClass(p) {
+    const b = sch_getBucket(p);
+    if (b === 'auction') return 'is-auction';
+    if (b === 'onbid') return 'is-onbid';
+    if (b === 'general') return 'is-general';
+    return 'is-realtor';
+  }
+
+  function sch_getAssignedProperties() {
+    return Array.isArray(state.properties) ? state.properties : [];
+  }
+
+  function sch_isAnchorCandidate(p) {
+    if (_scheduleState.showAll) return true;
+    const b = sch_getBucket(p);
+    return b === 'auction' || b === 'onbid';
+  }
+
+  // 기준 물건 카드 렌더
+  function sch_renderAnchorList() {
+    const listEl = document.getElementById('schAnchorList');
+    const emptyEl = document.getElementById('schAnchorEmpty');
+    const countEl = document.getElementById('schAnchorCount');
+    if (!listEl) return;
+
+    const props = sch_getAssignedProperties();
+    const anchors = props.filter(sch_isAnchorCandidate);
+
+    if (countEl) {
+      const labelMode = _scheduleState.showAll ? '전체' : '경매/공매';
+      countEl.textContent = `${anchors.length}건 (${labelMode})`;
+    }
+
+    if (!anchors.length) {
+      listEl.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.classList.remove('hidden');
+        emptyEl.textContent = _scheduleState.showAll
+          ? '배정받은 물건이 없습니다.'
+          : '배정받은 기준 물건(경매/공매)이 없습니다. 전체 보기를 켜면 다른 구분도 기준으로 선택할 수 있습니다.';
+      }
+      return;
+    }
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    // 이전 선택이 현재 리스트에 없으면 초기화
+    if (_scheduleState.selectedAnchorId && !anchors.some((p) => String(p.id || p.globalId) === _scheduleState.selectedAnchorId)) {
+      _scheduleState.selectedAnchorId = null;
+    }
+    // 기본 선택: 첫 번째
+    if (!_scheduleState.selectedAnchorId && anchors.length) {
+      _scheduleState.selectedAnchorId = String(anchors[0].id || anchors[0].globalId);
+    }
+
+    listEl.innerHTML = anchors.map((p) => {
+      const id = String(p.id || p.globalId || '');
+      const sel = id === _scheduleState.selectedAnchorId;
+      const label = sch_getBucketLabel(p);
+      const cls = sch_getBucketClass(p);
+      const addr = esc(String(p.address || '-'));
+      const assetType = esc(String(p.assetType || ''));
+      const area = p.exclusivearea != null && p.exclusivearea !== '' ? `${fmtArea(p.exclusivearea)}평` : '';
+      const price = formatEok(p.priceMain);
+      const ll = sch_getLatLng(p);
+      const noCoord = !ll;
+
+      const meta = [assetType, area, price !== '-' ? price : ''].filter(Boolean).join(' · ') || '세부 정보 없음';
+
+      return `
+        <button type="button" class="sch-anchor-card ${sel ? 'is-active' : ''}" data-anchor-id="${escAttr(id)}"
+          style="text-align:left;display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:8px;background:${sel ? 'var(--brand-soft,#fff7ed)' : 'var(--surface,#fff)'};border:1px solid ${sel ? 'var(--brand,#ea580c)' : 'var(--border,#e5e7eb)'};cursor:pointer;${noCoord ? 'opacity:.6;' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+            <span class="workmgmt-chip ${cls}" style="font-size:10px;padding:2px 6px;">${label}</span>
+            ${noCoord ? '<span style="font-size:10px;color:#b45309;">⚠ 좌표 없음</span>' : ''}
+          </div>
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${addr}</div>
+          <div style="font-size:11px;color:var(--muted,#999);">${esc(meta)}</div>
+        </button>
+      `;
+    }).join('');
+
+    // 클릭 핸들러
+    listEl.querySelectorAll('.sch-anchor-card').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.anchorId || '';
+        if (!id) return;
+        _scheduleState.selectedAnchorId = id;
+        sch_renderAnchorList();
+        sch_renderNearbyList();
+      });
+    });
+  }
+
+  // 선택된 기준 물건 헤더 + 주변 거리순 렌더
+  function sch_renderNearbyList() {
+    const headEl = document.getElementById('schSelectedHead');
+    const listEl = document.getElementById('schNearbyList');
+    const emptyEl = document.getElementById('schNearbyEmpty');
+    if (!headEl || !listEl) return;
+
+    const props = sch_getAssignedProperties();
+    const anchor = props.find((p) => String(p.id || p.globalId) === _scheduleState.selectedAnchorId);
+
+    if (!anchor) {
+      headEl.innerHTML = `<div style="font-size:13px;color:var(--muted,#999);">기준 물건을 선택하세요.</div>`;
+      listEl.innerHTML = '';
+      if (emptyEl) emptyEl.classList.add('hidden');
+      return;
+    }
+
+    const anchorLL = sch_getLatLng(anchor);
+    const anchorLabel = sch_getBucketLabel(anchor);
+    const anchorCls = sch_getBucketClass(anchor);
+    headEl.innerHTML = `
+      <div style="padding:10px 12px;border-radius:8px;background:linear-gradient(135deg,var(--brand-soft,#fff7ed),transparent);border:1px solid var(--brand,#ea580c);margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="font-size:10px;font-weight:700;color:var(--brand,#ea580c);">기준 물건</span>
+          <span class="workmgmt-chip ${anchorCls}" style="font-size:10px;padding:2px 6px;">${anchorLabel}</span>
+          ${anchorLL ? '' : '<span style="font-size:10px;color:#b45309;">⚠ 좌표 없음 — 거리 계산 불가</span>'}
+        </div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">${esc(String(anchor.address || '-'))}</div>
+        <div style="font-size:11px;color:var(--muted,#666);">
+          ${esc([anchor.assetType, anchor.exclusivearea ? fmtArea(anchor.exclusivearea) + '평' : '', formatEok(anchor.priceMain) !== '-' ? formatEok(anchor.priceMain) : ''].filter(Boolean).join(' · '))}
+        </div>
+      </div>
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">주변 방문 동선 (거리순)</div>
+    `;
+
+    if (!anchorLL) {
+      listEl.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.classList.remove('hidden');
+        emptyEl.textContent = '기준 물건에 좌표가 없어 거리 계산이 불가합니다. 다른 기준 물건을 선택해 주세요.';
+      }
+      return;
+    }
+
+    // 기준 제외 나머지 물건을 좌표 있는 것만 거리 계산 + 정렬
+    const selectedId = String(anchor.id || anchor.globalId);
+    const withDist = [];
+    const noCoord = [];
+    props.forEach((p) => {
+      const pid = String(p.id || p.globalId);
+      if (pid === selectedId) return;
+      const ll = sch_getLatLng(p);
+      if (!ll) { noCoord.push(p); return; }
+      const d = sch_haversineMeters(anchorLL, ll);
+      withDist.push({ p, d });
+    });
+    withDist.sort((a, b) => a.d - b.d);
+
+    if (!withDist.length && !noCoord.length) {
+      listEl.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.classList.remove('hidden');
+        emptyEl.textContent = '주변 방문 대상 물건이 없습니다.';
+      }
+      return;
+    }
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    const rowsHtml = withDist.map((entry, idx) => {
+      const p = entry.p;
+      const bucketLabel = sch_getBucketLabel(p);
+      const bucketCls = sch_getBucketClass(p);
+      const addr = esc(String(p.address || '-'));
+      const dist = sch_formatDistance(entry.d);
+      const meta = esc([
+        p.assetType,
+        p.exclusivearea != null && p.exclusivearea !== '' ? `${fmtArea(p.exclusivearea)}평` : '',
+        formatEok(p.priceMain) !== '-' ? formatEok(p.priceMain) : '',
+      ].filter(Boolean).join(' · '));
+      const pid = String(p.id || p.globalId || '');
+      return `
+        <div class="sch-nearby-card" data-nearby-id="${escAttr(pid)}"
+          style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);">
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:42px;">
+            <div style="width:28px;height:28px;border-radius:50%;background:var(--brand,#ea580c);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">${idx + 1}</div>
+            <div style="font-size:10px;color:var(--muted,#999);white-space:nowrap;">${dist}</div>
+          </div>
+          <div style="flex:1 1 auto;min-width:0;">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;">
+              <span class="workmgmt-chip ${bucketCls}" style="font-size:10px;padding:2px 6px;">${bucketLabel}</span>
+            </div>
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${addr}</div>
+            <div style="font-size:11px;color:var(--muted,#999);">${meta}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const noCoordHtml = noCoord.length ? `
+      <div style="margin-top:12px;padding:8px 10px;border-radius:6px;background:#fef3c7;border:1px solid #fcd34d;font-size:11px;color:#92400e;">
+        ⚠ 좌표 없는 물건 ${noCoord.length}건은 거리 계산 불가로 목록에서 제외됨.
+      </div>
+    ` : '';
+
+    listEl.innerHTML = rowsHtml + noCoordHtml;
+
+    // 각 주변 카드 클릭 → 물건 편집 모달 오픈 (기존 editor 재활용)
+    listEl.querySelectorAll('.sch-nearby-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        const pid = card.dataset.nearbyId || '';
+        if (!pid) return;
+        const found = sch_getAssignedProperties().find((p) => String(p.id || p.globalId) === pid);
+        if (found && typeof openEditModal === 'function') {
+          openEditModal(found);
+        }
+      });
+    });
+  }
+
+  async function refreshAgentScheduleView(options = {}) {
+    // state.properties 가 비어있으면 먼저 로드 시도
+    const props = sch_getAssignedProperties();
+    if (!props.length && typeof loadProperties === 'function') {
+      try { await loadProperties(); } catch (_) {}
+    }
+    sch_renderAnchorList();
+    sch_renderNearbyList();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const showAllCb = document.getElementById('schAnchorShowAll');
+    if (showAllCb) {
+      showAllCb.addEventListener('change', function () {
+        _scheduleState.showAll = !!this.checked;
+        // 전체 보기 토글 시 선택 초기화
+        _scheduleState.selectedAnchorId = null;
+        sch_renderAnchorList();
+        sch_renderNearbyList();
+      });
+    }
+    window.refreshAgentScheduleView = function () { refreshAgentScheduleView({ force: true }); };
+  });
+
   // ── Start ──
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
