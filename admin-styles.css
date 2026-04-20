@@ -1854,11 +1854,14 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
   display:none;
   align-items:center;justify-content:center;
   width:40px;height:40px;border-radius:10px;border:1px solid var(--border,#e5e7eb);
-  background:var(--surface,#fff);color:var(--text,#111);
+  background:var(--surface,#fff);color:#111;
   cursor:pointer;padding:0;flex-shrink:0;
 }
-.agent-mobile-menu-btn svg{width:22px;height:22px;display:block;}
-.agent-mobile-menu-btn:active{background:var(--hover-bg,#f5f5f5);}
+.agent-mobile-menu-btn svg{
+  width:22px;height:22px;display:block;
+  stroke:currentColor;fill:none;
+}
+.agent-mobile-menu-btn:active{background:#f5f5f5;}
 
 /* 드로어 오버레이 — 데스크톱에선 숨김 */
 .agent-drawer-overlay{
@@ -1928,9 +1931,13 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
     justify-content:flex-start !important;
   }
   .page-agent .sidebar-logo{justify-content:flex-start !important;}
+  /* 그룹 펼치기: 기존 max-height:0 !important 해제 (JS 가 inline 으로 동적 제어).
+     inline style 이 우선 적용되도록 CSS 는 기본값만 제공. 데스크톱 CSS 가 !important
+     로 잠그는 걸 우회하기 위해 동일 specificity + !important 로 'none' 설정. */
   .page-agent .sidebar-group-items{
-    /* max-height:0 !important 로 잠겨있던 것 해제. 그룹이 열려있으면 보이게 */
-    max-height:none;
+    max-height:none !important;
+    overflow:hidden;
+    transition:max-height .2s ease;
   }
 
   /* 드로어 내부 메뉴 아이템 터치 친화 (최소 44px) */
