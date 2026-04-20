@@ -1843,3 +1843,96 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
 .bld-dong-chip:hover{border-color:color-mix(in srgb, #F37022 40%, var(--line));}
 .bld-dong-chip.is-checked{background:#FFF3E0;border-color:#F37022;color:#E65100;}
 .bld-dong-chip input[type=checkbox]{display:none;}
+
+/* ════════════════════════════════════════════════════════════════════
+   담당자 페이지 모바일 최적화 (Phase 1: 사이드바 드로어)
+   대상: .page-agent, 폭 768px 이하 (실제 타겟은 ~430px)
+   ════════════════════════════════════════════════════════════════════ */
+
+/* 햄버거 버튼 — 데스크톱에선 숨김 */
+.agent-mobile-menu-btn{
+  display:none;
+  align-items:center;justify-content:center;
+  width:40px;height:40px;border-radius:10px;border:1px solid var(--border,#e5e7eb);
+  background:var(--surface,#fff);color:var(--text,#111);
+  cursor:pointer;padding:0;flex-shrink:0;
+}
+.agent-mobile-menu-btn svg{width:22px;height:22px;display:block;}
+.agent-mobile-menu-btn:active{background:var(--hover-bg,#f5f5f5);}
+
+/* 드로어 오버레이 — 데스크톱에선 숨김 */
+.agent-drawer-overlay{
+  display:none;
+  position:fixed;inset:0;z-index:55;
+  background:rgba(0,0,0,.45);backdrop-filter:blur(2px);
+  opacity:0;transition:opacity .2s ease;
+  pointer-events:none;
+}
+.agent-drawer-overlay.is-open{opacity:1;pointer-events:auto;}
+
+@media (max-width: 768px){
+  /* 기본 admin-shell/main padding 줄이기 */
+  .page-agent .admin-shell{padding:14px 12px 80px;}
+  .page-agent .admin-main{gap:12px;}
+
+  /* topbar 모바일 레이아웃 */
+  .page-agent .admin-topbar{
+    padding:10px 12px;height:auto;min-height:56px;
+    gap:10px;align-items:center;
+  }
+  .page-agent .topbar-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1;}
+  .page-agent .topbar-left h1{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .page-agent .top-actions{flex-shrink:0;}
+  .page-agent .topbar-user-avatar{width:36px;height:36px;}
+  .page-agent .topbar-user-meta{display:none;} /* 모바일에선 이름 숨김 (아바타만) */
+  .page-agent .topbar-user-trigger{padding:4px;}
+  .page-agent .topbar-user-card{gap:0;padding:0;}
+
+  /* 햄버거 버튼 노출 */
+  .page-agent .agent-mobile-menu-btn{display:inline-flex;}
+
+  /* 드로어 오버레이 노출 준비 */
+  .page-agent .agent-drawer-overlay{display:block;}
+
+  /* 사이드바 = 드로어 (off-canvas) */
+  .page-agent .admin-sidebar{
+    position:fixed;top:0;left:0;
+    width:280px;max-width:85vw;height:100vh;height:100dvh;
+    transform:translateX(-100%);
+    transition:transform .25s cubic-bezier(.22,.61,.36,1);
+    z-index:60;
+    box-shadow:2px 0 16px rgba(0,0,0,.08);
+  }
+  .page-agent.drawer-open .admin-sidebar{transform:translateX(0);}
+
+  /* 컨텐츠 영역 — 사이드바 margin-left 제거 */
+  .page-agent .admin-content{
+    margin-left:0 !important;width:100vw !important;
+  }
+
+  /* 드로어 내부 메뉴 아이템 터치 친화 (최소 44px) */
+  .page-agent .sidebar-nav-item,
+  .page-agent .sidebar-group-btn{
+    min-height:48px;padding:0 14px;font-size:14px;
+  }
+  .page-agent .sidebar-nav-item.sidebar-nav-sub{
+    min-height:44px;padding-left:32px;font-size:13px;
+  }
+  .page-agent .sidebar-nav-icon{font-size:16px;}
+  .page-agent .sidebar-logo{min-height:64px;padding:14px 16px;}
+  .page-agent .sidebar-page-title{font-size:14px;}
+  .page-agent .sidebar-logo-img{height:32px;}
+
+  /* 드롭다운 메뉴 (로그아웃 등) 모바일에서 위치 조정 */
+  .page-agent .topbar-user-dropdown{right:12px;min-width:160px;}
+}
+
+/* 작은 폰 (아이폰 SE ~ 일반 안드로이드) */
+@media (max-width: 430px){
+  .page-agent .admin-shell{padding:12px 10px 72px;}
+  .page-agent .admin-topbar{padding:8px 10px;min-height:52px;gap:8px;}
+  .page-agent .topbar-left h1{font-size:15px;}
+  .page-agent .agent-mobile-menu-btn{width:38px;height:38px;}
+  .page-agent .agent-mobile-menu-btn svg{width:20px;height:20px;}
+  .page-agent .admin-sidebar{width:270px;}
+}

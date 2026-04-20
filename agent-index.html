@@ -8,11 +8,13 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}try{localStorage.setItem('knson_theme_v1','light');}catch(e){}try{document.documentElement.setAttribute('data-theme','light');}catch(e){}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260407-logchips2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260420-agent-mobile1" />
 </head>
 <body class="page-agent">
 
-<aside class="admin-sidebar">
+<div id="agentDrawerOverlay" class="agent-drawer-overlay" aria-hidden="true"></div>
+
+<aside id="agentSidebar" class="admin-sidebar">
   <div class="sidebar-logo">
     <img src="./image/logo-main.png" alt="로고" class="sidebar-logo-img" />
     <button class="sidebar-page-title sidebar-nav-label sidebar-home-btn" id="btnSidebarHome" title="홈으로">담당자페이지</button>
@@ -42,7 +44,16 @@
 
 <div class="admin-content">
   <header class="admin-topbar">
-    <div class="topbar-left"><h1 id="agTopbarTitle">홈</h1></div>
+    <div class="topbar-left">
+      <button id="btnAgentMobileMenu" class="agent-mobile-menu-btn" type="button" aria-label="메뉴 열기" aria-controls="agentSidebar" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="4" y1="7" x2="20" y2="7"></line>
+          <line x1="4" y1="12" x2="20" y2="12"></line>
+          <line x1="4" y1="17" x2="20" y2="17"></line>
+        </svg>
+      </button>
+      <h1 id="agTopbarTitle">홈</h1>
+    </div>
     <div class="top-actions">
       <div class="topbar-user-menu" id="agentTopbarUserMenu">
         <button class="topbar-user-trigger" id="btnAgentTopbarUserMenu" type="button" aria-haspopup="menu" aria-expanded="false">
@@ -322,7 +333,37 @@
     if(titleEl){ titleEl.textContent = Object.prototype.hasOwnProperty.call(TITLES, viewName) ? TITLES[viewName] : ''; }
     if(viewName==='dailyreport' && typeof window.refreshAgentDailyReportView==='function'){window.refreshAgentDailyReportView();}
     if(viewName==='schedule' && typeof window.refreshAgentScheduleView==='function'){window.refreshAgentScheduleView();}
+    // 모바일: 뷰 전환 시 드로어 자동 닫기
+    closeMobileDrawer();
   }
+
+  // ── 모바일 드로어 (햄버거 메뉴) ──
+  var drawerOverlay=document.getElementById('agentDrawerOverlay');
+  var menuBtn=document.getElementById('btnAgentMobileMenu');
+  function openMobileDrawer(){
+    document.body.classList.add('drawer-open');
+    if(drawerOverlay){drawerOverlay.classList.add('is-open');drawerOverlay.setAttribute('aria-hidden','false');}
+    if(menuBtn){menuBtn.setAttribute('aria-expanded','true');}
+  }
+  function closeMobileDrawer(){
+    document.body.classList.remove('drawer-open');
+    if(drawerOverlay){drawerOverlay.classList.remove('is-open');drawerOverlay.setAttribute('aria-hidden','true');}
+    if(menuBtn){menuBtn.setAttribute('aria-expanded','false');}
+  }
+  if(menuBtn){
+    menuBtn.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(document.body.classList.contains('drawer-open')) closeMobileDrawer();
+      else openMobileDrawer();
+    });
+  }
+  if(drawerOverlay){
+    drawerOverlay.addEventListener('click',closeMobileDrawer);
+  }
+  // ESC 키로 닫기
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape' && document.body.classList.contains('drawer-open')) closeMobileDrawer();
+  });
 
   document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(item){
     item.addEventListener('click',function(){switchView(this.dataset.view);});
