@@ -327,6 +327,14 @@
           _lastMobile = nowMobile;
           if (typeof renderTable === 'function') { try { renderTable(); } catch(_){} }
         }
+        // 카카오맵 크기 재계산 (스케쥴 뷰의 지도 컨테이너가 모바일/데스크톱에서 높이 다름)
+        try {
+          if (_scheduleState && _scheduleState.map && typeof _scheduleState.map.relayout === 'function') {
+            _scheduleState.map.relayout();
+            // 마커/bounds 재설정
+            if (typeof sch_renderMap === 'function') sch_renderMap();
+          }
+        } catch(_){}
       }, 180);
     });
     ensureLoginThenLoad();

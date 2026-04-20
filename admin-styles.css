@@ -2346,3 +2346,77 @@ html.modal-open-lock-html{
   .page-agent #agEditModal .modal-actions{padding:8px 12px calc(8px + env(safe-area-inset-bottom));}
   .page-agent #agEditModal .modal-actions .btn{min-height:46px;font-size:14px;}
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   담당자 페이지 — Phase 5: 오늘의 스케쥴링 모바일 1열화
+   ════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px){
+  /* 스케쥴 뷰 패널 padding */
+  .page-agent #ag-view-schedule .panel{padding:12px 10px;border-radius:12px;}
+
+  /* 지도 카드: 높이 축소 + padding 조정 */
+  .page-agent #ag-view-schedule #schMap{height:220px !important;}
+  .page-agent #ag-view-schedule .sub-card{padding:12px;border-radius:10px;}
+  /* 첫 번째 sub-card (지도) 는 inline style 로 padding:0 되어있음 그대로 유지 */
+  .page-agent #ag-view-schedule > .panel > .sub-card:first-of-type{padding:0 !important;}
+
+  /* 지도 카드 헤더 */
+  .page-agent #ag-view-schedule #schMapSelectedCount{font-size:11px;}
+  .page-agent #ag-view-schedule #schMapClearSelection{
+    min-height:34px;padding:6px 10px;font-size:11px;
+  }
+
+  /* 2열 그리드 (기준 선택 + 주변 동선) → 1열 세로 스택 */
+  .page-agent #ag-view-schedule .schedule-layout{
+    grid-template-columns:1fr !important;
+    gap:12px !important;
+  }
+
+  /* 기준 물건 선택 카드 */
+  .page-agent #ag-view-schedule .sub-card{min-height:auto !important;}
+  .page-agent #schAnchorList{
+    max-height:280px !important; /* 너무 길어지지 않게 제한 + 스크롤 */
+  }
+
+  /* 주변 방문 동선: 2열 → 1열 */
+  .page-agent #schNearbyList{
+    grid-template-columns:1fr !important;
+    gap:8px !important;
+  }
+
+  /* 주변 카드 (.sch-nearby-card) - 터치 타겟 명확화 */
+  .page-agent .sch-nearby-card{padding:10px 12px !important;}
+
+  /* 기준 물건 후보 카드도 터치 친화 높이 */
+  .page-agent .sch-anchor-card{padding:10px 12px !important;}
+
+  /* 페이지네이션 버튼: 모바일에서 너무 작지 않게 */
+  .page-agent #schNearbyPagination button{
+    min-width:36px !important;
+    min-height:36px !important;
+    padding:0 8px !important;
+  }
+  .page-agent #schNearbyPagination{gap:4px !important;padding:10px 0 0 !important;}
+
+  /* '전체 보기' 토글 - 모바일에서 체크박스 크기 확대 */
+  .page-agent #schAnchorShowAll{
+    width:18px;height:18px;
+  }
+
+  /* 좌표 없음 경고 박스 */
+  .page-agent #schNearbyNoCoord{font-size:11px;padding:8px 10px;}
+
+  /* 기준 물건 헤더 (schSelectedHead) */
+  .page-agent #schSelectedHead{margin-bottom:10px !important;}
+}
+
+@media (max-width: 430px){
+  /* 초소형 폰에서 지도 더 축소 + 페이지네이션 축소 */
+  .page-agent #ag-view-schedule #schMap{height:190px !important;}
+  .page-agent #ag-view-schedule .panel{padding:10px 8px;}
+  .page-agent #ag-view-schedule .sub-card{padding:10px;}
+  .page-agent #schAnchorList{max-height:240px !important;}
+  .page-agent #schNearbyPagination button{
+    min-width:32px !important;min-height:32px !important;font-size:11px !important;padding:0 6px !important;
+  }
+}
