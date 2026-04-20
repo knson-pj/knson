@@ -1856,10 +1856,14 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
   width:40px;height:40px;border-radius:10px;border:1px solid var(--border,#e5e7eb);
   background:var(--surface,#fff);color:#111;
   cursor:pointer;padding:0;flex-shrink:0;
+  /* 부모의 다른 요소(h1 등)가 위로 덮지 못하도록 보호 */
+  position:relative;z-index:2;
 }
 .agent-mobile-menu-btn svg{
   width:22px;height:22px;display:block;
   stroke:currentColor;fill:none;
+  /* SVG 가 자체적으로 포인터 이벤트를 가로채지 않도록 */
+  pointer-events:none;
 }
 .agent-mobile-menu-btn:active{background:#f5f5f5;}
 
@@ -1884,7 +1888,7 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
     gap:10px;align-items:center;
   }
   .page-agent .topbar-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1;}
-  .page-agent .topbar-left h1{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .page-agent .topbar-left h1{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto;}
   .page-agent .top-actions{flex-shrink:0;}
   .page-agent .topbar-user-avatar{width:36px;height:36px;}
   .page-agent .topbar-user-meta{display:none;} /* 모바일에선 이름 숨김 (아바타만) */
