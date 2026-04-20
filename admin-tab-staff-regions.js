@@ -579,13 +579,53 @@
     document.addEventListener('click', function() { closeAllPanels(); });
   }
 
+  // 경매/공매 물건이 이미 종결된(낙찰/매각/취하/기각) 상태인지 판별.
+  // 자동/수동 배정 시 이런 물건은 배정 후보에서 제외해야 함.
+  // 두 가지 필드를 모두 확인:
+  //   - result_status: 매각결과 (정식 필드) — "낙찰","매각","유찰","취하","기각"
+  //   - status: 진행상태 — "유찰 N회","낙찰","취하","변경" 등 (일부 CSV 는 여기에만 들어옴)
+  const AUCTION_FINALIZED_STATUSES = new Set(['낙찰', '매각', '취하', '기각']);
+  function isAuctionLikeFinalized(prop) {
+    if (!prop) return false;
+    const src = String(prop.sourceType || prop.source_type || prop._raw?.source_type || prop._raw?.sourceType || '').trim().toLowerCase();
+    if (src !== 'auction' && src !== 'onbid') return false;
+    // raw.raw 와 최상위 양쪽 모두 체크 (레코드 구조가 경로마다 달라 대응)
+    const containers = [
+      prop._raw?.raw,
+      prop._raw,
+      prop.raw,
+      prop,
+    ].filter((c) => c && typeof c === 'object');
+    const statusValues = [];
+    for (const c of containers) {
+      if (c.result_status) statusValues.push(String(c.result_status).trim());
+      if (c.resultStatus) statusValues.push(String(c.resultStatus).trim());
+      if (c.status) statusValues.push(String(c.status).trim());
+    }
+    if (prop.status) statusValues.push(String(prop.status).trim());
+    // 종결 상태 이름을 정확히 포함하면 종결로 간주
+    // (status 에 "낙찰" 단독 또는 "낙찰 (매각불허)" 같은 변형 포함)
+    for (const s of statusValues) {
+      if (!s) continue;
+      for (const finalized of AUCTION_FINALIZED_STATUSES) {
+        if (s === finalized) return true;
+        // "낙찰" 로 시작하거나, 단어 경계로 포함되는 케이스
+        if (s.startsWith(finalized)) return true;
+      }
+    }
+    return false;
+  }
+
   // ── 동적 옵션 갱신 (시/도→구→동 cascading + 담당자) ──
   function getAllUnassignedRaw() {
     const { utils } = ctx();
     const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
     return allProps.filter(function(p) {
       const aid = String(p.assignedAgentId || p.assigneeId || '').trim();
-      return !aid;
+      if (aid) return false;  // 이미 배정된 건 제외
+      // 경매/공매 중 종결된(낙찰/매각/취하/기각) 물건은 배정 후보에서 제외
+      if (isAuctionLikeFinalized(p)) return false;
+      return true;
     });
   }
 
