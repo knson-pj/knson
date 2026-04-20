@@ -351,6 +351,7 @@
       geocoding: els.tabGeocoding,
       workmgmt: els.tabWorkmgmt,
       buildings: els.tabBuildings,
+      onbidSync: els.tabOnbidSync,
     };
     const active = panelMap[next] ? next : 'home';
     state.activeTab = active;
@@ -368,6 +369,14 @@
 
     if (active === 'properties') {
       syncPropertySourceFilterUi();
+    }
+
+    if (active === 'onbidSync') {
+      try {
+        const mod = AdminModules.onbidSync;
+        if (mod && typeof mod.initEvents === 'function') mod.initEvents();
+        if (mod && typeof mod.loadOnbidSyncLogs === 'function') mod.loadOnbidSyncLogs().catch(() => {});
+      } catch (e) { console.warn('onbidSync tab init failed', e); }
     }
 
     try {
@@ -538,6 +547,16 @@
 
       // buildings tab
       tabBuildings: $("#tab-buildings"),
+
+      // onbid sync tab
+      tabOnbidSync: $("#tab-onbidSync"),
+      btnOnbidSyncStart: $("#btnOnbidSyncStart"),
+      btnOnbidSyncRefreshLogs: $("#btnOnbidSyncRefreshLogs"),
+      onbidSyncMaxItems: $("#onbidSyncMaxItems"),
+      onbidSyncStatus: $("#onbidSyncStatus"),
+      onbidSyncResult: $("#onbidSyncResult"),
+      onbidSyncLogsBody: $("#onbidSyncLogsBody"),
+      onbidSyncLogsEmpty: $("#onbidSyncLogsEmpty"),
 
       // new property modal
       btnNewProperty: $("#btnNewProperty"),

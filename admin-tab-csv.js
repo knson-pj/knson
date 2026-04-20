@@ -383,35 +383,6 @@
         invalidatePropertyCollections();
         await loadProperties();
 
-        // 공매 CSV 업로드 후: 온비드 API 로 입찰결과 자동 동기화
-        // 새로 등록되거나 갱신된 공매 중 result_status 가 없는 건 전부 시도
-        if (sourceType === 'onbid') {
-          showResultBox(els.csvResultBox,
-            (summaryParts.join(" / ")) + ' / 온비드 입찰결과 동기화 중... (최대 수 분 소요)',
-            false);
-          try {
-            const syncRes = await api('/admin/properties', {
-              method: 'POST',
-              auth: true,
-              body: { mode: 'onbid_sync', triggeredBy: 'csv_upload' },
-            });
-            if (syncRes?.ok) {
-              const syncSummary = `공매 입찰결과 동기화: 대상 ${syncRes.targetCount}건 · 갱신 ${syncRes.updatedCount}건 · 결과없음 ${syncRes.nodataCount}건 · 오류 ${syncRes.errorCount}건`;
-              showResultBox(els.csvResultBox, summaryParts.join(" / ") + ' / ' + syncSummary, syncRes.errorCount > 0);
-              invalidatePropertyCollections();
-              await loadProperties();
-            } else {
-              showResultBox(els.csvResultBox,
-                summaryParts.join(" / ") + ' / 온비드 동기화 실패: ' + (syncRes?.message || '알 수 없는 오류'),
-                true);
-            }
-          } catch (syncErr) {
-            console.warn('onbid sync after csv upload failed', syncErr);
-            showResultBox(els.csvResultBox,
-              summaryParts.join(" / ") + ' / 온비드 동기화 오류: ' + String(syncErr.message || syncErr),
-              true);
-          }
-        }
         return;
       }
 
