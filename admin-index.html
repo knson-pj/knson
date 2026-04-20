@@ -9,7 +9,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260420-agent-mobile5" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260420-onbid" />
 </head>
 <body class="page-admin">
 
@@ -193,6 +193,14 @@
                 <div class="admin-home-mini-copy">
                   <p>지오코딩 대기</p>
                   <strong id="homeGeoPending">-</strong>
+                </div>
+              </article>
+              <article class="card-unit admin-home-mini-card admin-home-weekly-card" id="homeWeeklyAuctionCard" title="이번 주 낙찰/매각 현황">
+                <div class="admin-home-mini-icon is-weekly">★</div>
+                <div class="admin-home-mini-copy">
+                  <p>금주 낙찰/매각</p>
+                  <strong id="homeWeeklyWinCount">-</strong>
+                  <span class="admin-home-mini-sub" id="homeWeeklyAvgRatio"></span>
                 </div>
               </article>
             </div>
@@ -542,10 +550,10 @@
 
 <script src="./knson-property-photos.js?v=20260404-photo2"></script>
 <script src="./admin-tab-staff-regions.js?v=20260420-finalized"></script>
-<script src="./admin-tab-csv.js?v=20260420-bug23"></script>
+<script src="./admin-tab-csv.js?v=20260420-onbid"></script>
 <script src="./admin-tab-geocoding.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-properties.js?v=20260420-favd"></script>
-<script src="./admin-tab-dashboard.js?v=20260417-kst-fix"></script>
+<script src="./admin-tab-dashboard.js?v=20260420-onbid"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-buildings.js?v=20260417-bld11-binchip"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>

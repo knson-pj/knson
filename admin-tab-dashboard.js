@@ -374,7 +374,79 @@
       const usingFullData = Array.isArray(state.propertiesFullCache) || hasSnapshotRows;
       els.sumTodayDetail.innerHTML = formatTodayDetail(todayParts, usingFullData);
     }
+
+    // 금주 낙찰/매각 카드: 비동기 로드 (결과 도착 시 DOM 직접 갱신)
+    renderWeeklyAuctionCard();
   };
+
+  let _weeklyAuctionLoading = false;
+  let _weeklyAuctionFetchedAt = 0;
+  async function renderWeeklyAuctionCard() {
+    const { state, api } = ctx();
+    const countEl = document.getElementById('homeWeeklyWinCount');
+    const subEl = document.getElementById('homeWeeklyAvgRatio');
+    const cardEl = document.getElementById('homeWeeklyAuctionCard');
+    if (!countEl || !cardEl) return;
+    // 30초 이내 재호출 방지 (대시보드 렌더가 자주 호출되므로 캐시)
+    if (_weeklyAuctionLoading) return;
+    if (Date.now() - _weeklyAuctionFetchedAt < 30000 && countEl.textContent !== '-') return;
+    _weeklyAuctionLoading = true;
+    try {
+      const data = await api('/admin/properties?mode=weekly_auction_stats', { auth: true });
+      if (!data?.ok) throw new Error(data?.message || '통계 실패');
+      const c = data.counts || {};
+      const winCount = Number(c['낙찰'] || 0) + Number(c['매각'] || 0);
+      countEl.textContent = Number(winCount).toLocaleString('ko-KR');
+      if (subEl) {
+        if (data.avgRatio && winCount > 0) {
+          subEl.textContent = `평균 ${data.avgRatio}%`;
+        } else {
+          subEl.textContent = '';
+        }
+      }
+      // 카드에 주간 범위를 title 로 부착
+      if (data.weekStart && data.weekEnd) {
+        cardEl.title = `${data.weekStart} ~ ${data.weekEnd} 집계`;
+      }
+      _weeklyAuctionFetchedAt = Date.now();
+    } catch (e) {
+      console.warn('weekly auction stats load failed', e);
+      countEl.textContent = '-';
+      if (subEl) subEl.textContent = '';
+    } finally {
+      _weeklyAuctionLoading = false;
+    }
+  }
+
+  // 카드 클릭 → 전체리스트로 이동 + 낙찰/매각 필터 힌트
+  //   (별도 필터 UI 는 기존에 없으므로 구분별 공매/경매 + keyword '낙찰' 조합으로 유사 동작)
+  function bindWeeklyAuctionCardClick() {
+    const cardEl = document.getElementById('homeWeeklyAuctionCard');
+    if (!cardEl || cardEl.dataset.bound === '1') return;
+    cardEl.dataset.bound = '1';
+    cardEl.style.cursor = 'pointer';
+    cardEl.addEventListener('click', () => {
+      try {
+        // 관리자 탭 전환: tab-properties
+        const runtime = window.KNSN_ADMIN_RUNTIME || {};
+        if (typeof runtime.switchTab === 'function') {
+          runtime.switchTab('properties');
+        } else {
+          const tabBtn = document.querySelector('[data-admin-tab="properties"]');
+          if (tabBtn) tabBtn.click();
+        }
+      } catch (e) { console.warn('weekly card click nav failed', e); }
+    });
+  }
+
+  // 대시보드 DOM 이 세팅된 후 한 번 바인딩
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindWeeklyAuctionCardClick);
+    } else {
+      setTimeout(bindWeeklyAuctionCardClick, 0);
+    }
+  }
 
 
   function pickPropertyKey(row) {
