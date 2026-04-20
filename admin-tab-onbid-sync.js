@@ -66,13 +66,44 @@
 
   // ─────────────────────────────────────────────────────────────
   // Edge Function 호출 (1회)
+  //   sb.functions.invoke() 는 내부 타이머/retry 로직이 불안정한 경우가 있어
+  //   진단 버튼이 쓰는 직접 fetch 방식으로 통일.
   // ─────────────────────────────────────────────────────────────
   async function invokeOnce(sb, maxItems, triggeredBy) {
-    const { data, error } = await sb.functions.invoke('onbid-sync', {
-      body: { triggeredBy, maxItems },
-    });
-    if (error) throw new Error(error?.message || 'Edge Function 호출 실패');
-    if (!data || data.ok !== true) throw new Error(data?.message || '동기화 실패');
+    // 세션 토큰 획득
+    const { data: sessData } = await sb.auth.getSession();
+    const token = sessData?.session?.access_token || '';
+    if (!token) throw new Error('세션 토큰 없음 — 재로그인 필요');
+    const url = sb.supabaseUrl || '';
+    if (!url) throw new Error('Supabase URL 확인 불가');
+    const fnUrl = `${url}/functions/v1/onbid-sync`;
+
+    let res;
+    try {
+      res = await fetch(fnUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'apikey': sb.supabaseKey || '',
+        },
+        body: JSON.stringify({ triggeredBy, maxItems }),
+      });
+    } catch (fetchErr) {
+      throw new Error(`Edge Function fetch 실패: ${fetchErr.message || fetchErr}`);
+    }
+
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch {
+      throw new Error(`응답 JSON 파싱 실패 (HTTP ${res.status}): ${text.slice(0, 200)}`);
+    }
+    if (!res.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`);
+    }
+    if (!data || data.ok !== true) {
+      throw new Error(data?.message || '동기화 실패');
+    }
     return data;
   }
 
