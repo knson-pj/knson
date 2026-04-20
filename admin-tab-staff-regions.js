@@ -785,7 +785,42 @@
       .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
   }
 
-  // 미배정 물건 + 담당자 조합으로 assignments 계산 (실제 UPDATE 전 미리보기에도 사용)
+  // Phase 1/2 로직 상수
+  const PHASE1_BUCKETS = ['auction', 'onbid'];                          // 경매/공매 (앵커)
+  const PHASE2_BUCKETS = ['realtor_naver', 'realtor_direct', 'general']; // 중개/일반
+
+  function toFiniteNumber(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  function getLatLng(p) {
+    const lat = toFiniteNumber(p?.latitude ?? p?.lat ?? p?._raw?.latitude);
+    const lng = toFiniteNumber(p?.longitude ?? p?.lng ?? p?._raw?.longitude);
+    if (lat === null || lng === null) return null;
+    return { lat, lng };
+  }
+  // 서울권 범위에서는 단순 유클리드로도 오차 무시 가능. sqrt 생략 (정렬에만 쓰므로)
+  function squaredDist(a, b) {
+    const dx = a.lat - b.lat;
+    const dy = a.lng - b.lng;
+    return dx * dx + dy * dy;
+  }
+  // 배열을 N 명에게 균등 분배 (나머지는 앞쪽부터 +1)
+  function splitEvenly(items, numAgents) {
+    const per = Math.floor(items.length / numAgents);
+    const rem = items.length - per * numAgents;
+    const out = [];
+    let idx = 0;
+    for (let i = 0; i < numAgents; i++) {
+      const cnt = per + (i < rem ? 1 : 0);
+      out.push(items.slice(idx, idx + cnt));
+      idx += cnt;
+    }
+    return out;
+  }
+
+  // 미배정 물건 + 담당자 조합으로 assignments 계산 (2-phase: 경매/공매 균등 → 중개/일반 최근접)
   function computeAssignments() {
     const { state, utils } = ctx();
     const normalizeRole = utils.normalizeRole || function(r) { return String(r || '').trim().toLowerCase(); };
@@ -802,65 +837,100 @@
     const filtered = getFilteredUnassignedProperties();
     if (!filtered.length) return { error: '배정할 미배정 물건이 없습니다.' };
 
-    const allProps = utils.getAuxiliaryPropertiesSnapshot() || [];
-
-    // 담당자별 + 구분별 업무처리율 계산 (기존 로직 보존)
-    const agentRates = agents.map((a) => {
-      const aid = String(a.id);
-      const rateByBucket = {};
-      BUCKET_KEYS.forEach((k) => {
-        let total = 0, managed = 0;
-        allProps.forEach((p) => {
-          if (String(p.assignedAgentId || p.assigneeId || '').trim() !== aid) return;
-          const bucket = getSourceBucket(utils, p);
-          if ((BUCKET_KEYS.includes(bucket) ? bucket : 'general') !== k) return;
-          total++;
-          if (isManaged(p)) managed++;
-        });
-        rateByBucket[k] = total > 0 ? managed / total : 0.5;
-      });
-      return { agent: a, rateByBucket };
-    });
-
-    // 구분별로 미배정 물건 분류
-    const bucketProps = new Map();
+    // Phase 1(경매/공매) / Phase 2(중개/일반) 로 분리
+    const phase1Props = [];
+    const phase2Props = [];
     filtered.forEach((p) => {
       const bucket = getSourceBucket(utils, p);
       const key = BUCKET_KEYS.includes(bucket) ? bucket : 'general';
-      if (!bucketProps.has(key)) bucketProps.set(key, []);
-      bucketProps.get(key).push(p);
+      if (PHASE1_BUCKETS.includes(key)) phase1Props.push({ p, bucket: key });
+      else phase2Props.push({ p, bucket: key });
     });
 
-    // 구분별 업무처리율 가중 라운드로빈 배분
-    const assignments = [];
-    for (const [bucket, props] of bucketProps.entries()) {
-      const weights = agentRates.map((ar) => Math.max(ar.rateByBucket[bucket] || 0.1, 0.1));
-      const totalWeight = weights.reduce((a, b) => a + b, 0);
-      const agentCounts = weights.map((w) => Math.floor(props.length * w / totalWeight));
-      let remainder = props.length - agentCounts.reduce((a, b) => a + b, 0);
-      const sortedIdx = weights.map((w, i) => ({ i, w })).sort((a, b) => b.w - a.w);
-      for (let r = 0; r < remainder; r++) agentCounts[sortedIdx[r % sortedIdx.length].i]++;
-
-      let idx = 0;
-      agentRates.forEach((ar, ai) => {
-        const cnt = agentCounts[ai];
-        for (let c = 0; c < cnt && idx < props.length; c++, idx++) {
-          const p = props[idx];
-          assignments.push({
-            propertyId: String(p.id || p.globalId || '').trim(),
-            agentId: String(ar.agent.id),
-            agentName: String(ar.agent.name || ar.agent.email || ''),
-          });
-        }
-      });
+    // Phase 1 비면: 중개/일반 건수만 안내하고 스킵
+    if (!phase1Props.length) {
+      return {
+        error: `앵커가 되는 경매/공매 물건이 없습니다.\n\n현재 필터 결과: 중개/일반 ${phase2Props.length}건만 존재.\n경매 또는 공매를 필터에 포함해 주세요.`,
+      };
     }
 
-    // 담당자별 집계
+    // ── Phase 1: 경매/공매를 담당자 수 만큼 균등 분배 ──
+    // 재현성을 위해 id 정렬 후 분배
+    phase1Props.sort((a, b) => String(a.p.id || '').localeCompare(String(b.p.id || '')));
+    const splits = splitEvenly(phase1Props, agents.length);
+
+    const assignments = [];
+    // agentId -> { name, anchors: [{lat,lng}] } (Phase 2 에서 사용)
+    const agentAnchors = new Map();
+    agents.forEach((a, i) => {
+      const aid = String(a.id);
+      const aname = String(a.name || a.email || '');
+      agentAnchors.set(aid, { name: aname, anchors: [] });
+      splits[i].forEach(({ p }) => {
+        assignments.push({
+          propertyId: String(p.id || p.globalId || '').trim(),
+          agentId: aid,
+          agentName: aname,
+          phase: 1,
+        });
+        const ll = getLatLng(p);
+        if (ll) agentAnchors.get(aid).anchors.push(ll);
+      });
+    });
+
+    // ── Phase 2: 중개/일반을 "가장 가까운 Phase 1 앵커의 담당자" 에게 ──
+    // 좌표 있음 → 최단거리 담당자 / 좌표 없음 → 라운드로빈
+    let rrIdx = 0;
+    const rrIds = agents.map((a) => String(a.id));
+    const rrNames = agents.map((a) => String(a.name || a.email || ''));
+
+    phase2Props.forEach(({ p }) => {
+      const ll = getLatLng(p);
+      let chosenId = null;
+      let chosenName = null;
+
+      if (ll) {
+        let best = Infinity;
+        for (const [aid, info] of agentAnchors.entries()) {
+          if (!info.anchors.length) continue;
+          for (const anc of info.anchors) {
+            const d = squaredDist(ll, anc);
+            if (d < best) {
+              best = d;
+              chosenId = aid;
+              chosenName = info.name;
+            }
+          }
+        }
+      }
+      // 좌표 없거나 앵커 담당자 결정 실패 → 라운드로빈
+      if (!chosenId) {
+        const i = rrIdx % rrIds.length;
+        chosenId = rrIds[i];
+        chosenName = rrNames[i];
+        rrIdx++;
+      }
+
+      assignments.push({
+        propertyId: String(p.id || p.globalId || '').trim(),
+        agentId: chosenId,
+        agentName: chosenName,
+        phase: 2,
+      });
+    });
+
+    // 담당자별 집계 (phase 별 세부 포함)
     const agentSummary = {};
     assignments.forEach((a) => {
-      if (!agentSummary[a.agentId]) agentSummary[a.agentId] = { name: a.agentName, count: 0 };
+      if (!agentSummary[a.agentId]) {
+        agentSummary[a.agentId] = { name: a.agentName, count: 0, phase1: 0, phase2: 0 };
+      }
       agentSummary[a.agentId].count += 1;
+      if (a.phase === 1) agentSummary[a.agentId].phase1 += 1;
+      else agentSummary[a.agentId].phase2 += 1;
     });
+
+    const phase2NoCoord = phase2Props.filter(({ p }) => !getLatLng(p)).length;
 
     return {
       assignments,
@@ -869,6 +939,12 @@
       filtered,
       agentSummary,
       filterSnapshot: { ...getAssignFilterValues() },
+      strategy: {
+        mode: '2phase_nearest',
+        phase1Count: phase1Props.length,
+        phase2Count: phase2Props.length,
+        phase2NoCoord,
+      },
     };
   }
 
@@ -884,16 +960,35 @@
     // Summary
     const total = plan.assignments.length;
     const agentCount = plan.agents.length;
+    const strat = plan.strategy || {};
+    const phase1Count = Number(strat.phase1Count || 0);
+    const phase2Count = Number(strat.phase2Count || 0);
+    const phase2NoCoord = Number(strat.phase2NoCoord || 0);
+
     els.assignPreviewSummary.innerHTML =
       `<div style="font-weight:600;font-size:14px;margin-bottom:4px;">총 ${total}건을 ${agentCount}명에게 배정합니다.</div>`
+      + `<div style="color:var(--text-secondary,#666);font-size:12px;line-height:1.5;margin-bottom:6px;">`
+      +   `① 경매/공매 <strong>${phase1Count}건</strong>을 담당자에게 균등 분배<br/>`
+      +   `② 중개/일반 <strong>${phase2Count}건</strong>을 각 물건의 좌표 기준 가장 가까운 경매/공매 담당자에게 자동 배정`
+      + `</div>`
+      + (phase2NoCoord > 0
+          ? `<div style="color:#b45309;font-size:11px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:6px 8px;margin-bottom:6px;">`
+          + `⚠ 중개/일반 중 좌표 없는 <strong>${phase2NoCoord}건</strong>은 담당자 순환(라운드로빈) 방식으로 배정됩니다.`
+          + `</div>`
+          : '')
       + `<div style="color:var(--text-secondary,#666);font-size:12px;">실행 후 '배정 이력' 섹션에서 언제든 되돌릴 수 있습니다 (3주 이내).</div>`;
 
-    // 담당자별 배분
+    // 담당자별 배분 (Phase 1/2 세부)
     const sorted = Object.entries(plan.agentSummary).sort((a, b) => b[1].count - a[1].count);
     els.assignPreviewAgents.innerHTML = sorted.map(([aid, info]) => {
       const pct = total > 0 ? Math.round(info.count / total * 100) : 0;
-      return `<div style="display:flex;justify-content:space-between;padding:3px 0;">`
-        + `<span>${escapeForHtml(info.name || aid)}</span>`
+      const p1 = Number(info.phase1 || 0);
+      const p2 = Number(info.phase2 || 0);
+      const detail = (p1 || p2)
+        ? `<span style="color:var(--muted,#999);font-size:11px;font-weight:400;margin-left:6px;">경매·공매 ${p1} · 중개·일반 ${p2}</span>`
+        : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;gap:8px;flex-wrap:wrap;">`
+        + `<span>${escapeForHtml(info.name || aid)}${detail}</span>`
         + `<span style="font-weight:600;">${info.count}건 <span style="color:var(--muted,#999);font-size:11px;font-weight:400;">(${pct}%)</span></span>`
         + `</div>`;
     }).join('');
