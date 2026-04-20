@@ -3239,6 +3239,16 @@ function renderPagination(totalPages) {
   const _scheduleState = {
     selectedAnchorId: null,
     showAll: false,
+    // 페이지네이션
+    page: 1,
+    pageSize: 10,
+    // 체크박스로 선택된 주변 물건 id (기준별로 유지하면 복잡해지므로 단순히 전역 Set)
+    checkedIds: new Set(),
+    // 카카오맵 인스턴스/마커 캐시
+    map: null,
+    mapReady: false,
+    mapMarkers: [],
+    mapInfowindow: null,
   };
 
   function sch_toFiniteNumber(v) {
@@ -3382,17 +3392,23 @@ function renderPagination(totalPages) {
         const id = btn.dataset.anchorId || '';
         if (!id) return;
         _scheduleState.selectedAnchorId = id;
+        // 기준 변경 시 페이지/체크박스 초기화
+        _scheduleState.page = 1;
+        _scheduleState.checkedIds = new Set();
         sch_renderAnchorList();
         sch_renderNearbyList();
+        sch_renderMap();
       });
     });
   }
 
-  // 선택된 기준 물건 헤더 + 주변 거리순 렌더
+  // 선택된 기준 물건 헤더 + 주변 거리순 렌더 (페이지네이션 + 체크박스)
   function sch_renderNearbyList() {
     const headEl = document.getElementById('schSelectedHead');
     const listEl = document.getElementById('schNearbyList');
     const emptyEl = document.getElementById('schNearbyEmpty');
+    const pagerEl = document.getElementById('schNearbyPagination');
+    const noCoordEl = document.getElementById('schNearbyNoCoord');
     if (!headEl || !listEl) return;
 
     const props = sch_getAssignedProperties();
@@ -3402,6 +3418,8 @@ function renderPagination(totalPages) {
       headEl.innerHTML = `<div style="font-size:13px;color:var(--muted,#999);">기준 물건을 선택하세요.</div>`;
       listEl.innerHTML = '';
       if (emptyEl) emptyEl.classList.add('hidden');
+      if (pagerEl) pagerEl.style.display = 'none';
+      if (noCoordEl) noCoordEl.style.display = 'none';
       return;
     }
 
@@ -3429,6 +3447,8 @@ function renderPagination(totalPages) {
         emptyEl.classList.remove('hidden');
         emptyEl.textContent = '기준 물건에 좌표가 없어 거리 계산이 불가합니다. 다른 기준 물건을 선택해 주세요.';
       }
+      if (pagerEl) pagerEl.style.display = 'none';
+      if (noCoordEl) noCoordEl.style.display = 'none';
       return;
     }
 
@@ -3452,12 +3472,25 @@ function renderPagination(totalPages) {
         emptyEl.classList.remove('hidden');
         emptyEl.textContent = '주변 방문 대상 물건이 없습니다.';
       }
+      if (pagerEl) pagerEl.style.display = 'none';
+      if (noCoordEl) noCoordEl.style.display = 'none';
       return;
     }
     if (emptyEl) emptyEl.classList.add('hidden');
 
-    const rowsHtml = withDist.map((entry, idx) => {
+    // ── 페이지네이션 ──
+    const pageSize = _scheduleState.pageSize || 10;
+    const totalPages = Math.max(1, Math.ceil(withDist.length / pageSize));
+    if (_scheduleState.page < 1) _scheduleState.page = 1;
+    if (_scheduleState.page > totalPages) _scheduleState.page = totalPages;
+    const curPage = _scheduleState.page;
+    const startIdx = (curPage - 1) * pageSize;
+    const pageRows = withDist.slice(startIdx, startIdx + pageSize);
+
+    const rowsHtml = pageRows.map((entry, relIdx) => {
       const p = entry.p;
+      const absIdx = startIdx + relIdx; // 전체 기준 0-based
+      const displayIdx = absIdx + 1;    // 화면 표시용 1-based
       const bucketLabel = sch_getBucketLabel(p);
       const bucketCls = sch_getBucketClass(p);
       const addr = esc(String(p.address || '-'));
@@ -3468,43 +3501,315 @@ function renderPagination(totalPages) {
         formatEok(p.priceMain) !== '-' ? formatEok(p.priceMain) : '',
       ].filter(Boolean).join(' · '));
       const pid = String(p.id || p.globalId || '');
+      const checked = _scheduleState.checkedIds.has(pid) ? 'checked' : '';
       return `
         <div class="sch-nearby-card" data-nearby-id="${escAttr(pid)}"
-          style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);">
+          style="display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:8px;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);">
           <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:42px;">
-            <div style="width:28px;height:28px;border-radius:50%;background:var(--brand,#ea580c);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">${idx + 1}</div>
+            <div style="width:28px;height:28px;border-radius:50%;background:var(--brand,#ea580c);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">${displayIdx}</div>
             <div style="font-size:10px;color:var(--muted,#999);white-space:nowrap;">${dist}</div>
           </div>
-          <div style="flex:1 1 auto;min-width:0;">
+          <div class="sch-nearby-body" style="flex:1 1 auto;min-width:0;cursor:pointer;">
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;">
               <span class="workmgmt-chip ${bucketCls}" style="font-size:10px;padding:2px 6px;">${bucketLabel}</span>
             </div>
             <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${addr}</div>
             <div style="font-size:11px;color:var(--muted,#999);">${meta}</div>
           </div>
+          <label class="sch-nearby-check" style="flex:0 0 auto;display:flex;align-items:center;cursor:pointer;padding:6px;" title="지도에 표시">
+            <input type="checkbox" class="sch-check-input" data-check-id="${escAttr(pid)}" ${checked} style="width:18px;height:18px;cursor:pointer;" />
+          </label>
         </div>
       `;
     }).join('');
 
-    const noCoordHtml = noCoord.length ? `
-      <div style="margin-top:12px;padding:8px 10px;border-radius:6px;background:#fef3c7;border:1px solid #fcd34d;font-size:11px;color:#92400e;">
-        ⚠ 좌표 없는 물건 ${noCoord.length}건은 거리 계산 불가로 목록에서 제외됨.
-      </div>
-    ` : '';
+    listEl.innerHTML = rowsHtml;
 
-    listEl.innerHTML = rowsHtml + noCoordHtml;
+    // 좌표 없는 물건 경고
+    if (noCoordEl) {
+      if (noCoord.length) {
+        noCoordEl.textContent = `⚠ 좌표 없는 물건 ${noCoord.length}건은 거리 계산 불가로 목록에서 제외됨.`;
+        noCoordEl.style.display = 'block';
+      } else {
+        noCoordEl.style.display = 'none';
+      }
+    }
 
-    // 각 주변 카드 클릭 → 물건 편집 모달 오픈 (기존 editor 재활용)
-    listEl.querySelectorAll('.sch-nearby-card').forEach((card) => {
-      card.addEventListener('click', () => {
-        const pid = card.dataset.nearbyId || '';
+    // 페이지네이션 렌더
+    if (pagerEl) {
+      if (totalPages > 1) {
+        pagerEl.innerHTML = sch_buildPaginationHtml(curPage, totalPages);
+        pagerEl.style.display = 'flex';
+        pagerEl.querySelectorAll('[data-page]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const target = String(btn.dataset.page || '').trim();
+            if (!target || btn.hasAttribute('disabled')) return;
+            let next = curPage;
+            if (target === 'first') next = 1;
+            else if (target === 'prev')  next = Math.max(1, curPage - 1);
+            else if (target === 'next')  next = Math.min(totalPages, curPage + 1);
+            else if (target === 'last')  next = totalPages;
+            else next = Math.max(1, Math.min(totalPages, parseInt(target, 10) || curPage));
+            if (next !== curPage) {
+              _scheduleState.page = next;
+              sch_renderNearbyList();
+            }
+          });
+        });
+      } else {
+        pagerEl.innerHTML = '';
+        pagerEl.style.display = 'none';
+      }
+    }
+
+    // 카드 본문 클릭 → 편집 모달 / 체크박스는 별도 처리
+    listEl.querySelectorAll('.sch-nearby-body').forEach((body) => {
+      body.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const card = body.closest('.sch-nearby-card');
+        const pid = card?.dataset.nearbyId || '';
         if (!pid) return;
         const found = sch_getAssignedProperties().find((p) => String(p.id || p.globalId) === pid);
-        if (found && typeof openEditModal === 'function') {
-          openEditModal(found);
-        }
+        if (found && typeof openEditModal === 'function') openEditModal(found);
       });
     });
+    listEl.querySelectorAll('.sch-check-input').forEach((cb) => {
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const pid = cb.dataset.checkId || '';
+        if (!pid) return;
+        if (cb.checked) _scheduleState.checkedIds.add(pid);
+        else _scheduleState.checkedIds.delete(pid);
+        sch_updateMapSelectedCount();
+        sch_renderMap();
+      });
+    });
+    // 체크박스 라벨 클릭 이벤트 버블링 방지
+    listEl.querySelectorAll('.sch-nearby-check').forEach((lbl) => {
+      lbl.addEventListener('click', (e) => e.stopPropagation());
+    });
+
+    sch_updateMapSelectedCount();
+  }
+
+  // 페이지네이션 HTML (이미지 스타일 참고: << < 이전 1 2 3 … 다음 > >>)
+  function sch_buildPaginationHtml(current, total) {
+    const btnStyle = 'min-width:32px;height:30px;border-radius:6px;border:1px solid var(--border,#e5e7eb);background:var(--surface,#fff);color:var(--text,#333);font-size:12px;cursor:pointer;padding:0 8px;';
+    const activeStyle = 'min-width:32px;height:30px;border-radius:6px;border:1px solid var(--brand,#ea580c);background:var(--brand,#ea580c);color:#fff;font-size:12px;font-weight:600;padding:0 8px;';
+    const disabledStyle = btnStyle + 'opacity:.4;cursor:not-allowed;';
+
+    const parts = [];
+    const atStart = current === 1;
+    const atEnd = current === total;
+
+    parts.push(`<button type="button" data-page="first" ${atStart ? 'disabled' : ''} style="${atStart ? disabledStyle : btnStyle}">«</button>`);
+    parts.push(`<button type="button" data-page="prev"  ${atStart ? 'disabled' : ''} style="${atStart ? disabledStyle : btnStyle}">‹</button>`);
+    parts.push(`<button type="button" data-page="prev"  ${atStart ? 'disabled' : ''} style="${atStart ? disabledStyle : btnStyle}">이전</button>`);
+
+    // 번호: 최대 7개. current 중심 윈도우.
+    const windowSize = 7;
+    let from = Math.max(1, current - Math.floor(windowSize / 2));
+    let to = from + windowSize - 1;
+    if (to > total) { to = total; from = Math.max(1, to - windowSize + 1); }
+    for (let i = from; i <= to; i++) {
+      const s = i === current ? activeStyle : btnStyle;
+      parts.push(`<button type="button" data-page="${i}" style="${s}">${i}</button>`);
+    }
+
+    parts.push(`<button type="button" data-page="next" ${atEnd ? 'disabled' : ''} style="${atEnd ? disabledStyle : btnStyle}">다음</button>`);
+    parts.push(`<button type="button" data-page="next" ${atEnd ? 'disabled' : ''} style="${atEnd ? disabledStyle : btnStyle}">›</button>`);
+    parts.push(`<button type="button" data-page="last" ${atEnd ? 'disabled' : ''} style="${atEnd ? disabledStyle : btnStyle}">»</button>`);
+
+    return parts.join('');
+  }
+
+  function sch_updateMapSelectedCount() {
+    const countEl = document.getElementById('schMapSelectedCount');
+    if (countEl) countEl.textContent = `선택 ${_scheduleState.checkedIds.size}건`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // 카카오맵
+  // ═══════════════════════════════════════════════════════════════
+  function sch_getKakaoKey() {
+    const meta = document.querySelector('meta[name="kakao-app-key"]');
+    return (meta?.getAttribute('content') || '').trim();
+  }
+
+  function sch_loadKakaoSdk() {
+    return new Promise((resolve, reject) => {
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve());
+        return;
+      }
+      const key = sch_getKakaoKey();
+      if (!key) { reject(new Error('Kakao app key not set')); return; }
+      // 이미 script 태그가 있으면 중복 삽입 방지
+      const exists = document.querySelector('script[data-kakao-sdk]');
+      if (exists) {
+        exists.addEventListener('load', () => {
+          if (window.kakao?.maps?.load) window.kakao.maps.load(() => resolve());
+          else reject(new Error('Kakao SDK load 실패'));
+        });
+        exists.addEventListener('error', () => reject(new Error('Kakao SDK 네트워크 오류')));
+        return;
+      }
+      const s = document.createElement('script');
+      s.dataset.kakaoSdk = '1';
+      s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false&libraries=services`;
+      s.async = true;
+      s.onload = () => {
+        if (!window.kakao?.maps?.load) { reject(new Error('Kakao SDK 로드 실패')); return; }
+        window.kakao.maps.load(() => resolve());
+      };
+      s.onerror = () => reject(new Error('Kakao SDK 네트워크 오류'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function sch_ensureMap() {
+    if (_scheduleState.map) return _scheduleState.map;
+    const container = document.getElementById('schMap');
+    const emptyEl = document.getElementById('schMapEmpty');
+    if (!container) return null;
+    try {
+      await sch_loadKakaoSdk();
+    } catch (err) {
+      console.error('[schedule] kakao sdk failed:', err);
+      container.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'block';
+      return null;
+    }
+    const center = new kakao.maps.LatLng(37.5665, 126.978);
+    _scheduleState.map = new kakao.maps.Map(container, { center, level: 6 });
+    _scheduleState.mapReady = true;
+    return _scheduleState.map;
+  }
+
+  function sch_clearMarkers() {
+    (_scheduleState.mapMarkers || []).forEach((m) => {
+      try { m.setMap(null); } catch (_) {}
+    });
+    _scheduleState.mapMarkers = [];
+    if (_scheduleState.mapInfowindow) {
+      try { _scheduleState.mapInfowindow.close(); } catch (_) {}
+    }
+  }
+
+  async function sch_renderMap() {
+    const map = await sch_ensureMap();
+    if (!map) return;
+    sch_clearMarkers();
+
+    const props = sch_getAssignedProperties();
+    const anchor = props.find((p) => String(p.id || p.globalId) === _scheduleState.selectedAnchorId);
+    const anchorLL = anchor ? sch_getLatLng(anchor) : null;
+
+    const bounds = new kakao.maps.LatLngBounds();
+    let hasAny = false;
+
+    // 기준 물건 마커 (빨간색)
+    if (anchorLL) {
+      const pos = new kakao.maps.LatLng(anchorLL.lat, anchorLL.lng);
+      const marker = new kakao.maps.Marker({
+        map,
+        position: pos,
+        image: new kakao.maps.MarkerImage(
+          'data:image/svg+xml;utf8,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="46" viewBox="0 0 36 46">
+              <path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 28 18 28s18-14.5 18-28C36 8.06 27.94 0 18 0z" fill="#dc2626"/>
+              <circle cx="18" cy="18" r="7" fill="#fff"/>
+              <text x="18" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="#dc2626">★</text>
+            </svg>
+          `),
+          new kakao.maps.Size(36, 46),
+          { offset: new kakao.maps.Point(18, 46) }
+        ),
+        zIndex: 100,
+      });
+      _scheduleState.mapMarkers.push(marker);
+      bounds.extend(pos);
+      hasAny = true;
+
+      const infowindowContent = `<div style="padding:6px 10px;font-size:12px;font-weight:600;color:#dc2626;white-space:nowrap;">기준: ${esc(String(anchor.address || ''))}</div>`;
+      kakao.maps.event.addListener(marker, 'click', () => {
+        if (_scheduleState.mapInfowindow) { try { _scheduleState.mapInfowindow.close(); } catch (_) {} }
+        _scheduleState.mapInfowindow = new kakao.maps.InfoWindow({ content: infowindowContent, removable: true });
+        _scheduleState.mapInfowindow.open(map, marker);
+      });
+    }
+
+    // 체크된 주변 물건 마커 (주황색 + 순번)
+    // 거리순 정렬 후 체크된 것만 필터해서 번호 매김 (전체 거리순 기준 순번 유지)
+    if (anchorLL) {
+      const selectedId = String(anchor.id || anchor.globalId);
+      const withDist = [];
+      props.forEach((p) => {
+        const pid = String(p.id || p.globalId);
+        if (pid === selectedId) return;
+        const ll = sch_getLatLng(p);
+        if (!ll) return;
+        withDist.push({ p, ll, d: sch_haversineMeters(anchorLL, ll), pid });
+      });
+      withDist.sort((a, b) => a.d - b.d);
+
+      withDist.forEach((entry, idx) => {
+        if (!_scheduleState.checkedIds.has(entry.pid)) return;
+        const pos = new kakao.maps.LatLng(entry.ll.lat, entry.ll.lng);
+        const num = idx + 1;
+        const marker = new kakao.maps.Marker({
+          map,
+          position: pos,
+          image: new kakao.maps.MarkerImage(
+            'data:image/svg+xml;utf8,' + encodeURIComponent(`
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+                <path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="#ea580c"/>
+                <circle cx="16" cy="16" r="10" fill="#fff"/>
+                <text x="16" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="#ea580c">${num}</text>
+              </svg>
+            `),
+            new kakao.maps.Size(32, 40),
+            { offset: new kakao.maps.Point(16, 40) }
+          ),
+          zIndex: 50,
+        });
+        _scheduleState.mapMarkers.push(marker);
+        bounds.extend(pos);
+        hasAny = true;
+
+        const label = sch_getBucketLabel(entry.p);
+        const dist = sch_formatDistance(entry.d);
+        const infowindowContent = `
+          <div style="padding:6px 10px;font-size:12px;white-space:nowrap;line-height:1.5;">
+            <div style="font-weight:600;color:#ea580c;margin-bottom:2px;">${num}. ${esc(label)} · ${dist}</div>
+            <div>${esc(String(entry.p.address || ''))}</div>
+          </div>
+        `;
+        kakao.maps.event.addListener(marker, 'click', () => {
+          if (_scheduleState.mapInfowindow) { try { _scheduleState.mapInfowindow.close(); } catch (_) {} }
+          _scheduleState.mapInfowindow = new kakao.maps.InfoWindow({ content: infowindowContent, removable: true });
+          _scheduleState.mapInfowindow.open(map, marker);
+        });
+      });
+    }
+
+    if (hasAny) {
+      try {
+        map.setBounds(bounds, 40, 40, 40, 40);
+        // 단일 마커면 setBounds 가 과하게 줌인하므로 약간 조정
+        if (_scheduleState.mapMarkers.length === 1) {
+          setTimeout(() => { try { map.setLevel(4); } catch (_) {} }, 0);
+        }
+      } catch (_) {}
+    }
+  }
+
+  function sch_clearAllChecks() {
+    _scheduleState.checkedIds = new Set();
+    sch_updateMapSelectedCount();
+    sch_renderNearbyList();
+    sch_renderMap();
   }
 
   async function refreshAgentScheduleView(options = {}) {
@@ -3515,6 +3820,8 @@ function renderPagination(totalPages) {
     }
     sch_renderAnchorList();
     sch_renderNearbyList();
+    // 지도는 탭 보이는 상태에서만 제대로 초기화됨 → 비동기
+    setTimeout(() => { sch_renderMap(); }, 50);
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -3522,12 +3829,18 @@ function renderPagination(totalPages) {
     if (showAllCb) {
       showAllCb.addEventListener('change', function () {
         _scheduleState.showAll = !!this.checked;
-        // 전체 보기 토글 시 선택 초기화
+        // 전체 보기 토글 시 선택/페이지/체크 초기화
         _scheduleState.selectedAnchorId = null;
+        _scheduleState.page = 1;
+        _scheduleState.checkedIds = new Set();
         sch_renderAnchorList();
         sch_renderNearbyList();
+        sch_renderMap();
       });
     }
+    const clearBtn = document.getElementById('schMapClearSelection');
+    if (clearBtn) clearBtn.addEventListener('click', sch_clearAllChecks);
+
     window.refreshAgentScheduleView = function () { refreshAgentScheduleView({ force: true }); };
   });
 
