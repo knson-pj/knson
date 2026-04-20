@@ -290,11 +290,38 @@
         }
 
         const rawRows = mod.parseCsv(csvText);
-        const preparedRows = [];
+        // 1패스: 각 행을 mapPropertyCsvRow 로 파싱
+        const mappedRows = [];  // [{raw, m}]
         for (const r of rawRows) {
           const m = mod.mapPropertyCsvRow(r, sourceType);
           if (!m || !m.itemNo || !m.address) continue;
-          const built = mod.buildSupabasePropertyRow(r, m, sourceType);
+          mappedRows.push({ raw: r, m });
+        }
+
+        // 경매 전용: CSV 전체에서 같은 사건번호의 행 개수 집계.
+        // 빈도 2+ 인 사건만 itemNo 에 "(물건번호)" 붙여서 구분, 1건이면 사건번호 단독.
+        if (sourceType === "auction") {
+          const caseNoCount = new Map();
+          for (const { m } of mappedRows) {
+            const cn = String(m.auctionCaseNo || "").trim();
+            if (!cn) continue;
+            caseNoCount.set(cn, (caseNoCount.get(cn) || 0) + 1);
+          }
+          for (const { m } of mappedRows) {
+            const cn = String(m.auctionCaseNo || "").trim();
+            const pn = String(m.auctionPropNo || "").trim();
+            if (cn && pn && (caseNoCount.get(cn) || 0) >= 2) {
+              // 이미 물건번호가 사건번호를 포함하는 형식이면 그대로 사용
+              m.itemNo = pn.includes(cn) ? pn : `${cn}(${pn})`;
+            }
+            // else: caseNo 단독 유지 (mapPropertyCsvRow 에서 이미 설정됨)
+          }
+        }
+
+        // 2패스: 빌드 (itemNo 확정된 뒤여야 global_id 생성이 정확함)
+        const preparedRows = [];
+        for (const { raw, m } of mappedRows) {
+          const built = mod.buildSupabasePropertyRow(raw, m, sourceType);
           if (!built.global_id || built.global_id.endsWith(":")) continue;
           preparedRows.push(built);
         }
@@ -403,11 +430,85 @@
     };
     const parseAuctionAreas = (text) => {
       const src = String(text || "");
-      const building = src.match(/건물[^0-9]*([0-9.,]+)\s*평/i);
-      const site = src.match(/대지권[^0-9]*([0-9.,]+)\s*평/i);
+      // 경매 데이터의 경매현황 텍스트는 3가지 패턴 존재:
+      //   A) "집합건물 철근콘크리트구조 50.02㎡(15.13평)"  → 평 값 우선 사용
+      //   B) "건물 20.5평"                                 → 단순 N평
+      //   C) "건물 67.78㎡"                                → ㎡ → 평 환산
+      //
+      // 구현 전략: 평 / ㎡ 단위로 먼저 모든 후보를 찾고,
+      //   "건물" / "대지권" 단서와의 인접성으로 적절한 값을 선택.
+
+      // '건물/집합건물' 과 '대지권/토지' 위치
+      const buildingIdx = (() => {
+        const m = src.match(/(?:집합\s*건물|건물)/);
+        return m ? m.index + m[0].length : -1;
+      })();
+      const siteIdx = (() => {
+        const m = src.match(/(?:대지권|대\s*지\s*권|토지)/);
+        return m ? m.index + m[0].length : -1;
+      })();
+
+      const toP = (v) => {
+        const n = toNum(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const m2ToP = (m2) => {
+        const n = toNum(m2);
+        return Number.isFinite(n) ? n * 0.3025 : null;
+      };
+
+      // 숫자+평 / 숫자+㎡ 매칭을 position 과 함께 모두 수집
+      const pyeongMatches = [];
+      const sqmMatches = [];
+      const pyeongRe = /([0-9]+(?:[.,][0-9]+)?)\s*평/g;
+      const sqmRe = /([0-9]+(?:[.,][0-9]+)?)\s*(?:㎡|m²|m2)/g;
+      let mm;
+      while ((mm = pyeongRe.exec(src)) !== null) pyeongMatches.push({ idx: mm.index, value: toP(mm[1]) });
+      while ((mm = sqmRe.exec(src)) !== null)    sqmMatches.push({ idx: mm.index, value: m2ToP(mm[1]) });
+
+      // "건물" 이후 가장 가까이 나타나는 평 값 (있으면), 없으면 ㎡→평 변환값
+      // buildingIdx 가 없으면 첫 평 값(전체 중) 또는 첫 ㎡값
+      const pickNearestAfter = (idx, arr) => {
+        if (idx < 0) return null;
+        const after = arr.filter((x) => x.idx >= idx);
+        return after.length ? after[0].value : null;
+      };
+      const pickNearestBefore = (idx, limit, arr) => {
+        // idx 이후 limit 인덱스 이전에 나타나는 첫 값
+        if (idx < 0) return null;
+        const inRange = arr.filter((x) => x.idx >= idx && (limit < 0 || x.idx < limit));
+        return inRange.length ? inRange[0].value : null;
+      };
+
+      // 경계 계산: buildingIdx 와 siteIdx 중 더 뒤에 있는 것이 상대 섹션의 "끝".
+      // 예: "집합건물 50㎡(15평) 대지권 30㎡(9평)" 에서
+      //   buildingIdx=4, siteIdx=15 → 건물 섹션은 [4, 15) 사이의 값을 우선.
+      const hasBoth = buildingIdx >= 0 && siteIdx >= 0;
+      const buildingEnd = hasBoth ? (siteIdx > buildingIdx ? siteIdx : -1) : -1;
+      const siteEnd = hasBoth ? (buildingIdx > siteIdx ? buildingIdx : -1) : -1;
+
+      // 건물 섹션: '건물' 이후 ~ 대지권 이전. 평 > ㎡→평 순으로 우선
+      let building = null;
+      if (buildingIdx >= 0) {
+        building = pickNearestBefore(buildingIdx, buildingEnd, pyeongMatches);
+        if (building == null) building = pickNearestBefore(buildingIdx, buildingEnd, sqmMatches);
+      } else if (siteIdx < 0) {
+        // '건물' 도 '대지권/토지' 단서도 없을 때만 전체 첫 값 fallback
+        // (토지만 있는 경매현황을 건물로 오인하지 않기 위함)
+        if (pyeongMatches.length) building = pyeongMatches[0].value;
+        else if (sqmMatches.length) building = sqmMatches[0].value;
+      }
+
+      // 대지권 섹션: 같은 로직 site 기준
+      let site = null;
+      if (siteIdx >= 0) {
+        site = pickNearestBefore(siteIdx, siteEnd, pyeongMatches);
+        if (site == null) site = pickNearestBefore(siteIdx, siteEnd, sqmMatches);
+      }
+
       return {
-        building: building ? toNum(building[1]) : null,
-        site: site ? toNum(site[1]) : null,
+        building: Number.isFinite(building) ? Number(building.toFixed(2)) : null,
+        site: Number.isFinite(site) ? Number(site.toFixed(2)) : null,
       };
     };
 
@@ -431,14 +532,23 @@
     let realtorName = "";
     let realtorPhone = "";
     let realtorCell = "";
+    let auctionCaseNo = "";  // 경매 사건번호 원본 (상위 루프에서 빈도 집계용)
+    let auctionPropNo = "";  // 경매 물건번호 원본
 
     if (sourceType === "auction") {
       const caseNo = pick("사건번호", "caseNo", "");
       const propNo = pick("물건번호", "");
       const buildingDetail = pick("건물상세", "물건명", "건물명", "상세");
       const auctionStatusText = pick("경매현황", "비고", "memo");
-      if (caseNo && propNo) itemNo = propNo.includes(caseNo) ? propNo : `${caseNo}(${propNo})`;
-      else itemNo = caseNo || propNo || pick("itemNo", "");
+      // 원본 보관 (상위 루프에서 사건번호 빈도 파악 후 itemNo 확정)
+      auctionCaseNo = String(caseNo || "").trim();
+      auctionPropNo = String(propNo || "").trim();
+      // itemNo 초기값: caseNo 단독 (상위 루프에서 빈도 2+ 면 `(propNo)` 추가)
+      if (caseNo) {
+        itemNo = caseNo;
+      } else {
+        itemNo = propNo || pick("itemNo", "");
+      }
       address = pick("주소(시군구동)", "주소", "소재지", "address");
       status = pick("진행상태", "상태", "status");
       priceMain = toNum(pick("감정가", "감정가(원)", "priceMain"));
@@ -516,7 +626,7 @@
     }
 
     if (!address && !itemNo) return null;
-    return { itemNo, address, status, priceMain, latitude: Number.isFinite(latitude) ? latitude : null, longitude: Number.isFinite(longitude) ? longitude : null, assetType, commonArea, exclusiveArea, siteArea, useApproval, dateMain, sourceUrl, memo, lowprice, floor, totalfloor, realtorName, realtorPhone, realtorCell };
+    return { itemNo, address, status, priceMain, latitude: Number.isFinite(latitude) ? latitude : null, longitude: Number.isFinite(longitude) ? longitude : null, assetType, commonArea, exclusiveArea, siteArea, useApproval, dateMain, sourceUrl, memo, lowprice, floor, totalfloor, realtorName, realtorPhone, realtorCell, auctionCaseNo, auctionPropNo };
   };
 
   mod.buildSupabasePropertyRow = function buildSupabasePropertyRow(rawRow, m, sourceType) {

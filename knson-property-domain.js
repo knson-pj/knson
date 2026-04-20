@@ -612,6 +612,13 @@
     }
     nextRaw.firstRegisteredAt = firstAt;
     nextRaw.registrationLog = current;
+    // 최초 등록자 role 기반 식별 플래그 (담당자페이지 "등록자 유형" 표시에 사용)
+    // 이미 플래그가 있으면 덮어쓰지 않음 (기존 레코드 보존)
+    const actorRole = normalizeLogActorRole(context?.actorRole || "");
+    if (!nextRaw.registeredByAdmin && !nextRaw.registeredByAgent) {
+      if (actorRole === "admin") nextRaw.registeredByAdmin = true;
+      else if (actorRole === "staff" || actorRole === "agent") nextRaw.registeredByAgent = true;
+    }
     return nextRaw;
   }
 

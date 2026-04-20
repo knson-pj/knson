@@ -701,6 +701,13 @@
     const raw = itemOrRow?._raw?.raw && typeof itemOrRow._raw.raw === 'object' ? itemOrRow._raw.raw : (itemOrRow?._raw || {});
     if (raw?.registeredByAdmin) return '관리자';
     if (raw?.registeredByAgent) return '담당자';
+    // 레거시 fallback: 플래그 없는 기존 레코드는 registrationLog 첫 엔트리의 actorRole 로 판별
+    // (이 fallback 덕분에 이미 업로드된 CSV 건도 배포 즉시 '관리자' 로 올바르게 표시됨)
+    const logs = Array.isArray(raw?.registrationLog) ? raw.registrationLog : [];
+    const firstCreated = logs.find((e) => e && e.type === 'created');
+    const logRole = String(firstCreated?.actorRole || '').trim().toLowerCase();
+    if (logRole === 'admin') return '관리자';
+    if (logRole === 'staff' || logRole === 'agent') return '담당자';
     const submitterType = String(
       itemOrRow?.submitterType || itemOrRow?.submitter_type || raw?.submitter_type || raw?.submitterType || ''
     ).trim().toLowerCase();
