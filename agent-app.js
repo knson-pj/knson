@@ -2194,6 +2194,9 @@ function renderPagination(totalPages) {
       els.agEditModal.classList.remove("hidden");
       els.agEditModal.setAttribute("aria-hidden", "false");
     }
+    // 모바일 pull-to-refresh 방지: body + html 스크롤 잠금
+    document.body.classList.add('modal-open-lock');
+    document.documentElement.classList.add('modal-open-lock-html');
     const PhotoManager = window.KNSN_PROPERTY_PHOTOS || null;
     const propertyId = String(item?._raw?.id || item?.id || '').trim();
     if (PhotoManager && propertyId && typeof PhotoManager.mountSection === 'function') {
@@ -2213,6 +2216,9 @@ function renderPagination(totalPages) {
         els.agEditModal.setAttribute("aria-hidden", "true");
       }
     }
+    // 모바일 body + html 스크롤 잠금 해제
+    document.body.classList.remove('modal-open-lock');
+    document.documentElement.classList.remove('modal-open-lock-html');
   }
 
   async function saveProperty() {

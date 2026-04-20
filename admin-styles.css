@@ -2190,8 +2190,28 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
 /* ════════════════════════════════════════════════════════════════════
    담당자 페이지 — Phase 4: 편집 모달 모바일 풀스크린
    ════════════════════════════════════════════════════════════════════ */
+
+/* 모달 열린 상태에서 body 스크롤 완전 잠금 (pull-to-refresh 방지) */
+.page-agent.modal-open-lock,
+body.page-agent.modal-open-lock{
+  overflow:hidden;
+  overscroll-behavior:none;
+  -webkit-overflow-scrolling:auto;
+}
+html.modal-open-lock-html{
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+
 @media (max-width: 768px){
   /* 모달 자체 — 풀스크린으로 전환 */
+  /* 모달 자체 — 풀스크린으로 전환 */
+  .page-agent #agEditModal{
+    /* 모달 열린 상태에서 body 의 pull-to-refresh / overscroll 전파 차단 */
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    overflow:hidden;
+  }
   .page-agent #agEditModal .modal-card,
   .page-agent #agEditModal .agent-edit-modal-card{
     width:100vw !important;
@@ -2201,6 +2221,10 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
     margin:0 !important;
     border-radius:0 !important;
     border:none !important;
+    /* 모달 카드 자체에서도 overscroll 격리 */
+    overscroll-behavior:contain;
+    /* 모달 카드는 스크롤 안 하게 (modal-body 만 스크롤) */
+    overflow:hidden !important;
   }
   /* 백드롭 — 모달이 풀스크린이라 어둡게 할 의미 없어 투명 */
   .page-agent #agEditModal .modal-backdrop{
@@ -2219,10 +2243,16 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
     width:36px;height:36px;font-size:18px;
   }
 
-  /* body 스크롤 영역 — 헤더/액션 제외 */
+  /* body 스크롤 영역 — 헤더/액션 제외, 독립 스크롤 컨테이너로 격리 */
   .page-agent #agEditModal .modal-body{
     padding:14px;gap:14px;
     padding-bottom:80px; /* 하단 sticky actions 영역 확보 */
+    /* pull-to-refresh 및 오버스크롤 전파 방지 */
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    /* 헤더 높이 제외한 나머지 공간만 스크롤 */
+    overflow-y:auto;overflow-x:hidden;
+    flex:1 1 auto;min-height:0;
   }
 
   /* 탭 — sticky + 가로 스크롤 가능 (4개지만 좁은 폰에서 안전) */
