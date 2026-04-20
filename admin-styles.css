@@ -1895,19 +1895,42 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
   .page-agent .agent-drawer-overlay{display:block;}
 
   /* 사이드바 = 드로어 (off-canvas) */
+  /* 기존 CSS 에 아래 두 개 충돌 선언이 있어서 반드시 !important 필요:
+     - @media(max-width:980px) .admin-sidebar{width:52px !important}
+     - @media(max-width:980px) .page-agent .admin-sidebar{display:none}
+     드로어 방식으로 되돌리려면 display 복구 + width 복구. */
   .page-agent .admin-sidebar{
-    position:fixed;top:0;left:0;
-    width:280px;max-width:85vw;height:100vh;height:100dvh;
+    display:flex !important;
+    flex-direction:column;
+    position:fixed !important;top:0;left:0;
+    width:280px !important;max-width:85vw;height:100vh;height:100dvh;
     transform:translateX(-100%);
     transition:transform .25s cubic-bezier(.22,.61,.36,1);
     z-index:60;
     box-shadow:2px 0 16px rgba(0,0,0,.08);
+    overflow-y:auto;
   }
   .page-agent.drawer-open .admin-sidebar{transform:translateX(0);}
 
-  /* 컨텐츠 영역 — 사이드바 margin-left 제거 */
+  /* 컨텐츠 영역 — 사이드바 margin-left 제거 (기존 !important 오버라이드) */
   .page-agent .admin-content{
     margin-left:0 !important;width:100vw !important;
+  }
+
+  /* 980px 미디어쿼리가 적용했던 나머지 제약들도 모바일 드로어에선 해제 */
+  .page-agent .sidebar-nav-label,
+  .page-agent .sidebar-page-title,
+  .page-agent .sidebar-group-arrow{
+    opacity:1 !important;width:auto !important;pointer-events:auto !important;
+  }
+  .page-agent .sidebar-nav-item,
+  .page-agent .sidebar-group-btn{
+    justify-content:flex-start !important;
+  }
+  .page-agent .sidebar-logo{justify-content:flex-start !important;}
+  .page-agent .sidebar-group-items{
+    /* max-height:0 !important 로 잠겨있던 것 해제. 그룹이 열려있으면 보이게 */
+    max-height:none;
   }
 
   /* 드로어 내부 메뉴 아이템 터치 친화 (최소 44px) */
