@@ -3247,8 +3247,16 @@ function renderPagination(totalPages) {
     return Number.isFinite(n) ? n : null;
   }
   function sch_getLatLng(p) {
-    const lat = sch_toFiniteNumber(p?.latitude ?? p?.lat);
-    const lng = sch_toFiniteNumber(p?.longitude ?? p?.lng);
+    if (!p) return null;
+    // normalizeProperty 가 최상위에 latitude/longitude 를 포함시키지 않으므로
+    // _raw (원본 DB row) 를 우선 폴백으로 확인
+    const raw = p._raw || p.raw || {};
+    const lat = sch_toFiniteNumber(
+      p.latitude ?? p.lat ?? raw.latitude ?? raw.lat
+    );
+    const lng = sch_toFiniteNumber(
+      p.longitude ?? p.lng ?? raw.longitude ?? raw.lng
+    );
     if (lat === null || lng === null) return null;
     return { lat, lng };
   }
