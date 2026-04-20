@@ -142,8 +142,46 @@
     } catch (err) {
       console.error('onbid-sync edge function error', err);
       const msg = String(err?.message || err);
+
+      // Supabase JS 의 FunctionsFetchError 는 context 에 상세 정보 포함
+      //   - err.context?.status 로 HTTP 상태 확인 가능
+      //   - err.context?.res 에 원본 Response
+      let detail = '';
+      try {
+        if (err?.context) {
+          const status = err.context.status;
+          if (status) detail = `\nHTTP 상태: ${status}`;
+          if (err.context.responseText) {
+            detail += `\n응답: ${String(err.context.responseText).slice(0, 300)}`;
+          } else if (typeof err.context.text === 'function') {
+            // 대안: Response 객체에서 직접 읽기 시도
+            const respText = await err.context.text().catch(() => '');
+            if (respText) detail += `\n응답: ${String(respText).slice(0, 300)}`;
+          }
+        }
+      } catch {}
+
+      // 가능한 원인 힌트
+      const hints = [];
+      if (/failed to send|failed to fetch|network/i.test(msg)) {
+        hints.push('Edge Function 이 시작 중 오류로 죽었을 수 있습니다 (import 실패/런타임 에러)');
+        hints.push('Supabase 대시보드 → Edge Functions → onbid-sync → Logs 확인');
+      }
+      if (/401|unauthorized/i.test(msg + detail)) {
+        hints.push('로그인 토큰이 만료됐을 수 있습니다. 로그아웃 → 재로그인 시도');
+      }
+      if (/403|forbidden/i.test(msg + detail)) {
+        hints.push('app_metadata.role = "admin" 설정 확인 필요');
+      }
+      if (/500/i.test(msg + detail) || /ONBID_SERVICE_KEY/i.test(detail)) {
+        hints.push('ONBID_SERVICE_KEY 시크릿 설정 확인 (supabase secrets set)');
+      }
+
       setStatus('동기화 실패', true);
-      setResult(msg + '\nEdge Function 배포 상태 및 ONBID_SERVICE_KEY 시크릿 설정을 확인하세요.', true);
+      setResult(
+        msg + detail + (hints.length ? '\n\n가능한 원인:\n- ' + hints.join('\n- ') : ''),
+        true,
+      );
     } finally {
       if (els.btnOnbidSyncStart) els.btnOnbidSyncStart.disabled = false;
     }
@@ -211,6 +249,90 @@
   };
 
   // ─────────────────────────────────────────────────────────────
+  // 진단 — 직접 fetch 로 Edge Function 호출해서 원인 파악
+  // ─────────────────────────────────────────────────────────────
+  mod.diagnose = async function diagnose() {
+    const { state, K } = ctx();
+    const log = [];
+
+    if (!K || typeof K.supabaseEnabled !== 'function' || !K.supabaseEnabled()) {
+      setStatus('Supabase 미구성', true);
+      setResult('KNSN.supabaseEnabled() === false', true);
+      return;
+    }
+    const sb = K.initSupabase();
+    if (!sb) {
+      setStatus('Supabase 초기화 실패', true);
+      return;
+    }
+
+    setStatus('진단 실행 중...', false);
+    setResult('');
+
+    try {
+      // 1) supabaseUrl 확인
+      const url = sb.supabaseUrl || sb.restUrl?.replace('/rest/v1', '') || '';
+      log.push(`Supabase URL: ${url || '(알 수 없음)'}`);
+
+      // 2) 세션 토큰
+      const { data: sessData } = await sb.auth.getSession();
+      const token = sessData?.session?.access_token || '';
+      if (!token) {
+        log.push('❌ 세션 토큰 없음 — 재로그인 필요');
+        setStatus('진단 실패', true);
+        setResult(log.join('\n'), true);
+        return;
+      }
+      log.push(`세션 토큰: ${token.slice(0, 20)}... (길이 ${token.length})`);
+
+      // 3) 현재 사용자 role
+      const user = state?.session?.user || {};
+      log.push(`로그인 role: "${String(user.role || '')}"`);
+
+      // 4) Edge Function URL 구성
+      const fnUrl = `${url}/functions/v1/onbid-sync`;
+      log.push(`Edge Function URL: ${fnUrl}`);
+
+      // 5) 직접 fetch (invoke 대신)
+      log.push('Edge Function 에 직접 HTTP POST 시도...');
+      let res;
+      try {
+        res = await fetch(fnUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'apikey': sb.supabaseKey || '',
+          },
+          body: JSON.stringify({ maxItems: 1, triggeredBy: 'diagnose' }),
+        });
+      } catch (fetchErr) {
+        log.push(`❌ fetch 실패: ${fetchErr.message}`);
+        log.push('→ Edge Function URL 에 도달 불가 (Function 미배포/CORS/네트워크)');
+        setStatus('진단 실패', true);
+        setResult(log.join('\n'), true);
+        return;
+      }
+
+      log.push(`HTTP 상태: ${res.status} ${res.statusText || ''}`);
+      const respText = await res.text();
+      log.push(`응답 바디 (최대 500자):\n${respText.slice(0, 500)}`);
+
+      if (res.ok) {
+        setStatus('진단 성공', false);
+        setResult(log.join('\n'), false);
+      } else {
+        setStatus(`진단: HTTP ${res.status}`, true);
+        setResult(log.join('\n'), true);
+      }
+    } catch (err) {
+      log.push(`❌ 예외: ${err?.message || err}`);
+      setStatus('진단 오류', true);
+      setResult(log.join('\n'), true);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // 이벤트 바인딩 (admin-app.js 에서 호출)
   // ─────────────────────────────────────────────────────────────
   mod.initEvents = function initEvents() {
@@ -225,6 +347,12 @@
       els.btnOnbidSyncRefreshLogs.dataset.bound = '1';
       els.btnOnbidSyncRefreshLogs.addEventListener('click', () => {
         mod.loadOnbidSyncLogs().catch((e) => console.error(e));
+      });
+    }
+    if (els.btnOnbidSyncDiagnose && !els.btnOnbidSyncDiagnose.dataset.bound) {
+      els.btnOnbidSyncDiagnose.dataset.bound = '1';
+      els.btnOnbidSyncDiagnose.addEventListener('click', () => {
+        mod.diagnose().catch((e) => console.error(e));
       });
     }
   };

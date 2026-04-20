@@ -552,6 +552,7 @@
       tabOnbidSync: $("#tab-onbidSync"),
       btnOnbidSyncStart: $("#btnOnbidSyncStart"),
       btnOnbidSyncRefreshLogs: $("#btnOnbidSyncRefreshLogs"),
+      btnOnbidSyncDiagnose: $("#btnOnbidSyncDiagnose"),
       onbidSyncMaxItems: $("#onbidSyncMaxItems"),
       onbidSyncStatus: $("#onbidSyncStatus"),
       onbidSyncResult: $("#onbidSyncResult"),
