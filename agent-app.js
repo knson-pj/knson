@@ -1941,7 +1941,7 @@ function renderRow(p) {
         ? PropertyRenderers.formatScheduleHtml(p)
         : '') || formatScheduleHtmlLocal(p))
     : '';
-  const opinionText = !usePlainLayout && p.opinion ? '✓' : '';
+  const opinionText = p.opinion ? '✓' : '-';
   const createdAtText = formatDate(listView?.createdAtValue || p.createdAt || p.date || p.dateUploaded || p.date_uploaded || p._raw?.date_uploaded || "") || "-";
   const commonText = (listView?.commonAreaValue != null ? fmtArea(listView.commonAreaValue) : (p.commonarea != null ? fmtArea(p.commonarea) : "-"));
   const siteText = (listView?.siteAreaValue != null ? fmtArea(listView.siteAreaValue) : (p.sitearea != null ? fmtArea(p.sitearea) : "-"));
@@ -1969,7 +1969,7 @@ function renderRow(p) {
     if (scheduleHtml && scheduleHtml !== '-') tailParts.push('📅 ' + scheduleHtml);
     if (statusLabel && statusLabel !== '-') tailParts.push(statusLabel);
     const footerParts = [];
-    if (opinionText) footerParts.push('의견 ' + opinionText);
+    if (p.opinion) footerParts.push('의견 ✓');
     if (p.siteInspection) footerParts.push('실사 ✓');
     if (createdAtText && createdAtText !== '-') footerParts.push('등록 ' + createdAtText);
 
@@ -2048,7 +2048,7 @@ function renderRow(p) {
         "<td>" + esc(useapprovalText) + "</td>" +
         "<td>" + esc(appraisal) + "</td>" +
         "<td>" + esc(statusLabel) + "</td>" +
-        "<td>" + (p.rightsAnalysis ? "✓" : "-") + "</td>" +
+        "<td>" + esc(opinionText) + "</td>" +
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + _itemNoHtml + "</td>" +
