@@ -265,14 +265,85 @@ function normalizeActivityEntry(entry, ctx) {
 async function insertActivityEntries(entries, ctx) {
   const rows = (Array.isArray(entries) ? entries : []).map((entry) => normalizeActivityEntry(entry, ctx)).filter(Boolean);
   if (!rows.length) return { createdCount: 0 };
-  const created = await supabaseRest('/rest/v1/property_activity_logs', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    json: rows,
-  });
+
+  // 하루 1건만 유지되어야 하는 action_type (같은 물건/담당자/날짜 조합에서 덮어쓰기)
+  //   - daily_issue / opinion / site_inspection
+  // 그 외 (new_property / property_update / rights_analysis) 는 원래대로 매번 신규 insert.
+  const MERGE_TYPES = new Set(['daily_issue', 'opinion', 'site_inspection']);
+  const upsertRows = [];
+  const insertRows = [];
+  for (const row of rows) {
+    if (MERGE_TYPES.has(String(row.action_type || ''))) upsertRows.push(row);
+    else insertRows.push(row);
+  }
+
+  const createdItems = [];
+  // 1) insert-only 그룹: 기존처럼 한번에 bulk insert
+  if (insertRows.length) {
+    const created = await supabaseRest('/rest/v1/property_activity_logs', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      json: insertRows,
+    });
+    if (Array.isArray(created)) createdItems.push(...created);
+  }
+
+  // 2) upsert 그룹: 각 row 마다 기존 행 조회 → 있으면 PATCH, 없으면 POST
+  //    (property_id 가 null 인 경우도 안전하게 처리 — 키 조건이 3~4 항목으로 좁혀짐)
+  for (const row of upsertRows) {
+    const actorId = String(row.actor_id || '').trim();
+    const actionType = String(row.action_type || '').trim();
+    const actionDate = String(row.action_date || '').trim();
+    const propertyId = row.property_id ? String(row.property_id).trim() : '';
+    if (!actorId || !actionType || !actionDate) {
+      // 키 불완전 — 신규 insert 로 fallback
+      const created = await supabaseRest('/rest/v1/property_activity_logs', {
+        method: 'POST', headers: { Prefer: 'return=representation' }, json: [row],
+      });
+      if (Array.isArray(created)) createdItems.push(...created);
+      continue;
+    }
+    // 기존 행 조회 조건: actor_id + action_type + action_date + property_id (is.null 또는 값 일치)
+    const base = `/rest/v1/property_activity_logs?select=id`
+      + `&actor_id=eq.${encodeURIComponent(actorId)}`
+      + `&action_type=eq.${encodeURIComponent(actionType)}`
+      + `&action_date=eq.${encodeURIComponent(actionDate)}`;
+    const query = propertyId
+      ? `${base}&property_id=eq.${encodeURIComponent(propertyId)}`
+      : `${base}&property_id=is.null`;
+    let existing = null;
+    try {
+      const found = await supabaseRest(query);
+      if (Array.isArray(found) && found.length) existing = found[0];
+    } catch (e) {
+      // 조회 실패 시에도 진행(insert fallback)
+    }
+    if (existing && existing.id) {
+      // UPDATE: note / changed_fields / created_at 만 갱신 (마지막 수정 시각으로)
+      const patchPath = `/rest/v1/property_activity_logs?id=eq.${encodeURIComponent(existing.id)}`;
+      const patched = await supabaseRest(patchPath, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        json: {
+          note: row.note,
+          changed_fields: row.changed_fields,
+          created_at: new Date().toISOString(),
+          // actor/property/address 등은 불변으로 간주 (첫 입력을 기준으로 유지)
+        },
+      });
+      if (Array.isArray(patched)) createdItems.push(...patched);
+    } else {
+      // 신규 INSERT
+      const created = await supabaseRest('/rest/v1/property_activity_logs', {
+        method: 'POST', headers: { Prefer: 'return=representation' }, json: [row],
+      });
+      if (Array.isArray(created)) createdItems.push(...created);
+    }
+  }
+
   return {
-    createdCount: Array.isArray(created) ? created.length : 0,
-    items: Array.isArray(created) ? created : [],
+    createdCount: createdItems.length,
+    items: createdItems,
   };
 }
 

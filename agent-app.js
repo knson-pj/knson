@@ -1084,7 +1084,11 @@
       changedFields: Array.isArray(options.changedFields?.[key]) ? options.changedFields[key] : [],
       note: key === "dailyIssue"
         ? (String(options.dailyIssueText || "").trim() || null)
-        : (key === "opinion" ? (String(options.opinionText || "").trim() || null) : null),
+        : key === "opinion"
+          ? (String(options.opinionText || "").trim() || null)
+          : key === "siteInspection"
+            ? (String(options.siteInspectionText || "").trim() || null)
+            : null,
       actionDate: String(options.actionDate || getTodayDateKey(options.at)).trim() || getTodayDateKey(),
     }));
   }
@@ -2707,6 +2711,7 @@ function renderPagination(totalPages) {
             changedFields,
             dailyIssueText: newDailyIssueText,
             opinionText: newOpinionText,
+            siteInspectionText: siteVal,
           }));
         } catch (logErr) {
           activityError = logErr?.message || "일일업무일지 기록 실패";
