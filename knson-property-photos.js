@@ -367,8 +367,8 @@
         return;
       }
       if (action === 'delete') {
-        // 2단계 확인 — window.confirm 대신 사용 (모바일 차단 이슈 회피)
-        if (!requestDeleteConfirmation(button)) return;
+        // 2단계 확인 없이 즉시 삭제 (사용자 요청으로 "정말 삭제?" 단계 제거)
+        // 과거 호환: requestDeleteConfirmation / clearDeleteArmed 함수 정의는 남겨둠 (다른 경로에서 호출될 가능성 제로지만 안전을 위해).
       }
       setLoading(true, '사진 정보를 저장하는 중입니다.');
       if (action === 'primary') {
