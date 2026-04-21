@@ -172,13 +172,14 @@ async function handleCreate(req, res, admin) {
 
   let okCount = 0;
   let failCount = 0;
+  const assignedAtIso = new Date().toISOString();
   for (const [agentId, { name, ids }] of byAgent.entries()) {
     for (const block of chunk(ids, 100)) {
       const inList = block.map((v) => `"${v}"`).join(',');
       try {
         await sbRest(`/rest/v1/properties?id=in.(${inList})`, {
           method: 'PATCH',
-          json: { assignee_id: agentId, assignee_name: name },
+          json: { assignee_id: agentId, assignee_name: name, assigned_at: assignedAtIso },
         });
         okCount += block.length;
       } catch (err) {
@@ -250,7 +251,7 @@ async function handleRollback(req, res, admin, batchId) {
     try {
       await sbRest(`/rest/v1/properties?id=in.(${inList})`, {
         method: 'PATCH',
-        json: { assignee_id: null, assignee_name: null },
+        json: { assignee_id: null, assignee_name: null, assigned_at: null },
       });
       restoredOk += block.length;
     } catch (err) {

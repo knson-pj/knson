@@ -799,21 +799,37 @@ module.exports = async function handler(req, res) {
     }
 
     if (mode === 'all_favorites') {
-      // 모든 담당자의 ★ property_id 집합 (관리자용 ★ 필터링)
+      // 모든 담당자의 관심물건 property_id 집합 (관리자용 ★/🔥 필터링)
+      // - kind=star|fire|all (기본 all)
+      // - user_id=<uuid> 주면 해당 담당자의 것만
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       try {
         if (!hasSupabaseAdminEnv()) {
-          return send(res, 200, { ok: true, propertyIds: [] });
+          return send(res, 200, { ok: true, propertyIds: [], favorites: [] });
         }
-        const data = await supabaseRest('/rest/v1/user_favorites?select=property_id');
+        const kindParam = String(url.searchParams.get('kind') || 'all').trim().toLowerCase();
+        const userIdParam = String(url.searchParams.get('user_id') || '').trim();
+        const validKinds = new Set(['star', 'fire']);
+        const selectFields = 'property_id,user_id,kind';
+        let path = `/rest/v1/user_favorites?select=${selectFields}`;
+        if (validKinds.has(kindParam)) path += `&kind=eq.${encodeURIComponent(kindParam)}`;
+        if (userIdParam) path += `&user_id=eq.${encodeURIComponent(userIdParam)}`;
+        const data = await supabaseRest(path);
         const set = new Set();
+        const favorites = [];
         if (Array.isArray(data)) {
           for (const r of data) {
             const pid = String(r?.property_id || '').trim();
-            if (pid) set.add(pid);
+            if (!pid) continue;
+            set.add(pid);
+            favorites.push({
+              propertyId: pid,
+              userId: String(r?.user_id || '').trim(),
+              kind: String(r?.kind || 'star').trim(),
+            });
           }
         }
-        return send(res, 200, { ok: true, propertyIds: [...set] });
+        return send(res, 200, { ok: true, propertyIds: [...set], favorites });
       } catch (err) {
         return send(res, err?.status || 500, {
           ok: false,
