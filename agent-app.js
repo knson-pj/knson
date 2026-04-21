@@ -125,11 +125,16 @@
       };
 
   const FAVS_KEY_PREFIX = "knson_favs_v1_";
+  const FIRES_KEY_PREFIX = "knson_fires_v1_";
   const DAILY_REPORT_NOTE_PREFIX = "knson_daily_report_note_v1_";
 
   function getFavsKey() {
     const uid = state.session?.user?.id || state.session?.user?.email || "guest";
     return FAVS_KEY_PREFIX + uid;
+  }
+  function getFiresKey() {
+    const uid = state.session?.user?.id || state.session?.user?.email || "guest";
+    return FIRES_KEY_PREFIX + uid;
   }
 
   // localStorage 캐시 (초기 표시용, 진실은 DB)
@@ -147,12 +152,29 @@
     } catch {}
   }
 
+  function loadFiresCache() {
+    try {
+      const raw = localStorage.getItem(getFiresKey());
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch { return new Set(); }
+  }
+
+  function saveFiresCache() {
+    try {
+      localStorage.setItem(getFiresKey(), JSON.stringify([...state.fires]));
+    } catch {}
+  }
+
   // 최초 로드: localStorage 우선 (즉시 UI), DB 에서 동기화 (뒤에서)
   function loadFavorites() {
     return loadFavoritesCache();
   }
+  function loadFires() {
+    return loadFiresCache();
+  }
 
-  // DB 에서 ★ 목록 조회 → state.favorites 갱신
+  // DB 에서 ★/🔥 목록 조회 → state.favorites / state.fires 갱신 (kind 분리)
   async function syncFavoritesFromDb() {
     try {
       const sb = isSupabaseMode() ? K.initSupabase() : null;
@@ -161,12 +183,22 @@
       if (!uid) return false;
       const { data, error } = await sb
         .from('user_favorites')
-        .select('property_id')
+        .select('property_id, kind')
         .eq('user_id', uid);
       if (error) { console.warn('favorites load failed', error); return false; }
-      const ids = new Set((Array.isArray(data) ? data : []).map((r) => String(r.property_id || '')).filter(Boolean));
-      state.favorites = ids;
+      const starIds = new Set();
+      const fireIds = new Set();
+      (Array.isArray(data) ? data : []).forEach((r) => {
+        const pid = String(r?.property_id || '').trim();
+        if (!pid) return;
+        const kind = String(r?.kind || 'star').trim().toLowerCase();
+        if (kind === 'fire') fireIds.add(pid);
+        else starIds.add(pid); // 기본 'star' (kind 컬럼이 없거나 비정상값이면 star 로 간주)
+      });
+      state.favorites = starIds;
+      state.fires = fireIds;
       saveFavoritesCache();
+      saveFiresCache();
       return true;
     } catch (e) {
       console.warn('syncFavoritesFromDb error', e);
@@ -174,7 +206,7 @@
     }
   }
 
-  // localStorage → DB 1회 마이그레이션 (최초 1번만)
+  // localStorage → DB 1회 마이그레이션 (최초 1번만, ★ 만 대상)
   async function migrateLocalFavoritesToDb() {
     try {
       const migKey = 'knson_favs_migrated_v1_' + (state.session?.user?.id || state.session?.user?.email || 'guest');
@@ -185,7 +217,7 @@
       if (!uid) return;
       const local = loadFavoritesCache();
       if (!local.size) { localStorage.setItem(migKey, '1'); return; }
-      const rows = [...local].map((pid) => ({ user_id: uid, property_id: String(pid) }));
+      const rows = [...local].map((pid) => ({ user_id: uid, property_id: String(pid), kind: 'star' }));
       // upsert (이미 있는 건 무시)
       const { error } = await sb.from('user_favorites').upsert(rows, { onConflict: 'user_id,property_id', ignoreDuplicates: true });
       if (!error) localStorage.setItem(migKey, '1');
@@ -194,15 +226,25 @@
     }
   }
 
-  // ★ 토글: DB upsert/delete + 낙관적 UI 업데이트
-  function toggleFavorite(id) {
+  // ★ / 🔥 토글: DB upsert/delete + 낙관적 UI 업데이트
+  // kind = 'star' | 'fire'  (★과 🔥는 상호 배타 — 같은 물건에 둘 다 걸 수 없음)
+  function toggleFavorite(id, kind = 'star') {
     const pid = String(id || '').trim();
     if (!pid) return;
-    const willAdd = !state.favorites.has(pid);
-    // 1) 낙관적 UI 업데이트
-    if (willAdd) state.favorites.add(pid);
-    else state.favorites.delete(pid);
+    const targetKind = (kind === 'fire') ? 'fire' : 'star';
+    const mySet = (targetKind === 'fire') ? state.fires : state.favorites;
+    const otherSet = (targetKind === 'fire') ? state.favorites : state.fires;
+    const willAdd = !mySet.has(pid);
+    // 1) 낙관적 UI 업데이트 (같은 kind 면 toggle, 다른 kind 에 이미 있었다면 제거)
+    const hadOther = otherSet.has(pid);
+    if (willAdd) {
+      mySet.add(pid);
+      if (hadOther) otherSet.delete(pid); // 배타
+    } else {
+      mySet.delete(pid);
+    }
     saveFavoritesCache();
+    saveFiresCache();
     // 2) DB 동기화 (비동기, 실패 시 롤백)
     (async () => {
       try {
@@ -211,22 +253,35 @@
         const uid = String(state.session?.user?.id || "").trim();
         if (!uid) return;
         if (willAdd) {
-          const { error } = await sb.from('user_favorites')
-            .upsert({ user_id: uid, property_id: pid }, { onConflict: 'user_id,property_id', ignoreDuplicates: true });
-          if (error) throw error;
-        } else {
-          const { error } = await sb.from('user_favorites')
+          // 먼저 기존(어떤 kind든) 삭제 → 새 kind 로 insert (배타 보장)
+          const delRes = await sb.from('user_favorites')
             .delete()
             .eq('user_id', uid)
             .eq('property_id', pid);
+          if (delRes.error) throw delRes.error;
+          const insRes = await sb.from('user_favorites')
+            .insert({ user_id: uid, property_id: pid, kind: targetKind });
+          if (insRes.error) throw insRes.error;
+        } else {
+          // 해제: 해당 kind 만 정확히 삭제
+          const { error } = await sb.from('user_favorites')
+            .delete()
+            .eq('user_id', uid)
+            .eq('property_id', pid)
+            .eq('kind', targetKind);
           if (error) throw error;
         }
       } catch (e) {
         console.warn('toggleFavorite DB sync failed, rolling back', e);
         // 롤백
-        if (willAdd) state.favorites.delete(pid);
-        else state.favorites.add(pid);
+        if (willAdd) {
+          mySet.delete(pid);
+          if (hadOther) otherSet.add(pid);
+        } else {
+          mySet.add(pid);
+        }
         saveFavoritesCache();
+        saveFiresCache();
         try { renderTable(); } catch {}
       }
     })();
@@ -235,7 +290,8 @@
   const state = {
     session: loadSession(),
     properties: [],
-    favorites: new Set(),           // 즐겨찾기 property id 집합
+    favorites: new Set(),           // 즐겨찾기(★, kind='star') property id 집합
+    fires: new Set(),               // 강추매물(🔥, kind='fire') property id 집합 — ★과 배타
     filters: {
       activeCard: "",
       status: "",
@@ -244,7 +300,9 @@
       priceRange: "",
       ratio50: "",
       favOnly: false,
+      fireOnly: false,        // 🔥 강추매물만
       todayBid: false,        // 당일 입찰기일 필터
+      todayAssigned: false,   // 오늘 내게 배정된 물건만 (A 버튼)
     },
     page: 1,
     pageSize: 30,
@@ -469,7 +527,9 @@
     els.agRatioFilter = $("#agRatioFilter");
     els.agKeyword = $("#agKeyword");
     els.agFavFilter = $("#agFavFilter");
+    els.agFireFilter = $("#agFireFilter");
     els.agDayFilter = $("#agDayFilter");
+    els.agAssignedFilter = $("#agAssignedFilter");
     els.btnNewProperty = $("#btnNewProperty");
     els.newPropertyModal = $("#newPropertyModal");
     els.npmClose = $("#npmClose");
@@ -1150,9 +1210,23 @@
       renderTable();
     });
 
+    if (els.agFireFilter) els.agFireFilter.addEventListener("click", () => {
+      state.filters.fireOnly = !state.filters.fireOnly;
+      els.agFireFilter.classList.toggle("is-active", state.filters.fireOnly);
+      state.page = 1;
+      renderTable();
+    });
+
     if (els.agDayFilter) els.agDayFilter.addEventListener("click", () => {
       state.filters.todayBid = !state.filters.todayBid;
       els.agDayFilter.classList.toggle("is-active", state.filters.todayBid);
+      state.page = 1;
+      renderTable();
+    });
+
+    if (els.agAssignedFilter) els.agAssignedFilter.addEventListener("click", () => {
+      state.filters.todayAssigned = !state.filters.todayAssigned;
+      els.agAssignedFilter.classList.toggle("is-active", state.filters.todayAssigned);
       state.page = 1;
       renderTable();
     });
@@ -1238,6 +1312,7 @@
 
     // 세션 확정 후 즐겨찾기 로드 (userId 기반 키)
     state.favorites = loadFavorites();
+    state.fires = loadFires();
 
     await loadProperties();
 
@@ -1802,6 +1877,7 @@
         keywordFields,
         todayKey: getTodayDateKey(),
         isFavorite: (row) => state.favorites.has(row?.id),
+        isFire: (row) => state.fires.has(row?.id),
       });
     }
     let rows = state.properties;
@@ -1817,7 +1893,27 @@
     if (!ignoreKeys.has('priceRange') && f.priceRange) rows = rows.filter((r) => matchesPriceRangeValue(f.priceRange, r));
     if (!ignoreKeys.has('ratio50') && f.ratio50) rows = rows.filter((r) => matchesRatioFilterValue(f.ratio50, r));
     if (!ignoreKeys.has('todayBid') && f.todayBid) rows = rows.filter((r) => String(r.dateMain || '').trim().startsWith(getTodayDateKey()));
+    if (!ignoreKeys.has('todayAssigned') && f.todayAssigned) {
+      const todayKey = getTodayDateKey();
+      rows = rows.filter((r) => {
+        const val = r?.assignedAt || r?.assigned_at || r?._raw?.assigned_at || r?._raw?.assignedAt || '';
+        if (!val) return false;
+        const s = String(val).trim();
+        if (s.length <= 10) return s.startsWith(todayKey);
+        // ISO 타임스탬프 → KST 날짜로 변환
+        try {
+          const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+          }).formatToParts(new Date(s));
+          const y = parts.find((p) => p.type === 'year')?.value || '';
+          const m = parts.find((p) => p.type === 'month')?.value || '';
+          const d = parts.find((p) => p.type === 'day')?.value || '';
+          return !!(y && m && d) && `${y}-${m}-${d}` === todayKey;
+        } catch { return s.startsWith(todayKey); }
+      });
+    }
     if (!ignoreKeys.has('favOnly') && f.favOnly) rows = rows.filter((r) => state.favorites.has(r.id));
+    if (!ignoreKeys.has('fireOnly') && f.fireOnly) rows = rows.filter((r) => state.fires.has(r.id));
     if (!ignoreKeys.has('keyword') && f.keyword) rows = rows.filter((r) => PropertyDomain && typeof PropertyDomain.matchesKeyword === 'function' ? PropertyDomain.matchesKeyword(r, f.keyword, { fields: keywordFields }) : true);
     return rows;
   }
@@ -1932,6 +2028,7 @@ function renderRow(p) {
   const rate = !usePlainLayout ? (ratioValue >= 0 ? `${Math.round(ratioValue * 100)}%` : calcRate(p.priceMain, p.lowprice)) : "";
   const statusLabel = normalizeStatus(p.status);
   const isFav = state.favorites.has(p.id);
+  const isFire = state.fires.has(p.id);
   const addressText = truncateAddressText(listView?.address || p.address || '-', 30) || '-';
   const fullAddress = String(listView?.address || p.address || '').trim();
   const assetTypeText = truncateDisplayText(listView?.assetType || p.assetType || "-", 7) || "-";
@@ -1982,6 +2079,7 @@ function renderRow(p) {
       <div class="ag-card">
         <div class="ag-card-head">
           <button type="button" class="btn-fav${isFav ? ' is-active' : ''}" title="${isFav ? '관심 해제' : '관심 등록'}">${isFav ? '★' : '☆'}</button>
+          <button type="button" class="btn-fire${isFire ? ' is-active' : ''}" title="${isFire ? '강추매물 해제' : '강추매물 등록'}">🔥</button>
           <span class="kind-text ${kindClass}">${esc(kindLabel)}</span>
           <span class="ag-card-itemno">#${_itemNoHtml}</span>
         </div>
@@ -1994,17 +2092,40 @@ function renderRow(p) {
     `;
     tr.appendChild(favTd);
 
-    // 관심 버튼: 이벤트 바인딩
+    // 관심(★) 버튼: 이벤트 바인딩
     const favBtnM = favTd.querySelector('.btn-fav');
-    if (favBtnM) {
-      favBtnM.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleFavorite(p.id);
-        const nowFav = state.favorites.has(p.id);
+    const fireBtnM = favTd.querySelector('.btn-fire');
+    const refreshFavUiM = () => {
+      const nowFav = state.favorites.has(p.id);
+      if (favBtnM) {
         favBtnM.textContent = nowFav ? '★' : '☆';
         favBtnM.title = nowFav ? '관심 해제' : '관심 등록';
         favBtnM.classList.toggle('is-active', nowFav);
-        if (state.filters.favOnly) { state.page = 1; renderTable(); }
+      }
+    };
+    const refreshFireUiM = () => {
+      const nowFire = state.fires.has(p.id);
+      if (fireBtnM) {
+        fireBtnM.title = nowFire ? '강추매물 해제' : '강추매물 등록';
+        fireBtnM.classList.toggle('is-active', nowFire);
+      }
+    };
+    if (favBtnM) {
+      favBtnM.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(p.id, 'star');
+        refreshFavUiM();
+        refreshFireUiM(); // ★↔🔥 배타: 🔥 가 해제됐을 수도 있으므로 같이 갱신
+        if (state.filters.favOnly || state.filters.fireOnly) { state.page = 1; renderTable(); }
+      });
+    }
+    if (fireBtnM) {
+      fireBtnM.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(p.id, 'fire');
+        refreshFireUiM();
+        refreshFavUiM();
+        if (state.filters.favOnly || state.filters.fireOnly) { state.page = 1; renderTable(); }
       });
     }
     tr.addEventListener("click", () => openEditModal(p));
@@ -2020,16 +2141,38 @@ function renderRow(p) {
   favBtn.className = "btn-fav" + (isFav ? " is-active" : "");
   favBtn.textContent = isFav ? "★" : "☆";
   favBtn.title = isFav ? "관심 해제" : "관심 등록";
-  favBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleFavorite(p.id);
+  const fireBtn = document.createElement("button");
+  fireBtn.type = "button";
+  fireBtn.className = "btn-fire" + (isFire ? " is-active" : "");
+  fireBtn.textContent = "🔥";
+  fireBtn.title = isFire ? "강추매물 해제" : "강추매물 등록";
+  const refreshFavUi = () => {
     const nowFav = state.favorites.has(p.id);
     favBtn.textContent = nowFav ? "★" : "☆";
     favBtn.title = nowFav ? "관심 해제" : "관심 등록";
     favBtn.classList.toggle("is-active", nowFav);
-    if (state.filters.favOnly) { state.page = 1; renderTable(); }
+  };
+  const refreshFireUi = () => {
+    const nowFire = state.fires.has(p.id);
+    fireBtn.title = nowFire ? "강추매물 해제" : "강추매물 등록";
+    fireBtn.classList.toggle("is-active", nowFire);
+  };
+  favBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleFavorite(p.id, 'star');
+    refreshFavUi();
+    refreshFireUi(); // ★↔🔥 배타
+    if (state.filters.favOnly || state.filters.fireOnly) { state.page = 1; renderTable(); }
+  });
+  fireBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleFavorite(p.id, 'fire');
+    refreshFireUi();
+    refreshFavUi();
+    if (state.filters.favOnly || state.filters.fireOnly) { state.page = 1; renderTable(); }
   });
   favTd.appendChild(favBtn);
+  favTd.appendChild(fireBtn);
   tr.appendChild(favTd);
 
   const _srcUrl = p.sourceUrl || p.source_url || '';

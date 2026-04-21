@@ -341,6 +341,7 @@
       sitearea: toNullableNumber(item && (item.sitearea ?? item.site_area ?? item.siteArea ?? raw.sitearea ?? raw.siteArea ?? raw["토지면적(평)"])),
       dateMain: pickFirstText(item && item.dateMain, item && item.date_main, raw.dateMain, raw.date_main, raw["입찰일자"], raw["입찰마감일시"], item && item.bidDate, item && item.bid_date, ""),
       createdAt: pickFirstText(item && item.created_at, item && item.createdAt, item && item.date_uploaded, item && item.date, raw.createdAt, raw.date_uploaded, raw.date, ""),
+      assignedAt: pickFirstText(item && item.assigned_at, item && item.assignedAt, raw.assigned_at, raw.assignedAt, ""),
       assignedAgentId: pickFirstText(item && item.assignedAgentId, item && item.assigneeId, item && item.assignee_id, item && item.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, ""),
       assignedAgentName: (function () {
         var aid = pickFirstText(item && item.assignedAgentId, item && item.assigneeId, item && item.assignee_id, item && item.agentId, raw.assignedAgentId, raw.assigneeId, raw.assignee_id, "");
@@ -1527,11 +1528,42 @@
     return text.startsWith(key);
   }
 
+  // KST 오늘 00:00~23:59 범위 매칭 (ISO 타임스탬프와 단순 날짜문자열 모두 허용)
+  function matchesTodayTimestamp(enabled, value, todayKey) {
+    if (!enabled) return true;
+    const key = String(todayKey || '').trim();
+    if (!key) return false;
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    // ISO 형태면 KST 변환, 그 외에는 prefix 매칭
+    // "2026-04-21T00:00:00Z" 처럼 오면 KST 기준 날짜로 변환
+    const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (direct && raw.length <= 10) return direct[1] === key;
+    // 타임존 포함 ISO 로 간주하여 KST 날짜 추출
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      // 파싱 실패 시 prefix 시도
+      return raw.startsWith(key);
+    }
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(parsed);
+      const y = parts.find((p) => p.type === 'year')?.value || '';
+      const m = parts.find((p) => p.type === 'month')?.value || '';
+      const d = parts.find((p) => p.type === 'day')?.value || '';
+      if (y && m && d) return `${y}-${m}-${d}` === key;
+    } catch {}
+    return raw.startsWith(key);
+  }
+
   function applyPropertyFilters(rows, filters = {}, options = {}) {
     const list = Array.isArray(rows) ? rows : [];
     const ignoreKeys = new Set(Array.isArray(options?.ignoreKeys) ? options.ignoreKeys : []);
     const keywordFields = Array.isArray(options?.keywordFields) ? options.keywordFields : undefined;
     const isFavorite = typeof options?.isFavorite === 'function' ? options.isFavorite : null;
+    const isFire = typeof options?.isFire === 'function' ? options.isFire : null;
     const todayKey = String(options?.todayKey || '').trim();
     const toArr = (v) => Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []);
     return list.filter((row) => {
@@ -1560,7 +1592,16 @@
       if (!ignoreKeys.has('todayBid') && filters.todayBid) {
         if (!matchesTodayBidFilter(filters.todayBid, row, todayKey)) return false;
       }
+      if (!ignoreKeys.has('todayNew') && filters.todayNew) {
+        const val = row?.createdAt || row?.created_at || row?._raw?.created_at || row?._raw?.createdAt || row?._raw?.date_uploaded || '';
+        if (!matchesTodayTimestamp(true, val, todayKey)) return false;
+      }
+      if (!ignoreKeys.has('todayAssigned') && filters.todayAssigned) {
+        const val = row?.assignedAt || row?.assigned_at || row?._raw?.assigned_at || row?._raw?.assignedAt || '';
+        if (!matchesTodayTimestamp(true, val, todayKey)) return false;
+      }
       if (!ignoreKeys.has('favOnly') && filters.favOnly && isFavorite && !isFavorite(row)) return false;
+      if (!ignoreKeys.has('fireOnly') && filters.fireOnly && isFire && !isFire(row)) return false;
       if (!ignoreKeys.has('keyword') && filters.keyword) {
         if (!matchesKeyword(row, filters.keyword, { fields: keywordFields })) return false;
       }

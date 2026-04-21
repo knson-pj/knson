@@ -181,7 +181,10 @@
       priceRange: "",   // "0-1" | "1-3" | ... | "20-"  (억 단위)
       ratio50: "",      // "50" = 50% 이하 (경매/공매만)
       todayBid: false,  // 오늘 주요일정 물건만 (D 버튼)
+      todayNew: false,  // 오늘 신규등록 물건만 (N 버튼, created_at 기준 KST)
       favOnly: false,   // 담당자들이 ★로 선택한 물건만 (★ 버튼)
+      fireOnly: false,  // 담당자들이 🔥로 선택한 강추매물만 (🔥 버튼)
+      fireAssignee: "", // 특정 담당자의 🔥 만 (드롭다운)
     },
     lastGroupSuggestion: null,
     selectedPropertyIds: new Set(),
@@ -197,6 +200,8 @@
     propertySort: { key: '', direction: 'desc' },
     geocodeRunning: false,
     allFavoritePropertyIds: new Set(),  // 모든 담당자의 ★ property_id 집합 (관리자용)
+    allFirePropertyIds: new Set(),      // 모든 담당자의 🔥 property_id 집합 (관리자용)
+    firePropertyIdsByUser: new Map(),   // userId -> Set(propertyId) — 담당자별 🔥
   };
 
   const els = {};
@@ -467,6 +472,9 @@
       propRatioFilter: $("#propRatioFilter"),
       propKeyword: $("#propKeyword"),
       propFavFilter: $("#propFavFilter"),
+      propFireFilter: $("#propFireFilter"),
+      propFireAssignee: $("#propFireAssignee"),
+      propNewFilter: $("#propNewFilter"),
       propDayFilter: $("#propDayFilter"),
       propertiesTableBody: $("#propertiesTable tbody"),
       propertiesEmpty: $("#propertiesEmpty"),
@@ -863,6 +871,49 @@ function bindEvents() {
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
 
+    // N 버튼: 오늘(KST) 신규등록된 물건만 보기 (created_at 기준)
+    if (els.propNewFilter) els.propNewFilter.addEventListener("click", () => {
+      state.propertyFilters.todayNew = !state.propertyFilters.todayNew;
+      els.propNewFilter.classList.toggle("is-active", state.propertyFilters.todayNew);
+      state.propertyPage = 1;
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+    });
+
+    // 🔥 버튼: 담당자들이 강추매물(🔥)로 선택한 물건만 보기 (전체)
+    //   - 담당자별 🔥 드롭다운(propFireAssignee)과 상호 배타
+    if (els.propFireFilter) els.propFireFilter.addEventListener("click", async () => {
+      const turningOn = !state.propertyFilters.fireOnly;
+      state.propertyFilters.fireOnly = turningOn;
+      if (turningOn) {
+        // 전체 🔥 필터 켤 때: 담당자별 🔥 드롭다운 해제
+        state.propertyFilters.fireAssignee = "";
+        if (els.propFireAssignee) {
+          els.propFireAssignee.value = "";
+          els.propFireAssignee.classList.remove("is-active");
+        }
+        try { await loadAllFirePropertyIds(); } catch (e) { console.warn("fire load failed", e); }
+      }
+      els.propFireFilter.classList.toggle("is-active", state.propertyFilters.fireOnly);
+      state.propertyPage = 1;
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+    });
+
+    // 🔥 담당자별 드롭다운: 특정 담당자가 🔥 한 물건만 보기
+    //   - 전체 🔥 버튼(propFireFilter)과 상호 배타
+    if (els.propFireAssignee) els.propFireAssignee.addEventListener("change", async (e) => {
+      const v = String(e.target.value || "").trim();
+      state.propertyFilters.fireAssignee = v;
+      if (v) {
+        // 담당자별 🔥 선택 시: 전체 🔥 버튼 해제
+        state.propertyFilters.fireOnly = false;
+        if (els.propFireFilter) els.propFireFilter.classList.remove("is-active");
+        try { await loadAllFirePropertyIds(v); } catch (err) { console.warn("fire(user) load failed", err); }
+      }
+      els.propFireAssignee.classList.toggle("is-active", !!v);
+      state.propertyPage = 1;
+      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
+    });
+
     // CSV import (관리자만)
     if (els.btnCsvUpload) els.btnCsvUpload.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
@@ -1071,7 +1122,10 @@ function bindEvents() {
       toArr(f.priceRange).filter(Boolean).length ||
       toArr(f.ratio50).filter(Boolean).length ||
       !!f.todayBid ||
-      !!f.favOnly
+      !!f.todayNew ||
+      !!f.favOnly ||
+      !!f.fireOnly ||
+      String(f.fireAssignee || '').trim()
     );
   }
 
@@ -1085,7 +1139,10 @@ function bindEvents() {
       toArr(f.priceRange).filter(Boolean).length ||
       toArr(f.ratio50).filter(Boolean).length ||
       !!f.todayBid ||   // D 버튼: dateMain 매칭은 DB select 에 필터 없음 → 로컬 처리
-      !!f.favOnly       // ★ 버튼: user_favorites 조인 없음 → 로컬 처리
+      !!f.todayNew ||   // N 버튼: created_at KST 매칭 → 로컬 처리
+      !!f.favOnly ||    // ★ 버튼: user_favorites 조인 없음 → 로컬 처리
+      !!f.fireOnly ||   // 🔥 버튼: user_favorites(kind=fire) 조인 없음 → 로컬 처리
+      String(f.fireAssignee || '').trim() // 🔥 담당자별: 로컬 처리
     );
   }
 
@@ -1107,7 +1164,7 @@ function bindEvents() {
   // 관리자 페이지의 ★ 필터 (favOnly) 에서 사용.
   async function loadAllFavoritePropertyIds() {
     try {
-      const res = await api('/admin/properties?mode=all_favorites', { auth: true });
+      const res = await api('/admin/properties?mode=all_favorites&kind=star', { auth: true });
       const ids = Array.isArray(res?.propertyIds) ? res.propertyIds : [];
       state.allFavoritePropertyIds = new Set(ids.map((v) => String(v || '')).filter(Boolean));
       return state.allFavoritePropertyIds;
@@ -1115,6 +1172,45 @@ function bindEvents() {
       console.warn('loadAllFavoritePropertyIds failed', err);
       // 실패해도 기존 캐시 유지
       return state.allFavoritePropertyIds || new Set();
+    }
+  }
+
+  // 모든 담당자의 🔥 property_id 집합을 조회해 state.allFirePropertyIds / state.firePropertyIdsByUser 에 캐시.
+  // 관리자 페이지의 🔥 필터 (fireOnly / fireAssignee) 에서 사용.
+  // userId 를 주면 해당 담당자의 🔥 만 가져와 state.firePropertyIdsByUser 에 담는다.
+  async function loadAllFirePropertyIds(userId = '') {
+    try {
+      const qs = new URLSearchParams({ mode: 'all_favorites', kind: 'fire' });
+      const uid = String(userId || '').trim();
+      if (uid) qs.set('user_id', uid);
+      const res = await api(`/admin/properties?${qs.toString()}`, { auth: true });
+      const favorites = Array.isArray(res?.favorites) ? res.favorites : [];
+      // 전체 집합 (현재 쿼리 범위)
+      const allSet = new Set();
+      // 담당자별 맵 — 기존 맵을 유지하되 같은 uid 키는 새 값으로 덮어씀
+      const byUser = (state.firePropertyIdsByUser instanceof Map)
+        ? new Map(state.firePropertyIdsByUser)
+        : new Map();
+      if (uid) byUser.set(uid, new Set()); // 이 담당자에 대해 새로 채움
+      for (const f of favorites) {
+        if (String(f?.kind || '') !== 'fire') continue;
+        const pid = String(f?.propertyId || '').trim();
+        const fuid = String(f?.userId || '').trim();
+        if (!pid) continue;
+        allSet.add(pid);
+        if (fuid) {
+          if (!byUser.has(fuid)) byUser.set(fuid, new Set());
+          byUser.get(fuid).add(pid);
+        }
+      }
+      // userId 지정이 없으면 전체를 새로 썼으니 allFirePropertyIds 를 전체로 교체.
+      // userId 지정이 있으면 기존 allFirePropertyIds 는 그대로 두고, 해당 유저 set 만 갱신.
+      if (!uid) state.allFirePropertyIds = allSet;
+      state.firePropertyIdsByUser = byUser;
+      return uid ? (byUser.get(uid) || new Set()) : state.allFirePropertyIds;
+    } catch (err) {
+      console.warn('loadAllFirePropertyIds failed', err);
+      return state.allFirePropertyIds || new Set();
     }
   }
 

@@ -157,6 +157,47 @@
     selectEl.value = options.some((item) => item.value === current) ? current : '';
   }
 
+  // 🔥 담당자별 드롭다운(propFireAssignee) 옵션 채우기.
+  // 일반 담당자 필터(propAssigneeFilter)와 달리 value 는 순수 user UUID 를 사용한다
+  // (/admin/properties?mode=all_favorites&kind=fire&user_id=<uuid> 와 일치시키기 위해).
+  function renderFireAssigneeOptions(selectEl, state, selectedValue) {
+    if (!selectEl) return;
+    const current = String(selectedValue || '').trim();
+    const staffList = Array.isArray(state?.staff) ? state.staff : [];
+    // 첫 옵션(placeholder)은 기존 HTML 에 이미 있지만, 여기서 완전히 재구성한다.
+    selectEl.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '🔥 담당자별';
+    selectEl.appendChild(placeholder);
+
+    const seen = new Set();
+    staffList
+      .map((staff, idx) => ({
+        id: String(staff?.id || '').trim(),
+        name: String(staff?.name || staff?.email || '담당자').replace(/\s+/g, ' ').trim(),
+        order: idx,
+      }))
+      .filter((item) => item.id && !seen.has(item.id) && (seen.add(item.id), true))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'))
+      .forEach((item) => {
+        const optionEl = document.createElement('option');
+        optionEl.value = item.id;
+        optionEl.textContent = item.name;
+        selectEl.appendChild(optionEl);
+      });
+
+    // 선택값이 현재 staff 목록에 없더라도 유지 (레이스 방지)
+    if (current && !Array.from(selectEl.options).some((o) => o.value === current)) {
+      const fallback = document.createElement('option');
+      fallback.value = current;
+      fallback.textContent = current;
+      selectEl.appendChild(fallback);
+    }
+    selectEl.value = current || '';
+    selectEl.classList.toggle('is-active', !!current);
+  }
+
   function nl2brEscaped(utils, value) {
     const safe = utils.escapeHtml(String(value || ''));
     return safe.replace(/\r?\n/g, '<br/>');
@@ -901,8 +942,12 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const baseRows = auctionOnlyForSort
       ? sourceRows.filter((p) => p.sourceType === 'auction' || p.sourceType === 'onbid')
       : sourceRows;
+    // fireAssignee(담당자별 🔥 드롭다운) 가 선택되어 있으면 내부적으로 fireOnly=true 로 동작시키고,
+    // isFire 콜백에서 해당 담당자 set 으로 좁혀서 판정한다.
+    const fireAssignee = String(filters.fireAssignee || '').trim();
+    const effectiveFilters = fireAssignee ? { ...filters, fireOnly: true } : filters;
     const filtered = (window.KNSN_PROPERTY_DOMAIN && typeof window.KNSN_PROPERTY_DOMAIN.applyPropertyFilters === 'function')
-      ? window.KNSN_PROPERTY_DOMAIN.applyPropertyFilters(baseRows, filters, {
+      ? window.KNSN_PROPERTY_DOMAIN.applyPropertyFilters(baseRows, effectiveFilters, {
           ignoreKeys,
           keywordFields: [
             'itemNo', 'address', 'assetType', 'floor', 'totalfloor', 'siteInspection', 'opinion', 'regionGu', 'regionDong', 'status',
@@ -913,6 +958,18 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
             const favs = state?.allFavoritePropertyIds;
             if (!(favs instanceof Set) || !favs.size) return false;
             return favs.has(String(row?.id || ''));
+          },
+          isFire: (row) => {
+            const rid = String(row?.id || '');
+            if (!rid) return false;
+            if (fireAssignee) {
+              const userSet = state?.firePropertyIdsByUser instanceof Map
+                ? state.firePropertyIdsByUser.get(fireAssignee)
+                : null;
+              return userSet instanceof Set ? userSet.has(rid) : false;
+            }
+            const allFire = state?.allFirePropertyIds;
+            return (allFire instanceof Set) ? allFire.has(rid) : false;
           },
         })
       : baseRows;
@@ -947,6 +1004,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       if (overviewCounts.price) updatePropMultiCounts('propPriceFilter', overviewCounts.price);
       if (overviewCounts.ratio) updatePropMultiCounts('propRatioFilter', overviewCounts.ratio);
       renderAssigneeFilterOptions(els.propAssigneeFilter, getPropertyFilterSourceRows(state), state, filters.assignee);
+      renderFireAssigneeOptions(els.propFireAssignee, state, filters.fireAssignee);
       return;
     }
 
@@ -988,6 +1046,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     updatePropMultiCounts('propRatioFilter', ratioCounts);
 
     renderAssigneeFilterOptions(els.propAssigneeFilter, assigneeRows, state, state?.propertyFilters?.assignee);
+    renderFireAssigneeOptions(els.propFireAssignee, state, state?.propertyFilters?.fireAssignee);
   };
 
   function updatePropMultiCounts(filterKey, countMap) {
