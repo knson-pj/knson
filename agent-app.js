@@ -2635,7 +2635,7 @@ function renderPagination(totalPages) {
         exclusive_area: exclusiveAreaVal,
         site_area: siteAreaVal,
         use_approval: useApprovalVal,
-        status: hidePlainFields ? prev.status : (readStr('status') || null),
+        status: readStr('status') || null,
         price_main: priceMainVal,
         lowprice: currentPriceVal,
         date_main: dateMainVal,

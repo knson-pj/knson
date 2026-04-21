@@ -292,14 +292,29 @@
     });
     const memoText = pickFirstText(item && item.memo, raw.memo, "");
     const sourceNote = extractDedicatedSourceNote(sourceType, item, raw);
+    // stripDedicatedSourceNoteEcho 의 판정 기준은 매물특징/경매현황 '전용' 필드로 한정한다.
+    // sourceNote.text 는 매물특징 탭 UI 렌더링을 위해 memo 도 fallback 으로 쓰지만,
+    // 그 경로를 그대로 strip 기준으로 사용하면 담당자가 입력한 의견(memo 에 저장) 자체가
+    // 통째로 날아가 버리는 버그가 생긴다.
+    const sourceNoteEchoRef = pickFirstText(
+      raw && raw.importedSourceText,
+      raw && raw.sourceNoteText,
+      raw && raw["매물특징"],
+      raw && raw.listingFeature,
+      raw && raw.listing_feature,
+      raw && raw["경매현황"],
+      raw && raw.auctionStatus,
+      raw && raw.auction_status,
+      ""
+    );
     const opinionTextRaw = sourceType === "onbid"
       ? sanitizeOnbidOpinion(pickFirstText(item && item.opinion, raw.opinion, ""), memoText, address)
       : usesDedicatedSourceNote(sourceType)
         ? pickFirstText(item && item.opinion, raw.opinion, item && item.comment, memoText, "")
         : pickFirstText(item && item.opinion, raw.opinion, memoText, item && item.comment, "");
-    const opinionText = stripDedicatedSourceNoteEcho(opinionTextRaw, sourceNote.text);
-    const dailyIssueText = stripDedicatedSourceNoteEcho(pickFirstText(item && item.dailyIssue, item && item.daily_issue, raw.dailyIssue, raw.daily_issue, ""), sourceNote.text);
-    const siteInspectionText = stripDedicatedSourceNoteEcho(pickFirstText(item && item.siteInspection, item && item.site_inspection, raw.siteInspection, raw.site_inspection, ""), sourceNote.text);
+    const opinionText = stripDedicatedSourceNoteEcho(opinionTextRaw, sourceNoteEchoRef);
+    const dailyIssueText = stripDedicatedSourceNoteEcho(pickFirstText(item && item.dailyIssue, item && item.daily_issue, raw.dailyIssue, raw.daily_issue, ""), sourceNoteEchoRef);
+    const siteInspectionText = stripDedicatedSourceNoteEcho(pickFirstText(item && item.siteInspection, item && item.site_inspection, raw.siteInspection, raw.site_inspection, ""), sourceNoteEchoRef);
     const isDirectSubmission = isDirectRealtorSubmission({
       sourceType,
       rawSource,
