@@ -1712,6 +1712,9 @@ textarea.form-textarea-tall{
 .property-photo-card-size{font-size:11px;color:#64748b}
 .property-photo-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:10px}
 .btn-xs{padding:7px 8px;font-size:12px;border-radius:10px}
+/* 삭제 2단계 확인 상태: 버튼이 armed 되었을 때 강조 */
+.btn.is-delete-armed,button.is-delete-armed{background:#dc2626!important;color:#fff!important;border-color:#991b1b!important;animation:photoDeleteArmedPulse 0.6s ease-in-out infinite alternate}
+@keyframes photoDeleteArmedPulse{from{box-shadow:0 0 0 0 rgba(220,38,38,.6)}to{box-shadow:0 0 0 6px rgba(220,38,38,0)}}
 @media (max-width: 768px){
   .property-photo-section{padding:12px}
   .property-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}

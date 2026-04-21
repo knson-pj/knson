@@ -312,7 +312,48 @@
     }
   }
 
-  async function handleAction(manager, action, photoId) {
+  // 2단계 삭제 확인: window.confirm 이 모바일에서 차단되는 이슈 회피.
+  // 첫 탭 → 버튼 텍스트가 "정말 삭제?" 로 바뀌고 빨갛게 강조
+  // 2초 내 같은 버튼 한 번 더 탭 → 실제 삭제
+  // 2초 지나면 자동으로 원상복구
+  function requestDeleteConfirmation(button) {
+    if (!button) return false;
+    const now = Date.now();
+    const armed = Number(button.dataset.deleteArmedAt || 0);
+    if (armed && now - armed < 2000) {
+      // 이미 armed 상태 → 실제 삭제
+      clearDeleteArmed(button);
+      return true;
+    }
+    // 첫 탭 → armed 상태로
+    button.dataset.deleteArmedAt = String(now);
+    const originalText = button.dataset.originalText || button.textContent || '삭제';
+    button.dataset.originalText = originalText;
+    button.textContent = '정말 삭제?';
+    button.classList.add('is-delete-armed');
+    // 2초 후 자동 복구
+    const timerId = window.setTimeout(() => {
+      clearDeleteArmed(button);
+    }, 2000);
+    button.dataset.deleteArmedTimer = String(timerId);
+    return false;
+  }
+
+  function clearDeleteArmed(button) {
+    if (!button) return;
+    if (button.dataset.deleteArmedTimer) {
+      window.clearTimeout(Number(button.dataset.deleteArmedTimer));
+      delete button.dataset.deleteArmedTimer;
+    }
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      delete button.dataset.originalText;
+    }
+    delete button.dataset.deleteArmedAt;
+    button.classList.remove('is-delete-armed');
+  }
+
+  async function handleAction(manager, action, photoId, button) {
     const { root, api, propertyId } = manager;
     const setLoading = getLoadingSetter(root);
     const setMessage = getMessageSetter(root);
@@ -325,11 +366,14 @@
         openViewer(items, photoId);
         return;
       }
+      if (action === 'delete') {
+        // 2단계 확인 — window.confirm 대신 사용 (모바일 차단 이슈 회피)
+        if (!requestDeleteConfirmation(button)) return;
+      }
       setLoading(true, '사진 정보를 저장하는 중입니다.');
       if (action === 'primary') {
         await DataAccess.setPrimaryPropertyPhotoViaApi(api, { propertyId, photoId, auth: true });
       } else if (action === 'delete') {
-        if (!window.confirm('이 사진을 삭제할까요?')) return;
         await DataAccess.deletePropertyPhotoViaApi(api, { propertyId, photoId, auth: true });
       } else if (action === 'move-left' || action === 'move-right') {
         const nextIndex = action === 'move-left' ? idx - 1 : idx + 1;
@@ -350,30 +394,41 @@
     }
   }
 
-  function bind(root, manager) {
+  function bind(root) {
     if (root.__photoBound) return;
     root.__photoBound = true;
     const input = root.querySelector('[data-photo-role="input"]');
     root.addEventListener('click', (event) => {
       const button = event.target.closest('[data-photo-action]');
       if (!button) return;
+      // 🛡️ 매 이벤트마다 최신 manager 를 읽음 (클로저 캡처 버그 방지)
+      const manager = root.__photoManager;
+      if (!manager) return;
       const action = button.getAttribute('data-photo-action');
       const photoId = button.getAttribute('data-photo-id') || '';
       if (action === 'pick') {
         input?.click();
         return;
       }
-      handleAction(manager, action, photoId);
+      // 다른 delete 버튼이 armed 상태라면 모두 해제 (실수로 다른 버튼 누를 때)
+      if (action !== 'delete') {
+        root.querySelectorAll('.is-delete-armed').forEach(clearDeleteArmed);
+      }
+      handleAction(manager, action, photoId, button);
     });
-    input?.addEventListener('change', (event) => uploadFiles(manager, event.target.files));
+    input?.addEventListener('change', (event) => {
+      const manager = root.__photoManager;
+      if (!manager) return;
+      uploadFiles(manager, event.target.files);
+    });
   }
 
   async function mountSection({ form, propertyId, api }) {
     if (!form || !propertyId || !DataAccess) return null;
     const root = ensureSection(form);
     const manager = { form, root, propertyId, api, items: [] };
-    root.__photoManager = manager;
-    bind(root, manager);
+    root.__photoManager = manager;  // ← 이벤트 핸들러가 매번 이 필드를 참조
+    bind(root);                     // ← manager 파라미터 제거됨 (클로저 캡처 방지)
     await reload(manager);
     return manager;
   }

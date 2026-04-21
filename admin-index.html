@@ -9,7 +9,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260420-onbid2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260420-photo-fix2" />
 </head>
 <body class="page-admin">
 
@@ -603,7 +603,7 @@
   <script src="./knson-property-renderers.js?v=20260403-photo1"></script>
 <script src="./knson-data-access.js?v=20260404-photo2"></script>
 
-<script src="./knson-property-photos.js?v=20260404-photo2"></script>
+<script src="./knson-property-photos.js?v=20260420-photo-fix2"></script>
 <script src="./admin-tab-staff-regions.js?v=20260420-finalized"></script>
 <script src="./admin-tab-csv.js?v=20260420-onbid-edge"></script>
 <script src="./admin-tab-geocoding.js?v=20260330-phase3a"></script>
