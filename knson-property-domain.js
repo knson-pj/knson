@@ -295,7 +295,7 @@
     const opinionTextRaw = sourceType === "onbid"
       ? sanitizeOnbidOpinion(pickFirstText(item && item.opinion, raw.opinion, ""), memoText, address)
       : usesDedicatedSourceNote(sourceType)
-        ? pickFirstText(item && item.opinion, raw.opinion, item && item.comment, "")
+        ? pickFirstText(item && item.opinion, raw.opinion, item && item.comment, memoText, "")
         : pickFirstText(item && item.opinion, raw.opinion, memoText, item && item.comment, "");
     const opinionText = stripDedicatedSourceNoteEcho(opinionTextRaw, sourceNote.text);
     const dailyIssueText = stripDedicatedSourceNoteEcho(pickFirstText(item && item.dailyIssue, item && item.daily_issue, raw.dailyIssue, raw.daily_issue, ""), sourceNote.text);
