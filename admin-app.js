@@ -473,7 +473,6 @@
       propKeyword: $("#propKeyword"),
       propFavFilter: $("#propFavFilter"),
       propFireFilter: $("#propFireFilter"),
-      propFireAssignee: $("#propFireAssignee"),
       propNewFilter: $("#propNewFilter"),
       propDayFilter: $("#propDayFilter"),
       propertiesTableBody: $("#propertiesTable tbody"),
@@ -850,11 +849,24 @@ function bindEvents() {
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     }, 150));
 
+    // ── 상호 배타 필터 (★ / 🔥 / N / D 는 단독 선택만 가능) ─────────────────
+    // which ∈ { null, 'favOnly', 'fireOnly', 'todayNew', 'todayBid' }
+    //   null 을 넘기면 4개 모두 해제
+    function setExclusivePropertyFilter(which) {
+      const keys = ['favOnly', 'fireOnly', 'todayNew', 'todayBid'];
+      keys.forEach((k) => { state.propertyFilters[k] = (which === k); });
+      // 🔥 담당자별 드롭다운은 제거됐지만 state 정합성 유지 (fireAssignee 도 항상 해제)
+      state.propertyFilters.fireAssignee = '';
+      if (els.propFavFilter) els.propFavFilter.classList.toggle('is-active', which === 'favOnly');
+      if (els.propFireFilter) els.propFireFilter.classList.toggle('is-active', which === 'fireOnly');
+      if (els.propNewFilter) els.propNewFilter.classList.toggle('is-active', which === 'todayNew');
+      if (els.propDayFilter) els.propDayFilter.classList.toggle('is-active', which === 'todayBid');
+    }
+
     // ★ 버튼: 담당자들이 즐겨찾기(★) 한 물건만 보기
     if (els.propFavFilter) els.propFavFilter.addEventListener("click", async () => {
       const turningOn = !state.propertyFilters.favOnly;
-      state.propertyFilters.favOnly = turningOn;
-      els.propFavFilter.classList.toggle("is-active", state.propertyFilters.favOnly);
+      setExclusivePropertyFilter(turningOn ? 'favOnly' : null);
       state.propertyPage = 1;
       // 켜질 때 최신 즐겨찾기 목록 동기화 (다른 담당자의 ★ 변경 반영)
       if (turningOn) {
@@ -865,52 +877,28 @@ function bindEvents() {
 
     // D 버튼: 주요일정이 오늘인 경매/공매 물건만 보기
     if (els.propDayFilter) els.propDayFilter.addEventListener("click", () => {
-      state.propertyFilters.todayBid = !state.propertyFilters.todayBid;
-      els.propDayFilter.classList.toggle("is-active", state.propertyFilters.todayBid);
+      const turningOn = !state.propertyFilters.todayBid;
+      setExclusivePropertyFilter(turningOn ? 'todayBid' : null);
       state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
 
     // N 버튼: 오늘(KST) 신규등록된 물건만 보기 (created_at 기준)
     if (els.propNewFilter) els.propNewFilter.addEventListener("click", () => {
-      state.propertyFilters.todayNew = !state.propertyFilters.todayNew;
-      els.propNewFilter.classList.toggle("is-active", state.propertyFilters.todayNew);
+      const turningOn = !state.propertyFilters.todayNew;
+      setExclusivePropertyFilter(turningOn ? 'todayNew' : null);
       state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
 
-    // 🔥 버튼: 담당자들이 강추매물(🔥)로 선택한 물건만 보기 (전체)
-    //   - 담당자별 🔥 드롭다운(propFireAssignee)과 상호 배타
+    // 🔥 버튼: 담당자들이 강추매물(🔥)로 선택한 물건만 보기
     if (els.propFireFilter) els.propFireFilter.addEventListener("click", async () => {
       const turningOn = !state.propertyFilters.fireOnly;
-      state.propertyFilters.fireOnly = turningOn;
+      setExclusivePropertyFilter(turningOn ? 'fireOnly' : null);
+      state.propertyPage = 1;
       if (turningOn) {
-        // 전체 🔥 필터 켤 때: 담당자별 🔥 드롭다운 해제
-        state.propertyFilters.fireAssignee = "";
-        if (els.propFireAssignee) {
-          els.propFireAssignee.value = "";
-          els.propFireAssignee.classList.remove("is-active");
-        }
         try { await loadAllFirePropertyIds(); } catch (e) { console.warn("fire load failed", e); }
       }
-      els.propFireFilter.classList.toggle("is-active", state.propertyFilters.fireOnly);
-      state.propertyPage = 1;
-      loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
-    });
-
-    // 🔥 담당자별 드롭다운: 특정 담당자가 🔥 한 물건만 보기
-    //   - 전체 🔥 버튼(propFireFilter)과 상호 배타
-    if (els.propFireAssignee) els.propFireAssignee.addEventListener("change", async (e) => {
-      const v = String(e.target.value || "").trim();
-      state.propertyFilters.fireAssignee = v;
-      if (v) {
-        // 담당자별 🔥 선택 시: 전체 🔥 버튼 해제
-        state.propertyFilters.fireOnly = false;
-        if (els.propFireFilter) els.propFireFilter.classList.remove("is-active");
-        try { await loadAllFirePropertyIds(v); } catch (err) { console.warn("fire(user) load failed", err); }
-      }
-      els.propFireAssignee.classList.toggle("is-active", !!v);
-      state.propertyPage = 1;
       loadProperties({ refreshSummary: false }).catch((e)=>handleAsyncError(e,"물건 로드 실패"));
     });
 

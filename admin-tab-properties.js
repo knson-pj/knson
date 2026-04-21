@@ -1004,7 +1004,6 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
       if (overviewCounts.price) updatePropMultiCounts('propPriceFilter', overviewCounts.price);
       if (overviewCounts.ratio) updatePropMultiCounts('propRatioFilter', overviewCounts.ratio);
       renderAssigneeFilterOptions(els.propAssigneeFilter, getPropertyFilterSourceRows(state), state, filters.assignee);
-      renderFireAssigneeOptions(els.propFireAssignee, state, filters.fireAssignee);
       return;
     }
 
@@ -1046,7 +1045,6 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     updatePropMultiCounts('propRatioFilter', ratioCounts);
 
     renderAssigneeFilterOptions(els.propAssigneeFilter, assigneeRows, state, state?.propertyFilters?.assignee);
-    renderFireAssigneeOptions(els.propFireAssignee, state, state?.propertyFilters?.fireAssignee);
   };
 
   function updatePropMultiCounts(filterKey, countMap) {

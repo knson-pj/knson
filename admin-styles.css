@@ -340,11 +340,10 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
 .btn-new-circle{background:var(--surface);color:var(--text-3);font-size:12px;font-weight:700;}
 .btn-new-circle:hover{color:#16a34a;border-color:#16a34a;}
 .btn-new-circle.is-active{color:#16a34a;border-color:#16a34a;background:#dcfce7;}
-.btn-fire-circle{background:var(--surface);color:var(--text-3);font-size:14px;line-height:1;}
-.btn-fire-circle:hover{color:#ea580c;border-color:#ea580c;background:var(--surface);}
-.btn-fire-circle.is-active{color:#ea580c;border-color:#ea580c;background:#fff7ed;}
-.prop-fire-assignee{max-width:150px;}
-.prop-fire-assignee.is-active{border-color:#ea580c;background:#fff7ed;color:#ea580c;font-weight:600;}
+.btn-fire-circle{background:var(--surface);color:var(--text-3);font-size:14px;line-height:1;filter:grayscale(1) opacity(.7);transition:filter .12s,border-color .12s,background .12s;}
+.btn-fire-circle:hover{filter:grayscale(1) opacity(1);border-color:var(--text-3);background:var(--surface);}
+.btn-fire-circle.is-active{filter:grayscale(1) opacity(1);border-color:var(--text-2);background:var(--brand-light,#f1f5f9);}
+/* .prop-fire-assignee 는 드롭다운 삭제로 사용처 없음 — 스타일만 남겨둬도 무해하지만 혼선 방지 위해 제거 */
 
 /* Badge / chip */
 .badge{
