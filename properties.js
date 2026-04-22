@@ -501,10 +501,16 @@ async function handleActivityLog(req, res) {
         },
       });
     } catch (err) {
+      // 에러 메시지에 "property_activity_logs" 문자열이 포함되면 "테이블 없음"으로 오역하던
+      // 기존 로직을 제거. 실제 원인 대부분은 RLS 정책 / 권한 / 쿼리 문제이고 테이블 누락은
+      // 사실상 발생하지 않는다. 원본 메시지를 그대로 돌려주되, RLS 정책 위반(42501)만
+      // 사용자 친화적으로 변환한다.
       const rawMessage = err?.message || '일일업무일지 조회 실패';
-      const message = /property_activity_logs/i.test(String(rawMessage))
-        ? 'property_activity_logs 테이블이 없거나 접근할 수 없습니다. migration SQL을 먼저 실행해 주세요.'
-        : rawMessage;
+      const pgCode = err?.data?.code || '';
+      let message = rawMessage;
+      if (pgCode === '42501') {
+        message = '업무일지 조회 권한이 없습니다.';
+      }
       return send(res, err?.status || 500, { ok: false, message });
     }
   }
@@ -512,47 +518,35 @@ async function handleActivityLog(req, res) {
   if (req.method === 'POST') {
     try {
       const body = req.__jsonBody || getJsonBody(req);
-      const rows = (Array.isArray(body?.entries) ? body.entries : [body])
-        .map((entry) => normalizeActivityEntry(entry, ctx))
-        .filter(Boolean);
-      if (!rows.length) {
+      const entries = Array.isArray(body?.entries) ? body.entries : [body];
+      // insertActivityEntries 는 관리자 PATCH 경로(handleSupabaseWrite)에서도 쓰이는 공통 함수로,
+      // daily_issue / opinion / site_inspection 은 부분 유니크 인덱스
+      //   (actor_id, property_id, action_date, action_type) WHERE action_type IN (...)
+      // 를 회피하기 위해 기존 행을 PATCH 로 갱신한다. 담당자 POST 경로도 이 함수를 재사용해
+      // 동일한 "하루 1건 유지" 의미를 보장한다.
+      const result = await insertActivityEntries(entries, ctx);
+      if (!Number(result?.createdCount || 0) && !(Array.isArray(result?.items) && result.items.length)) {
+        // normalizeActivityEntry 가 모든 entry 를 reject 한 경우 (action_type 미지정 등)
         return send(res, 400, { ok: false, message: '기록할 업무일지 항목이 없습니다.' });
       }
-      const created = await supabaseRest('/rest/v1/property_activity_logs', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        json: rows,
-      });
       return send(res, 201, {
         ok: true,
-        createdCount: Array.isArray(created) ? created.length : 0,
-        items: Array.isArray(created) ? created : [],
+        createdCount: Number(result?.createdCount || 0),
+        items: Array.isArray(result?.items) ? result.items : [],
         actorId: ctx.userId,
         actorName: cleanText(ctx.name || ctx.email || '', 120),
       });
     } catch (err) {
-      // DIAGNOSTIC 2026-04-22: 진짜 원인 파악을 위해 임시로 원본 메시지 노출.
-      // 원인 확정 후 제거 예정.
+      // 에러 메시지에 "property_activity_logs" 문자열이 포함돼 있어도, 실제 원인이
+      // 테이블 누락인 경우는 드물다 (보통 UNIQUE 위반 / NOT NULL / RLS). 원본 메시지를
+      // 그대로 돌려주되 UNIQUE 위반(23505)만 사용자 친화적으로 변환한다.
       const rawMessage = err?.message || '일일업무일지 기록 실패';
-      return send(res, err?.status || 500, {
-        ok: false,
-        message: rawMessage,
-        diagnostic: {
-          status: err?.status || null,
-          postgrestDetails: err?.data || null,
-          submittedRowsPreview: rows.slice(0, 3).map((r) => ({
-            actor_id: r.actor_id,
-            action_type: r.action_type,
-            action_date: r.action_date,
-            property_id: r.property_id,
-            property_identity_key: r.property_identity_key,
-            property_item_no: r.property_item_no,
-            property_address: r.property_address ? String(r.property_address).slice(0, 60) : null,
-            changed_fields_count: Array.isArray(r.changed_fields) ? r.changed_fields.length : 0,
-            note_len: typeof r.note === 'string' ? r.note.length : 0,
-          })),
-        },
-      });
+      const pgCode = err?.data?.code || '';
+      let message = rawMessage;
+      if (pgCode === '23505') {
+        message = '같은 날 같은 항목이 이미 기록되어 있어 저장을 건너뛰었습니다.';
+      }
+      return send(res, err?.status || 500, { ok: false, message });
     }
   }
 
