@@ -135,6 +135,7 @@
     let totalSuccess = 0;
     let totalNodata = 0;
     let totalError = 0;
+    let totalOther = 0;
     let totalUpdated = 0;
     let iter = 0;
     const errorSamples = [];
@@ -160,6 +161,7 @@
         totalSuccess += Number(data.successCount || 0);
         totalNodata += Number(data.nodataCount || 0);
         totalError += Number(data.errorCount || 0);
+        totalOther += Number(data.otherCount || 0);
         totalUpdated += Number(data.updatedCount || 0);
         if (Array.isArray(data.errors)) {
           for (const e of data.errors) {
@@ -168,9 +170,10 @@
         }
 
         // 중간 결과 표시
+        const otherInline = Number(data.otherCount || 0) > 0 ? ` · 진행중 ${data.otherCount}` : '';
         const summaryLines = [
-          `[${iter}회차] 대상 ${data.targetCount} · 갱신 ${data.updatedCount} · 결과없음 ${data.nodataCount} · 오류 ${data.errorCount}`,
-          `[누적] 대상 ${totalTarget} · 갱신 ${totalUpdated} · 결과없음 ${totalNodata} · 오류 ${totalError}`,
+          `[${iter}회차] 대상 ${data.targetCount} · 갱신 ${data.updatedCount} · 결과대기 ${data.nodataCount}${otherInline} · 오류 ${data.errorCount}`,
+          `[누적] 대상 ${totalTarget} · 갱신 ${totalUpdated} · 결과대기 ${totalNodata}${totalOther > 0 ? ' · 진행중 ' + totalOther : ''} · 오류 ${totalError}`,
         ];
         setResult(summaryLines.join('\n'), totalError > 0);
 
@@ -178,19 +181,25 @@
         if (!autoLoop) break;
         if (_stopRequested) { setStatus('사용자 중지', false); break; }
         if (Number(data.targetCount || 0) === 0) { setStatus('처리할 건이 더 없습니다', false); break; }
+        if (data.abortedByQuota) {
+          setStatus('온비드 API 일일 한도 초과 — 내일 다시 시도', true);
+          break;
+        }
         if (data.abortedByTimeout) { /* 계속 진행 가능 */ }
 
         // 다음 반복 전에 500ms 대기 (서버 부하 방지)
         await new Promise((r) => setTimeout(r, 500));
       }
 
-      const finalSummary = [
+      const finalLines = [
         `완료 — ${iter}회차 수행`,
-        `대상 ${totalTarget} · 갱신 ${totalUpdated} · 결과없음 ${totalNodata} · 오류 ${totalError}`,
-      ].join('\n');
+        `대상 ${totalTarget} · 갱신 ${totalUpdated} · 결과대기 ${totalNodata}${totalOther > 0 ? ' · 진행중 ' + totalOther : ''} · 오류 ${totalError}`,
+      ];
+      const finalSummary = finalLines.join('\n');
 
       if (errorSamples.length) {
         const sample = errorSamples.slice(0, 5).map((e) => {
+          if (e?.reason) return `${e.itemNo || e.id || '?'}: ${e.reason}`;
           if (e?.error) return `${e.itemNo}: ${e.error}`;
           if (e?.code) return `${e.itemNo}: [${e.code}] ${e.msg || ''}`;
           if (e?.updateError) return `${e.itemNo}: DB ${e.updateError}`;
