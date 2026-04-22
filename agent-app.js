@@ -662,7 +662,13 @@
         json: options.json,
         auth: options.auth !== false,
       });
-      if (data?.ok === false) throw new Error(extractApiErrorText(data, 200));
+      if (data?.ok === false) {
+        const err = new Error(extractApiErrorText(data, 200));
+        err.serverData = data;
+        err.serverCode = (data && typeof data === "object") ? (data.code || null) : null;
+        err.serverDebug = (data && typeof data === "object") ? (data.debug || null) : null;
+        throw err;
+      }
       return data;
     }
     const base = API_BASE;
@@ -682,7 +688,12 @@
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text || null; }
     if (!res.ok || data?.ok === false) {
-      throw new Error(extractApiErrorText(data, res.status));
+      const err = new Error(extractApiErrorText(data, res.status));
+      err.serverData = data;
+      err.httpStatus = res.status;
+      err.serverCode = (data && typeof data === "object") ? (data.code || null) : null;
+      err.serverDebug = (data && typeof data === "object") ? (data.debug || null) : null;
+      throw err;
     }
     return data;
   }
@@ -2714,7 +2725,20 @@ function renderPagination(totalPages) {
             siteInspectionText: siteVal,
           }));
         } catch (logErr) {
-          activityError = logErr?.message || "일일업무일지 기록 실패";
+          const baseMsg = logErr?.message || "일일업무일지 기록 실패";
+          const codeTag = logErr?.serverCode ? ` [${logErr.serverCode}]` : "";
+          activityError = `${baseMsg}${codeTag}`;
+          // 운영 진단용: 서버가 돌려준 원본 code/debug/raw 를 콘솔에 기록한다.
+          // (사용자에게 노출되지는 않지만 F12 콘솔에서 바로 확인 가능)
+          try {
+            console.warn('[activity_log][save_failed]', {
+              message: baseMsg,
+              serverCode: logErr?.serverCode || null,
+              serverDebug: logErr?.serverDebug || null,
+              httpStatus: logErr?.httpStatus || null,
+              serverData: logErr?.serverData || null,
+            });
+          } catch {}
         }
       }
 
@@ -3176,7 +3200,18 @@ function renderPagination(totalPages) {
           changedFields: { newProperty: ["registration"] },
         }));
       } catch (logErr) {
-        activityError = logErr?.message || "일일업무일지 기록 실패";
+        const baseMsg = logErr?.message || "일일업무일지 기록 실패";
+        const codeTag = logErr?.serverCode ? ` [${logErr.serverCode}]` : "";
+        activityError = `${baseMsg}${codeTag}`;
+        try {
+          console.warn('[activity_log][new_property_failed]', {
+            message: baseMsg,
+            serverCode: logErr?.serverCode || null,
+            serverDebug: logErr?.serverDebug || null,
+            httpStatus: logErr?.httpStatus || null,
+            serverData: logErr?.serverData || null,
+          });
+        } catch {}
       }
       if (activityError) setGlobalMsg(`물건 등록은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);
       else setGlobalMsg("");
