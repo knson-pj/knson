@@ -1717,6 +1717,10 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     }
     try {
       if (els.aemSave) els.aemSave.disabled = true;
+      // 저장 버튼 클릭 직후 사용자에게 즉시 진행 상태를 피드백한다.
+      // 기존에는 서버 PATCH 가 끝난 뒤에야 완료 팝업이 떠서 몇 초간 "아무 반응 없음"
+      // 상태로 보이던 문제를 해결한다. (agent-app.js saveProperty 와 동일 패턴)
+      utils.setAdminLoading?.('save', true, '저장 중입니다...');
       setAemMsg(els, '');
       const saveResponse = await mod.updatePropertyAdmin(targetId, patch, isAdmin, item);
 
@@ -1760,6 +1764,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       console.error(err);
       setAemMsg(els, err?.message || '저장 실패');
     } finally {
+      utils.setAdminLoading?.('save', false);
       if (els.aemSave) els.aemSave.disabled = false;
     }
   };

@@ -177,6 +177,9 @@
     if (els.npmSave) els.npmSave.disabled = true;
     setNpmMsgLocal(els, '');
     try {
+      // 등록 버튼 클릭 직후 사용자에게 즉시 진행 상태를 피드백한다.
+      // (agent-app.js submitNewProperty / admin-tab-properties.js savePropertyEditModal 과 동일 패턴)
+      utils.setAdminLoading?.('save', true, '등록 중입니다...');
       const supabaseMode = typeof utils.isSupabaseMode === 'function'
         ? !!utils.isSupabaseMode()
         : !!(K?.supabaseEnabled?.() && K.initSupabase?.());
@@ -212,6 +215,7 @@
         window.setTimeout(() => refreshPropertiesInBackground(state, utils), 2400);
       }, 2200);
     } finally {
+      utils.setAdminLoading?.('save', false);
       if (els.npmSave) els.npmSave.disabled = false;
     }
   };

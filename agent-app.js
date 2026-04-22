@@ -2579,6 +2579,10 @@ function renderPagination(totalPages) {
 
     try {
       if (els.agEditSave) els.agEditSave.disabled = true;
+      // 저장 버튼 클릭 직후 사용자에게 즉시 진행 상태를 피드백한다.
+      // 기존에는 서버 PATCH + activity log POST 가 끝난 뒤에야 완료 팝업이 떠서
+      // 3 초 가량 "아무 반응 없음" 상태로 보이던 문제를 해결한다.
+      setAgentLoading('save', true, '저장 중입니다...');
       if (!currentUserId) throw new Error("로그인 정보가 만료되었습니다. 다시 로그인해 주세요.");
       if (!K || typeof K.initSupabase !== "function") throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
       const sb = K.initSupabase();
@@ -2751,6 +2755,7 @@ function renderPagination(totalPages) {
     } catch (err) {
       setAgentEditMsg(toUserErrorMessage(err, '저장 실패'));
     } finally {
+      setAgentLoading('save', false);
       if (els.agEditSave) els.agEditSave.disabled = false;
     }
   }
@@ -3172,6 +3177,8 @@ function renderPagination(totalPages) {
     if (els.npmSave) els.npmSave.disabled = true;
     setNpmMsg("");
     try {
+      // 신규 물건 등록도 saveProperty 와 동일하게 클릭 즉시 진행 상태를 표시한다.
+      setAgentLoading('save', true, '등록 중입니다...');
       const sb = isSupabaseMode() ? K.initSupabase() : null;
       if (!sb) throw new Error("Supabase 연동이 필요합니다.");
       const regContext = buildRegisterLogContext("담당자 등록", state.session?.user);
@@ -3217,6 +3224,7 @@ function renderPagination(totalPages) {
       else setGlobalMsg("");
       setTimeout(() => { closeNewPropertyModal(); window.setTimeout(() => refreshAgentPropertiesInBackground(), 2400); }, 2200);
     } finally {
+      setAgentLoading('save', false);
       if (els.npmSave) els.npmSave.disabled = false;
     }
   }
