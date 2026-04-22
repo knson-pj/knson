@@ -2765,6 +2765,35 @@ function renderPagination(totalPages) {
       }
 
       setAgentEditMsg('', false);
+      // [수정 내역] 백그라운드 refresh(50ms 후 시작 + 서버 fetch 수백 ms)가 끝나기 전에
+      // 사용자가 모달을 다시 열 수 있다. 그 시점에 item 객체는 여전히 이전 값(예: 기존
+      // opinion 텍스트)을 갖고 있어 getAgentEditableSnapshot 의 firstText fallback 이
+      // stale 값을 반환한다. 저장 직후 item 및 item._raw 의 관련 필드를 서버 전송 값으로
+      // 즉시 동기화해 모달 재오픈 시 UI 가 정확히 반영되도록 한다.
+      // patch.memo 는 null(공백 저장) 또는 신규 opinion 텍스트. patch.raw 는 newRaw.
+      try {
+        if (item) {
+          item.opinion = patch.memo;
+          item.dailyIssue = newDailyIssueText || null;
+          item.siteInspection = newSiteInspectionText || null;
+          item.memo = patch.memo;
+          if (patch.status !== undefined) item.status = patch.status;
+          if (patch.floor !== undefined) item.floor = patch.floor;
+          if (patch.total_floor !== undefined) item.totalfloor = patch.total_floor;
+          if (patch.lowprice !== undefined) item.lowprice = patch.lowprice;
+          if (item._raw && typeof item._raw === 'object') {
+            item._raw.memo = patch.memo;
+            item._raw.raw = newRaw;
+            if (patch.status !== undefined) item._raw.status = patch.status;
+            if (patch.floor !== undefined) item._raw.floor = patch.floor;
+            if (patch.total_floor !== undefined) item._raw.total_floor = patch.total_floor;
+            if (patch.lowprice !== undefined) item._raw.lowprice = patch.lowprice;
+          }
+        }
+      } catch (syncErr) {
+        // 로컬 동기화 실패는 저장 자체에 영향 없음. 경고만 남기고 background refresh 대기.
+        try { console.warn('[saveProperty] local item sync failed', syncErr); } catch {}
+      }
       closeEditModal();
       flashAgentSaveNotice('저장되었습니다.', 1500);
       if (activityError) setGlobalMsg(`저장은 완료되었지만 업무일지 기록에 실패했습니다. ${activityError}`);

@@ -1869,6 +1869,28 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
       : null;
     const payload = { ...patch, raw: mergedLogRow?.row?.raw || currentRawForLog };
 
+    // [수정 내역] opinion / dailyIssue / siteInspection 4개 필드는 mergeMeaningfulShallow
+    // 가 null/빈 값을 "의미없음" 으로 판정해 스킵하는 바람에 공백 저장이 DB 에 반영되지
+    // 않는 버그가 있었다. buildRegistrationDbRowForExisting 의 기본 동작(기존 값 보존)은
+    // 등록 이력 생성 등 다른 용도에 필요하므로 그대로 유지하고, 여기서는 payload.raw 에
+    // 의견 필드만 patch 값으로 강제 재반영한다. patch 에 해당 key 가 존재(= 유저가
+    // 편집 모달을 통해 명시적으로 제출)한 경우에만 override 하므로 부분 업데이트 시
+    // 의도치 않은 덮어쓰기는 발생하지 않는다.
+    if (payload.raw && typeof payload.raw === 'object') {
+      if (Object.prototype.hasOwnProperty.call(patch, 'opinion')) {
+        payload.raw.opinion = patch.opinion;
+        payload.raw.memo = patch.opinion; // memo 는 opinion 의 raw alias
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'dailyIssue')) {
+        payload.raw.dailyIssue = patch.dailyIssue;
+        payload.raw.daily_issue = patch.dailyIssue;
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'siteInspection')) {
+        payload.raw.siteInspection = patch.siteInspection;
+        payload.raw.site_inspection = patch.siteInspection;
+      }
+    }
+
     // 관리자 수정(특히 담당자 배정 assignee_id 변경)은 브라우저의 direct Supabase update를 타면
     // DB 정책/트리거에서 "not allowed"가 발생할 수 있으므로 서버 API를 우선 사용한다.
     if (!isAdmin && sb) {
