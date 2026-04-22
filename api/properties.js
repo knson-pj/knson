@@ -439,6 +439,70 @@ async function fetchRowsByAssignedProperties(baseSelect, date, actorId) {
   });
 }
 
+// =============================================================================
+// property_activity_logs 에러 분류 helper
+// -----------------------------------------------------------------------------
+// 기존에는 에러 메시지에 'property_activity_logs' 문자열이 포함되기만 하면
+// 무조건 "테이블 없음" 메시지로 치환해 진짜 원인(컬럼/NOT NULL/권한/UUID 등)을
+// 가렸다. Postgres 및 PostgREST 에러 코드를 먼저 분류해서 사용자·운영자가
+// 1차 원인을 즉시 식별 가능하도록 한다. 원본 코드/hint/details 는 debug 필드로
+// 그대로 전달되므로, 필요 시 관리자가 정확한 진단이 가능하다.
+// =============================================================================
+function describePropertyActivityLogError(err, fallback) {
+  const rawMessage = String(err?.message || fallback || '').trim();
+  const data = (err && typeof err === 'object' && err.data && typeof err.data === 'object') ? err.data : null;
+  const pgCode = String(data?.code || '').trim();
+  const details = String(data?.details || '').trim();
+  const hint = String(data?.hint || '').trim();
+  const mentionsTable = /property_activity_logs/i.test(rawMessage);
+
+  let message = rawMessage || fallback || '일일업무일지 처리 중 오류가 발생했습니다.';
+  let category = 'unknown';
+
+  if (pgCode === '42P01' || /relation\s+"?[^"\s]*property_activity_logs[^"\s]*"?\s+does not exist/i.test(rawMessage)) {
+    message = 'property_activity_logs 테이블이 존재하지 않습니다. Supabase 콘솔에서 migration SQL(0003_tables.sql)을 먼저 실행해 주세요.';
+    category = 'missing_table';
+  } else if (pgCode === '42703' || /column .* does not exist/i.test(rawMessage) || /Could not find the .* column/i.test(rawMessage)) {
+    message = `property_activity_logs 테이블 컬럼 구조가 일치하지 않습니다. 최신 migration 적용이 필요합니다. (${details || rawMessage})`;
+    category = 'schema_mismatch';
+  } else if (pgCode === '42501' || /permission denied/i.test(rawMessage)) {
+    message = 'property_activity_logs 접근 권한이 없습니다. Supabase service_role 키(SUPABASE_SERVICE_ROLE_KEY) 환경변수 또는 RLS 정책을 확인해 주세요.';
+    category = 'permission_denied';
+  } else if (pgCode === '23502' || /null value in column .* violates not-null/i.test(rawMessage)) {
+    const match = rawMessage.match(/null value in column "([^"]+)"/i);
+    const colName = match ? match[1] : ((details.match(/column "([^"]+)"/i) || [])[1] || '(알 수 없음)');
+    message = `property_activity_logs 필수 값이 비어 있습니다: ${colName}. 세션이 만료되었거나 사용자 식별자가 유효하지 않을 수 있으니 로그아웃 후 다시 로그인해 시도해 주세요.`;
+    category = 'not_null_violation';
+  } else if (pgCode === '22P02' || /invalid input syntax for type uuid/i.test(rawMessage)) {
+    message = '사용자 식별자(actor_id) 형식이 유효하지 않습니다. 로그아웃 후 다시 로그인해 주세요.';
+    category = 'invalid_uuid';
+  } else if (pgCode === '23505' || /duplicate key value violates unique constraint/i.test(rawMessage)) {
+    message = '동일한 업무일지 항목이 이미 존재합니다.';
+    category = 'unique_violation';
+  } else if (pgCode === 'PGRST301' || /JWT expired/i.test(rawMessage)) {
+    message = '로그인 세션이 만료되었습니다. 다시 로그인해 주세요.';
+    category = 'jwt_expired';
+  } else if (pgCode && /^PGRST/i.test(pgCode)) {
+    message = `Supabase REST 오류 (${pgCode}): ${rawMessage}`;
+    category = 'postgrest';
+  } else if (mentionsTable) {
+    // 테이블 이름은 언급되는데 위 패턴 모두 미매칭 — 원본 메시지 노출
+    message = `property_activity_logs 처리 중 오류: ${rawMessage}`;
+    category = 'other_table_error';
+  }
+
+  return {
+    message,
+    category,
+    debug: {
+      code: pgCode || null,
+      details: details || null,
+      hint: hint || null,
+      raw: rawMessage || null,
+    },
+  };
+}
+
 async function handleActivityLog(req, res) {
   if (!hasSupabaseAdminEnv()) {
     return send(res, 501, { ok: false, message: '일일업무일지 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
@@ -454,6 +518,25 @@ async function handleActivityLog(req, res) {
   if (!ctx?.userId) return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
   if (!['staff', 'admin'].includes(String(ctx.role || '').trim())) {
     return send(res, 403, { ok: false, message: '담당자 또는 관리자 권한이 필요합니다.' });
+  }
+
+  // actor_id 는 property_activity_logs.actor_id (uuid NOT NULL) 컬럼에 바인딩되므로
+  // UUID v1~v5 일반 포맷을 만족해야 한다. ctx.userId 가 UUID 가 아니면 Postgres 가
+  // 22P02 (invalid input syntax for type uuid) 를 뱉고, 프런트는 원인을 알 수 없는
+  // "업무일지 기록 실패" 상태에 빠진다. 여기서 선제 차단해 명확한 원인을 돌려준다.
+  const ACTIVITY_ACTOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const actorIdStr = String(ctx.userId).trim();
+  if (!ACTIVITY_ACTOR_UUID_RE.test(actorIdStr)) {
+    return send(res, 400, {
+      ok: false,
+      message: '사용자 식별자(actor_id) 형식이 유효한 UUID가 아닙니다. 로그아웃 후 다시 로그인해 주세요.',
+      code: 'actor_id_invalid_format',
+      debug: {
+        actorIdLength: actorIdStr.length,
+        actorIdSample: actorIdStr ? `${actorIdStr.slice(0, 8)}…` : '(empty)',
+        role: ctx.role || null,
+      },
+    });
   }
 
   if (req.method === 'GET') {
@@ -501,41 +584,38 @@ async function handleActivityLog(req, res) {
         },
       });
     } catch (err) {
-      const rawMessage = err?.message || '일일업무일지 조회 실패';
-      const message = /property_activity_logs/i.test(String(rawMessage))
-        ? 'property_activity_logs 테이블이 없거나 접근할 수 없습니다. migration SQL을 먼저 실행해 주세요.'
-        : rawMessage;
-      return send(res, err?.status || 500, { ok: false, message });
+      const info = describePropertyActivityLogError(err, '일일업무일지 조회 실패');
+      return send(res, err?.status || 500, { ok: false, message: info.message, code: info.category, debug: info.debug });
     }
   }
 
   if (req.method === 'POST') {
     try {
       const body = req.__jsonBody || getJsonBody(req);
-      const rows = (Array.isArray(body?.entries) ? body.entries : [body])
-        .map((entry) => normalizeActivityEntry(entry, ctx))
-        .filter(Boolean);
-      if (!rows.length) {
+      const entries = Array.isArray(body?.entries) ? body.entries : [body];
+      // insertActivityEntries 는 내부에서 normalizeActivityEntry 를 수행하고,
+      // MERGE_TYPES(daily_issue / opinion / site_inspection) 는 같은 날 같은
+      // (actor_id + action_type + action_date + property_id) 조합의 기존 row 를
+      // 찾아 PATCH, 없으면 INSERT 한다. 즉 하루에 여러 번 저장해도 해당 세 유형은
+      // 최종본 1 건만 유지되고, 그 외 유형(new_property/property_update/
+      // rights_analysis)은 원래 동작대로 매번 신규 INSERT 된다.
+      // (이전에는 이 지점에서 insertActivityEntries 를 거치지 않고 직접 bulk
+      //  insert 했기 때문에 MERGE_TYPES 머지 로직이 동작하지 않아 매 저장마다
+      //  행이 누적되는 버그가 있었다.)
+      const { createdCount, items } = await insertActivityEntries(entries, ctx);
+      if (!createdCount && (!Array.isArray(items) || !items.length)) {
         return send(res, 400, { ok: false, message: '기록할 업무일지 항목이 없습니다.' });
       }
-      const created = await supabaseRest('/rest/v1/property_activity_logs', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        json: rows,
-      });
       return send(res, 201, {
         ok: true,
-        createdCount: Array.isArray(created) ? created.length : 0,
-        items: Array.isArray(created) ? created : [],
+        createdCount: Number(createdCount) || (Array.isArray(items) ? items.length : 0),
+        items: Array.isArray(items) ? items : [],
         actorId: ctx.userId,
         actorName: cleanText(ctx.name || ctx.email || '', 120),
       });
     } catch (err) {
-      const rawMessage = err?.message || '일일업무일지 기록 실패';
-      const message = /property_activity_logs/i.test(String(rawMessage))
-        ? 'property_activity_logs 테이블이 없거나 접근할 수 없습니다. migration SQL을 먼저 실행해 주세요.'
-        : rawMessage;
-      return send(res, err?.status || 500, { ok: false, message });
+      const info = describePropertyActivityLogError(err, '일일업무일지 기록 실패');
+      return send(res, err?.status || 500, { ok: false, message: info.message, code: info.category, debug: info.debug });
     }
   }
 
