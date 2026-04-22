@@ -592,21 +592,24 @@ async function handleActivityLog(req, res) {
   if (req.method === 'POST') {
     try {
       const body = req.__jsonBody || getJsonBody(req);
-      const rows = (Array.isArray(body?.entries) ? body.entries : [body])
-        .map((entry) => normalizeActivityEntry(entry, ctx))
-        .filter(Boolean);
-      if (!rows.length) {
+      const entries = Array.isArray(body?.entries) ? body.entries : [body];
+      // insertActivityEntries 는 내부에서 normalizeActivityEntry 를 수행하고,
+      // MERGE_TYPES(daily_issue / opinion / site_inspection) 는 같은 날 같은
+      // (actor_id + action_type + action_date + property_id) 조합의 기존 row 를
+      // 찾아 PATCH, 없으면 INSERT 한다. 즉 하루에 여러 번 저장해도 해당 세 유형은
+      // 최종본 1 건만 유지되고, 그 외 유형(new_property/property_update/
+      // rights_analysis)은 원래 동작대로 매번 신규 INSERT 된다.
+      // (이전에는 이 지점에서 insertActivityEntries 를 거치지 않고 직접 bulk
+      //  insert 했기 때문에 MERGE_TYPES 머지 로직이 동작하지 않아 매 저장마다
+      //  행이 누적되는 버그가 있었다.)
+      const { createdCount, items } = await insertActivityEntries(entries, ctx);
+      if (!createdCount && (!Array.isArray(items) || !items.length)) {
         return send(res, 400, { ok: false, message: '기록할 업무일지 항목이 없습니다.' });
       }
-      const created = await supabaseRest('/rest/v1/property_activity_logs', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        json: rows,
-      });
       return send(res, 201, {
         ok: true,
-        createdCount: Array.isArray(created) ? created.length : 0,
-        items: Array.isArray(created) ? created : [],
+        createdCount: Number(createdCount) || (Array.isArray(items) ? items.length : 0),
+        items: Array.isArray(items) ? items : [],
         actorId: ctx.userId,
         actorName: cleanText(ctx.name || ctx.email || '', 120),
       });
