@@ -859,7 +859,52 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
     const isRealtor = bucket === 'realtor_naver' || bucket === 'realtor_direct' || normalizedSource === 'realtor';
     const isGeneral = bucket === 'general' || normalizedSource === 'general';
     const hideForPlain = isRealtor || isGeneral;
-    ensureProgressStatusSelect(form.elements['status'], form.elements['status']?.value || view?.status || item?.status || '', bucket);
+    // [수정 내역] agent-app.js applyAgentEditFormMode 와 동일 패턴으로 진행상태 필드를
+    // bucket 별로 동적 전환한다.
+    //   - 경매 / 공매 → readonly <input> (외부 시스템에서 동기화되는 값 보존)
+    //   - 중개 / 일반 → <select> (관찰 / 협상 / 보류)
+    // 기존에는 ensureProgressStatusSelect 가 <select> 전용 로직이라 HTML 의
+    // <input type="text"> 에는 옵션이 붙지 않아 "관리자만 진행상태 수정 불가"
+    // 버그가 있었다. 여기서는 엘리먼트 자체를 교체해 agent 와 동일한 UX 를 제공한다.
+    const statusWrap = form.querySelector('[data-aem-field="status"]');
+    if (statusWrap) {
+      statusWrap.classList.remove('hidden');
+      const currentStatus = form.elements['status']?.value || view?.status || item?.status || '';
+      const isAuctionType = bucket === 'auction' || bucket === 'onbid';
+      if (isAuctionType) {
+        if (form.elements['status']?.tagName === 'SELECT') {
+          const inp = document.createElement('input');
+          inp.name = 'status'; inp.className = 'input'; inp.type = 'text'; inp.readOnly = true;
+          inp.value = currentStatus;
+          form.elements['status'].replaceWith(inp);
+        } else if (form.elements['status']) {
+          form.elements['status'].readOnly = true;
+          if (form.elements['status'].value !== currentStatus) form.elements['status'].value = currentStatus;
+        }
+      } else {
+        const el = form.elements['status'];
+        if (el?.tagName !== 'SELECT') {
+          const sel = document.createElement('select');
+          sel.name = 'status'; sel.className = 'input';
+          ['', '관찰', '협상', '보류'].forEach((v) => {
+            const opt = document.createElement('option');
+            opt.value = v; opt.textContent = v || '선택';
+            sel.appendChild(opt);
+          });
+          if (currentStatus && !['관찰', '협상', '보류'].includes(currentStatus)) {
+            const opt = document.createElement('option');
+            opt.value = currentStatus; opt.textContent = currentStatus;
+            sel.insertBefore(opt, sel.options[1]);
+          }
+          sel.value = currentStatus;
+          if (el) el.replaceWith(sel); else form.appendChild(sel);
+        } else {
+          // 이미 select → readOnly 해제 + 값 동기화
+          el.removeAttribute('readonly');
+          if (el.value !== currentStatus) el.value = currentStatus;
+        }
+      }
+    }
     form.querySelectorAll('[data-aem-field="dateMain"], [data-aem-field="currentPrice"]').forEach((node) => {
       node.classList.toggle('hidden', hideForPlain);
     });
