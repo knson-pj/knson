@@ -60,6 +60,9 @@
     }
     bindTypeSwitch();
     updateTypeUi(getSubmitterKind());
+    // SECURITY: 폼 로드 시점 기록 (서버 dwell-time 봇 감지용)
+    const ts = document.getElementById('formLoadedAt');
+    if (ts) ts.value = String(Date.now());
   });
 
   form.addEventListener("submit", async (e) => {
@@ -103,6 +106,16 @@
       realtorCell,
       opinion: readStr(fd, 'opinion') || null,
     }) || null;
+
+    // SECURITY: honeypot 필드와 로드시각 타임스탬프를 payload 에 같이 전송.
+    // PropertyDomain.buildPublicListingPayload 는 알려진 필드만 구성하므로 여기서 직접 주입한다.
+    if (payload) {
+      payload.website = readStr(fd, 'website');
+      payload.url = readStr(fd, 'url');
+      payload.email_confirm = readStr(fd, 'email_confirm');
+      payload.form_loaded_at = readStr(fd, 'form_loaded_at');
+    }
+
     const validationMessage = PropertyDomain?.validateRegistrationSubmissionCore?.(payload, {
       requiredMessage: '주소/세부유형/매매가를 입력해 주세요.',
       realtorMessage: '중개 등록은 중개사무소명과 휴대폰번호를 입력해 주세요.',

@@ -10,7 +10,57 @@ const {
   nowIso,
 } = require('./_lib/utils');
 const { hasSupabaseAdminEnv, getEnv } = require('./_lib/supabase-admin');
+const { getClientIp, checkRateLimitMany } = require('./_lib/rate-limit');
 const PropertyDomain = require('../knson-property-domain.js');
+
+// =============================================================================
+// 공개 등록 스팸 방어 상수 (2026-04-22)
+// =============================================================================
+// Honeypot: 프런트 폼에 CSS 로 숨겨둔 필드. 사람은 보지 못하므로 비어있고,
+// 자동 봇은 모든 필드를 채우므로 값이 들어온다. 값이 들어오면 즉시 거부하되,
+// 공격자에게 "차단됐다"는 신호를 주지 않기 위해 일반 성공 응답으로 속이는
+// silent-drop 방식을 채택한다.
+const HONEYPOT_FIELD_NAMES = ['website', 'url', 'email_confirm'];
+
+// 폼 로드~제출 사이 최소 경과 시간(ms). 사람은 최소 2초 이상 걸린다고 가정.
+// 이보다 빠르면 봇일 확률이 높음. timestamp 필드가 없으면 체크 skip (backward compat).
+const MIN_FORM_DWELL_MS = 2000;
+
+// 필드 길이 상한 (DB 자체 제한 전에 API 에서 먼저 차단)
+const FIELD_MAX_LENGTHS = {
+  address: 500,
+  assetType: 120,
+  floor: 40,
+  totalFloor: 40,
+  realtorName: 200,
+  realtorPhone: 40,
+  realtorCell: 40,
+  submitterName: 100,
+  submitterPhone: 40,
+  opinion: 2000,
+  useApproval: 40,
+};
+
+// memo/opinion 에 포함된 외부 URL 은 스팸 광고의 전형적 신호. 포함 시 거부.
+const URL_PATTERN = /https?:\/\/|www\.[a-z0-9-]+\.[a-z]{2,}/i;
+
+// 숫자 필드 상한 (비정상적으로 큰 값 차단 — SQL numeric overflow 방지 겸용)
+const NUMERIC_MAX = {
+  priceMain: 1e14,       // 100조 원
+  commonArea: 1e7,       // 1천만 평 (현실적으로 불가)
+  exclusiveArea: 1e7,
+  siteArea: 1e7,
+};
+
+// Rate limit bucket 설정 (IP / phone 기반)
+const RATE_LIMIT_BUCKETS_IP = [
+  { windowMs: 60_000,       max: 5,   label: 'ip-1min' },   // 1분에 5건
+  { windowMs: 60 * 60_000,  max: 30,  label: 'ip-1hour' },  // 1시간에 30건
+];
+const RATE_LIMIT_BUCKETS_PHONE = [
+  { windowMs: 60 * 60_000,      max: 5,   label: 'phone-1hour' },  // 전화번호당 1시간 5건
+  { windowMs: 24 * 60 * 60_000, max: 20,  label: 'phone-1day' },   // 전화번호당 하루 20건
+];
 
 const REG_LOG_LABELS = PropertyDomain.REGISTRATION_LOG_LABELS_PUBLIC;
 
@@ -216,7 +266,97 @@ function validatePayload(payload) {
   } else if (!payload.submitterName || !payload.submitterPhone) {
     return '소유자/일반 등록은 이름과 연락처를 입력해 주세요.';
   }
+
+  // 길이 상한 검증 — 과도한 데이터 주입 차단
+  for (const [field, maxLen] of Object.entries(FIELD_MAX_LENGTHS)) {
+    const value = payload[field];
+    if (value != null && typeof value === 'string' && value.length > maxLen) {
+      return '입력값이 너무 깁니다.';
+    }
+  }
+
+  // 숫자 필드 상한 검증 — 비정상적으로 큰 값 차단
+  for (const [field, maxVal] of Object.entries(NUMERIC_MAX)) {
+    const value = payload[field];
+    if (value != null && Number.isFinite(Number(value)) && Number(value) > maxVal) {
+      return '입력값이 허용 범위를 초과했습니다.';
+    }
+    if (value != null && Number.isFinite(Number(value)) && Number(value) < 0) {
+      return '음수는 입력할 수 없습니다.';
+    }
+  }
+
+  // opinion/memo 에 외부 URL 포함 시 거부 — 스팸 광고 차단
+  if (payload.opinion && URL_PATTERN.test(String(payload.opinion))) {
+    return '의견란에 링크를 포함할 수 없습니다.';
+  }
+
+  // 전화번호 숫자만 추출 후 길이 체크 (9~11자리, 한국 번호 체계)
+  const phoneToCheck = payload.submitterType === 'realtor' ? payload.realtorCell : payload.submitterPhone;
+  if (phoneToCheck) {
+    const digits = String(phoneToCheck).replace(/\D/g, '');
+    if (digits.length < 9 || digits.length > 11) {
+      return '연락처 형식이 올바르지 않습니다.';
+    }
+  }
+
   return '';
+}
+
+// Honeypot 검사. 값이 조금이라도 채워져 있으면 봇으로 판단.
+function isHoneypotTriggered(body = {}) {
+  for (const name of HONEYPOT_FIELD_NAMES) {
+    const v = body[name];
+    if (v != null && String(v).trim() !== '') return true;
+  }
+  return false;
+}
+
+// 폼 로드-제출 간격 검사. 너무 빠르면 봇. 필드 없으면 skip (backward compat).
+function isFormSubmittedTooFast(body = {}, now = Date.now()) {
+  const raw = body.form_loaded_at ?? body.formLoadedAt;
+  if (raw == null || raw === '') return false; // 필드 없음 → 체크 skip
+  const loadedAt = Number(raw);
+  if (!Number.isFinite(loadedAt) || loadedAt <= 0) return false;
+  const diff = now - loadedAt;
+  // 비정상 음수/미래시각 또는 너무 짧은 dwell → 봇
+  if (diff < 0) return true;
+  if (diff < MIN_FORM_DWELL_MS) return true;
+  return false;
+}
+
+// Rate limit 체크 (IP + phone). 차단 시 429 응답 반환하고 true 를 리턴.
+function enforceRateLimit(req, res, payload) {
+  const ip = getClientIp(req);
+  const phone = normalizePhone(
+    payload.submitterType === 'realtor' ? payload.realtorCell : payload.submitterPhone
+  );
+
+  const buckets = [];
+  if (ip) {
+    for (const cfg of RATE_LIMIT_BUCKETS_IP) {
+      buckets.push({ key: `pub-listings:ip:${ip}:${cfg.windowMs}`, ...cfg });
+    }
+  }
+  if (phone) {
+    for (const cfg of RATE_LIMIT_BUCKETS_PHONE) {
+      buckets.push({ key: `pub-listings:phone:${phone}:${cfg.windowMs}`, ...cfg });
+    }
+  }
+  if (!buckets.length) return false;
+
+  const result = checkRateLimitMany(buckets);
+  if (!result.allowed) {
+    const retrySec = Math.max(1, Math.ceil((result.retryAfterMs || 60_000) / 1000));
+    res.setHeader('Retry-After', String(retrySec));
+    send(res, 429, {
+      ok: false,
+      message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+      retryAfter: retrySec,
+    });
+    return true;
+  }
+  return false;
 }
 
 function buildRawForCreate(payload, context) {
@@ -500,9 +640,26 @@ module.exports = async function handler(req, res) {
   }
 
   const body = getJsonBody(req);
+
+  // [방어 L2-a] Honeypot: 봇이 숨겨진 필드를 채웠다면 성공처럼 응답하고 실제로는 무시 (silent drop).
+  // 공격자가 "차단됐다"는 신호를 받지 못하게 하여 우회 시도를 지연시킨다.
+  if (isHoneypotTriggered(body)) {
+    return send(res, 200, { ok: true, message: '검토후 연락드리겠습니다.', item: null });
+  }
+
+  // [방어 L2-b] 폼 dwell time: 제출이 너무 빠르면 봇. timestamp 없으면 체크 skip.
+  if (isFormSubmittedTooFast(body)) {
+    return send(res, 400, { ok: false, message: '잠시 후 다시 시도해 주세요.' });
+  }
+
   const payload = buildPayloadFromBody(body);
+
+  // [방어 L2-c] 페이로드 검증 (필수필드/길이/숫자범위/전화형식/URL패턴)
   const validationMessage = validatePayload(payload);
   if (validationMessage) return send(res, 400, { ok: false, message: validationMessage });
+
+  // [방어 L2-d] IP + 전화번호 기반 rate limit
+  if (enforceRateLimit(req, res, payload)) return;
 
   try {
     if (hasSupabaseAdminEnv()) {

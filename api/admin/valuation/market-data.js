@@ -14,7 +14,7 @@
 
 const { applyCors } = require('../../_lib/cors');
 const { send, getJsonBody } = require('../../_lib/utils');
-const { hasSupabaseAdminEnv, getEnv } = require('../../_lib/supabase-admin');
+const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../../_lib/supabase-admin');
 
 function getMolitApiKey() {
   return String(process.env.MOLIT_API_KEY || '').trim();
@@ -205,6 +205,11 @@ async function queryTransactions({ sigunguCode, dong, months = 12, buildingUse, 
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
   if (!hasSupabaseAdminEnv()) return send(res, 500, { error: 'Supabase 미설정' });
+
+  // SECURITY: 관리자 인증 필수 — 비로그인 호출 시 국토부 MOLIT API 키 소진 및
+  // market_transactions 테이블 오염 공격이 가능하므로 반드시 관리자 권한 검증 수행.
+  const session = await requireSupabaseAdmin(req, res);
+  if (!session) return;
 
   try {
     if (req.method === 'POST') {

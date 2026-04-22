@@ -26,6 +26,24 @@
 
       <form id="generalForm" class="form">
 
+        <!--
+          SECURITY: 봇 스팸 방어용 honeypot 필드.
+          화면에 보이지 않지만(aria-hidden + 다중 CSS hidden), 봇은 HTML 을 파싱해서
+          모든 input 을 채우므로 이 필드에 값이 들어오면 서버에서 silent-drop 한다.
+          screenreader 에서도 감지 안 되도록 tabindex=-1, autocomplete=off 부여.
+        -->
+        <div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden;opacity:0;pointer-events:none;" data-hp-wrap>
+          <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+          <label>URL<input type="text" name="url" tabindex="-1" autocomplete="off" /></label>
+          <label>Email confirm<input type="email" name="email_confirm" tabindex="-1" autocomplete="off" /></label>
+        </div>
+
+        <!--
+          SECURITY: 폼 로드~제출 사이의 dwell time 측정용 hidden 필드.
+          페이지 로드 시 JS 가 Date.now() 를 채운다. 서버는 2초 미만 제출을 봇으로 판단.
+        -->
+        <input type="hidden" name="form_loaded_at" id="formLoadedAt" value="" />
+
         <!-- 등록자 유형 -->
         <div class="field full type-switch" role="radiogroup" aria-label="등록자 유형">
           <span>등록자 유형 *</span>

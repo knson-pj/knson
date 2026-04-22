@@ -16,7 +16,7 @@
 
 const { applyCors } = require('../../_lib/cors');
 const { send, getJsonBody } = require('../../_lib/utils');
-const { hasSupabaseAdminEnv, getEnv } = require('../../_lib/supabase-admin');
+const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../../_lib/supabase-admin');
 
 function buildHeaders({ hasJson = false } = {}) {
   const { serviceRoleKey } = getEnv();
@@ -562,6 +562,11 @@ async function evaluateProperty(propertyId) {
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
   if (!hasSupabaseAdminEnv()) return send(res, 500, { error: 'Supabase 미설정' });
+
+  // SECURITY: 관리자 인증 필수 — 평가 트리거/결과 조회 모두 service_role 로 DB 에 접근하므로
+  // 비로그인/비관리자 호출을 차단해 valuation_results 테이블 쓰기 및 자원 남용을 방지한다.
+  const session = await requireSupabaseAdmin(req, res);
+  if (!session) return;
 
   try {
     if (req.method === 'GET') {
