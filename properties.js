@@ -786,6 +786,23 @@ async function handleSupabaseWrite(req, res) {
       ...currentRaw,
       ...(patch.raw && typeof patch.raw === 'object' ? patch.raw : {}),
     });
+    // [수정 내역] 클라이언트가 body.patch.raw 에 opinion/memo/dailyIssue/siteInspection 을
+    // null 로 명시적으로 보낸 경우, 위의 spread merge + sanitizePropertyRaw 조합으로 null 이
+    // 반영돼야 하나 실제 운영에서 DB 에 기존값이 유지되는 사례가 보고됨
+    // (예: 물건 f2a64d1a-69a1-4327-b65e-132aab880629). 원본 body 에서 직접 해당 필드의
+    // 존재 여부를 확인해 강제 반영하는 최종 방어선을 둔다. 이 단계를 거친 뒤에도 DB 에
+    // 반영되지 않으면 Supabase trigger/policy 문제로 범위가 좁혀진다.
+    const userPatchRaw = (body && body.patch && typeof body.patch === 'object' && body.patch.raw && typeof body.patch.raw === 'object')
+      ? body.patch.raw
+      : null;
+    if (userPatchRaw) {
+      if (!patch.raw || typeof patch.raw !== 'object') patch.raw = {};
+      ['opinion', 'memo', 'dailyIssue', 'daily_issue', 'siteInspection', 'site_inspection'].forEach((k) => {
+        if (Object.prototype.hasOwnProperty.call(userPatchRaw, k)) {
+          patch.raw[k] = userPatchRaw[k];
+        }
+      });
+    }
     if (currentSourceType) {
       if (patch.raw.source_type === undefined) patch.raw.source_type = currentSourceType;
       if (patch.raw.sourceType === undefined) patch.raw.sourceType = currentSourceType;
