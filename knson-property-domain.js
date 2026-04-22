@@ -697,7 +697,13 @@
 
   function buildOpinionHistoryEntry(kind, text, user, options = {}) {
     const body = String(text || "").trim();
-    if (!body) return null;
+    // 빈 텍스트도 허용한다. 담당자/관리자가 이미 작성한 의견/현장실사/금일이슈를
+    // 명시적으로 "지움"으로 변경하고 저장할 수 있어야 하기 때문이다. 빈 entry 는
+    // history 타임라인 상 "내용 삭제" 이벤트로 동작하며, getEditorHistoryText 가
+    // 최신 entry 의 빈 text 를 반환해 textarea 가 빈 칸으로 초기화된다.
+    // 단, options.requireText 가 true 인 경우에는 기존처럼 null 을 반환한다
+    // (LOG 에 빈 entry 가 불필요한 다른 호출 경로용 안전장치).
+    if (!body && options.requireText) return null;
     const at = String(options.at || new Date().toISOString()).trim() || new Date().toISOString();
     const date = String(options.date || (Shared && typeof Shared.formatDate === "function" ? (Shared.formatDate(at) || "") : "")).trim();
     const fallbackDate = (() => {

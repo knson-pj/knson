@@ -783,10 +783,13 @@
 
   function appendHistoryIfChangedLocal(item, history, kind, nextText, user, options = {}) {
     const text = String(nextText || '').trim();
-    if (!text) return Array.isArray(history) ? history : [];
+    const safeHistory = Array.isArray(history) ? history : [];
     const current = String(getEditorHistoryTextLocal(item, kind, { todayOnly: false }) || '').trim();
-    if (current === text) return Array.isArray(history) ? history : [];
-    return appendOpinionEntryLocal(history, text, user, { ...options, kind });
+    if (current === text) return safeHistory;
+    // [수정 내역] 빈 값으로 "지움" 이벤트 기록: 이전에 값이 있었던 경우에만 append.
+    // (agent-app.js appendHistoryIfChanged 와 동일 패턴.)
+    if (!text && !current) return safeHistory;
+    return appendOpinionEntryLocal(safeHistory, text, user, { ...options, kind });
   }
 
 
@@ -1498,7 +1501,10 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     if (!f.elements['realtorphone']?.value) setVal('realtorphone', _editRaw['중개사 유선전화'] || _editRaw['중개사무소전화'] || _editRaw['대표전화'] || _editRaw.realtorPhone || '');
     if (!f.elements['realtorcell']?.value) setVal('realtorcell', _editRaw['중개사 휴대폰'] || _editRaw['휴대폰번호'] || _editRaw['휴대폰'] || _editRaw.realtorCell || '');
     const brokerMemoEl = f.elements['brokerMemoDisplay'];
-    if (brokerMemoEl) brokerMemoEl.value = _editRaw.memo || _editRaw.importedSourceText || _editRaw.sourceNoteText || _editRaw['매물특징'] || '';
+    // [수정 내역] agent-app.js 와 동일 — "매물특징" 은 네이버중개 CSV 업로드 시
+    // import 된 원본 메모에만 바인딩. _editRaw.memo(담당자 의견) 가 첫 번째 fallback
+    // 이라 담당자/관리자가 의견을 저장하면 매물특징 칸에도 같이 뜨던 버그를 제거.
+    if (brokerMemoEl) brokerMemoEl.value = _editRaw.importedSourceText || _editRaw.sourceNoteText || _editRaw['매물특징'] || _editRaw.brokerMemo || '';
     const auctionInfoEl = f.elements['auctionInfoDisplay'];
     if (auctionInfoEl) auctionInfoEl.value = _editRaw['경매현황'] || _editRaw.auctionStatus || _editRaw.auction_status || '';
     const auctionBigoEl = f.elements['auctionBigoDisplay'];

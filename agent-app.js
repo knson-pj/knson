@@ -2316,13 +2316,19 @@ function renderPagination(totalPages) {
   }
 
   function maybeAssignInitialColumnValue(patch, key, nextValue, currentValue) {
-    const currentText = currentValue == null ? "" : String(currentValue).trim();
-    const hasCurrent = currentText !== "";
+    // [수정 내역] 원래는 "기존 값이 비어있을 때만 최초 할당" 의도였으나, 담당자가
+    // 이미 값이 있는 컬럼(floor / common_area / price_main 등)을 수정해도 patch 에
+    // 누락되어 DB 반영이 되지 않는 버그의 원인이었다. 담당자 수정이 정상 반영되어야
+    // 하므로 단순 대입으로 동작을 변경한다. 함수 이름은 호출부 호환을 위해 유지.
+    //   nextValue 가 null / 빈 문자열 → patch[key] = null (명시적 비움)
+    //   그 외 값                     → patch[key] = nextValue
+    // currentValue 인자는 이제 사용하지 않지만 호출부 시그니처 호환을 위해 남긴다.
+    void currentValue;
     if (nextValue == null || nextValue === "") {
-      if (!hasCurrent) patch[key] = null;
+      patch[key] = null;
       return;
     }
-    if (!hasCurrent) patch[key] = nextValue;
+    patch[key] = nextValue;
   }
 
   function setAgentEditSection(sectionKey) {
@@ -2438,7 +2444,10 @@ function renderPagination(totalPages) {
     if (!form.elements["brokerPhoneDisplay"]?.value || form.elements["brokerPhoneDisplay"]?.value === "-") setVal(form, "brokerPhoneDisplay", _agRaw["중개사 유선전화"] || _agRaw["중개사무소전화"] || _agRaw["대표전화"] || _agRaw.realtorPhone || "-");
     if (!form.elements["brokerCellDisplay"]?.value || form.elements["brokerCellDisplay"]?.value === "-") setVal(form, "brokerCellDisplay", _agRaw["중개사 휴대폰"] || _agRaw["휴대폰번호"] || _agRaw["휴대폰"] || _agRaw.realtorCell || "-");
     const agBrokerMemoEl = form.elements["brokerMemoDisplay"];
-    if (agBrokerMemoEl) agBrokerMemoEl.value = _agRaw.memo || _agRaw.importedSourceText || _agRaw.sourceNoteText || _agRaw["매물특징"] || "";
+    // [수정 내역] "매물특징" 은 네이버중개 CSV 업로드 시 import 된 원본 메모에만
+    // 바인딩되어야 한다. 기존 fallback 첫 번째가 _agRaw.memo(담당자 의견) 여서
+    // 담당자가 의견을 저장하면 매물특징 칸에도 같은 텍스트가 뜨는 버그가 있었다.
+    if (agBrokerMemoEl) agBrokerMemoEl.value = _agRaw.importedSourceText || _agRaw.sourceNoteText || _agRaw["매물특징"] || _agRaw.brokerMemo || "";
     const agAuctionInfoEl = form.elements["auctionInfoDisplay"];
     if (agAuctionInfoEl) agAuctionInfoEl.value = _agRaw["경매현황"] || _agRaw.auctionStatus || _agRaw.auction_status || "";
     const agAuctionBigoEl = form.elements["auctionBigoDisplay"];
@@ -2674,6 +2683,15 @@ function renderPagination(totalPages) {
       maybeAssignInitialColumnValue(patch, "site_area", siteAreaVal, item?._raw?.site_area);
       maybeAssignInitialColumnValue(patch, "price_main", priceMainVal, item?._raw?.price_main);
       maybeAssignInitialColumnValue(patch, "date_main", dateMainVal, item?._raw?.date_main);
+
+      // [수정 내역] 물건상세 탭의 모든 필드를 DB 컬럼에 직접 매핑한다.
+      // 기존에는 floor / total_floor / lowprice / status 가 patch 에 누락되어
+      // raw jsonb 에만 저장되고 실제 컬럼은 stale 인 상태였다. 관리자 저장 경로
+      // (admin-tab-properties.js updatePropertyAdmin) 와 동일 수준으로 맞춘다.
+      patch.status = readStr("status") || null;
+      patch.floor = floorVal;
+      patch.total_floor = totalFloorVal;
+      patch.lowprice = currentPriceVal;
 
       const resultStatusVal = readStr("resultStatus") || null;
       const resultPriceVal = readNum("resultPrice");
@@ -3456,10 +3474,16 @@ function renderPagination(totalPages) {
 
   function appendHistoryIfChanged(item, history, kind, nextText, user, options = {}) {
     const text = String(nextText || '').trim();
-    if (!text) return Array.isArray(history) ? history : [];
+    const safeHistory = Array.isArray(history) ? history : [];
     const current = String(getEditorHistoryText(item, kind, { todayOnly: false }) || '').trim();
-    if (current === text) return Array.isArray(history) ? history : [];
-    return appendOpinionEntry(history, text, user, { ...options, kind });
+    // 변경 없음 (같은 텍스트) → 추가하지 않는다.
+    if (current === text) return safeHistory;
+    // [수정 내역] 빈 값으로 "지움" 이벤트 기록: 이전에 값이 있었던 경우에만 append.
+    // 빈 상태에서 빈 저장은 로그를 남길 필요가 없어 그대로 스킵한다.
+    // (기존에는 `if (!text) return history` 로 항상 스킵 → 모달 재오픈 시
+    //  getEditorHistoryText 가 이전 텍스트를 반환해 "저장 안 됨"으로 오인되던 문제.)
+    if (!text && !current) return safeHistory;
+    return appendOpinionEntry(safeHistory, text, user, { ...options, kind });
   }
 
   function getLatestHistoryText(item, kind) {
