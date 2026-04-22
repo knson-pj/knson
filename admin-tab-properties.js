@@ -50,6 +50,18 @@
   function ensureProgressStatusSelect(selectEl, currentValue = '', bucket = '') {
     if (!selectEl) return;
     const current = String(currentValue || '').trim();
+    // [수정 내역] 관리자 편집 폼의 진행상태 필드는 admin-index.html 에서
+    // <input type="text"> 로 정의돼 있으나, 기존 코드는 <select> 로 가정하고
+    // innerHTML 을 초기화하고 <option> 을 appendChild 했다. <input> 은 void element
+    // 이므로 <option> 자식을 가질 수 없고, 브라우저(특히 Chrome)에서 해당 input 이
+    // 편집 불가능 상태로 렌더링되어 "관리자만 진행상태를 수정할 수 없다" 는
+    // 버그가 발생했다. 엘리먼트 태그를 확인해 <select> 일 때만 옵션을 구성하고,
+    // 그 외(<input> 등)에는 value 만 세팅한다.
+    const isSelect = String(selectEl.tagName || '').toUpperCase() === 'SELECT';
+    if (!isSelect) {
+      if (selectEl.value !== current) selectEl.value = current;
+      return;
+    }
     const values = getProgressStatusOptionsForBucket(bucket);
     if (current && !values.includes(current)) values.unshift(current);
     selectEl.innerHTML = '';
