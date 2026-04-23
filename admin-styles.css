@@ -1487,6 +1487,27 @@ body{
 .admin-home-weekly-large .admin-home-mini-copy p{font-size:18px;}
 .admin-home-weekly-large .admin-home-mini-copy strong{font-size:64px;}
 .admin-home-weekly-large .admin-home-sub-chip{font-size:14px;padding:5px 12px;}
+/* [신규] 전일 대비 증가율 칩 (전체 등록 물건 / 신규 등록 카드) */
+.admin-home-delta-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:4px 10px;border-radius:999px;
+  font-size:13px;font-weight:700;letter-spacing:-.01em;
+  white-space:nowrap;line-height:1;
+  background:#f3f4f6;color:#6b7280;
+}
+.admin-home-delta-chip:empty{display:none;}
+.admin-home-delta-chip.is-up{background:#dcfce7;color:#16a34a;}
+.admin-home-delta-chip.is-down{background:#fee2e2;color:#dc2626;}
+.admin-home-delta-chip.is-flat{background:#f3f4f6;color:#6b7280;}
+/* 전체 등록 물건 카드: 숫자와 칩을 가로 정렬 (baseline 맞춤) */
+.admin-home-overview-numrow{
+  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:6px;
+}
+.admin-home-overview-numrow .highlight-number{margin:0;}
+.admin-home-overview-numrow .admin-home-delta-chip{font-size:14px;padding:5px 12px;}
+/* 신규 등록 카드: 숫자 옆에 칩 */
+.admin-home-today-number-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.admin-home-today-number-row .admin-mini-number{margin:0;}
 /* [신규] 금주 낙찰/매각 카드의 '상세 내역 확인하기' 버튼 */
 .admin-home-weekly-detail-btn{
   margin-top:10px;align-self:flex-start;

@@ -9,7 +9,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260423-weekly" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260423-delta" />
 </head>
 <body class="page-admin">
 
@@ -116,8 +116,10 @@
         <article class="card-unit admin-home-overview">
           <div class="admin-home-overview-copy">
             <h3>전체 등록 물건</h3>
-            <div class="highlight-number" id="sumTotal">-</div>
-            <p class="admin-home-overview-sub">관리 중인 물건</p>
+            <div class="admin-home-overview-numrow">
+              <div class="highlight-number" id="sumTotal">-</div>
+              <span class="admin-home-delta-chip" id="sumTotalDeltaChip"></span>
+            </div>
           </div>
           <div class="admin-home-divider"></div>
           <div class="admin-home-source-grid">
@@ -180,7 +182,10 @@
             <article class="card-unit admin-home-updates-main">
               <div class="admin-home-updates-main-left">
                 <p class="admin-mini-label">신규 등록</p>
-                <div class="admin-mini-number" id="sumTodayTotal">-</div>
+                <div class="admin-home-today-number-row">
+                  <div class="admin-mini-number" id="sumTodayTotal">-</div>
+                  <span class="admin-home-delta-chip" id="sumTodayDeltaChip"></span>
+                </div>
               </div>
               <div class="admin-home-updates-list">
                 <div class="admin-home-updates-row is-auction"><span>경매</span><strong id="sumTodayAuction">-</strong></div>
@@ -620,7 +625,7 @@
 <script src="./admin-tab-csv.js?v=20260423-area"></script>
 <script src="./admin-tab-geocoding.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-properties.js?v=20260422-fix4"></script>
-<script src="./admin-tab-dashboard.js?v=20260423-weekly"></script>
+<script src="./admin-tab-dashboard.js?v=20260423-delta"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-buildings.js?v=20260417-bld11-binchip"></script>
 <script src="./admin-tab-onbid-sync.js?v=20260420-onbid-edge4"></script>

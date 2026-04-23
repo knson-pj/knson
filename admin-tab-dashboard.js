@@ -377,7 +377,78 @@
 
     // 금주 낙찰/매각 카드: 비동기 로드 (결과 도착 시 DOM 직접 갱신)
     renderWeeklyAuctionCard();
+
+    // [신규] 전일 대비 증가율 칩: API 비동기 로드 후 두 카드 칩 동시 갱신
+    renderDailyDeltaChips(Number(summary.total) || 0, Number(todayParts.total) || 0);
   };
+
+  // ─────────────────────────────────────────────────────────────
+  // [신규] 전일 대비 증가율 칩 렌더러
+  //   - totalNow: 현재 전체 등록 물건 수
+  //   - todayNewNow: 오늘 신규 등록 수
+  //   - API 로 전일 누적 총건수, 어제 하루 신규 건수를 받아 백분율 계산
+  // ─────────────────────────────────────────────────────────────
+  let _deltaLoading = false;
+  let _deltaFetchedAt = 0;
+  let _deltaData = null;
+  async function renderDailyDeltaChips(totalNow, todayNewNow) {
+    const totalChip = document.getElementById('sumTotalDeltaChip');
+    const todayChip = document.getElementById('sumTodayDeltaChip');
+    if (!totalChip && !todayChip) return;
+    // 30초 캐시 (카드 재렌더 시 API 연발 방지)
+    const needFetch = !_deltaData || (Date.now() - _deltaFetchedAt) >= 30000;
+    if (needFetch && !_deltaLoading) {
+      _deltaLoading = true;
+      try {
+        const { api } = ctx();
+        const data = await api('/admin/properties?mode=daily_delta_stats', { auth: true });
+        if (data?.ok) {
+          _deltaData = data;
+          _deltaFetchedAt = Date.now();
+        }
+      } catch (e) {
+        console.warn('daily delta stats load failed', e);
+      } finally {
+        _deltaLoading = false;
+      }
+    }
+    applyDeltaChip(totalChip, totalNow, Number(_deltaData?.totalUntilYesterday || 0), { mode: 'cumulative' });
+    applyDeltaChip(todayChip, todayNewNow, Number(_deltaData?.yesterdayNewCount || 0), { mode: 'daily' });
+  }
+
+  function applyDeltaChip(el, nowValue, prevValue, options = {}) {
+    if (!el) return;
+    el.classList.remove('is-up', 'is-down', 'is-flat');
+    // 전일 기준 값이 0 이면 백분율 정의 불가
+    //  - cumulative(전체 등록): 어제 누적이 0이면 표시 안 함 (DB 초기화 직후 등 edge)
+    //  - daily(신규 등록): 어제 신규가 0이면 "신규" 뱃지 표시
+    if (!Number.isFinite(prevValue) || prevValue <= 0) {
+      if (options.mode === 'daily' && nowValue > 0) {
+        el.textContent = '신규';
+        el.classList.add('is-up');
+      } else {
+        el.textContent = '';
+      }
+      return;
+    }
+    const diff = nowValue - prevValue;
+    const pct = (diff / prevValue) * 100;
+    // 소수점 1자리 표시. 단 절대값 10% 이상은 정수로 표시해 노이즈 감소.
+    const absPct = Math.abs(pct);
+    const pctStr = absPct >= 10
+      ? `${Math.round(pct)}%`
+      : `${(Math.round(pct * 10) / 10).toFixed(1)}%`;
+    if (diff > 0) {
+      el.textContent = `▲ ${pct > 0 ? '+' : ''}${pctStr.replace(/^-/, '')}`;
+      el.classList.add('is-up');
+    } else if (diff < 0) {
+      el.textContent = `▼ ${pctStr.replace(/^-/, '')}`;
+      el.classList.add('is-down');
+    } else {
+      el.textContent = '0%';
+      el.classList.add('is-flat');
+    }
+  }
 
   let _weeklyAuctionLoading = false;
   let _weeklyAuctionFetchedAt = 0;
