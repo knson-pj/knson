@@ -756,7 +756,7 @@ module.exports = async function handler(req, res) {
         weekEndKst.setUTCDate(weekStartKst.getUTCDate() + 6);
         const weekEndStr = weekEndKst.toISOString().slice(0, 10);
 
-        const select = 'id,item_no,address,source_type,result_status,result_price,result_date,price_main';
+        const select = 'id,item_no,address,source_type,asset_type,result_status,result_price,result_date,price_main';
         const path = `/rest/v1/properties`
           + `?select=${encodeURIComponent(select)}`
           + `&result_status=in.(낙찰,매각,유찰,취하,기각)`
@@ -780,6 +780,31 @@ module.exports = async function handler(req, res) {
             ratioN++;
           }
         }
+        // 모달용 낙찰/매각 상세 리스트 (낙찰율 계산까지 서버에서 처리해 클라이언트 단순화)
+        const winItems = rows
+          .filter((r) => {
+            const s = String(r.result_status || '').trim();
+            return s === '낙찰' || s === '매각';
+          })
+          .map((r) => {
+            const appraisal = Number(r.price_main || 0);
+            const resultPrice = Number(r.result_price || 0);
+            const ratio = (appraisal && resultPrice)
+              ? Math.round((resultPrice / appraisal) * 1000) / 10
+              : null;
+            return {
+              id: r.id,
+              itemNo: r.item_no || '',
+              sourceType: r.source_type || '',
+              assetType: r.asset_type || '',
+              address: r.address || '',
+              resultStatus: String(r.result_status || '').trim(),
+              resultDate: r.result_date || '',
+              priceMain: appraisal || 0,
+              resultPrice: resultPrice || 0,
+              ratio,
+            };
+          });
         return send(res, 200, {
           ok: true,
           weekStart: weekStartStr,
@@ -788,7 +813,7 @@ module.exports = async function handler(req, res) {
           totalAppraisal,
           totalResultPrice,
           avgRatio: ratioN ? Math.round((ratioSum / ratioN) * 10) / 10 : 0,
-          items: rows.slice(0, 50),
+          items: winItems,
         });
       } catch (err) {
         return send(res, err?.status || 500, {
