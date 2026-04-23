@@ -1853,6 +1853,7 @@
           "address", "asset_type", "exclusive_area", "common_area", "site_area", "use_approval", "status", "price_main", "lowprice",
           "date_main", "source_url", "broker_office_name", "submitter_name", "submitter_phone", "memo", "latitude", "longitude",
           "floor", "total_floor", "item_no", "source_type", "submitter_type", "assignee_id",
+          "court_dept",
         ];
     for (const key of copyFields) {
       if (key === "assignee_id" && options.assignIfEmpty) {

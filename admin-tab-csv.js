@@ -425,6 +425,22 @@
       const n = toNum(m2);
       return n ? (n / 3.305785) : 0;
     };
+    // [신규] 법원+계 정규화 — SQL migration 의 normalize_court_dept 와 동일 로직.
+    // 탱크옥션 API 의 crtDpt 포맷 (예: "서울중앙8계") 과 매칭하기 위함.
+    //   "서울중앙지방법원" + "경매8계" → "서울중앙8계"
+    //   "수원지방법원"     + "3계"     → "수원3계"
+    //   "평택지원"         + "경매5계" → "평택지원5계"
+    const normalizeCourtDept = (court, division) => {
+      const c = String(court == null ? '' : court).trim();
+      if (!c) return null;
+      let base = c.replace(/지방법원$/, '').replace(/법원$/, '').trim();
+      if (!base) return null;
+      const d = String(division == null ? '' : division).trim();
+      if (!d) return base;
+      const div = d.replace(/^경매\s*/, '').replace(/\s+/g, '');
+      if (!div) return base;
+      return base + div;
+    };
     const toISO = (v) => {
       if (K && typeof K.toISODate === "function") return K.toISODate(v);
       return null;
@@ -556,6 +572,7 @@
     let realtorCell = "";
     let auctionCaseNo = "";  // 경매 사건번호 원본 (상위 루프에서 빈도 집계용)
     let auctionPropNo = "";  // 경매 물건번호 원본
+    let courtDept = null;    // [신규] 법원+계 정규화 값 (예: "서울중앙8계")
 
     if (sourceType === "auction") {
       const caseNo = pick("사건번호", "caseNo", "");
@@ -579,7 +596,11 @@
       lowprice = salePrice || lowestPrice || null;
       assetType = pick("종별", "부동산유형", "assetType");
       dateMain = toISO(pick("입찰일자", "입찰일", "dateMain")) || null;
-      memo = [auctionStatusText, pick("비고", "memo"), pick("담당법원", "court"), pick("담당계", "division")]
+      // [신규] 법원+계 정규화 — 같은 사건번호 중복 시 지역 구분 키
+      const csvCourt = pick("담당법원", "court");
+      const csvDivision = pick("담당계", "division");
+      courtDept = normalizeCourtDept(csvCourt, csvDivision);
+      memo = [auctionStatusText, pick("비고", "memo"), csvCourt, csvDivision]
         .filter(Boolean)
         .join(" / ");
       const area = parseAuctionAreas(auctionStatusText);
@@ -680,7 +701,7 @@
     }
 
     if (!address && !itemNo) return null;
-    return { itemNo, address, status, priceMain, latitude: Number.isFinite(latitude) ? latitude : null, longitude: Number.isFinite(longitude) ? longitude : null, assetType, commonArea, exclusiveArea, siteArea, useApproval, dateMain, sourceUrl, memo, lowprice, floor, totalfloor, realtorName, realtorPhone, realtorCell, auctionCaseNo, auctionPropNo };
+    return { itemNo, address, status, priceMain, latitude: Number.isFinite(latitude) ? latitude : null, longitude: Number.isFinite(longitude) ? longitude : null, assetType, commonArea, exclusiveArea, siteArea, useApproval, dateMain, sourceUrl, memo, lowprice, floor, totalfloor, realtorName, realtorPhone, realtorCell, auctionCaseNo, auctionPropNo, courtDept };
   };
 
   mod.buildSupabasePropertyRow = function buildSupabasePropertyRow(rawRow, m, sourceType) {
@@ -739,6 +760,7 @@
       memo: m.memo || null,
       latitude: toNullNum(m.latitude),
       longitude: toNullNum(m.longitude),
+      court_dept: m.courtDept || null,
       raw: normalizedRaw,
     };
   };
