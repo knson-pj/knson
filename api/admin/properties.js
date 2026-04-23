@@ -823,6 +823,76 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    if (mode === 'daily_delta_stats') {
+      // [신규] 대시보드 증가율 칩 데이터
+      //   - totalUntilYesterday: 어제 자정(KST) 이전까지의 누적 등록 건수
+      //     → 현재 total 과 대비해 전체 등록 물건 증가율 계산
+      //   - yesterdayNewCount: 어제 하루(0시~24시 KST) 신규 등록 건수
+      //     → 오늘 신규 등록 건수와 대비해 신규 등록 증가율 계산
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      try {
+        if (!hasSupabaseAdminEnv()) {
+          return send(res, 200, { ok: true, totalUntilYesterday: 0, yesterdayNewCount: 0 });
+        }
+        // KST 기준 오늘 자정, 어제 자정 ISO 문자열 계산
+        const now = new Date();
+        const kstOffsetMs = 9 * 60 * 60 * 1000;
+        const kstNow = new Date(now.getTime() + kstOffsetMs);
+        const kstTodayMidnight = new Date(Date.UTC(
+          kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate(), 0, 0, 0, 0
+        ));
+        // KST 자정 → UTC 기준 ISO (예: 오늘 KST 00:00 = 어제 UTC 15:00)
+        const todayKstAsUtc = new Date(kstTodayMidnight.getTime() - kstOffsetMs);
+        const yesterdayKstAsUtc = new Date(todayKstAsUtc.getTime() - 24 * 60 * 60 * 1000);
+        const todayIso = todayKstAsUtc.toISOString();
+        const yesterdayIso = yesterdayKstAsUtc.toISOString();
+
+        // 1) 어제 자정 이전 누적 건수 (created_at < todayIso)
+        //    HEAD + Prefer:count=exact 로 count 만 받아 경량 처리
+        const untilPath = `/rest/v1/properties?select=id&created_at=lt.${encodeURIComponent(todayIso)}`;
+        // 2) 어제 하루 신규 건수 (yesterdayIso <= created_at < todayIso)
+        const ydyPath = `/rest/v1/properties?select=id&created_at=gte.${encodeURIComponent(yesterdayIso)}&created_at=lt.${encodeURIComponent(todayIso)}`;
+
+        async function countRows(path) {
+          // supabaseRest 는 data 반환형이라 count 만 가져오기 어려우므로 HEAD 로 직접 호출.
+          // Prefer: count=exact + Range: 0-0 헤더로 Content-Range 응답 헤더에 총건수 포함.
+          const { url: baseUrl, serviceRoleKey } = getEnv();
+          const r = await fetch(`${baseUrl}${path}`, {
+            method: 'HEAD',
+            headers: {
+              apikey: serviceRoleKey,
+              Authorization: `Bearer ${serviceRoleKey}`,
+              Prefer: 'count=exact',
+              'Range-Unit': 'items',
+              Range: '0-0',
+            },
+          });
+          // Content-Range 형식: "0-0/1234" 또는 "*/1234"
+          const contentRange = r.headers.get('content-range') || '';
+          const m = contentRange.match(/\/(\d+)$/);
+          return m ? Number(m[1]) : 0;
+        }
+
+        const [totalUntilYesterday, yesterdayNewCount] = await Promise.all([
+          countRows(untilPath).catch(() => 0),
+          countRows(ydyPath).catch(() => 0),
+        ]);
+
+        return send(res, 200, {
+          ok: true,
+          totalUntilYesterday,
+          yesterdayNewCount,
+          todayKstIso: todayIso,
+          yesterdayKstIso: yesterdayIso,
+        });
+      } catch (err) {
+        return send(res, err?.status || 500, {
+          ok: false,
+          message: err?.message || '전일 대비 통계를 불러오지 못했습니다.',
+        });
+      }
+    }
+
     if (mode === 'all_favorites') {
       // 모든 담당자의 관심물건 property_id 집합 (관리자용 ★/🔥 필터링)
       // - kind=star|fire|all (기본 all)
