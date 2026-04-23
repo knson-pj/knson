@@ -686,13 +686,23 @@
   function normalizeOpinionHistoryEntry(entry) {
     if (!entry || typeof entry !== "object") return null;
     const text = String(entry.text || entry.note || "").trim();
-    if (!text) return null;
     const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
     const title = String(entry.title || entry.label || "").trim();
     const date = String(entry.date || entry.at || "").trim();
+    const at = date || String(entry.at || "").trim();
     const author = String(entry.author || entry.actor || "").trim();
+    // [수정 내역] 이전에는 text 가 빈 문자열이면 null 을 반환해 history 에서 제외했다.
+    // 이로 인해 두 가지 버그가 발생했다:
+    //   1) 담당자/관리자가 "의견/현장실사/금일이슈" 의 내용을 지우고 저장해도 LOG 에
+    //      "지움" 이벤트가 기록되지 않음.
+    //   2) 더 심각한 버그 — 모달 재오픈 시 getLatestHistoryEntryLocal 이 빈 entry 를
+    //      찾지 못하고 그 이전의 "진짜 내용 있는" entry 를 "최신" 으로 반환해,
+    //      textarea 에 이전 텍스트가 복원되는 현상.
+    // 이제 text 가 비어 있더라도 kind/at/author 중 하나라도 있으면 유지한다.
+    // 진짜로 깨진 entry (아무 정보도 없는 객체) 는 여전히 제외한다.
+    if (!text && !at && !author) return null;
     const authorRole = normalizeLogActorRole(entry.authorRole || entry.actorRole || "");
-    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author, authorRole };
+    return { ...entry, kind, title, date, at, text, author, authorRole };
   }
 
   function buildOpinionHistoryEntry(kind, text, user, options = {}) {
