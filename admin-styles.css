@@ -215,6 +215,19 @@ a{text-decoration:none;color:inherit;}
 .sidebar-nav-sub{padding-left:28px !important;}
 .sidebar-nav-icon{font-size:13px;line-height:1;flex-shrink:0;width:16px;text-align:center;opacity:.7;}
 .sidebar-nav-label{overflow:hidden;text-overflow:ellipsis;transition:opacity .2s,width .2s;}
+/* 외부 링크 스타일 a 태그 — 다른 sidebar-nav-item 과 시각적 통일 */
+a.sidebar-nav-item{text-decoration:none;}
+.sidebar-nav-external{color:var(--sb-text);}
+.sidebar-nav-external:visited{color:var(--sb-text);}
+/* Beta / Alpha 같은 상태 뱃지 */
+.sidebar-nav-badge{
+  margin-left:auto;padding:1px 6px;
+  font-size:9px;font-weight:700;line-height:1.4;
+  letter-spacing:.3px;text-transform:uppercase;
+  border-radius:4px;flex-shrink:0;
+}
+.sidebar-nav-badge-beta{background:#7c3aed;color:#fff;}
+body.sidebar-collapsed .sidebar-nav-badge{display:none;}
 
 /* Bottom buttons */
 .sidebar-bottom{
