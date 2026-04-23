@@ -9,7 +9,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260423-dashboard3" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260423-weekly" />
 </head>
 <body class="page-admin">
 
@@ -217,6 +217,7 @@
                   <strong id="homeWeeklyWinCount">-</strong>
                   <span class="admin-home-mini-sub admin-home-sub-chip" id="homeWeeklyAvgRatio"></span>
                 </div>
+                <button type="button" id="btnWeeklyAuctionDetail" class="btn btn-ghost admin-home-weekly-detail-btn">상세 내역 확인하기</button>
               </div>
             </article>
           </div>
@@ -619,11 +620,40 @@
 <script src="./admin-tab-csv.js?v=20260423-area"></script>
 <script src="./admin-tab-geocoding.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-properties.js?v=20260422-fix4"></script>
-<script src="./admin-tab-dashboard.js?v=20260420-onbid2"></script>
+<script src="./admin-tab-dashboard.js?v=20260423-weekly"></script>
 <script src="./admin-tab-new-property.js?v=20260330-phase3a"></script>
 <script src="./admin-tab-buildings.js?v=20260417-bld11-binchip"></script>
 <script src="./admin-tab-onbid-sync.js?v=20260420-onbid-edge4"></script>
 <script src="./admin-shell-bootstrap.js?v=20260326-home2"></script>
 <script src="./admin-app.js?v=20260420-onbid-edge3"></script>
+<!-- 금주 낙찰/매각 상세 모달 -->
+<div id="weeklyAuctionDetailModal" class="modal hidden">
+  <div class="modal-backdrop" data-close="true"></div>
+  <div class="modal-card weekly-auction-modal-card">
+    <div class="modal-header">
+      <h3>금주 낙찰/매각 상세 내역 <span id="weeklyAuctionModalRange" class="weekly-auction-modal-range"></span></h3>
+      <button id="weeklyAuctionModalClose" class="icon-btn" type="button">✕</button>
+    </div>
+    <div class="modal-body weekly-auction-modal-body">
+      <div id="weeklyAuctionModalMsg" class="weekly-auction-modal-msg">로딩 중…</div>
+      <div class="table-wrap weekly-auction-modal-tablewrap hidden" id="weeklyAuctionModalTableWrap">
+        <table class="table weekly-auction-modal-table">
+          <thead>
+            <tr>
+              <th>물건번호</th>
+              <th>유형</th>
+              <th>주소</th>
+              <th class="num">감정가</th>
+              <th class="num">낙찰가</th>
+              <th class="num">낙찰율</th>
+            </tr>
+          </thead>
+          <tbody id="weeklyAuctionModalTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

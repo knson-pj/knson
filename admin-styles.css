@@ -1487,6 +1487,57 @@ body{
 .admin-home-weekly-large .admin-home-mini-copy p{font-size:18px;}
 .admin-home-weekly-large .admin-home-mini-copy strong{font-size:64px;}
 .admin-home-weekly-large .admin-home-sub-chip{font-size:14px;padding:5px 12px;}
+/* [신규] 금주 낙찰/매각 카드의 '상세 내역 확인하기' 버튼 */
+.admin-home-weekly-detail-btn{
+  margin-top:10px;align-self:flex-start;
+  padding:6px 14px;font-size:13px;font-weight:600;
+  background:rgba(234,88,12,.08);color:#ea580c;
+  border:1px solid rgba(234,88,12,.25);border-radius:999px;
+  cursor:pointer;transition:background .15s,border-color .15s,transform .1s;
+}
+.admin-home-weekly-detail-btn:hover{background:rgba(234,88,12,.14);border-color:rgba(234,88,12,.4);}
+.admin-home-weekly-detail-btn:active{transform:scale(.98);}
+/* [신규] 금주 낙찰/매각 상세 모달 */
+.weekly-auction-modal-card{
+  width:min(960px,calc(100% - 24px));
+  max-height:calc(100vh - 48px);
+  display:flex;flex-direction:column;
+}
+.weekly-auction-modal-range{font-size:12px;color:#6b7280;font-weight:500;margin-left:8px;}
+.weekly-auction-modal-body{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:16px 20px 20px;}
+.weekly-auction-modal-msg{font-size:13px;color:#6b7280;padding:20px 4px;text-align:center;}
+.weekly-auction-modal-msg.is-error{color:#dc2626;}
+.weekly-auction-modal-msg.is-empty{color:#9ca3af;}
+.weekly-auction-modal-tablewrap{flex:1;min-height:0;overflow:auto;border:1px solid var(--border);border-radius:10px;}
+.weekly-auction-modal-table{width:100%;border-collapse:collapse;font-size:13px;}
+.weekly-auction-modal-table thead th{
+  position:sticky;top:0;z-index:1;
+  background:#f9fafb;color:#374151;font-weight:700;
+  padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.weekly-auction-modal-table thead th.num{text-align:right;}
+.weekly-auction-modal-table tbody td{
+  padding:10px 12px;border-bottom:1px solid #f3f4f6;color:#111827;
+  vertical-align:middle;
+}
+.weekly-auction-modal-table tbody tr:last-child td{border-bottom:none;}
+.weekly-auction-modal-table tbody td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.weekly-auction-modal-table tbody td.col-item{font-weight:600;white-space:nowrap;}
+.weekly-auction-modal-table tbody td.col-address{color:#374151;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.weekly-auction-modal-table tbody .ratio-badge{
+  display:inline-block;padding:2px 8px;border-radius:999px;
+  font-size:12px;font-weight:700;
+  background:#fff2ea;color:#ea580c;
+}
+.weekly-auction-modal-table tbody .ratio-badge.is-high{background:#fee2e2;color:#dc2626;}
+.weekly-auction-modal-table tbody .ratio-badge.is-low{background:#dcfce7;color:#16a34a;}
+@media (max-width: 720px){
+  .weekly-auction-modal-table tbody td.col-address{max-width:160px;}
+  .weekly-auction-modal-table{font-size:12px;}
+  .weekly-auction-modal-table thead th,
+  .weekly-auction-modal-table tbody td{padding:8px 10px;}
+}
 
 .admin-bottom-nav{display:none;}
 

@@ -381,6 +381,7 @@
 
   let _weeklyAuctionLoading = false;
   let _weeklyAuctionFetchedAt = 0;
+  let _weeklyAuctionData = null;  // 모달 재오픈 시 재활용용 캐시
   async function renderWeeklyAuctionCard() {
     const { state, api } = ctx();
     const countEl = document.getElementById('homeWeeklyWinCount');
@@ -394,6 +395,7 @@
     try {
       const data = await api('/admin/properties?mode=weekly_auction_stats', { auth: true });
       if (!data?.ok) throw new Error(data?.message || '통계 실패');
+      _weeklyAuctionData = data;  // 모달용 캐시
       const c = data.counts || {};
       const winCount = Number(c['낙찰'] || 0) + Number(c['매각'] || 0);
       countEl.textContent = Number(winCount).toLocaleString('ko-KR');
@@ -415,6 +417,144 @@
       if (subEl) subEl.textContent = '';
     } finally {
       _weeklyAuctionLoading = false;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // [신규] 금주 낙찰/매각 상세 모달
+  //   - '상세 내역 확인하기' 버튼 클릭 시 열림
+  //   - 캐시가 유효하면 즉시 표시, 아니면 API 재호출
+  //   - 카드 전체 클릭(전체리스트 이동) 과 독립 동작
+  // ─────────────────────────────────────────────────────────────
+  const SOURCE_TYPE_LABEL = {
+    auction: '경매', onbid: '공매',
+    realtor_naver: '네이버중개', realtor_direct: '일반중개', realtor: '중개',
+    general: '일반',
+  };
+  function formatWon(n) {
+    const num = Number(n || 0);
+    if (!Number.isFinite(num) || num <= 0) return '-';
+    return num.toLocaleString('ko-KR') + '원';
+  }
+  function escHtmlLocal(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function renderWeeklyAuctionModalContent(data) {
+    const rangeEl = document.getElementById('weeklyAuctionModalRange');
+    const msgEl = document.getElementById('weeklyAuctionModalMsg');
+    const wrapEl = document.getElementById('weeklyAuctionModalTableWrap');
+    const tbodyEl = document.getElementById('weeklyAuctionModalTbody');
+    if (!msgEl || !wrapEl || !tbodyEl) return;
+    if (rangeEl) {
+      rangeEl.textContent = (data && data.weekStart && data.weekEnd)
+        ? `(${data.weekStart} ~ ${data.weekEnd})`
+        : '';
+    }
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) {
+      msgEl.textContent = '이번 주에 낙찰/매각된 물건이 없습니다.';
+      msgEl.classList.remove('hidden', 'is-error');
+      msgEl.classList.add('is-empty');
+      wrapEl.classList.add('hidden');
+      tbodyEl.innerHTML = '';
+      return;
+    }
+    msgEl.classList.add('hidden');
+    msgEl.classList.remove('is-empty', 'is-error');
+    wrapEl.classList.remove('hidden');
+    const rows = items.map((it) => {
+      const typeLabel = escHtmlLocal(SOURCE_TYPE_LABEL[it.sourceType] || it.sourceType || '-');
+      const assetLabel = escHtmlLocal(it.assetType || '');
+      const fullType = assetLabel ? `${typeLabel} · ${assetLabel}` : typeLabel;
+      const itemNo = escHtmlLocal(it.itemNo || '-');
+      const address = escHtmlLocal(it.address || '-');
+      const priceMain = formatWon(it.priceMain);
+      const resultPrice = formatWon(it.resultPrice);
+      let ratioHtml = '-';
+      if (typeof it.ratio === 'number' && Number.isFinite(it.ratio)) {
+        let cls = '';
+        if (it.ratio >= 100) cls = 'is-high';
+        else if (it.ratio < 80) cls = 'is-low';
+        ratioHtml = `<span class="ratio-badge ${cls}">${it.ratio.toFixed(1)}%</span>`;
+      }
+      return (
+        `<tr>`
+        + `<td class="col-item">${itemNo}</td>`
+        + `<td>${fullType}</td>`
+        + `<td class="col-address" title="${address}">${address}</td>`
+        + `<td class="num">${priceMain}</td>`
+        + `<td class="num">${resultPrice}</td>`
+        + `<td class="num">${ratioHtml}</td>`
+        + `</tr>`
+      );
+    }).join('');
+    tbodyEl.innerHTML = rows;
+  }
+  async function openWeeklyAuctionDetailModal() {
+    const modalEl = document.getElementById('weeklyAuctionDetailModal');
+    const msgEl = document.getElementById('weeklyAuctionModalMsg');
+    const wrapEl = document.getElementById('weeklyAuctionModalTableWrap');
+    if (!modalEl) return;
+    modalEl.classList.remove('hidden');
+    // 캐시가 유효(30초 이내)하면 즉시 표시
+    if (_weeklyAuctionData && (Date.now() - _weeklyAuctionFetchedAt) < 30000) {
+      renderWeeklyAuctionModalContent(_weeklyAuctionData);
+      return;
+    }
+    // 로딩 표시
+    if (msgEl) {
+      msgEl.textContent = '로딩 중…';
+      msgEl.classList.remove('hidden', 'is-error', 'is-empty');
+    }
+    if (wrapEl) wrapEl.classList.add('hidden');
+    try {
+      const { api } = ctx();
+      const data = await api('/admin/properties?mode=weekly_auction_stats', { auth: true });
+      if (!data?.ok) throw new Error(data?.message || '통계 실패');
+      _weeklyAuctionData = data;
+      _weeklyAuctionFetchedAt = Date.now();
+      renderWeeklyAuctionModalContent(data);
+    } catch (e) {
+      console.warn('weekly auction detail load failed', e);
+      if (msgEl) {
+        msgEl.textContent = '상세 내역을 불러오지 못했습니다.';
+        msgEl.classList.add('is-error');
+        msgEl.classList.remove('hidden', 'is-empty');
+      }
+      if (wrapEl) wrapEl.classList.add('hidden');
+    }
+  }
+  function closeWeeklyAuctionDetailModal() {
+    const modalEl = document.getElementById('weeklyAuctionDetailModal');
+    if (modalEl) modalEl.classList.add('hidden');
+  }
+  function bindWeeklyAuctionModal() {
+    const btn = document.getElementById('btnWeeklyAuctionDetail');
+    if (btn && btn.dataset.bound !== '1') {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e) => {
+        // 카드 전체 클릭(전체리스트 이동) 이벤트가 함께 발생하지 않도록 버블 차단
+        e.stopPropagation();
+        openWeeklyAuctionDetailModal();
+      });
+    }
+    const modalEl = document.getElementById('weeklyAuctionDetailModal');
+    if (modalEl && modalEl.dataset.bound !== '1') {
+      modalEl.dataset.bound = '1';
+      modalEl.addEventListener('click', (e) => {
+        const t = e.target;
+        if (t && t.dataset && t.dataset.close === 'true') closeWeeklyAuctionDetailModal();
+      });
+      const closeBtn = document.getElementById('weeklyAuctionModalClose');
+      if (closeBtn) closeBtn.addEventListener('click', closeWeeklyAuctionDetailModal);
+      // ESC 로 닫기
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modalEl.classList.contains('hidden')) {
+          closeWeeklyAuctionDetailModal();
+        }
+      });
     }
   }
 
@@ -442,9 +582,15 @@
   // 대시보드 DOM 이 세팅된 후 한 번 바인딩
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', bindWeeklyAuctionCardClick);
+      document.addEventListener('DOMContentLoaded', () => {
+        bindWeeklyAuctionCardClick();
+        bindWeeklyAuctionModal();
+      });
     } else {
-      setTimeout(bindWeeklyAuctionCardClick, 0);
+      setTimeout(() => {
+        bindWeeklyAuctionCardClick();
+        bindWeeklyAuctionModal();
+      }, 0);
     }
   }
 
