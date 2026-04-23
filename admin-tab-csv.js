@@ -431,23 +431,44 @@
     };
     const parseAuctionAreas = (text) => {
       const src = String(text || "");
-      // 경매 데이터의 경매현황 텍스트는 3가지 패턴 존재:
-      //   A) "집합건물 철근콘크리트구조 50.02㎡(15.13평)"  → 평 값 우선 사용
-      //   B) "건물 20.5평"                                 → 단순 N평
-      //   C) "건물 67.78㎡"                                → ㎡ → 평 환산
+      // [수정 내역] 경매 CSV 의 경매현황(=text) 텍스트 파싱 로직 전면 개편.
+      // 기존 문제: 같은 경매현황 문자열이라도 "건물" 키워드 위치·정규식 상태에 따라
+      // 파싱이 불안정했고, 실패 시 호출부에서 CSV 면적(㎡) 을 평으로 환산하는
+      // fallback 이 일어나 집합건물(호별 경매) 에 엉뚱한 큰 값이 저장되는 버그
+      // (예: 47.18㎡(14.27평) 짜리 집합건물에 1007.93평 저장) 가 있었다.
       //
-      // 구현 전략: 평 / ㎡ 단위로 먼저 모든 후보를 찾고,
-      //   "건물" / "대지권" 단서와의 인접성으로 적절한 값을 선택.
+      // 새 분기:
+      //   1) 집합건물 → 경매현황의 첫 (X평) 값을 반드시 사용. 없으면 ㎡→평 환산.
+      //                CSV 면적(㎡) fallback 금지 (호출부에서 isAggregateBuilding 플래그
+      //                기반으로 막는다).
+      //   2) 다층 일반 건물 → CSV 면적(㎡) 을 평으로 환산 (호출부에서 isMultiFloor
+      //                      플래그 기반으로 분기).
+      //   3) 단층 일반 건물 → 기존과 유사 (경매현황의 건물 섹션 첫 평 값).
+      //   4) 토지만 → building=null, site=값. 호출부에서 종별과 조합해 skip 판정.
+      //
+      // 반환 추가 필드: isAggregateBuilding / isMultiFloor / hasBuilding / hasLand.
 
-      // '건물/집합건물' 과 '대지권/토지' 위치
+      // 집합건물 / 건물 / 대지권 / 토지 단서 위치 탐지
+      const aggregateMatch = src.match(/집합\s*건물/);
+      const isAggregateBuilding = !!aggregateMatch;
       const buildingIdx = (() => {
-        const m = src.match(/(?:집합\s*건물|건물)/);
+        if (aggregateMatch) return aggregateMatch.index + aggregateMatch[0].length;
+        const m = src.match(/건물/);
         return m ? m.index + m[0].length : -1;
       })();
       const siteIdx = (() => {
         const m = src.match(/(?:대지권|대\s*지\s*권|토지)/);
         return m ? m.index + m[0].length : -1;
       })();
+      const hasBuilding = buildingIdx >= 0;
+      const hasLand = siteIdx >= 0;
+
+      // 다층 판정: "1층/2층/지층/옥탑 ... (X평)" 같은 층별 평수 패턴이 2개 이상
+      //   예: "1층 563.13㎡(170.35평)\n2층 378.87㎡(114.61평)" → 다층.
+      //       "21.3㎡(6.44평)" 단일 패턴 → 단층.
+      const floorPyeongPattern = /(?:\d+\s*층|지하\s*\d*\s*층|지\s*층|옥\s*탑|옥탑)[^\r\n(]*\([0-9]+(?:[.,][0-9]+)?\s*평\)/g;
+      const floorPyeongCount = (src.match(floorPyeongPattern) || []).length;
+      const isMultiFloor = floorPyeongCount >= 2;
 
       const toP = (v) => {
         const n = toNum(v);
@@ -455,7 +476,7 @@
       };
       const m2ToP = (m2) => {
         const n = toNum(m2);
-        return Number.isFinite(n) ? n * 0.3025 : null;
+        return Number.isFinite(n) ? Number((n * 0.3025).toFixed(2)) : null;
       };
 
       // 숫자+평 / 숫자+㎡ 매칭을 position 과 함께 모두 수집
@@ -465,51 +486,51 @@
       const sqmRe = /([0-9]+(?:[.,][0-9]+)?)\s*(?:㎡|m²|m2)/g;
       let mm;
       while ((mm = pyeongRe.exec(src)) !== null) pyeongMatches.push({ idx: mm.index, value: toP(mm[1]) });
-      while ((mm = sqmRe.exec(src)) !== null)    sqmMatches.push({ idx: mm.index, value: m2ToP(mm[1]) });
+      while ((mm = sqmRe.exec(src)) !== null)    sqmMatches.push({ idx: mm.index, value: toP(mm[1]) });
 
-      // "건물" 이후 가장 가까이 나타나는 평 값 (있으면), 없으면 ㎡→평 변환값
-      // buildingIdx 가 없으면 첫 평 값(전체 중) 또는 첫 ㎡값
-      const pickNearestAfter = (idx, arr) => {
-        if (idx < 0) return null;
-        const after = arr.filter((x) => x.idx >= idx);
-        return after.length ? after[0].value : null;
-      };
-      const pickNearestBefore = (idx, limit, arr) => {
-        // idx 이후 limit 인덱스 이전에 나타나는 첫 값
-        if (idx < 0) return null;
-        const inRange = arr.filter((x) => x.idx >= idx && (limit < 0 || x.idx < limit));
-        return inRange.length ? inRange[0].value : null;
-      };
-
-      // 경계 계산: buildingIdx 와 siteIdx 중 더 뒤에 있는 것이 상대 섹션의 "끝".
-      // 예: "집합건물 50㎡(15평) 대지권 30㎡(9평)" 에서
-      //   buildingIdx=4, siteIdx=15 → 건물 섹션은 [4, 15) 사이의 값을 우선.
+      // 섹션 경계 계산
       const hasBoth = buildingIdx >= 0 && siteIdx >= 0;
       const buildingEnd = hasBoth ? (siteIdx > buildingIdx ? siteIdx : -1) : -1;
       const siteEnd = hasBoth ? (buildingIdx > siteIdx ? buildingIdx : -1) : -1;
 
-      // 건물 섹션: '건물' 이후 ~ 대지권 이전. 평 > ㎡→평 순으로 우선
+      const pickFirstInRange = (startIdx, endIdx, arr) => {
+        if (startIdx < 0) return null;
+        const inRange = arr.filter((x) => x.idx >= startIdx && (endIdx < 0 || x.idx < endIdx));
+        return inRange.length ? inRange[0].value : null;
+      };
+
+      // 건물 섹션: 평 > ㎡→평 순으로 우선. 집합건물인 경우도 동일 로직이나
+      // 호출부에서 CSV 면적(㎡) fallback 금지로 작동.
       let building = null;
       if (buildingIdx >= 0) {
-        building = pickNearestBefore(buildingIdx, buildingEnd, pyeongMatches);
-        if (building == null) building = pickNearestBefore(buildingIdx, buildingEnd, sqmMatches);
+        building = pickFirstInRange(buildingIdx, buildingEnd, pyeongMatches);
+        if (building == null) {
+          const m2 = pickFirstInRange(buildingIdx, buildingEnd, sqmMatches);
+          if (m2 != null) building = Number((m2 * 0.3025).toFixed(2));
+        }
       } else if (siteIdx < 0) {
-        // '건물' 도 '대지권/토지' 단서도 없을 때만 전체 첫 값 fallback
-        // (토지만 있는 경매현황을 건물로 오인하지 않기 위함)
+        // 건물/토지 단서 모두 없음 → 전체 첫 평/㎡ 값 fallback
         if (pyeongMatches.length) building = pyeongMatches[0].value;
-        else if (sqmMatches.length) building = sqmMatches[0].value;
+        else if (sqmMatches.length) building = Number((sqmMatches[0].value * 0.3025).toFixed(2));
       }
 
-      // 대지권 섹션: 같은 로직 site 기준
+      // 토지 섹션
       let site = null;
       if (siteIdx >= 0) {
-        site = pickNearestBefore(siteIdx, siteEnd, pyeongMatches);
-        if (site == null) site = pickNearestBefore(siteIdx, siteEnd, sqmMatches);
+        site = pickFirstInRange(siteIdx, siteEnd, pyeongMatches);
+        if (site == null) {
+          const m2 = pickFirstInRange(siteIdx, siteEnd, sqmMatches);
+          if (m2 != null) site = Number((m2 * 0.3025).toFixed(2));
+        }
       }
 
       return {
-        building: Number.isFinite(building) ? Number(building.toFixed(2)) : null,
-        site: Number.isFinite(site) ? Number(site.toFixed(2)) : null,
+        building: Number.isFinite(building) ? Number(Number(building).toFixed(2)) : null,
+        site: Number.isFinite(site) ? Number(Number(site).toFixed(2)) : null,
+        isAggregateBuilding,
+        isMultiFloor,
+        hasBuilding,
+        hasLand,
       };
     };
 
@@ -562,8 +583,40 @@
         .filter(Boolean)
         .join(" / ");
       const area = parseAuctionAreas(auctionStatusText);
-      exclusiveArea = area.building || (pick("면적(㎡)") ? m2ToPyeong(pick("면적(㎡)")) : null);
+      // [수정 내역] exclusive_area 결정 로직 분기 재작성.
+      //   1) 집합건물 → 경매현황의 (X평) 값만 사용. CSV 면적(㎡) fallback 금지
+      //      (버그 재발 방지: 3332㎡ → 1007.93평 같은 대규모 건물 전체 면적이
+      //      호별 경매 exclusive_area 로 저장되는 현상).
+      //   2) 다층 일반 건물 → CSV "면적(㎡)" 컬럼을 평으로 환산.
+      //      경매현황에 층별로 여러 (X평) 이 있어 첫 값만 쓰면 부정확하기 때문.
+      //   3) 단층 일반 건물 → area.building 값 (경매현황 내 (X평)).
+      //      아예 파싱 실패 시에만 CSV 면적(㎡) fallback 허용.
+      const csvAreaM2 = pick("면적(㎡)");
+      if (area.isAggregateBuilding) {
+        exclusiveArea = area.building; // null 이어도 fallback 금지
+      } else if (area.isMultiFloor) {
+        exclusiveArea = csvAreaM2 ? m2ToPyeong(csvAreaM2) : (area.building || null);
+      } else {
+        exclusiveArea = area.building || (csvAreaM2 ? m2ToPyeong(csvAreaM2) : null);
+      }
       siteArea = area.site;
+
+      // [수정 내역] 토지만 있는 경매 + 종별이 건물류(상가/오피스텔/근린시설 등) →
+      // 업로드 대상에서 제외. 종별이 토지류(토지/대지/전/답/잡종지 등) 인 경우는
+      // 그대로 업로드(토지 평수 = siteArea 는 이미 세팅됨). 종별 토큰 파싱은
+      // "상가,오피스텔,근린시설" 같은 쉼표 구분 원본을 split 해서 판정.
+      const isLandOnly = !area.hasBuilding && area.hasLand;
+      if (isLandOnly) {
+        const assetTokens = String(assetType || "").split(/[,\/\s]+/).map((s) => s.trim()).filter(Boolean);
+        const LAND_TYPES = new Set(["토지", "대지", "전", "답", "임야", "잡종지", "과수원", "목장", "농지"]);
+        const BUILDING_TYPES = new Set([
+          "상가", "오피스텔", "근린시설", "근린", "아파트", "빌라", "주택", "연립",
+          "다세대", "다가구", "사무실", "사무소", "공장", "창고", "기숙사"
+        ]);
+        const hasLandToken = assetTokens.some((t) => LAND_TYPES.has(t));
+        const hasBuildingToken = assetTokens.some((t) => BUILDING_TYPES.has(t));
+        if (hasBuildingToken && !hasLandToken) return null;
+      }
       floor = extractFloorLabelFromTexts(buildingDetail, address, auctionStatusText);
       totalfloor = extractTotalFloorFromTexts(auctionStatusText);
     } else if (sourceType === "onbid") {
