@@ -24,19 +24,31 @@
     (function(){
       try {
         // [수정 내역] 외부 탭에서 이 페이지로 진입할 때 sessionStorage 는
-        // 복제되지 않으므로, admin 페이지가 localStorage 에 심어둔 handoff 키를
-        // 먼저 확인해 sessionStorage 로 복구한다. handoff 키는 사용 즉시 삭제
-        // 하므로 페이지 닫고 다시 열 때의 "자동 로그인" 으로 연결되지 않는다.
+        // 복제되지 않으므로, admin 페이지가 localStorage 에 심어둔 handoff 번들을
+        // 먼저 확인해 sessionStorage 로 복구한다. 번들에는 우리 커스텀 세션
+        // (knson_bms_session_v1) 뿐 아니라 Supabase SDK 가 sessionStorage 에 쓴
+        // auth 토큰(sb-* 키들) 도 함께 들어있다. 이것까지 복구해야 app.js 의
+        // sbSyncLocalSession() 가 Supabase 세션을 정상 인식해, 페이지가 잠깐
+        // 보였다가 로그인으로 튕기는 현상이 사라진다. handoff 키는 사용 즉시
+        // 삭제하므로 페이지 닫고 다시 열 때의 "자동 로그인" 으로 연결되지 않는다.
         // 60초 타임아웃으로 오래된 handoff 는 무효화.
         try {
           var handoffRaw = localStorage.getItem('knson_bms_session_handoff_v1');
           if (handoffRaw) {
             localStorage.removeItem('knson_bms_session_handoff_v1');
-            var parsed = JSON.parse(handoffRaw);
-            if (parsed && parsed.session && parsed.ts && (Date.now() - parsed.ts) < 60000) {
-              var existing = sessionStorage.getItem('knson_bms_session_v1');
-              if (!existing) {
-                sessionStorage.setItem('knson_bms_session_v1', parsed.session);
+            var bundle = JSON.parse(handoffRaw);
+            if (bundle && bundle.ts && (Date.now() - bundle.ts) < 60000) {
+              // 커스텀 세션 복구 (이미 있으면 덮어쓰지 않음 — 현재 탭의 세션 보존)
+              if (bundle.knson && !sessionStorage.getItem('knson_bms_session_v1')) {
+                sessionStorage.setItem('knson_bms_session_v1', bundle.knson);
+              }
+              // Supabase SDK auth 토큰 복구
+              if (bundle.sbKeys && typeof bundle.sbKeys === 'object') {
+                for (var k in bundle.sbKeys) {
+                  if (Object.prototype.hasOwnProperty.call(bundle.sbKeys, k) && !sessionStorage.getItem(k)) {
+                    try { sessionStorage.setItem(k, bundle.sbKeys[k]); } catch(e) {}
+                  }
+                }
               }
             }
           }

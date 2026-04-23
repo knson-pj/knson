@@ -727,17 +727,35 @@ function bindEvents() {
     // sessionStorage 가 복제되지 않음). 링크 클릭 순간 세션을 localStorage 의
     // 임시 handoff 키로 복사해두면, 목적지 페이지(index.html) 가 로드될 때 이를
     // 감지해 자신의 sessionStorage 로 복구 후 localStorage 키는 즉시 삭제한다.
+    //
+    // 추가: 우리 커스텀 SESSION_KEY 뿐 아니라 Supabase SDK 가 sessionStorage 에
+    // 저장한 auth 토큰(sb-* prefix) 도 함께 복사해야 한다. knson-core.js 의
+    // createClient 가 storage:sessionStorage 로 설정되어 있어 Supabase auth 세션도
+    // sessionStorage 에 저장되기 때문. 이것이 빠지면 index.html 의 app.js 초기화
+    // 단계에서 sbSyncLocalSession()이 Supabase 세션 없음을 감지해 clearSession()
+    // 으로 우리 세션마저 지워버린다(페이지가 잠깐 보였다가 로그인으로 튕기는 현상).
     // 기존에 잔존할 수 있는 'knson_bms_session_v1' localStorage (과거 버전 자동
     // 로그인용) 와 키 이름을 다르게(_handoff) 해서 index.html 의 legacy 정리
     // 로직과 충돌하지 않는다.
     document.querySelectorAll('[data-session-handoff="true"]').forEach((el) => {
       el.addEventListener('click', () => {
         try {
-          const sessionRaw = sessionStorage.getItem(SESSION_KEY);
-          if (sessionRaw) {
-            const payload = JSON.stringify({ session: sessionRaw, ts: Date.now() });
-            localStorage.setItem('knson_bms_session_handoff_v1', payload);
+          const bundle = {
+            knson: null,
+            sbKeys: {},
+            ts: Date.now(),
+          };
+          // 1) 커스텀 세션
+          bundle.knson = sessionStorage.getItem(SESSION_KEY) || null;
+          // 2) Supabase SDK 가 sessionStorage 에 쓴 auth 키들 전부 복사
+          //    (버전별 key format 편차 흡수: sb-<ref>-auth-token / sb.auth.token / 기타)
+          for (let i = 0; i < sessionStorage.length; i += 1) {
+            const k = sessionStorage.key(i);
+            if (k && (k.startsWith('sb-') || k.startsWith('sb.') || k.indexOf('supabase') !== -1)) {
+              bundle.sbKeys[k] = sessionStorage.getItem(k);
+            }
           }
+          localStorage.setItem('knson_bms_session_handoff_v1', JSON.stringify(bundle));
         } catch {}
       }, { capture: true });
     });
