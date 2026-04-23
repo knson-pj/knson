@@ -23,6 +23,25 @@
   <script>
     (function(){
       try {
+        // [수정 내역] 외부 탭에서 이 페이지로 진입할 때 sessionStorage 는
+        // 복제되지 않으므로, admin 페이지가 localStorage 에 심어둔 handoff 키를
+        // 먼저 확인해 sessionStorage 로 복구한다. handoff 키는 사용 즉시 삭제
+        // 하므로 페이지 닫고 다시 열 때의 "자동 로그인" 으로 연결되지 않는다.
+        // 60초 타임아웃으로 오래된 handoff 는 무효화.
+        try {
+          var handoffRaw = localStorage.getItem('knson_bms_session_handoff_v1');
+          if (handoffRaw) {
+            localStorage.removeItem('knson_bms_session_handoff_v1');
+            var parsed = JSON.parse(handoffRaw);
+            if (parsed && parsed.session && parsed.ts && (Date.now() - parsed.ts) < 60000) {
+              var existing = sessionStorage.getItem('knson_bms_session_v1');
+              if (!existing) {
+                sessionStorage.setItem('knson_bms_session_v1', parsed.session);
+              }
+            }
+          }
+        } catch(e) {}
+
         var raw = null;
         try { raw = sessionStorage.getItem('knson_bms_session_v1'); } catch(e) {}
         // 과거 버전 세션 정리(브라우저 재접속 자동로그인 방지)

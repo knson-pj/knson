@@ -722,6 +722,26 @@ function bindEvents() {
       }, { capture: true });
     });
 
+    // [수정 내역] 외부 탭(target=_blank)으로 열리는 Platform 링크는 sessionStorage
+    // 공유가 불가능하다 (Chrome 88+ 에서 target=_blank 새 탭은 opener 격리되어
+    // sessionStorage 가 복제되지 않음). 링크 클릭 순간 세션을 localStorage 의
+    // 임시 handoff 키로 복사해두면, 목적지 페이지(index.html) 가 로드될 때 이를
+    // 감지해 자신의 sessionStorage 로 복구 후 localStorage 키는 즉시 삭제한다.
+    // 기존에 잔존할 수 있는 'knson_bms_session_v1' localStorage (과거 버전 자동
+    // 로그인용) 와 키 이름을 다르게(_handoff) 해서 index.html 의 legacy 정리
+    // 로직과 충돌하지 않는다.
+    document.querySelectorAll('[data-session-handoff="true"]').forEach((el) => {
+      el.addEventListener('click', () => {
+        try {
+          const sessionRaw = sessionStorage.getItem(SESSION_KEY);
+          if (sessionRaw) {
+            const payload = JSON.stringify({ session: sessionRaw, ts: Date.now() });
+            localStorage.setItem('knson_bms_session_handoff_v1', payload);
+          }
+        } catch {}
+      }, { capture: true });
+    });
+
     // auth / password
     if (els.btnChangeMyPassword) els.btnChangeMyPassword.addEventListener("click", openPasswordChangeModal);
 
