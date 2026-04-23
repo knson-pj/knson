@@ -9,7 +9,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260423-menu2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260423-dashboard" />
 </head>
 <body class="page-admin">
 
@@ -49,7 +49,7 @@
         <button class="sidebar-nav-item sidebar-nav-sub" data-tab="geocoding"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">지오 코딩</span></button>
       </div>
     </div>
-    <a class="sidebar-nav-item sidebar-nav-external sidebar-nav-platform" href="https://knson-pj.github.io/knson/index.html" target="_blank" rel="noopener noreferrer">
+    <a class="sidebar-nav-item sidebar-nav-external sidebar-nav-platform" href="https://knson-pj.github.io/knson/index.html" target="_blank">
       <span class="sidebar-nav-icon">◇</span><span class="sidebar-nav-label">Platform</span><span class="sidebar-nav-badge sidebar-nav-badge-beta">Beta</span>
     </a>
   </nav>
@@ -178,7 +178,7 @@
           <h3 class="admin-page-heading admin-page-heading-sm">오늘의 업데이트</h3>
           <div class="admin-home-updates-grid">
             <article class="card-unit admin-home-updates-main">
-              <div>
+              <div class="admin-home-updates-main-left">
                 <p class="admin-mini-label">신규 등록</p>
                 <div class="admin-mini-number" id="sumTodayTotal">-</div>
               </div>
@@ -207,15 +207,16 @@
                   <strong id="homeGeoPending">-</strong>
                 </div>
               </article>
-              <article class="card-unit admin-home-mini-card admin-home-weekly-card" id="homeWeeklyAuctionCard" title="이번 주 낙찰/매각 현황">
-                <div class="admin-home-mini-icon is-weekly">★</div>
-                <div class="admin-home-mini-copy">
-                  <p>금주 낙찰/매각</p>
-                  <strong id="homeWeeklyWinCount">-</strong>
-                  <span class="admin-home-mini-sub" id="homeWeeklyAvgRatio"></span>
-                </div>
-              </article>
             </div>
+
+            <article class="card-unit admin-home-mini-card admin-home-weekly-card admin-home-weekly-large" id="homeWeeklyAuctionCard" title="이번 주 낙찰/매각 현황">
+              <div class="admin-home-mini-icon is-weekly">★</div>
+              <div class="admin-home-mini-copy">
+                <p>금주 낙찰/매각</p>
+                <strong id="homeWeeklyWinCount">-</strong>
+                <span class="admin-home-mini-sub" id="homeWeeklyAvgRatio"></span>
+              </div>
+            </article>
           </div>
         </section>
       </div>
