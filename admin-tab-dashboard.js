@@ -384,36 +384,57 @@
 
   // ─────────────────────────────────────────────────────────────
   // [신규] 전일 대비 증가율 칩 렌더러
-  //   - totalNow: 현재 전체 등록 물건 수
-  //   - todayNewNow: 오늘 신규 등록 수
-  //   - API 로 전일 누적 총건수, 어제 하루 신규 건수를 받아 백분율 계산
+  //   - renderSummary 가 스냅샷 경로/비스냅샷 경로 등 여러 번 호출되면서,
+  //     첫 호출의 stale 한 totalNow=0 값이 async 완료 시점에 칩에 세팅되어
+  //     ▼100% 가 잘못 표시되는 문제가 있었다. 이를 막기 위해 API 응답 후
+  //     칩을 세팅할 때는 매개변수가 아니라 현재 DOM 에 렌더된 숫자(#sumTotal,
+  //     #sumTodayTotal) 를 재조회해서 계산한다 — DOM 이 source of truth.
+  //   - 30초 캐시로 대시보드 재렌더 시 API 연발 방지
   // ─────────────────────────────────────────────────────────────
   let _deltaLoading = false;
   let _deltaFetchedAt = 0;
   let _deltaData = null;
-  async function renderDailyDeltaChips(totalNow, todayNewNow) {
+  function parseChipNowFromDom(id) {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    const raw = String(el.textContent || '').replace(/[^0-9.-]/g, '');
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function refreshDeltaChipsFromDom() {
+    const totalChip = document.getElementById('sumTotalDeltaChip');
+    const todayChip = document.getElementById('sumTodayDeltaChip');
+    const totalNow = parseChipNowFromDom('sumTotal');
+    const todayNow = parseChipNowFromDom('sumTodayTotal');
+    applyDeltaChip(totalChip, totalNow, Number(_deltaData?.totalUntilYesterday || 0), { mode: 'cumulative' });
+    applyDeltaChip(todayChip, todayNow, Number(_deltaData?.yesterdayNewCount || 0), { mode: 'daily' });
+  }
+  async function renderDailyDeltaChips(/* totalNow_ignored, todayNewNow_ignored */) {
     const totalChip = document.getElementById('sumTotalDeltaChip');
     const todayChip = document.getElementById('sumTodayDeltaChip');
     if (!totalChip && !todayChip) return;
-    // 30초 캐시 (카드 재렌더 시 API 연발 방지)
-    const needFetch = !_deltaData || (Date.now() - _deltaFetchedAt) >= 30000;
-    if (needFetch && !_deltaLoading) {
-      _deltaLoading = true;
-      try {
-        const { api } = ctx();
-        const data = await api('/admin/properties?mode=daily_delta_stats', { auth: true });
-        if (data?.ok) {
-          _deltaData = data;
-          _deltaFetchedAt = Date.now();
-        }
-      } catch (e) {
-        console.warn('daily delta stats load failed', e);
-      } finally {
-        _deltaLoading = false;
-      }
+    // 캐시 유효하면 즉시 DOM 최신값으로 재계산 (매개변수 사용 안 함)
+    if (_deltaData && (Date.now() - _deltaFetchedAt) < 30000) {
+      refreshDeltaChipsFromDom();
+      return;
     }
-    applyDeltaChip(totalChip, totalNow, Number(_deltaData?.totalUntilYesterday || 0), { mode: 'cumulative' });
-    applyDeltaChip(todayChip, todayNewNow, Number(_deltaData?.yesterdayNewCount || 0), { mode: 'daily' });
+    // API 호출 진행 중이면 스킵 (먼저 시작된 호출이 끝나고 칩 세팅함)
+    if (_deltaLoading) return;
+    _deltaLoading = true;
+    try {
+      const { api } = ctx();
+      const data = await api('/admin/properties?mode=daily_delta_stats', { auth: true });
+      if (data?.ok) {
+        _deltaData = data;
+        _deltaFetchedAt = Date.now();
+      }
+    } catch (e) {
+      console.warn('daily delta stats load failed', e);
+    } finally {
+      _deltaLoading = false;
+    }
+    // API 응답 직후 DOM 최신값으로 칩 계산 — 매개변수로 받은 stale 값은 사용 안 함
+    refreshDeltaChipsFromDom();
   }
 
   function applyDeltaChip(el, nowValue, prevValue, options = {}) {
