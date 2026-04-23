@@ -228,6 +228,24 @@ a.sidebar-nav-item{text-decoration:none;}
 }
 .sidebar-nav-badge-beta{background:#7c3aed;color:#fff;}
 body.sidebar-collapsed .sidebar-nav-badge{display:none;}
+/* Material Symbols 를 sidebar-nav-icon 으로 쓸 때 크기·variation 조정
+   (사이드바 다른 유니코드 아이콘과 시각 크기 통일) */
+.sidebar-nav-icon.material-symbols-outlined{
+  font-size:17px;line-height:1;
+  font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 20;
+}
+/* Platform 메뉴 전용: 보라→핑크 그라데이션 텍스트·아이콘 */
+.sidebar-nav-platform .sidebar-nav-icon,
+.sidebar-nav-platform .sidebar-nav-label{
+  background:linear-gradient(135deg,#a855f7 0%,#7c3aed 50%,#ec4899 100%);
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;color:transparent;
+  font-weight:600;opacity:1;
+}
+.sidebar-nav-platform:hover .sidebar-nav-icon,
+.sidebar-nav-platform:hover .sidebar-nav-label{
+  filter:brightness(1.15) saturate(1.1);
+}
 
 /* Bottom buttons */
 .sidebar-bottom{

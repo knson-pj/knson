@@ -9,7 +9,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role!=='admin'){location.replace('./agent-index.html');return;}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./admin-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260423-menu" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260423-menu2" />
 </head>
 <body class="page-admin">
 
@@ -32,7 +32,7 @@
     </div>
     <div class="sidebar-group">
       <button class="sidebar-group-btn" data-group="staff">
-        <span class="sidebar-nav-icon">👤</span><span class="sidebar-nav-label">담당자 관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
+        <span class="sidebar-nav-icon material-symbols-outlined">person</span><span class="sidebar-nav-label">담당자 관리</span><span class="sidebar-group-arrow sidebar-nav-label">∨</span>
       </button>
       <div class="sidebar-group-items">
         <button class="sidebar-nav-item sidebar-nav-sub" data-tab="staff"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">등록 관리</span></button>
@@ -49,7 +49,7 @@
         <button class="sidebar-nav-item sidebar-nav-sub" data-tab="geocoding"><span class="sidebar-nav-icon">•</span><span class="sidebar-nav-label">지오 코딩</span></button>
       </div>
     </div>
-    <a class="sidebar-nav-item sidebar-nav-external" href="https://knson-pj.github.io/knson/index.html" target="_blank" rel="noopener noreferrer">
+    <a class="sidebar-nav-item sidebar-nav-external sidebar-nav-platform" href="https://knson-pj.github.io/knson/index.html" target="_blank" rel="noopener noreferrer">
       <span class="sidebar-nav-icon">◇</span><span class="sidebar-nav-label">Platform</span><span class="sidebar-nav-badge sidebar-nav-badge-beta">Beta</span>
     </a>
   </nav>
