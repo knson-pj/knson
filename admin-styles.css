@@ -1496,8 +1496,8 @@ body{
   background:#f3f4f6;color:#6b7280;
 }
 .admin-home-delta-chip:empty{display:none;}
-.admin-home-delta-chip.is-up{background:#dcfce7;color:#16a34a;}
-.admin-home-delta-chip.is-down{background:#fee2e2;color:#dc2626;}
+.admin-home-delta-chip.is-up{background:#fee2e2;color:#dc2626;}
+.admin-home-delta-chip.is-down{background:#dbeafe;color:#2563eb;}
 .admin-home-delta-chip.is-flat{background:#f3f4f6;color:#6b7280;}
 /* 전체 등록 물건 카드: 숫자와 칩을 가로 정렬 (baseline 맞춤) */
 .admin-home-overview-numrow{
@@ -1552,7 +1552,7 @@ body{
   background:#fff2ea;color:#ea580c;
 }
 .weekly-auction-modal-table tbody .ratio-badge.is-high{background:#fee2e2;color:#dc2626;}
-.weekly-auction-modal-table tbody .ratio-badge.is-low{background:#dcfce7;color:#16a34a;}
+.weekly-auction-modal-table tbody .ratio-badge.is-low{background:#dbeafe;color:#2563eb;}
 @media (max-width: 720px){
   .weekly-auction-modal-table tbody td.col-address{max-width:160px;}
   .weekly-auction-modal-table{font-size:12px;}
