@@ -130,6 +130,7 @@
     "memo",
     "latitude",
     "longitude",
+    "court_dept",
     "raw",
   ]);
 
