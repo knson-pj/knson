@@ -539,6 +539,7 @@
     els.npmMsg = $("#npmMsg");
     els.npmRealtorFields = $("#npmRealtorFields");
     els.npmOwnerFields = $("#npmOwnerFields");
+    els.npmDupPreview = $("#npmDupPreview");
 
     // Edit modal
     els.agEditModal = $("#agEditModal");
@@ -3005,6 +3006,342 @@ function renderPagination(totalPages) {
     el.value = value || "";
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // 신규 물건 등록 모달 — 주소 기반 중복 감지 프리뷰
+  // 2026-04-24 추가: 사용자가 주소/층을 입력하는 동안 DB 내 동일/유사
+  // 매물이 있는지 실시간 감지해 모달 내 인라인 영역에 안내한다.
+  //
+  // 매칭 키: buildRegistrationMatchKey 재사용 (저장 시 로직과 완전 동일)
+  //   → 주소 표기 변형(서울특별시/서울시, 동번지 붙임 등) 자동 흡수
+  //
+  // 탐색 2단계:
+  //   ① 클라이언트(state.properties) 즉시 → 본인 담당 매물에서 찾으면 0ms 로 표시
+  //   ② 서버(Supabase) debounce 450ms → 다른 담당자/미배정 포함 DB 전체
+  //
+  // 상태 분기:
+  //   idle / searching / parse-fail / new / own / unassigned / other-staff / building
+  // ══════════════════════════════════════════════════════════════════════
+
+  const npmDupState = { generation: 0, lastAddress: "", lastFloor: "", blockedForSave: false };
+
+  function getNpmFormInput(name) {
+    return els.newPropertyForm?.querySelector(`input[name="${name}"]`) || null;
+  }
+
+  function escapeHtmlForPreview(text) {
+    return String(text == null ? "" : text).replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[ch]);
+  }
+
+  function resetNpmDupPreview() {
+    npmDupState.generation++;
+    npmDupState.lastAddress = "";
+    npmDupState.lastFloor = "";
+    npmDupState.blockedForSave = false;
+    const box = els.npmDupPreview;
+    if (box) {
+      box.hidden = true;
+      box.dataset.state = "idle";
+      box.innerHTML = "";
+    }
+    if (els.npmSave) els.npmSave.disabled = false;
+  }
+
+  function renderNpmDupPreview(state) {
+    const box = els.npmDupPreview;
+    if (!box) return;
+    const kind = state?.kind || "idle";
+    box.dataset.state = kind;
+    box.hidden = false;
+
+    const setSaveBlocked = (blocked) => {
+      npmDupState.blockedForSave = !!blocked;
+      if (els.npmSave) els.npmSave.disabled = !!blocked;
+    };
+
+    if (kind === "idle") {
+      box.hidden = true;
+      box.innerHTML = "";
+      setSaveBlocked(false);
+      return;
+    }
+    if (kind === "searching") {
+      box.innerHTML = `<div class="npm-dup-head">🔍 중복 확인 중…</div>`;
+      setSaveBlocked(false);
+      return;
+    }
+    if (kind === "parse-fail") {
+      box.innerHTML = `<div class="npm-dup-head">💡 주소 확인</div>
+        <div class="npm-dup-body">지번 주소로 입력해 주세요 <span class="npm-dup-sub">(예: 서울 강남구 역삼동 736-20)</span></div>`;
+      setSaveBlocked(false);
+      return;
+    }
+    if (kind === "new") {
+      box.innerHTML = `<div class="npm-dup-head">✅ 신규 매물입니다</div>`;
+      setSaveBlocked(false);
+      return;
+    }
+    if (kind === "own") {
+      const addr = escapeHtmlForPreview(state?.match?.address || "");
+      box.innerHTML = `<div class="npm-dup-head">⚠️ 본인이 관리중인 매물입니다</div>
+        <div class="npm-dup-body"><em>${addr}</em></div>
+        <div class="npm-dup-actions"><button type="button" class="npm-dup-btn" data-npm-dup-action="edit">편집으로 이동</button></div>`;
+      setSaveBlocked(false);
+      return;
+    }
+    if (kind === "unassigned") {
+      const addr = escapeHtmlForPreview(state?.match?.address || "");
+      box.innerHTML = `<div class="npm-dup-head">ℹ️ DB에 등록된 미배정 건입니다. 저장 시 본인에게 배정됩니다</div>
+        <div class="npm-dup-body"><em>${addr}</em></div>`;
+      setSaveBlocked(false);
+      return;
+    }
+    if (kind === "other-staff") {
+      const addr = escapeHtmlForPreview(state?.match?.address || "");
+      const staffName = escapeHtmlForPreview(state?.match?.assigneeName || "알 수 없음");
+      box.innerHTML = `<div class="npm-dup-head">🚫 다른 담당자(${staffName})에게 배정된 매물입니다. 해당 담당자에게 문의하세요</div>
+        <div class="npm-dup-body"><em>${addr}</em></div>`;
+      setSaveBlocked(true);
+      return;
+    }
+    if (kind === "building") {
+      const own = Number(state?.counts?.own || 0);
+      const unassigned = Number(state?.counts?.unassigned || 0);
+      const others = Array.isArray(state?.counts?.others) ? state.counts.others : [];
+      const othersCount = others.reduce((acc, g) => acc + Number(g.count || 0), 0);
+      const total = own + unassigned + othersCount;
+      const lines = [];
+      if (own > 0) lines.push(`<li><span class="npm-dup-list-label">본인 담당</span><span>${own}건</span></li>`);
+      if (unassigned > 0) lines.push(`<li><span class="npm-dup-list-label">미배정</span><span>${unassigned}건</span></li>`);
+      if (othersCount > 0) {
+        const names = others.map((g) => `${escapeHtmlForPreview(g.name || "알 수 없음")} ${g.count}건`).join(", ");
+        lines.push(`<li><span class="npm-dup-list-label">타 담당자</span><span>${names}</span></li>`);
+      }
+      box.innerHTML = `<div class="npm-dup-head">🏢 이 건물에 이미 ${total}건 등록됨</div>
+        <ul class="npm-dup-list">${lines.join("")}</ul>
+        <div class="npm-dup-sub">층·호까지 입력하시면 정확히 어느 매물인지 확인됩니다.</div>`;
+      setSaveBlocked(false);
+      return;
+    }
+  }
+
+  // 같은 건물 매물 그룹핑 (본인/미배정/타담당자별 카운트)
+  function summarizeBuildingMatches(rows, currentUserId) {
+    const myId = String(currentUserId || "").trim();
+    let own = 0, unassigned = 0;
+    const otherMap = new Map(); // assignee_id → { name, count }
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const aid = String(row?.assignee_id || "").trim();
+      if (!aid) { unassigned += 1; continue; }
+      if (myId && aid === myId) { own += 1; continue; }
+      const name = String(row?.assignee_name || row?.assigneeName || "").trim() || "알 수 없음";
+      const ent = otherMap.get(aid) || { name, count: 0 };
+      ent.count += 1;
+      otherMap.set(aid, ent);
+    }
+    return { own, unassigned, others: Array.from(otherMap.values()) };
+  }
+
+  // address 에서 건물 레벨 파싱 (dong + mainNo + subNo)
+  function buildBuildingKey(address) {
+    const parts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === "function")
+      ? PropertyDomain.parseAddressIdentityParts(address || "")
+      : parseAddressIdentityParts(address || "");
+    if (!parts?.dong || !parts?.mainNo) return "";
+    return `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}`;
+  }
+
+  // 클라이언트 state.properties 에서 같은 건물 매물 전수 탐색
+  function findBuildingMatchesLocal(address) {
+    const target = buildBuildingKey(address);
+    if (!target) return [];
+    const out = [];
+    for (const item of Array.isArray(state?.properties) ? state.properties : []) {
+      const snap = buildRegistrationSnapshotFromItem(item);
+      if (buildBuildingKey(snap?.address || item?.address) === target) {
+        out.push(item?._raw || item);
+      }
+    }
+    return out;
+  }
+
+  // 서버에서 같은 동 매물을 가져와 필터
+  async function findBuildingMatchesRemote(sb, address) {
+    const parts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === "function")
+      ? PropertyDomain.parseAddressIdentityParts(address || "")
+      : parseAddressIdentityParts(address || "");
+    if (!parts?.dong || !parts?.mainNo) return [];
+    const target = `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}`;
+    try {
+      const { data, error } = await sb.from("properties")
+        .select("id, global_id, address, floor, assignee_id, assignee_name, raw, source_type, item_no")
+        .ilike("address", `%${parts.dong}%`)
+        .limit(400);
+      if (error || !Array.isArray(data)) return [];
+      return data.filter((row) => buildBuildingKey(row?.address || "") === target);
+    } catch {
+      return [];
+    }
+  }
+
+  // 건물 매물 목록에서 정확 매칭(주소+층+호) 찾기
+  function pickExactMatchFromBuilding(rows, payload) {
+    const targetKey = buildRegistrationMatchKey(payload);
+    if (!targetKey) return null;
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const rowRaw = row?.raw || row?._raw?.raw || {};
+      const snap = { address: row?.address || "", floor: row?.floor || rowRaw?.floor || "", raw: rowRaw };
+      if (buildRegistrationMatchKey(snap) === targetKey) return row;
+    }
+    return null;
+  }
+
+  // 매칭된 row 에서 담당자 상태(own/unassigned/other-staff) 판정
+  function classifyMatchForCurrentUser(row, currentUserId) {
+    const aid = String(row?.assignee_id || "").trim();
+    const myId = String(currentUserId || "").trim();
+    if (!aid) return "unassigned";
+    if (myId && aid === myId) return "own";
+    return "other-staff";
+  }
+
+  async function runNpmDuplicateCheck() {
+    const box = els.npmDupPreview;
+    if (!box) return;
+    const address = (getNpmFormInput("address")?.value || "").trim();
+    const floor = (getNpmFormInput("floor")?.value || "").trim();
+
+    // 주소 없으면 침묵
+    if (!address) { renderNpmDupPreview({ kind: "idle" }); return; }
+
+    // 주소 파싱 실패 → 안내
+    const buildingKey = buildBuildingKey(address);
+    if (!buildingKey) { renderNpmDupPreview({ kind: "parse-fail" }); return; }
+
+    const myGen = ++npmDupState.generation;
+    npmDupState.lastAddress = address;
+    npmDupState.lastFloor = floor;
+
+    // 1단계: 클라이언트 즉시 탐색 (본인 담당 매물 전수)
+    const currentUserId = String(state?.session?.user?.id || "").trim();
+    const localBuilding = findBuildingMatchesLocal(address);
+    const payloadForKey = { address, floor, raw: {} };
+    const localExact = pickExactMatchFromBuilding(localBuilding, payloadForKey);
+    if (localExact) {
+      // 본인 소유일 것이 확실 (state.properties 에는 본인 매물만 존재)
+      const kind = classifyMatchForCurrentUser(localExact, currentUserId);
+      const match = {
+        id: localExact?.id || localExact?._raw?.id,
+        address: localExact?.address || localExact?._raw?.address,
+        assigneeName: localExact?.assignee_name || localExact?.assigneeName || "",
+      };
+      renderNpmDupPreview({ kind, match });
+      // 로컬에서 본인 매물 확정된 경우라도 서버 탐색 계속 진행할 필요 없음
+      if (kind === "own") return;
+    }
+
+    // 2단계: 서버 탐색
+    renderNpmDupPreview({ kind: "searching" });
+    let sb = null;
+    try { sb = isSupabaseMode() ? K.initSupabase() : null; } catch {}
+    if (!sb) {
+      // Supabase 불가 → 로컬 결과로만 판단
+      if (localBuilding.length > 0) {
+        const summary = summarizeBuildingMatches(localBuilding, currentUserId);
+        renderNpmDupPreview({ kind: "building", counts: summary });
+      } else {
+        renderNpmDupPreview({ kind: "new" });
+      }
+      return;
+    }
+
+    const remoteBuilding = await findBuildingMatchesRemote(sb, address);
+    // 레이스 방어: 최신 요청이 아니면 무시
+    if (myGen !== npmDupState.generation) return;
+
+    // 로컬 + 서버 중복 제거 (id 기준 병합)
+    const merged = new Map();
+    for (const r of localBuilding) {
+      const id = String(r?.id || r?._raw?.id || "").trim();
+      if (id) merged.set(id, r?._raw || r);
+    }
+    for (const r of remoteBuilding) {
+      const id = String(r?.id || "").trim();
+      if (id && !merged.has(id)) merged.set(id, r);
+    }
+    const allBuilding = Array.from(merged.values());
+
+    if (allBuilding.length === 0) {
+      renderNpmDupPreview({ kind: "new" });
+      return;
+    }
+
+    // 정확 매칭 시도 (층까지 포함)
+    const exact = pickExactMatchFromBuilding(allBuilding, payloadForKey);
+    if (exact) {
+      const kind = classifyMatchForCurrentUser(exact, currentUserId);
+      const match = {
+        id: exact?.id,
+        address: exact?.address,
+        assigneeName: exact?.assignee_name || exact?.assigneeName || "",
+      };
+      renderNpmDupPreview({ kind, match });
+      return;
+    }
+
+    // 정확 매칭 없음 → 건물 단위 집계
+    const summary = summarizeBuildingMatches(allBuilding, currentUserId);
+    renderNpmDupPreview({ kind: "building", counts: summary });
+  }
+
+  const runNpmDuplicateCheckDebounced = debounce(runNpmDuplicateCheck, 450);
+
+  function handleNpmDupInputChange() {
+    // 입력 즉시 blockedForSave 해제 (사용자가 수정 중임 — 서버 완료까지 저장 허용)
+    npmDupState.blockedForSave = false;
+    if (els.npmSave) els.npmSave.disabled = false;
+    runNpmDuplicateCheckDebounced();
+  }
+
+  // 프리뷰의 [편집으로 이동] 버튼 위임 핸들러
+  function bindNpmDupPreviewActions() {
+    const box = els.npmDupPreview;
+    if (!box || box.dataset.bound === "1") return;
+    box.dataset.bound = "1";
+    box.addEventListener("click", (e) => {
+      const btn = e.target?.closest?.('[data-npm-dup-action]');
+      if (!btn) return;
+      const action = btn.getAttribute("data-npm-dup-action");
+      if (action === "edit") {
+        // 현재 주소/층으로 로컬 매칭 재조회 → 본인 매물이면 해당 아이템으로 편집 모달 열기
+        const address = (getNpmFormInput("address")?.value || "").trim();
+        const floor = (getNpmFormInput("floor")?.value || "").trim();
+        const building = findBuildingMatchesLocal(address);
+        const exactRaw = pickExactMatchFromBuilding(building, { address, floor, raw: {} });
+        if (!exactRaw) {
+          setNpmMsg("매물 정보를 찾을 수 없습니다. 다시 확인해 주세요.", true);
+          return;
+        }
+        // state.properties 배열에서 id 매칭되는 정규화 item 찾기
+        const id = String(exactRaw?.id || "").trim();
+        const normalized = Array.isArray(state?.properties)
+          ? state.properties.find((it) => String(it?.id || it?._raw?.id || "") === id)
+          : null;
+        if (!normalized) {
+          setNpmMsg("편집 모달을 열 수 없습니다. 페이지를 새로고침해 주세요.", true);
+          return;
+        }
+        // 신규 모달 닫고 편집 모달 열기
+        closeNewPropertyModal();
+        try { openEditModal(normalized); } catch (err) {
+          console.error("[npm-dup] openEditModal failed:", err);
+        }
+      }
+    });
+  }
+
+  // 신규 물건 등록 모달
   // ── 신규 물건 등록 모달 ──
   function openNewPropertyModal() {
     if (!els.newPropertyModal || !els.newPropertyForm) return;
@@ -3017,6 +3354,19 @@ function renderPagination(totalPages) {
       card.classList.toggle("is-active", !!radio?.checked);
     });
     setNpmMsg("");
+    // 중복 감지 프리뷰 초기화 + 이벤트 바인딩 (최초 1회)
+    resetNpmDupPreview();
+    bindNpmDupPreviewActions();
+    const addrInput = getNpmFormInput("address");
+    const floorInput = getNpmFormInput("floor");
+    if (addrInput && addrInput.dataset.npmDupBound !== "1") {
+      addrInput.dataset.npmDupBound = "1";
+      addrInput.addEventListener("input", handleNpmDupInputChange);
+    }
+    if (floorInput && floorInput.dataset.npmDupBound !== "1") {
+      floorInput.dataset.npmDupBound = "1";
+      floorInput.addEventListener("input", handleNpmDupInputChange);
+    }
     document.body.classList.add("modal-open");
     els.newPropertyModal.classList.remove("hidden");
     els.newPropertyModal.setAttribute("aria-hidden", "false");
@@ -3028,6 +3378,7 @@ function renderPagination(totalPages) {
     els.newPropertyModal.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
     setNpmMsg("");
+    resetNpmDupPreview();
   }
 
   function setNpmMsg(text, isError = true) {

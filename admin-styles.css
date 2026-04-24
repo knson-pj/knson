@@ -2574,3 +2574,66 @@ html.modal-open-lock-html{
     min-width:32px !important;min-height:32px !important;font-size:11px !important;padding:0 6px !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * 신규 물건 등록 모달 — 주소 중복 감지 프리뷰 (agent)
+ * 2026-04-24: 주소/층 입력 시 DB 내 동일/유사 매물 실시간 감지 UI
+ * ───────────────────────────────────────────────────────────────────── */
+.npm-dup-preview{
+  margin: -4px 0 10px; padding: 10px 12px;
+  border-radius: 8px; border: 1px solid transparent;
+  font-size: 13px; line-height: 1.45;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.npm-dup-preview[hidden]{ display: none; }
+.npm-dup-preview .npm-dup-head{ display:flex; align-items:center; gap:6px; font-weight:600; }
+.npm-dup-preview .npm-dup-body{ font-weight:400; }
+.npm-dup-preview .npm-dup-body em{ font-style:normal; font-weight:600; }
+.npm-dup-preview .npm-dup-sub{ font-size:12px; opacity:0.85; font-weight:400; }
+.npm-dup-preview .npm-dup-actions{ display:flex; gap:8px; margin-top:2px; flex-wrap:wrap; }
+.npm-dup-preview .npm-dup-btn{
+  padding: 5px 12px; border-radius: 6px; border: 1px solid currentColor;
+  background: transparent; font-size: 12px; font-weight: 600; cursor: pointer;
+  color: inherit;
+}
+.npm-dup-preview .npm-dup-btn:hover{ background: rgba(255,255,255,0.35); }
+.npm-dup-preview .npm-dup-list{
+  margin: 2px 0 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.npm-dup-preview .npm-dup-list li{
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 4px 8px; border-radius: 4px; background: rgba(255,255,255,0.35);
+  font-size: 12px;
+}
+.npm-dup-preview .npm-dup-list li .npm-dup-list-label{ font-weight: 600; min-width: 60px; }
+
+/* 상태별 색상 테마 */
+.npm-dup-preview[data-state="searching"]{
+  background: #f1f5f9; border-color: #cbd5e1; color: #475569;
+}
+.npm-dup-preview[data-state="parse-fail"]{
+  background: #fefce8; border-color: #fde68a; color: #854d0e;
+}
+.npm-dup-preview[data-state="new"]{
+  background: #ecfdf5; border-color: #86efac; color: #166534;
+}
+.npm-dup-preview[data-state="own"]{
+  background: #fff7ed; border-color: #fdba74; color: #9a3412;
+}
+.npm-dup-preview[data-state="unassigned"]{
+  background: #eff6ff; border-color: #93c5fd; color: #1e40af;
+}
+.npm-dup-preview[data-state="other-staff"]{
+  background: #fef2f2; border-color: #fca5a5; color: #991b1b;
+}
+.npm-dup-preview[data-state="building"]{
+  background: #f8fafc; border-color: #cbd5e1; color: #334155;
+}
+
+/* 모바일 */
+@media (max-width: 430px){
+  .npm-dup-preview{ font-size: 12px; padding: 8px 10px; }
+  .npm-dup-preview .npm-dup-list li{ flex-direction: column; gap: 2px; align-items: stretch; }
+  .npm-dup-preview .npm-dup-list li .npm-dup-list-label{ min-width: 0; }
+}
