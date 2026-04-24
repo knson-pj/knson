@@ -291,27 +291,52 @@
         }
 
         const rawRows = mod.parseCsv(csvText);
+
+        // [신규 2026-04-24] 경매 CSV 선제 병합:
+        // 탱크옥션/법원경매 CSV 에서 같은 물건(사건번호+물건번호+주소+감정가+최저가
+        // 완전 일치) 이 "토지 표시 행" + "건물 표시 행" 으로 쪼개져 들어오는 경우,
+        // 경매현황 텍스트를 합쳐 1개 raw 행으로 압축. 감정가/최저가 동일 = 일괄매각
+        // 시그널이므로 그룹 키에 포함. 비경매는 그대로 통과.
+        let workingRows = rawRows;
+        let auctionMergedCount = 0;
+        if (sourceType === "auction") {
+          const mergeRes = mod.mergeAuctionCaseLandBuildingRows(rawRows);
+          workingRows = mergeRes.rows;
+          auctionMergedCount = mergeRes.mergedCount;
+        }
+
         // 1패스: 각 행을 mapPropertyCsvRow 로 파싱
         const mappedRows = [];  // [{raw, m}]
-        for (const r of rawRows) {
+        for (const r of workingRows) {
           const m = mod.mapPropertyCsvRow(r, sourceType);
           if (!m || !m.itemNo || !m.address) continue;
           mappedRows.push({ raw: r, m });
         }
 
-        // 경매 전용: CSV 전체에서 같은 사건번호의 행 개수 집계.
-        // 빈도 2+ 인 사건만 itemNo 에 "(물건번호)" 붙여서 구분, 1건이면 사건번호 단독.
+        // 경매 전용: 같은 사건번호 내에서 "서로 다른 물건번호" 가 2개 이상인 경우에만
+        // itemNo 뒤에 "(물건번호)" 를 붙여 구분한다. 물건번호가 1개(또는 없음)이면
+        // 업계 관례(탱크옥션/지지옥션/대법원경매 모두 동일)에 따라 "(1)" / "(10)" 등을
+        // 붙이지 않고 사건번호 단독 사용.
+        // [수정 2026-04-24] 기존 "행 수" 기반 판정의 버그 수정.
+        //   이전: 같은 사건의 행이 2개 이상이면 무조건 "(물건번호)" 부착
+        //   문제: 한 물건(예: 10번) 의 토지행+건물행 2행이 들어오면 "(10)" 오부착
+        //         → 2024타경80309(10) 같은 잘못된 itemNo 생성
+        //   수정: "서로 다른 물건번호 개수" 가 2개 이상일 때만 부착
+        //         (Phase 1 의 선제 병합이 적용되면 행 수는 이미 1로 줄어들지만,
+        //          병합 조건을 벗어난 edge case 도 안전하게 처리하기 위해 판정 교체)
         if (sourceType === "auction") {
-          const caseNoCount = new Map();
+          const casePropNos = new Map();  // caseNo → Set<propNo>
           for (const { m } of mappedRows) {
             const cn = String(m.auctionCaseNo || "").trim();
             if (!cn) continue;
-            caseNoCount.set(cn, (caseNoCount.get(cn) || 0) + 1);
+            if (!casePropNos.has(cn)) casePropNos.set(cn, new Set());
+            casePropNos.get(cn).add(String(m.auctionPropNo || "").trim());
           }
           for (const { m } of mappedRows) {
             const cn = String(m.auctionCaseNo || "").trim();
             const pn = String(m.auctionPropNo || "").trim();
-            if (cn && pn && (caseNoCount.get(cn) || 0) >= 2) {
+            const distinctPropCount = cn ? (casePropNos.get(cn)?.size || 0) : 0;
+            if (cn && pn && distinctPropCount >= 2) {
               // 이미 물건번호가 사건번호를 포함하는 형식이면 그대로 사용
               m.itemNo = pn.includes(cn) ? pn : `${cn}(${pn})`;
             }
@@ -372,6 +397,7 @@
         if (collapsed.outcomeCounts.create > 0) summaryParts.push(`신규 등록: ${collapsed.outcomeCounts.create}건`);
         if (collapsed.outcomeCounts.update > 0) summaryParts.push(`기존 물건 갱신(LOG): ${collapsed.outcomeCounts.update}건`);
         if (collapsed.outcomeCounts.noChange > 0) summaryParts.push(`기존 물건 일치(변경없음): ${collapsed.outcomeCounts.noChange}건`);
+        if (auctionMergedCount > 0) summaryParts.push(`토지/건물 행 병합: ${auctionMergedCount}건`);
         if (dedupedInFile > 0) summaryParts.push(`파일내 중복 통합: ${dedupedInFile}건`);
         if (collapsed.duplicateCollapsedCount > 0) summaryParts.push(`병합 후 중복 제외: ${collapsed.duplicateCollapsedCount}건`);
         if (importResult.failed.length > 0) {
@@ -878,6 +904,147 @@
         headers.forEach((h, idx) => { obj[h] = r[idx] ?? ""; });
         return obj;
       });
+  };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // [신규 2026-04-24] 경매 CSV 토지+건물 행 선제 병합
+  //
+  // 배경:
+  //   탱크옥션/법원경매 CSV 는 한 물건(사건번호+물건번호) 을 "토지 표시 행" 과
+  //   "건물 표시 행" 으로 분리해서 출력하는 경우가 있다. 예:
+  //     Row A: 경매현황="토지 대 232.3㎡(70.27평)"
+  //     Row B: 경매현황="건물 철근콘크리트조 스라브지붕 4층 ..."
+  //   두 행 모두 사건번호·주소·감정가·최저가·진행상태가 완전히 동일하고
+  //   경매현황 텍스트만 다르다.
+  //
+  // 이전 동작의 문제:
+  //   - 두 행이 각각 mapPropertyCsvRow 로 파싱되어 별개 물건으로 취급되거나,
+  //     "토지만" 행이 건물류 종별 필터로 드롭되어 토지면적(70.27평) 정보가 소실.
+  //   - 사건 빈도 2+ 로 잘못 인식되어 실제로는 물건 1개뿐인데 "(10)" 같은
+  //     접미사가 붙는 부작용.
+  //
+  // 해법:
+  //   - 그룹 키 = (사건번호, 물건번호, 주소정규화, 감정가, 최저가) 완전 일치
+  //     4~5 필드가 동시에 일치하면 물리적으로 같은 매물의 일괄매각 표시임.
+  //   - 그룹 내 경매현황을 "\n" 으로 이어붙여 1 행으로 압축.
+  //   - 후속의 parseAuctionAreas 가 이미 "건물+토지 혼재 텍스트" 를 정상 처리
+  //     하도록 설계되어 있으므로, 이 함수는 "raw 행 병합" 만 수행하면 끝.
+  //
+  // 그룹화 제외 조건 (단독 유지):
+  //   - 사건번호 없음 또는 주소 없음 → 식별 불가
+  //   - 감정가 가 0 또는 비어있음 → 일괄매각 시그널 신뢰 불가
+  // ─────────────────────────────────────────────────────────────────────
+  mod.mergeAuctionCaseLandBuildingRows = function mergeAuctionCaseLandBuildingRows(rawRows) {
+    if (!Array.isArray(rawRows) || rawRows.length === 0) {
+      return { rows: Array.isArray(rawRows) ? rawRows : [], mergedCount: 0 };
+    }
+
+    const pickField = (row, ...keys) => {
+      for (const k of keys) {
+        const v = row == null ? null : row[k];
+        if (v != null && String(v).trim() !== "") return String(v);
+      }
+      return "";
+    };
+
+    const normalizeNumberKey = (value) => {
+      const digits = String(value == null ? "" : value).replace(/[^0-9]/g, "");
+      return digits || "";
+    };
+
+    const normalizeAddrKey = (value) => {
+      return String(value == null ? "" : value).replace(/\s+/g, "").trim();
+    };
+
+    const groups = new Map();
+    const order = [];
+
+    for (const row of rawRows) {
+      const caseNo = pickField(row, "사건번호", "caseNo").trim();
+      const propNo = pickField(row, "물건번호").trim();
+      const addrNorm = normalizeAddrKey(pickField(row, "주소(시군구동)", "주소", "소재지", "address"));
+      const priceKey = normalizeNumberKey(pickField(row, "감정가", "감정가(원)", "priceMain"));
+      const lowKey = normalizeNumberKey(pickField(row, "최저가", "lowprice"));
+
+      // 그룹화 불가: 단독 유지 (나중에 rows.length === 1 분기로 통과)
+      if (!caseNo || !addrNorm || !priceKey || priceKey === "0") {
+        const soloKey = `__solo__${order.length}`;
+        groups.set(soloKey, [row]);
+        order.push(soloKey);
+        continue;
+      }
+
+      const key = `${caseNo}|${propNo}|${addrNorm}|${priceKey}|${lowKey}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+        order.push(key);
+      }
+      groups.get(key).push(row);
+    }
+
+    const merged = [];
+    let mergedCount = 0;
+
+    for (const key of order) {
+      const groupRows = groups.get(key);
+      if (!groupRows || groupRows.length === 0) continue;
+      if (groupRows.length === 1) {
+        merged.push(groupRows[0]);
+        continue;
+      }
+
+      // 2 개 이상 → 병합. 경매현황 키워드로 건물/토지/기타 분류.
+      const buildingRows = [];
+      const landRows = [];
+      const otherRows = [];
+      for (const r of groupRows) {
+        const status = pickField(r, "경매현황", "비고", "memo");
+        const hasBuilding = /건물/.test(status);
+        const hasLand = /(?:대지권|대\s*지\s*권|토지)/.test(status);
+        if (hasBuilding) buildingRows.push(r);
+        else if (hasLand) landRows.push(r);
+        else otherRows.push(r);
+      }
+
+      // Base row: 건물 row 우선 → exclusive_area / 층 등 정보가 건물 행에 있음.
+      // 없으면 기타 → 토지 → 순서대로 첫 번째 행.
+      const baseRow = buildingRows[0] || otherRows[0] || landRows[0] || groupRows[0];
+
+      // 경매현황 통합 순서: 건물 → 기타 → 토지 (자연스러운 읽기 흐름)
+      const readOrder = [...buildingRows, ...otherRows, ...landRows];
+      const seenTexts = new Set();
+      const combinedParts = [];
+      for (const r of readOrder) {
+        const s = pickField(r, "경매현황", "비고").trim();
+        if (s && !seenTexts.has(s)) {
+          combinedParts.push(s);
+          seenTexts.add(s);
+        }
+      }
+      const combinedStatus = combinedParts.join("\n");
+
+      // 새 raw row: baseRow 복제 후 경매현황 컬럼만 덮어쓰기.
+      // baseRow 에 실제 존재하는 컬럼명 중 첫 번째에 저장해 CSV 헤더 불일치 회피.
+      const mergedRow = { ...baseRow };
+      if (Object.prototype.hasOwnProperty.call(mergedRow, "경매현황")) {
+        mergedRow["경매현황"] = combinedStatus;
+      } else if (Object.prototype.hasOwnProperty.call(mergedRow, "비고")) {
+        mergedRow["비고"] = combinedStatus;
+      } else if (Object.prototype.hasOwnProperty.call(mergedRow, "memo")) {
+        mergedRow["memo"] = combinedStatus;
+      } else {
+        mergedRow["경매현황"] = combinedStatus;
+      }
+
+      merged.push(mergedRow);
+      mergedCount += groupRows.length - 1;
+    }
+
+    if (mergedCount > 0) {
+      try { console.info(`[CSV auction merge] ${mergedCount} row(s) merged across groups`); } catch {}
+    }
+
+    return { rows: merged, mergedCount };
   };
 
   mod.inferSigunguCode = function inferSigunguCode(address) {
