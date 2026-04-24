@@ -2,7 +2,7 @@ const { applyCors } = require('./_lib/cors');
 const { getStore } = require('./_lib/store');
 const { send, getJsonBody, normalizeAddress, extractGuDong, normalizePhone, normalizeStatus, id, nowIso } = require('./_lib/utils');
 const { getSession } = require('./_lib/auth');
-const { hasSupabaseAdminEnv, resolveCurrentUserContext, getEnv } = require('./_lib/supabase-admin');
+const { hasSupabaseAdminEnv, resolveCurrentUserContext, verifySupabaseUser, getEnv } = require('./_lib/supabase-admin');
 const PropertyDomain = require('../knson-property-domain.js');
 const PropertyPhotos = require('./_lib/property-photos');
 
@@ -742,63 +742,67 @@ function buildLegacySessionContext(req, res) {
 //        assignee_name, raw, source_type, item_no }, ... ] }
 // ═══════════════════════════════════════════════════════════════════════════
 async function handleSearchDuplicates(req, res) {
-  // 로그인 확인 (담당자·관리자 모두 허용 — 조회만 가능)
-  let ctx = null;
+  // ─────────────────────────────────────────────────────────
+  // DEBUG 버전 — 인증 플로우 각 단계의 결과를 응답에 담아 반환
+  // 원인 파악 후 아래 블록을 삭제하고 원래 로직으로 복원할 것
+  // ─────────────────────────────────────────────────────────
+  const debug = {
+    step: 'start',
+    method: req.method,
+    hasSupabaseAdminEnv: null,
+    hasAuthHeader: null,
+    authHeaderPrefix: null,
+    bearerToken: null,
+    bearerTokenLen: 0,
+    bearerUser: null,
+    bearerUserError: null,
+    ctxResult: null,
+    ctxError: null,
+    envCheck: null,
+  };
   try {
-    ctx = await resolveCurrentUserContext(req);
+    debug.hasSupabaseAdminEnv = !!hasSupabaseAdminEnv();
+    debug.hasAuthHeader = !!(req?.headers?.authorization);
+    debug.authHeaderPrefix = String(req?.headers?.authorization || '').slice(0, 20);
+    const token = readBearer(req);
+    debug.bearerToken = token ? (token.slice(0, 20) + '...') : null;
+    debug.bearerTokenLen = token?.length || 0;
+
+    // env 확인 (serviceRoleKey, anonKey, url 존재 여부)
+    try {
+      const env = getEnv();
+      debug.envCheck = {
+        hasServiceRoleKey: !!env?.serviceRoleKey,
+        hasAnonKey: !!env?.anonKey,
+        hasSupabaseUrl: !!env?.supabaseUrl,
+      };
+    } catch (e) {
+      debug.envCheck = { error: String(e?.message || e) };
+    }
+
+    debug.step = 'verifySupabaseUser';
+    try {
+      const user = await verifySupabaseUser(req);
+      debug.bearerUser = user ? { id: user.id, email: user.email, role: user.role } : null;
+    } catch (e) {
+      debug.bearerUserError = String(e?.message || e);
+    }
+
+    debug.step = 'resolveCurrentUserContext';
+    try {
+      const ctx = await resolveCurrentUserContext(req);
+      debug.ctxResult = ctx ? { userId: ctx.userId, role: ctx.role, email: ctx.email } : null;
+    } catch (e) {
+      debug.ctxError = String(e?.message || e);
+    }
+
+    debug.step = 'done';
+    return send(res, 200, { ok: true, debug });
   } catch (err) {
-    return send(res, 500, { ok: false, message: err.message || '사용자 확인에 실패했습니다.' });
+    debug.step = 'exception';
+    debug.exception = String(err?.message || err);
+    return send(res, 200, { ok: true, debug });
   }
-  if (!ctx?.userId) return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
-
-  const body = req.__jsonBody || getJsonBody(req) || {};
-  const address = String(body.address || '').trim();
-  if (!address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
-
-  // 주소에서 dong, mainNo, subNo 추출 (클라이언트의 parseAddressIdentityParts 와 동일 함수 사용)
-  const parts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === 'function')
-    ? PropertyDomain.parseAddressIdentityParts(address)
-    : { dong: '', mainNo: '', subNo: '' };
-  if (!parts?.dong || !parts?.mainNo) {
-    // 지번 주소로 파싱이 안 되는 경우(도로명 등) → 빈 결과로 응답
-    return send(res, 200, { ok: true, matches: [] });
-  }
-  const targetKey = `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}`;
-
-  // service_role 로 dong 을 포함하는 모든 매물 조회 (최대 500건)
-  const dongEnc = encodeURIComponent(parts.dong);
-  const selectCols = 'id,global_id,address,floor,assignee_id,assignee_name,raw,source_type,item_no';
-  const path = `/rest/v1/properties?select=${selectCols}&address=ilike.*${dongEnc}*&limit=500`;
-
-  let rows = [];
-  try {
-    rows = await supabaseRest(path);
-    if (!Array.isArray(rows)) rows = [];
-  } catch (err) {
-    return send(res, 500, { ok: false, message: '매물 조회 실패: ' + (err?.message || '') });
-  }
-
-  // 같은 건물만 필터 (dong + mainNo + subNo 일치)
-  const matches = rows.filter((row) => {
-    const rowParts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === 'function')
-      ? PropertyDomain.parseAddressIdentityParts(row?.address || '')
-      : null;
-    if (!rowParts?.dong || !rowParts?.mainNo) return false;
-    const rowKey = `${rowParts.dong}|${rowParts.mainNo}|${rowParts.subNo || '0'}`;
-    return rowKey === targetKey;
-  }).map((r) => ({
-    id: r.id,
-    global_id: r.global_id,
-    address: r.address,
-    floor: r.floor,
-    assignee_id: r.assignee_id,
-    assignee_name: r.assignee_name,
-    raw: r.raw,
-    source_type: r.source_type,
-    item_no: r.item_no,
-  }));
-
-  return send(res, 200, { ok: true, matches });
 }
 
 async function handleSupabaseWrite(req, res) {
