@@ -729,6 +729,78 @@ function buildLegacySessionContext(req, res) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 주소 기반 중복 매물 탐색 (신규 물건 등록 모달의 실시간 감지용)
+//
+// 배경: 담당자 세션에서는 RLS 정책에 의해 sb.from('properties').select() 가
+// 본인 배정 매물만 반환하므로, 다른 담당자/미배정 매물을 볼 수 없다.
+// 이 엔드포인트는 service_role 로 동작해 RLS 우회 후, 주소 파싱 결과가
+// 동일한 건물(dong + mainNo + subNo) 매물을 반환한다.
+//
+// 요청: POST /properties { action: 'search_duplicates', address: '...' }
+// 응답: { ok: true, matches: [ { id, address, floor, assignee_id,
+//        assignee_name, raw, source_type, item_no }, ... ] }
+// ═══════════════════════════════════════════════════════════════════════════
+async function handleSearchDuplicates(req, res) {
+  // 로그인 확인 (담당자·관리자 모두 허용 — 조회만 가능)
+  let ctx = null;
+  try {
+    ctx = await resolveCurrentUserContext(req);
+  } catch (err) {
+    return send(res, 500, { ok: false, message: err.message || '사용자 확인에 실패했습니다.' });
+  }
+  if (!ctx?.userId) return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+
+  const body = req.__jsonBody || getJsonBody(req) || {};
+  const address = String(body.address || '').trim();
+  if (!address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
+
+  // 주소에서 dong, mainNo, subNo 추출 (클라이언트의 parseAddressIdentityParts 와 동일 함수 사용)
+  const parts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === 'function')
+    ? PropertyDomain.parseAddressIdentityParts(address)
+    : { dong: '', mainNo: '', subNo: '' };
+  if (!parts?.dong || !parts?.mainNo) {
+    // 지번 주소로 파싱이 안 되는 경우(도로명 등) → 빈 결과로 응답
+    return send(res, 200, { ok: true, matches: [] });
+  }
+  const targetKey = `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}`;
+
+  // service_role 로 dong 을 포함하는 모든 매물 조회 (최대 500건)
+  const dongEnc = encodeURIComponent(parts.dong);
+  const selectCols = 'id,global_id,address,floor,assignee_id,assignee_name,raw,source_type,item_no';
+  const path = `/rest/v1/properties?select=${selectCols}&address=ilike.*${dongEnc}*&limit=500`;
+
+  let rows = [];
+  try {
+    rows = await supabaseRest(path);
+    if (!Array.isArray(rows)) rows = [];
+  } catch (err) {
+    return send(res, 500, { ok: false, message: '매물 조회 실패: ' + (err?.message || '') });
+  }
+
+  // 같은 건물만 필터 (dong + mainNo + subNo 일치)
+  const matches = rows.filter((row) => {
+    const rowParts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === 'function')
+      ? PropertyDomain.parseAddressIdentityParts(row?.address || '')
+      : null;
+    if (!rowParts?.dong || !rowParts?.mainNo) return false;
+    const rowKey = `${rowParts.dong}|${rowParts.mainNo}|${rowParts.subNo || '0'}`;
+    return rowKey === targetKey;
+  }).map((r) => ({
+    id: r.id,
+    global_id: r.global_id,
+    address: r.address,
+    floor: r.floor,
+    assignee_id: r.assignee_id,
+    assignee_name: r.assignee_name,
+    raw: r.raw,
+    source_type: r.source_type,
+    item_no: r.item_no,
+  }));
+
+  return send(res, 200, { ok: true, matches });
+}
+
 async function handleSupabaseWrite(req, res) {
   let ctx = null;
   try {
@@ -1157,6 +1229,10 @@ module.exports = async function handler(req, res) {
       if (action === 'daily_report_log' || action === 'daily-report-log' || action === 'dailyreportlog') {
         req.__jsonBody = body;
         return handleActivityLog(req, res);
+      }
+      if (action === 'search_duplicates' || action === 'searchduplicates' || action === 'search-duplicates') {
+        req.__jsonBody = body;
+        return handleSearchDuplicates(req, res);
       }
       req.__jsonBody = body;
     }
