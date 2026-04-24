@@ -1,40 +1,42 @@
-const { applyCors } = require('../_lib/cors');
-const { getStore } = require('../_lib/store');
-const {
-  send,
-  getJsonBody,
-  normalizeAddress,
-  extractGuDong,
-  normalizePhone,
-  normalizeStatus,
-  id,
-  nowIso,
-} = require('../_lib/utils');
-const { requireAdmin } = require('../_lib/auth');
-const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../_lib/supabase-admin');
-const PropertyDomain = require('../../knson-property-domain.js');
+const { applyCors } = require('./_lib/cors');
+const { getStore } = require('./_lib/store');
+const { send, getJsonBody, normalizeAddress, extractGuDong, normalizePhone, normalizeStatus, id, nowIso } = require('./_lib/utils');
+const { getSession } = require('./_lib/auth');
+const { hasSupabaseAdminEnv, resolveCurrentUserContext, getEnv } = require('./_lib/supabase-admin');
+const PropertyDomain = require('../knson-property-domain.js');
+const PropertyPhotos = require('./_lib/property-photos');
 
 function omitUndefined(obj) {
-  return Object.fromEntries(Object.entries(obj || {}).filter(([_, v]) => v !== undefined));
+  return Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v !== undefined));
 }
 
-function buildSupabaseHeaders(hasJson = false, extra = {}) {
-  const { serviceRoleKey } = getEnv();
+function readBearer(req) {
+  const auth = String(req?.headers?.authorization || '').trim();
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  return m ? String(m[1] || '').trim() : '';
+}
+
+function buildSupabaseHeaders({ hasJson = false, extra = {}, authToken = '', useAnon = false } = {}) {
+  const { serviceRoleKey, anonKey } = getEnv();
+  const token = String(authToken || '').trim();
+  const hasUserToken = !!token;
+  const apiKey = hasUserToken || useAnon ? (anonKey || serviceRoleKey) : serviceRoleKey;
+  const authorization = hasUserToken ? token : serviceRoleKey;
   const headers = {
     Accept: 'application/json',
-    apikey: serviceRoleKey,
-    Authorization: `Bearer ${serviceRoleKey}`,
+    apikey: apiKey,
+    Authorization: `Bearer ${authorization}`,
     ...extra,
   };
   if (hasJson) headers['Content-Type'] = 'application/json';
   return headers;
 }
 
-async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
+async function supabaseRest(path, { method = 'GET', json, headers, authToken = '', useAnon = false } = {}) {
   const { url } = getEnv();
   const res = await fetch(`${url}${path}`, {
     method,
-    headers: buildSupabaseHeaders(json !== undefined, headers),
+    headers: buildSupabaseHeaders({ hasJson: json !== undefined, extra: headers, authToken, useAnon }),
     body: json !== undefined ? JSON.stringify(json) : undefined,
   });
   const text = await res.text();
@@ -49,1113 +51,1206 @@ async function supabaseRest(path, { method = 'GET', json, headers } = {}) {
   return data;
 }
 
-
-const OVERVIEW_SELECT = [
-  'global_id', 'source_type', 'source_url', 'is_general', 'submitter_type', 'submitter_name', 'broker_office_name',
-  'address', 'latitude', 'longitude', 'geocode_status', 'exclusive_area', 'date_uploaded', 'created_at', 'raw'
-].join(',');
-
-const MAP_SCAN_SELECT = [
-  'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
-  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
-  'exclusive_area', 'status', 'price_main',
-  'latitude', 'longitude', 'created_at', 'date_uploaded', 'raw'
-].join(',');
-
-const MAP_DETAIL_SELECT = [
-  'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
-  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
-  'exclusive_area', 'status', 'price_main', 'latitude', 'longitude',
-  'created_at', 'date_uploaded', 'memo', 'raw'
-].join(',');
-
-const AREA_KEYS = ['', '0-5', '5-10', '10-20', '20-30', '30-50', '50-100', '100-'];
-
-function toFiniteNumber(value) {
-  const n = Number(value);
+function parseNumberOrNull(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const n = Number(String(value).replace(/,/g, '').trim());
   return Number.isFinite(n) ? n : null;
 }
 
-function parseMapBounds(options = {}) {
-  const swLat = toFiniteNumber(options.swLat);
-  const swLng = toFiniteNumber(options.swLng);
-  const neLat = toFiniteNumber(options.neLat);
-  const neLng = toFiniteNumber(options.neLng);
-  if ([swLat, swLng, neLat, neLng].some((v) => v == null)) return null;
-  return { swLat, swLng, neLat, neLng };
-}
-
-function rowWithinBounds(row, bounds) {
-  if (!bounds) return true;
-  const lat = Number(row?.latitude);
-  const lng = Number(row?.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-  return lat >= bounds.swLat && lat <= bounds.neLat && lng >= bounds.swLng && lng <= bounds.neLng;
-}
-
-function appendSupabaseBboxFilters(params, bounds) {
-  if (!bounds) return;
-  params.append('and', `(latitude.gte.${bounds.swLat},latitude.lte.${bounds.neLat},longitude.gte.${bounds.swLng},longitude.lte.${bounds.neLng})`);
-}
-
-function appendCommonMapFilters(params, { status = '' } = {}) {
-  if (status) params.append('status', `eq.${status}`);
-}
-
-
-async function supabaseHeadCount(path) {
-  const { url } = getEnv();
-  const res = await fetch(`${url}${path}`, {
-    method: 'HEAD',
-    headers: buildSupabaseHeaders(false, { Prefer: 'count=exact' }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    const err = new Error(text || `Supabase count 오류 (${res.status})`);
-    err.status = res.status;
-    throw err;
-  }
-  const contentRange = String(res.headers.get('content-range') || '').trim();
-  const m = contentRange.match(/\/(\d+)$/);
-  return m ? Number(m[1] || 0) : 0;
-}
-
-function getKstTodayRangeIso() {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = formatter.formatToParts(new Date());
-  const year = parts.find((part) => part.type === 'year')?.value || '1970';
-  const month = parts.find((part) => part.type === 'month')?.value || '01';
-  const day = parts.find((part) => part.type === 'day')?.value || '01';
-  const startIso = new Date(`${year}-${month}-${day}T00:00:00+09:00`).toISOString();
-  const endIso = new Date(`${year}-${month}-${day}T24:00:00+09:00`).toISOString();
-  return { startIso, endIso };
-}
-
-async function fetchSupabaseOverviewCountsExact() {
-  const countSafe = async (path) => {
-    try {
-      return await supabaseHeadCount(path);
-    } catch {
-      return 0;
-    }
-  };
-
-  const base = '/rest/v1/properties?select=id';
-
-  // KST(Asia/Seoul) 기준 "오늘" 구간을 서버가 UTC여도 정확히 계산.
-  // startIso/endIso 는 UTC ISO(Z)로 변환된 KST 0시~24시.
-  // PostgREST 는 동일 컬럼 필터 중복 시 AND 로 결합되므로
-  // created_at=gte.{start}&created_at=lt.{end} 로 오늘 범위를 제한.
-  const { startIso, endIso } = getKstTodayRangeIso();
-  const todayFilter = `&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}`;
-  const realtorDirectOr = `or=${encodeURIComponent('(source_url.is.null,source_url.eq.)')}`;
-
-  const [
-    total,
-    auction,
-    onbid,
-    general,
-    realtorTotal,
-    realtorDirect,
-    geoPending,
-    todayTotal,
-    todayAuction,
-    todayOnbid,
-    todayGeneral,
-    todayRealtorTotal,
-    todayRealtorDirect,
-  ] = await Promise.all([
-    countSafe(base),
-    countSafe(`${base}&source_type=eq.auction`),
-    countSafe(`${base}&source_type=eq.onbid`),
-    countSafe(`${base}&source_type=eq.general`),
-    countSafe(`${base}&source_type=eq.realtor`),
-    countSafe(`${base}&source_type=eq.realtor&${realtorDirectOr}`),
-    fetchSupabaseGeoPendingCount(),
-    countSafe(`${base}${todayFilter}`),
-    countSafe(`${base}&source_type=eq.auction${todayFilter}`),
-    countSafe(`${base}&source_type=eq.onbid${todayFilter}`),
-    countSafe(`${base}&source_type=eq.general${todayFilter}`),
-    countSafe(`${base}&source_type=eq.realtor${todayFilter}`),
-    countSafe(`${base}&source_type=eq.realtor&${realtorDirectOr}${todayFilter}`),
-  ]);
-
-  const realtor_naver = Math.max(0, Number(realtorTotal || 0) - Number(realtorDirect || 0));
-  const realtor_direct = Math.max(0, Number(realtorDirect || 0));
-  const today_realtor_total = Number(todayRealtorTotal || 0);
-  const today_realtor_direct = Math.max(0, Number(todayRealtorDirect || 0));
-  const today_realtor_naver = Math.max(0, today_realtor_total - today_realtor_direct);
-
-  return {
-    summary: {
-      total: Number(total || 0),
-      auction: Number(auction || 0),
-      onbid: Number(onbid || 0),
-      realtor_naver,
-      realtor_direct,
-      general: Number(general || 0),
-    },
-    today: {
-      total: Number(todayTotal || 0),
-      auction: Number(todayAuction || 0),
-      onbid: Number(todayOnbid || 0),
-      realtor: today_realtor_total,
-      realtor_naver: today_realtor_naver,
-      realtor_direct: today_realtor_direct,
-      general: Number(todayGeneral || 0),
-    },
-    geoPending: Number(geoPending || 0),
-    filterCounts: {
-      source: {
-        '': Number(total || 0),
-        auction: Number(auction || 0),
-        onbid: Number(onbid || 0),
-        realtor_naver,
-        realtor_direct,
-        general: Number(general || 0),
-      },
-      area: { '': Number(total || 0), '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 },
-      price: { '': Number(total || 0), '0-1': 0, '1-3': 0, '3-5': 0, '5-10': 0, '10-20': 0, '20-': 0 },
-      ratio: { '': Number(total || 0), '50': 0 },
-    },
-    generatedAt: new Date().toISOString(),
-    fast: true,
-    accurate: true,
-    scanCount: 0,
-    source: 'supabase_exact_head_count',
-    kstRange: { start: startIso, end: endIso },
-  };
-}
-
-async function fetchSupabaseGeoPendingCount() {
-  try {
-    return await supabaseHeadCount('/rest/v1/properties?select=id&latitude=is.null&longitude=is.null&address=not.is.null&geocode_status=not.in.(ok,failed)');
-  } catch {
-    return 0;
-  }
-}
-
-const OVERVIEW_CACHE_TTL_MS = 15 * 1000;
-let overviewCacheValue = null;
-let overviewCacheAt = 0;
-let overviewCachePromise = null;
-
-async function buildOverviewFastFromSupabase({ forceRefresh = false } = {}) {
-  const now = Date.now();
-  if (!forceRefresh && overviewCacheValue && (now - overviewCacheAt) < OVERVIEW_CACHE_TTL_MS) {
-    return {
-      ...overviewCacheValue,
-      cached: true,
-      cacheAgeMs: now - overviewCacheAt,
-    };
-  }
-  if (!forceRefresh && overviewCachePromise) {
-    return overviewCachePromise;
-  }
-
-  overviewCachePromise = (async () => {
-    const overview = await fetchSupabaseOverviewCountsExact();
-    overviewCacheValue = overview;
-    overviewCacheAt = Date.now();
-    return overview;
-  })();
-
-  try {
-    return await overviewCachePromise;
-  } finally {
-    overviewCachePromise = null;
-  }
-}
-
-
-function splitSelectColumns(select) {
-  return String(select || '').split(',').map((part) => String(part || '').trim()).filter(Boolean);
-}
-
-function removeMissingColumnFromSelect(select, missingColumn) {
-  const target = String(missingColumn || '').trim();
-  if (!target) return String(select || '');
-  return splitSelectColumns(select)
-    .filter((part) => String(part || '').split(':').pop().split('->')[0].split('(')[0].trim() !== target)
-    .join(',');
-}
-
-function extractMissingColumn(error) {
-  const text = String(error?.message || error?.details || error || '').trim();
-  const m = text.match(/column\s+properties\.([a-zA-Z0-9_]+)\s+does not exist/i)
-    || text.match(/Could not find the '([a-zA-Z0-9_]+)' column of 'properties'/i);
+function extractMissingPropertiesColumn(error) {
+  const message = String(error?.message || error?.data?.message || error?.data?.error || '').trim();
+  const m = message.match(/Could not find the '([^']+)' column of 'properties' in the schema cache/i);
   return m ? String(m[1] || '').trim() : '';
 }
 
-function getAreaFilterMatch(value, area) {
-  if (!value) return true;
-  const [minStr, maxStr] = String(value).split('-');
-  const min = parseFloat(minStr) || 0;
-  const max = maxStr ? parseFloat(maxStr) : Infinity;
-  const numericArea = Number(area);
-  if (!Number.isFinite(numericArea) || numericArea <= 0) return false;
-  return numericArea >= min && (max === Infinity || numericArea < max);
+function clonePlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
 }
 
-function sameDay(dateLike, dateKey) {
-  const d = new Date(dateLike);
-  if (Number.isNaN(d.getTime())) return false;
-  // KST(UTC+9) 기준 날짜 비교 (서버가 UTC 런타임이어도 정확)
-  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-  const yyyy = kst.getUTCFullYear();
-  const mm = String(kst.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(kst.getUTCDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}` === dateKey;
+function normalizePropertyDuplicateError(error) {
+  return PropertyDomain.normalizePropertyDuplicateError(error);
 }
 
-function getTodayKey() {
-  // KST(UTC+9) 기준 오늘 날짜 키 (서버가 UTC 런타임이어도 정확)
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const yyyy = kst.getUTCFullYear();
-  const mm = String(kst.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(kst.getUTCDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function createEmptyOverview() {
-  return {
-    summary: { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
-    today: { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 },
-    geoPending: 0,
-    filterCounts: {
-      source: { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
-      area: { '': 0, '0-5': 0, '5-10': 0, '10-20': 0, '20-30': 0, '30-50': 0, '50-100': 0, '100-': 0 },
-    },
-    generatedAt: new Date().toISOString(),
-  };
-}
-
-function appendRowToOverview(overview, row, todayKey) {
-  const normalized = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
-    ? PropertyDomain.buildNormalizedPropertyBase(row)
-    : row;
-  const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
-    ? PropertyDomain.getSourceBucket(normalized)
-    : String(normalized?.source_type || normalized?.sourceType || 'general');
-  overview.summary.total += 1;
-  if (Object.prototype.hasOwnProperty.call(overview.summary, bucket)) overview.summary[bucket] += 1;
-  overview.filterCounts.source[''] += 1;
-  if (Object.prototype.hasOwnProperty.call(overview.filterCounts.source, bucket)) overview.filterCounts.source[bucket] += 1;
-
-  const createdAt = normalized?.createdAt || row?.created_at || row?.date_uploaded || '';
-  if (sameDay(createdAt, todayKey)) {
-    overview.today.total += 1;
-    if (bucket === 'auction') overview.today.auction += 1;
-    else if (bucket === 'onbid') overview.today.onbid += 1;
-    else if (bucket === 'general') overview.today.general += 1;
-    else if (bucket === 'realtor_naver' || bucket === 'realtor_direct') overview.today.realtor += 1;
-  }
-
-  const status = String(normalized?.geocodeStatus || row?.geocode_status || '').trim().toLowerCase();
-  const lat = normalized?.latitude ?? row?.latitude;
-  const lng = normalized?.longitude ?? row?.longitude;
-  const hasCoords = lat !== null && lat !== undefined && lat !== '' && lng !== null && lng !== undefined && lng !== '';
-  const address = String(normalized?.address || row?.address || '').trim();
-  if (!hasCoords && address && status !== 'failed' && status !== 'ok') overview.geoPending += 1;
-
-  overview.filterCounts.area[''] += 1;
-  for (const key of AREA_KEYS.slice(1)) {
-    if (getAreaFilterMatch(key, normalized?.exclusivearea ?? row?.exclusive_area)) {
-      overview.filterCounts.area[key] += 1;
+async function supabasePropertyWriteWithRetry(path, { method, json, headers, authToken = '', useAnon = false }, { maxAttempts = 6 } = {}) {
+  let payload = clonePlainObject(json);
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    try {
+      return await supabaseRest(path, { method, json: payload, headers, authToken, useAnon });
+    } catch (err) {
+      const missingCol = extractMissingPropertiesColumn(err);
+      if (!missingCol || !(missingCol in payload)) throw err;
+      const missingVal = payload[missingCol];
+      delete payload[missingCol];
+      if (missingVal !== undefined) {
+        const raw = sanitizePropertyRaw(payload.raw || {});
+        if (raw[missingCol] === undefined) raw[missingCol] = missingVal;
+        payload.raw = raw;
+      }
+      attempts += 1;
+      continue;
     }
   }
+  return supabaseRest(path, { method, json: payload, headers, authToken, useAnon });
 }
 
-async function fetchSupabaseOverviewRows(pageSize = 1000) {
-  const safePageSize = Math.max(1, Math.min(1000, Number(pageSize || 1000)));
-  const rows = [];
-  let from = 0;
-  let total = null;
-  let activeSelect = OVERVIEW_SELECT;
-  const removed = new Set();
+function sanitizeJsonValue(value, depth = 0, seen) {
+  if (value == null) return value;
+  if (depth > 6) return undefined;
+  const t = typeof value;
+  if (t === 'string' || t === 'number' || t === 'boolean') return value;
+  if (t !== 'object') return undefined;
+  const bag = seen || new WeakSet();
+  if (bag.has(value)) return undefined;
+  bag.add(value);
   try {
-    total = await supabaseHeadCount('/rest/v1/properties?select=id');
+    if (Array.isArray(value)) {
+      const out = [];
+      for (const item of value.slice(0, 500)) {
+        const next = sanitizeJsonValue(item, depth + 1, bag);
+        if (next !== undefined) out.push(next);
+      }
+      return out;
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k === 'raw') continue;
+      const next = sanitizeJsonValue(v, depth + 1, bag);
+      if (next !== undefined) out[k] = next;
+    }
+    return out;
+  } finally {
+    bag.delete(value);
+  }
+}
+
+function sanitizePropertyRaw(raw) {
+  const base = raw && typeof raw === 'object' ? (sanitizeJsonValue(raw, 0) || {}) : {};
+  if (base && typeof base === 'object') delete base.raw;
+  if (Array.isArray(base.opinionHistory)) {
+    base.opinionHistory = base.opinionHistory.slice(-200).map((entry) => ({
+      date: String(entry?.date || '').trim(),
+      text: String(entry?.text || '').trim(),
+      author: String(entry?.author || '').trim(),
+      authorRole: String(entry?.authorRole || entry?.actorRole || '').trim(),
+      kind: String(entry?.kind || '').trim(),
+      title: String(entry?.title || '').trim(),
+      at: String(entry?.at || '').trim(),
+    })).filter((entry) => entry.date || entry.text || entry.author || entry.authorRole || entry.kind || entry.title || entry.at);
+  }
+  return base;
+}
+
+
+
+function kstDateKey(input) {
+  const d = input ? new Date(input) : new Date();
+  if (!d || Number.isNaN(d.getTime())) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
+    const year = parts.find((p) => p.type === 'year')?.value || '';
+    const month = parts.find((p) => p.type === 'month')?.value || '';
+    const day = parts.find((p) => p.type === 'day')?.value || '';
+    return year && month && day ? `${year}-${month}-${day}` : '';
   } catch {
-    total = null;
-  }
-  while (true) {
-    let data;
-    try {
-      data = await supabaseRest(`/rest/v1/properties?select=${encodeURIComponent(activeSelect)}&offset=${from}&limit=${safePageSize}`);
-    } catch (err) {
-      const missing = extractMissingColumn(err);
-      if (missing && !removed.has(missing)) {
-        const nextSelect = removeMissingColumnFromSelect(activeSelect, missing);
-        if (nextSelect && nextSelect !== activeSelect) {
-          removed.add(missing);
-          activeSelect = nextSelect;
-          from = 0;
-          rows.length = 0;
-          continue;
-        }
-      }
-      throw err;
-    }
-    const batch = Array.isArray(data) ? data : [];
-    rows.push(...batch);
-    if (!batch.length) break;
-    from += batch.length;
-    if (total !== null && rows.length >= total) break;
-    if (batch.length < safePageSize) break;
-  }
-  return rows;
-}
-
-
-async function fetchSupabaseRowsWithSafeSelect(buildPath, initialSelect) {
-  let activeSelect = initialSelect;
-  const removed = new Set();
-  while (true) {
-    try {
-      return await supabaseRest(buildPath(activeSelect));
-    } catch (err) {
-      const missing = extractMissingColumn(err);
-      if (missing && !removed.has(missing)) {
-        const nextSelect = removeMissingColumnFromSelect(activeSelect, missing);
-        if (nextSelect && nextSelect !== activeSelect) {
-          removed.add(missing);
-          activeSelect = nextSelect;
-          continue;
-        }
-      }
-      throw err;
-    }
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 }
 
-async function fetchSupabaseHeadCountSafe(basePath, initialSelect = 'id') {
-  let activeSelect = initialSelect;
-  const removed = new Set();
-  while (true) {
-    try {
-      return await supabaseHeadCount(`${basePath}${basePath.includes('?') ? '&' : '?'}select=${encodeURIComponent(activeSelect)}`);
-    } catch (err) {
-      const missing = extractMissingColumn(err);
-      if (missing && !removed.has(missing)) {
-        const nextSelect = removeMissingColumnFromSelect(activeSelect, missing);
-        if (nextSelect && nextSelect !== activeSelect) {
-          removed.add(missing);
-          activeSelect = nextSelect;
-          continue;
-        }
-      }
-      throw err;
-    }
+function normalizeActionType(value) {
+  const s = String(value || '').trim().toLowerCase();
+  if (!s) return '';
+  const map = {
+    new_property: 'new_property',
+    newproperty: 'new_property',
+    rights_analysis: 'rights_analysis',
+    rightsanalysis: 'rights_analysis',
+    site_inspection: 'site_inspection',
+    siteinspection: 'site_inspection',
+    daily_issue: 'daily_issue',
+    dailyissue: 'daily_issue',
+    opinion: 'opinion',
+    property_update: 'property_update',
+    propertyupdate: 'property_update',
+  };
+  return map[s] || '';
+}
+
+function cleanText(value, max = 500) {
+  const s = String(value || '').trim();
+  return s ? s.slice(0, max) : null;
+}
+
+function normalizeChangedFields(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of value) {
+    const s = String(entry || '').trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s.slice(0, 80));
   }
+  return out;
 }
 
-async function fetchSupabaseRealtorRowsForBounds(bounds, { status = '' } = {}) {
-  const query = new URLSearchParams();
-  query.set('select', 'source_type,source_url,is_general,submitter_type,submitter_name,broker_office_name,address,latitude,longitude,created_at,date_uploaded,raw,global_id');
-  query.set('source_type', 'eq.realtor');
-  appendCommonMapFilters(query, { status });
-  appendSupabaseBboxFilters(query, bounds);
-  return fetchSupabaseRowsWithSafeSelect(
-    (select) => {
-      query.set('select', select);
-      return `/rest/v1/properties?${query.toString()}`;
-    },
-    query.get('select')
-  );
-}
-
-async function buildSupabaseVisibleSummary(bounds, { status = '' } = {}) {
-  const query = new URLSearchParams();
-  appendCommonMapFilters(query, { status });
-  appendSupabaseBboxFilters(query, bounds);
-  const qs = query.toString();
-  const basePath = `/rest/v1/properties${qs ? `?${qs}` : ''}`;
-  const [total, auction, onbid, general, realtorRows] = await Promise.all([
-    fetchSupabaseHeadCountSafe(basePath),
-    fetchSupabaseHeadCountSafe(`${basePath}${basePath.includes('?') ? '&' : '?'}source_type=eq.auction`),
-    fetchSupabaseHeadCountSafe(`${basePath}${basePath.includes('?') ? '&' : '?'}source_type=eq.onbid`),
-    fetchSupabaseHeadCountSafe(`${basePath}${basePath.includes('?') ? '&' : '?'}source_type=eq.general`),
-    fetchSupabaseRealtorRowsForBounds(bounds, { status }).catch(() => []),
-  ]);
-  const summary = { total: Number(total || 0), auction: Number(auction || 0), onbid: Number(onbid || 0), realtor_naver: 0, realtor_direct: 0, general: Number(general || 0) };
-  for (const row of Array.isArray(realtorRows) ? realtorRows : []) {
-    const normalized = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
-      ? PropertyDomain.buildNormalizedPropertyBase(row)
-      : row;
-    const bucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
-      ? PropertyDomain.getSourceBucket(normalized)
-      : (String(row?.source_url || '').trim() ? 'realtor_naver' : 'realtor_direct');
-    if (bucket === 'realtor_direct') summary.realtor_direct += 1;
-    else summary.realtor_naver += 1;
+function summarizeActivityRows(rows) {
+  const defs = {
+    new_property: 'newProperty',
+    rights_analysis: 'rightsAnalysis',
+    site_inspection: 'siteInspection',
+    daily_issue: 'dailyIssue',
+    opinion: 'opinion',
+    property_update: 'propertyUpdate',
+  };
+  const buckets = {
+    newProperty: new Set(),
+    rightsAnalysis: new Set(),
+    siteInspection: new Set(),
+    dailyIssue: new Set(),
+    opinion: new Set(),
+    propertyUpdate: new Set(),
+  };
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const bucket = defs[String(row?.action_type || '').trim()];
+    if (!bucket) continue;
+    const key = String(
+      row?.property_id ||
+      row?.property_identity_key ||
+      row?.property_item_no ||
+      row?.property_address ||
+      row?.id ||
+      ''
+    ).trim();
+    if (!key) continue;
+    buckets[bucket].add(key);
   }
-  return summary;
+  const counts = {
+    newProperty: buckets.newProperty.size,
+    rightsAnalysis: buckets.rightsAnalysis.size,
+    siteInspection: buckets.siteInspection.size,
+    dailyIssue: buckets.dailyIssue.size,
+    opinion: buckets.opinion.size,
+    propertyUpdate: buckets.propertyUpdate.size,
+  };
+  counts.total = counts.newProperty + counts.rightsAnalysis + counts.siteInspection + counts.dailyIssue + counts.opinion + counts.propertyUpdate;
+  return counts;
 }
 
-function buildOverviewFromRows(rows) {
-  const overview = createEmptyOverview();
-  const todayKey = getTodayKey();
-  for (const row of Array.isArray(rows) ? rows : []) appendRowToOverview(overview, row, todayKey);
-  return overview;
-}
-
-
-function buildMapRow(row) {
-  const base = PropertyDomain && typeof PropertyDomain.buildNormalizedPropertyBase === 'function'
-    ? PropertyDomain.buildNormalizedPropertyBase(row)
-    : row;
-  const sourceBucket = PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function'
-    ? PropertyDomain.getSourceBucket({
-        ...row,
-        ...base,
-        raw: row?.raw || base?.raw || {},
-        sourceType: base?.sourceType || row?.source_type || row?.sourceType || row?.source,
-        source_type: row?.source_type || base?.sourceType || row?.sourceType || row?.source,
-        sourceUrl: base?.sourceUrl || row?.source_url || row?.sourceUrl,
-        source_url: row?.source_url || base?.sourceUrl || row?.sourceUrl,
-        globalId: base?.globalId || row?.global_id || row?.globalId,
-        global_id: row?.global_id || base?.globalId || row?.globalId,
-        submitterType: base?.submitterType || row?.submitter_type || row?.submitterType,
-        submitter_type: row?.submitter_type || base?.submitterType || row?.submitterType,
-        brokerOfficeName: base?.brokerOfficeName || row?.broker_office_name || row?.brokerOfficeName,
-        broker_office_name: row?.broker_office_name || base?.brokerOfficeName || row?.brokerOfficeName,
-        isGeneral: (row?.is_general ?? base?.isGeneral),
-        is_general: (row?.is_general ?? base?.isGeneral),
-      })
-    : String(base?.sourceType || row?.source_type || 'general');
-
+function normalizeActivityEntry(entry, ctx) {
+  const actionType = normalizeActionType(entry?.actionType || entry?.action_type);
+  if (!actionType) return null;
   return {
-    id: base?.id || row?.id || '',
-    itemNo: base?.itemNo || row?.item_no || '',
-    source: base?.sourceType || row?.source_type || 'general',
-    sourceBucket,
-    status: base?.status || row?.status || '',
-    address: base?.address || row?.address || '',
-    type: base?.assetType || row?.asset_type || '',
-    floor: base?.floor || row?.floor || '',
-    totalFloor: base?.totalfloor || row?.total_floor || '',
-    useapproval: base?.useapproval || row?.use_approval || '',
-    exclusivearea: base?.exclusivearea ?? row?.exclusive_area ?? null,
-    commonarea: base?.commonarea ?? row?.common_area ?? null,
-    sitearea: base?.sitearea ?? row?.site_area ?? null,
-    appraisalPrice: base?.priceMain ?? row?.price_main ?? null,
-    currentPrice: base?.lowprice ?? row?.lowprice ?? null,
-    bidDate: base?.dateMain || row?.date_main || '',
-    createdAt: base?.createdAt || row?.created_at || row?.date_uploaded || '',
-    assignedAgentId: base?.assignedAgentId || row?.assignee_id || '',
-    assignedAgentName: base?.assignedAgentName || '-',
-    rightsAnalysis: base?.rightsAnalysis || '',
-    siteInspection: base?.siteInspection || '',
-    opinion: base?.opinion || row?.memo || '',
-    regionGu: base?.regionGu || '',
-    regionDong: base?.regionDong || '',
-    latitude: base?.latitude ?? row?.latitude ?? null,
-    longitude: base?.longitude ?? row?.longitude ?? null,
-    sourceUrl: base?.sourceUrl || row?.source_url || '',
-    globalId: base?.globalId || row?.global_id || '',
-    submitterType: base?.submitterType || row?.submitter_type || '',
-    brokerOfficeName: base?.brokerOfficeName || row?.broker_office_name || '',
-    isDirectSubmission: !!base?.isDirectSubmission,
-    raw: row?.raw && typeof row.raw === 'object' ? row.raw : (base?.raw || {}),
+    actor_id: ctx.userId,
+    actor_name: cleanText(ctx.name || ctx.email || '', 120),
+    property_id: cleanText(entry?.propertyId || entry?.property_id, 120),
+    property_identity_key: cleanText(entry?.propertyIdentityKey || entry?.property_identity_key, 180),
+    property_item_no: cleanText(entry?.propertyItemNo || entry?.property_item_no, 120),
+    property_address: cleanText(entry?.propertyAddress || entry?.property_address, 500),
+    action_type: actionType,
+    action_date: /^\d{4}-\d{2}-\d{2}$/.test(String(entry?.actionDate || entry?.action_date || '').trim())
+      ? String(entry.actionDate || entry.action_date).trim()
+      : kstDateKey(),
+    changed_fields: normalizeChangedFields(entry?.changedFields || entry?.changed_fields),
+    note: cleanText(entry?.note, 4000),
   };
 }
 
-function matchesMapFilters(row, { source = 'all', status = '', q = '' } = {}) {
-  const bucket = String(row?.sourceBucket || row?.source || 'general').trim() || 'general';
-  const sourceKey = String(source || 'all').trim() || 'all';
-  if (sourceKey !== 'all') {
-    if (sourceKey === 'realtor') {
-      if (!(bucket === 'realtor_naver' || bucket === 'realtor_direct')) return false;
-    } else if (bucket !== sourceKey) {
-      return false;
+async function insertActivityEntries(entries, ctx) {
+  const rows = (Array.isArray(entries) ? entries : []).map((entry) => normalizeActivityEntry(entry, ctx)).filter(Boolean);
+  if (!rows.length) return { createdCount: 0 };
+
+  // 하루 1건만 유지되어야 하는 action_type (같은 물건/담당자/날짜 조합에서 덮어쓰기)
+  //   - daily_issue / opinion / site_inspection
+  // 그 외 (new_property / property_update / rights_analysis) 는 원래대로 매번 신규 insert.
+  const MERGE_TYPES = new Set(['daily_issue', 'opinion', 'site_inspection']);
+  const upsertRows = [];
+  const insertRows = [];
+  for (const row of rows) {
+    if (MERGE_TYPES.has(String(row.action_type || ''))) upsertRows.push(row);
+    else insertRows.push(row);
+  }
+
+  const createdItems = [];
+  // 1) insert-only 그룹: 기존처럼 한번에 bulk insert
+  if (insertRows.length) {
+    const created = await supabaseRest('/rest/v1/property_activity_logs', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      json: insertRows,
+    });
+    if (Array.isArray(created)) createdItems.push(...created);
+  }
+
+  // 2) upsert 그룹: 각 row 마다 기존 행 조회 → 있으면 PATCH, 없으면 POST
+  //    (property_id 가 null 인 경우도 안전하게 처리 — 키 조건이 3~4 항목으로 좁혀짐)
+  for (const row of upsertRows) {
+    const actorId = String(row.actor_id || '').trim();
+    const actionType = String(row.action_type || '').trim();
+    const actionDate = String(row.action_date || '').trim();
+    const propertyId = row.property_id ? String(row.property_id).trim() : '';
+    if (!actorId || !actionType || !actionDate) {
+      // 키 불완전 — 신규 insert 로 fallback
+      const created = await supabaseRest('/rest/v1/property_activity_logs', {
+        method: 'POST', headers: { Prefer: 'return=representation' }, json: [row],
+      });
+      if (Array.isArray(created)) createdItems.push(...created);
+      continue;
+    }
+    // 기존 행 조회 조건: actor_id + action_type + action_date + property_id (is.null 또는 값 일치)
+    const base = `/rest/v1/property_activity_logs?select=id`
+      + `&actor_id=eq.${encodeURIComponent(actorId)}`
+      + `&action_type=eq.${encodeURIComponent(actionType)}`
+      + `&action_date=eq.${encodeURIComponent(actionDate)}`;
+    const query = propertyId
+      ? `${base}&property_id=eq.${encodeURIComponent(propertyId)}`
+      : `${base}&property_id=is.null`;
+    let existing = null;
+    try {
+      const found = await supabaseRest(query);
+      if (Array.isArray(found) && found.length) existing = found[0];
+    } catch (e) {
+      // 조회 실패 시에도 진행(insert fallback)
+    }
+    if (existing && existing.id) {
+      // UPDATE: note / changed_fields / created_at 만 갱신 (마지막 수정 시각으로)
+      const patchPath = `/rest/v1/property_activity_logs?id=eq.${encodeURIComponent(existing.id)}`;
+      const patched = await supabaseRest(patchPath, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        json: {
+          note: row.note,
+          changed_fields: row.changed_fields,
+          created_at: new Date().toISOString(),
+          // actor/property/address 등은 불변으로 간주 (첫 입력을 기준으로 유지)
+        },
+      });
+      if (Array.isArray(patched)) createdItems.push(...patched);
+    } else {
+      // 신규 INSERT
+      const created = await supabaseRest('/rest/v1/property_activity_logs', {
+        method: 'POST', headers: { Prefer: 'return=representation' }, json: [row],
+      });
+      if (Array.isArray(created)) createdItems.push(...created);
     }
   }
 
-  if (status) {
-    if (String(row?.status || '').trim() !== String(status).trim()) return false;
-  }
-
-  const keyword = String(q || '').trim().toLowerCase();
-  if (keyword) {
-    const hay = [
-      row?.address, row?.itemNo, row?.type, row?.opinion, row?.rightsAnalysis, row?.siteInspection,
-      row?.brokerOfficeName, row?.submitterType, row?.sourceBucket, row?.source,
-    ].map((value) => String(value || '').toLowerCase()).join(' ');
-    if (!hay.includes(keyword)) return false;
-  }
-
-  return true;
+  return {
+    createdCount: createdItems.length,
+    items: createdItems,
+  };
 }
 
-async function buildSupabaseMapResponse({ source = 'all', status = '', q = '', offset = 0, limit = 300, markerLimit = 1200, swLat = null, swLng = null, neLat = null, neLng = null } = {}) {
-  const bounds = parseMapBounds({ swLat, swLng, neLat, neLng });
-  const query = new URLSearchParams();
-  query.set('order', 'date_uploaded.desc.nullslast,id.desc');
-  query.set('offset', '0');
-  query.set('limit', String(Math.max(Number(limit || 300), Number(markerLimit || 1200), 1200)));
-  appendCommonMapFilters(query, { status });
-  appendSupabaseBboxFilters(query, bounds);
 
-  const data = await fetchSupabaseRowsWithSafeSelect((select) => {
-    query.set('select', select);
-    return `/rest/v1/properties?${query.toString()}`;
-  }, MAP_SCAN_SELECT);
+function mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId) {
+  const idRows = Array.isArray(rowsById) ? rowsById : [];
+  const nameRows = Array.isArray(rowsByName) ? rowsByName : [];
+  const out = [];
+  const seen = new Set();
+  const allowLooseNameFallback = !idRows.length;
+  const add = (row, source) => {
+    if (!row || typeof row !== 'object') return;
+    const actorIdValue = cleanText(row?.actor_id, 120);
+    if (source === 'name' && !allowLooseNameFallback && actorIdValue && actorId && actorIdValue !== actorId) return;
+    const key = String(row.id || `${row.actor_id || ''}|${row.property_id || ''}|${row.property_identity_key || ''}|${row.property_item_no || ''}|${row.property_address || ''}|${row.action_type || ''}|${row.created_at || ''}`).trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(row);
+  };
+  idRows.forEach((row) => add(row, 'id'));
+  nameRows.forEach((row) => add(row, 'name'));
+  out.sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
+  return out;
+}
 
-  const batch = Array.isArray(data) ? data : [];
-  const filtered = [];
-  for (const row of batch) {
-    const normalized = buildMapRow(row);
-    if (!rowWithinBounds(normalized, bounds)) continue;
-    if (!matchesMapFilters(normalized, { source, status, q })) continue;
-    filtered.push(normalized);
+function collectActorNameCandidates(ctx) {
+  const values = [
+    ctx?.name,
+    ctx?.email,
+    ctx?.profile?.name,
+    ctx?.authUser?.user_metadata?.display_name,
+    ctx?.bearerUser?.user_metadata?.display_name,
+    ctx?.authUser?.email,
+    ctx?.bearerUser?.email,
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const s = cleanText(value, 120);
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
   }
+  return out;
+}
 
-  const safeOffset = Math.max(0, Number(offset || 0));
-  const safeLimit = Math.max(1, Number(limit || 300));
-  const safeMarkerLimit = Math.max(1, Number(markerLimit || 1200));
-  const items = filtered.slice(safeOffset, safeOffset + safeLimit);
-  const markers = filtered
-    .filter((row) => Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude)))
-    .slice(0, safeMarkerLimit)
-    .map((row) => ({
-      id: row.id,
-      address: row.address,
-      type: row.type,
-      latitude: Number(row.latitude),
-      longitude: Number(row.longitude),
-      sourceBucket: row.sourceBucket,
-      source: row.source,
-    }));
-
-  let summary;
-  if (!String(q || '').trim()) {
-    summary = await buildSupabaseVisibleSummary(bounds, { status });
-    if (source && source !== 'all') {
-      const scoped = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-      if (source === 'realtor') {
-        scoped.realtor_naver = Number(summary.realtor_naver || 0);
-        scoped.realtor_direct = Number(summary.realtor_direct || 0);
-        scoped.total = scoped.realtor_naver + scoped.realtor_direct;
-      } else if (Object.prototype.hasOwnProperty.call(scoped, source)) {
-        scoped[source] = Number(summary[source] || 0);
-        scoped.total = scoped[source];
-      }
-      summary = scoped;
-    }
-  } else {
-    summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-    for (const row of filtered) {
-      summary.total += 1;
-      if (Object.prototype.hasOwnProperty.call(summary, row.sourceBucket)) summary[row.sourceBucket] += 1;
+async function fetchRowsByActorNames(baseSelect, date, actorNames) {
+  const names = Array.isArray(actorNames) ? actorNames.filter(Boolean) : [];
+  if (!names.length) return [];
+  const merged = [];
+  const seen = new Set();
+  for (const name of names) {
+    const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&actor_name=eq.${encodeURIComponent(name)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`);
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = String(row?.id || '').trim();
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      merged.push(row);
     }
   }
-
-  return { summary, total: Number(summary?.total || filtered.length || 0), items, markers };
+  return merged;
 }
 
-function buildStoreMapResponse(rows, options = {}) {
-  const bounds = parseMapBounds(options);
-  const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-  const items = [];
-  const markers = [];
-  const offset = Number(options.offset || 0);
-  const limit = Number(options.limit || 300);
-  const markerLimit = Number(options.markerLimit || 1200);
-  const filtered = [];
+async function fetchRowsByAssignedProperties(baseSelect, date, actorId) {
+  const userId = cleanText(actorId, 120);
+  if (!userId) return [];
+  const propertyRows = await supabaseRest(`/rest/v1/properties?select=id,item_no,address,global_id,assignee_id&assignee_id=eq.${encodeURIComponent(userId)}&limit=5000`);
+  const props = Array.isArray(propertyRows) ? propertyRows : [];
+  if (!props.length) return [];
 
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const normalized = buildMapRow(row);
-    if (!rowWithinBounds(normalized, bounds)) continue;
-    if (!matchesMapFilters(normalized, options)) continue;
-    filtered.push(normalized);
-    summary.total += 1;
-    if (Object.prototype.hasOwnProperty.call(summary, normalized.sourceBucket)) summary[normalized.sourceBucket] += 1;
+  const idSet = new Set();
+  const itemNoSet = new Set();
+  const addressSet = new Set();
+  for (const row of props) {
+    const idVals = [row?.id, row?.global_id];
+    for (const value of idVals) {
+      const s = cleanText(value, 120);
+      if (s) idSet.add(s);
+    }
+    const itemNo = cleanText(row?.item_no, 120);
+    if (itemNo) itemNoSet.add(itemNo);
+    const address = cleanText(row?.address, 500);
+    if (address) addressSet.add(address);
   }
+  if (!idSet.size && !itemNoSet.size && !addressSet.size) return [];
 
-  filtered.slice(offset, offset + limit).forEach((row) => items.push(row));
-  filtered
-    .filter((row) => Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude)))
-    .slice(0, markerLimit)
-    .forEach((row) => markers.push({ id: row.id, address: row.address, type: row.type, latitude: Number(row.latitude), longitude: Number(row.longitude), sourceBucket: row.sourceBucket, source: row.source }));
-
-  return { summary, total: summary.total, items, markers };
-}
-
-function buildSupabasePropertyPatch(body = {}) {
-  return omitUndefined({
-    item_no: body.item_no ?? body.itemNo,
-    source_type: body.source_type ?? body.sourceType,
-    assignee_id: body.assignee_id ?? body.assigneeId,
-    assignee_name: body.assignee_name ?? body.assigneeName,
-    submitter_type: body.submitter_type ?? body.submitterType,
-    address: body.address,
-    asset_type: body.asset_type ?? body.assetType,
-    floor: body.floor,
-    total_floor: body.total_floor ?? body.totalfloor,
-    common_area: body.common_area ?? body.commonarea,
-    exclusive_area: body.exclusive_area ?? body.exclusivearea,
-    site_area: body.site_area ?? body.sitearea,
-    use_approval: body.use_approval ?? body.useapproval,
-    status: body.status,
-    price_main: body.price_main ?? body.priceMain,
-    lowprice: body.lowprice,
-    date_main: body.date_main ?? body.dateMain,
-    source_url: body.source_url ?? body.sourceUrl,
-    broker_office_name: body.broker_office_name ?? body.realtorname,
-    submitter_phone: body.submitter_phone ?? body.realtorcell,
-    memo: body.memo ?? body.opinion,
-    latitude: body.latitude,
-    longitude: body.longitude,
-    raw: body.raw,
+  const rows = await supabaseRest(`/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`);
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const propertyId = cleanText(row?.property_id, 120);
+    const itemNo = cleanText(row?.property_item_no, 120);
+    const address = cleanText(row?.property_address, 500);
+    return (propertyId && idSet.has(propertyId)) || (itemNo && itemNoSet.has(itemNo)) || (address && addressSet.has(address));
   });
 }
 
+// =============================================================================
+// property_activity_logs 에러 분류 helper
+// -----------------------------------------------------------------------------
+// 기존에는 에러 메시지에 'property_activity_logs' 문자열이 포함되기만 하면
+// 무조건 "테이블 없음" 메시지로 치환해 진짜 원인(컬럼/NOT NULL/권한/UUID 등)을
+// 가렸다. Postgres 및 PostgREST 에러 코드를 먼저 분류해서 사용자·운영자가
+// 1차 원인을 즉시 식별 가능하도록 한다. 원본 코드/hint/details 는 debug 필드로
+// 그대로 전달되므로, 필요 시 관리자가 정확한 진단이 가능하다.
+// =============================================================================
+function describePropertyActivityLogError(err, fallback) {
+  const rawMessage = String(err?.message || fallback || '').trim();
+  const data = (err && typeof err === 'object' && err.data && typeof err.data === 'object') ? err.data : null;
+  const pgCode = String(data?.code || '').trim();
+  const details = String(data?.details || '').trim();
+  const hint = String(data?.hint || '').trim();
+  const mentionsTable = /property_activity_logs/i.test(rawMessage);
 
-module.exports = async function handler(req, res) {
-  if (applyCors(req, res)) return;
-  let session = null;
-  if (hasSupabaseAdminEnv()) {
-    session = await requireSupabaseAdmin(req, res);
-  } else {
-    session = requireAdmin(req, res);
+  let message = rawMessage || fallback || '일일업무일지 처리 중 오류가 발생했습니다.';
+  let category = 'unknown';
+
+  if (pgCode === '42P01' || /relation\s+"?[^"\s]*property_activity_logs[^"\s]*"?\s+does not exist/i.test(rawMessage)) {
+    message = 'property_activity_logs 테이블이 존재하지 않습니다. Supabase 콘솔에서 migration SQL(0003_tables.sql)을 먼저 실행해 주세요.';
+    category = 'missing_table';
+  } else if (pgCode === '42703' || /column .* does not exist/i.test(rawMessage) || /Could not find the .* column/i.test(rawMessage)) {
+    message = `property_activity_logs 테이블 컬럼 구조가 일치하지 않습니다. 최신 migration 적용이 필요합니다. (${details || rawMessage})`;
+    category = 'schema_mismatch';
+  } else if (pgCode === '42501' || /permission denied/i.test(rawMessage)) {
+    message = 'property_activity_logs 접근 권한이 없습니다. Supabase service_role 키(SUPABASE_SERVICE_ROLE_KEY) 환경변수 또는 RLS 정책을 확인해 주세요.';
+    category = 'permission_denied';
+  } else if (pgCode === '23502' || /null value in column .* violates not-null/i.test(rawMessage)) {
+    const match = rawMessage.match(/null value in column "([^"]+)"/i);
+    const colName = match ? match[1] : ((details.match(/column "([^"]+)"/i) || [])[1] || '(알 수 없음)');
+    message = `property_activity_logs 필수 값이 비어 있습니다: ${colName}. 세션이 만료되었거나 사용자 식별자가 유효하지 않을 수 있으니 로그아웃 후 다시 로그인해 시도해 주세요.`;
+    category = 'not_null_violation';
+  } else if (pgCode === '22P02' || /invalid input syntax for type uuid/i.test(rawMessage)) {
+    message = '사용자 식별자(actor_id) 형식이 유효하지 않습니다. 로그아웃 후 다시 로그인해 주세요.';
+    category = 'invalid_uuid';
+  } else if (pgCode === '23505' || /duplicate key value violates unique constraint/i.test(rawMessage)) {
+    message = '동일한 업무일지 항목이 이미 존재합니다.';
+    category = 'unique_violation';
+  } else if (pgCode === 'PGRST301' || /JWT expired/i.test(rawMessage)) {
+    message = '로그인 세션이 만료되었습니다. 다시 로그인해 주세요.';
+    category = 'jwt_expired';
+  } else if (pgCode && /^PGRST/i.test(pgCode)) {
+    message = `Supabase REST 오류 (${pgCode}): ${rawMessage}`;
+    category = 'postgrest';
+  } else if (mentionsTable) {
+    // 테이블 이름은 언급되는데 위 패턴 모두 미매칭 — 원본 메시지 노출
+    message = `property_activity_logs 처리 중 오류: ${rawMessage}`;
+    category = 'other_table_error';
   }
-  if (!session) return;
 
-  const store = getStore();
+  return {
+    message,
+    category,
+    debug: {
+      code: pgCode || null,
+      details: details || null,
+      hint: hint || null,
+      raw: rawMessage || null,
+    },
+  };
+}
+
+async function handleActivityLog(req, res) {
+  if (!hasSupabaseAdminEnv()) {
+    return send(res, 501, { ok: false, message: '일일업무일지 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
+  }
+
+  let ctx = null;
+  try {
+    ctx = await resolveCurrentUserContext(req);
+  } catch (err) {
+    return send(res, 500, { ok: false, message: err?.message || '사용자 확인에 실패했습니다.' });
+  }
+
+  if (!ctx?.userId) return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+  if (!['staff', 'admin'].includes(String(ctx.role || '').trim())) {
+    return send(res, 403, { ok: false, message: '담당자 또는 관리자 권한이 필요합니다.' });
+  }
+
+  // actor_id 는 property_activity_logs.actor_id (uuid NOT NULL) 컬럼에 바인딩되므로
+  // UUID v1~v5 일반 포맷을 만족해야 한다. ctx.userId 가 UUID 가 아니면 Postgres 가
+  // 22P02 (invalid input syntax for type uuid) 를 뱉고, 프런트는 원인을 알 수 없는
+  // "업무일지 기록 실패" 상태에 빠진다. 여기서 선제 차단해 명확한 원인을 돌려준다.
+  const ACTIVITY_ACTOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const actorIdStr = String(ctx.userId).trim();
+  if (!ACTIVITY_ACTOR_UUID_RE.test(actorIdStr)) {
+    return send(res, 400, {
+      ok: false,
+      message: '사용자 식별자(actor_id) 형식이 유효한 UUID가 아닙니다. 로그아웃 후 다시 로그인해 주세요.',
+      code: 'actor_id_invalid_format',
+      debug: {
+        actorIdLength: actorIdStr.length,
+        actorIdSample: actorIdStr ? `${actorIdStr.slice(0, 8)}…` : '(empty)',
+        role: ctx.role || null,
+      },
+    });
+  }
 
   if (req.method === 'GET') {
-    const url = new URL(req.url, 'http://localhost');
-    const mode = String(url.searchParams.get('mode') || '').trim().toLowerCase();
-    if (mode === 'weekly_auction_stats') {
-      // 금주(월~일, KST) 기준 낙찰/매각 건수 + 감정가 합계 + 낙찰가 합계
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-      try {
-        if (!hasSupabaseAdminEnv()) {
-          return send(res, 200, {
-            ok: true,
-            weekStart: null, weekEnd: null,
-            counts: { 낙찰: 0, 매각: 0, 유찰: 0, 취하: 0, 기각: 0 },
-            totalAppraisal: 0, totalResultPrice: 0, avgRatio: 0,
-          });
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(url.searchParams.get('date') || '').trim())
+        ? String(url.searchParams.get('date')).trim()
+        : kstDateKey();
+      const requestedActorId = cleanText(url.searchParams.get('actor_id'), 120);
+      const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
+      const actorId = ctx.role === 'admin' && requestedActorId ? requestedActorId : ctx.userId;
+      const actorName = cleanText(ctx.name || ctx.email || '', 120);
+      const baseSelect = 'id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at';
+      let rows = [];
+      if (adminViewRequested) {
+        let query = `/rest/v1/property_activity_logs?select=${baseSelect}&action_date=eq.${encodeURIComponent(date)}`;
+        if (requestedActorId) {
+          query += `&actor_id=eq.${encodeURIComponent(requestedActorId)}`;
         }
-        // KST 기준 '이번 주 월요일 00:00' 계산
-        const now = new Date();
-        const kstOffsetMs = 9 * 60 * 60 * 1000;
-        const kstNow = new Date(now.getTime() + kstOffsetMs);
-        const dayOfWeek = kstNow.getUTCDay();  // Sun=0 ... Sat=6
-        const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        const weekStartKst = new Date(kstNow);
-        weekStartKst.setUTCDate(kstNow.getUTCDate() - daysSinceMonday);
-        weekStartKst.setUTCHours(0, 0, 0, 0);
-        const weekStartStr = weekStartKst.toISOString().slice(0, 10);  // YYYY-MM-DD
-        const weekEndKst = new Date(weekStartKst);
-        weekEndKst.setUTCDate(weekStartKst.getUTCDate() + 6);
-        const weekEndStr = weekEndKst.toISOString().slice(0, 10);
-
-        const select = 'id,item_no,address,source_type,asset_type,result_status,result_price,result_date,price_main';
-        const path = `/rest/v1/properties`
-          + `?select=${encodeURIComponent(select)}`
-          + `&result_status=in.(낙찰,매각,유찰,취하,기각)`
-          + `&result_date=gte.${weekStartStr}`
-          + `&result_date=lte.${weekEndStr}`
-          + `&order=result_date.desc`
-          + `&limit=500`;
-        const data = await supabaseRest(path);
-        const rows = Array.isArray(data) ? data : [];
-        const counts = { 낙찰: 0, 매각: 0, 유찰: 0, 취하: 0, 기각: 0 };
-        let totalAppraisal = 0, totalResultPrice = 0, ratioSum = 0, ratioN = 0;
-        for (const r of rows) {
-          const s = String(r.result_status || '').trim();
-          if (counts[s] != null) counts[s]++;
-          const appraisal = Number(r.price_main || 0);
-          const resultPrice = Number(r.result_price || 0);
-          if (appraisal) totalAppraisal += appraisal;
-          if (resultPrice) totalResultPrice += resultPrice;
-          if (appraisal && resultPrice && (s === '낙찰' || s === '매각')) {
-            ratioSum += (resultPrice / appraisal) * 100;
-            ratioN++;
-          }
+        query += '&order=actor_name.asc.nullslast,created_at.desc';
+        rows = await supabaseRest(query);
+      } else {
+        const actorNames = collectActorNameCandidates(ctx);
+        const byActorId = `/rest/v1/property_activity_logs?select=${baseSelect}&actor_id=eq.${encodeURIComponent(actorId)}&action_date=eq.${encodeURIComponent(date)}&order=created_at.desc`;
+        const rowsById = await supabaseRest(byActorId);
+        const rowsByName = await fetchRowsByActorNames(baseSelect, date, actorNames);
+        rows = mergeActivityRowsByIdAndName(rowsById, rowsByName, actorId);
+        if (!rows.length) {
+          rows = await fetchRowsByAssignedProperties(baseSelect, date, actorId);
         }
-        // 모달용 낙찰/매각 상세 리스트 (낙찰율 계산까지 서버에서 처리해 클라이언트 단순화)
-        const winItems = rows
-          .filter((r) => {
-            const s = String(r.result_status || '').trim();
-            return s === '낙찰' || s === '매각';
-          })
-          .map((r) => {
-            const appraisal = Number(r.price_main || 0);
-            const resultPrice = Number(r.result_price || 0);
-            const ratio = (appraisal && resultPrice)
-              ? Math.round((resultPrice / appraisal) * 1000) / 10
-              : null;
-            return {
-              id: r.id,
-              itemNo: r.item_no || '',
-              sourceType: r.source_type || '',
-              assetType: r.asset_type || '',
-              address: r.address || '',
-              resultStatus: String(r.result_status || '').trim(),
-              resultDate: r.result_date || '',
-              priceMain: appraisal || 0,
-              resultPrice: resultPrice || 0,
-              ratio,
-            };
-          });
-        return send(res, 200, {
-          ok: true,
-          weekStart: weekStartStr,
-          weekEnd: weekEndStr,
-          counts,
-          totalAppraisal,
-          totalResultPrice,
-          avgRatio: ratioN ? Math.round((ratioSum / ratioN) * 10) / 10 : 0,
-          items: winItems,
-        });
-      } catch (err) {
-        return send(res, err?.status || 500, {
-          ok: false,
-          message: err?.message || '금주 낙찰 통계를 불러오지 못했습니다.',
-        });
       }
+      return send(res, 200, {
+        ok: true,
+        date,
+        actorId: adminViewRequested ? (requestedActorId || null) : actorId,
+        actorName: adminViewRequested ? null : actorName,
+        adminView: adminViewRequested,
+        counts: summarizeActivityRows(rows),
+        items: Array.isArray(rows) ? rows : [],
+        debug: {
+          queryMode: adminViewRequested ? 'admin_view' : 'self_view',
+          actorIdRows: Array.isArray(rows) ? rows.filter((row) => String(row?.actor_id || '').trim() === String(actorId || '').trim()).length : 0,
+          actorNameCandidates: adminViewRequested ? [] : collectActorNameCandidates(ctx),
+          fallbackMode: adminViewRequested ? null : (Array.isArray(rows) && rows.length ? 'actor_or_name_or_assigned_property' : 'empty'),
+        },
+      });
+    } catch (err) {
+      const info = describePropertyActivityLogError(err, '일일업무일지 조회 실패');
+      return send(res, err?.status || 500, { ok: false, message: info.message, code: info.category, debug: info.debug });
     }
-
-    if (mode === 'daily_delta_stats') {
-      // [신규] 대시보드 증가율 칩 데이터
-      //   - totalUntilYesterday: 어제 자정(KST) 이전까지의 누적 등록 건수
-      //     → 현재 total 과 대비해 전체 등록 물건 증가율 계산
-      //   - yesterdayNewCount: 어제 하루(0시~24시 KST) 신규 등록 건수
-      //     → 오늘 신규 등록 건수와 대비해 신규 등록 증가율 계산
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-      try {
-        if (!hasSupabaseAdminEnv()) {
-          return send(res, 200, { ok: true, totalUntilYesterday: 0, yesterdayNewCount: 0 });
-        }
-        // KST 기준 오늘 자정, 어제 자정 ISO 문자열 계산
-        const now = new Date();
-        const kstOffsetMs = 9 * 60 * 60 * 1000;
-        const kstNow = new Date(now.getTime() + kstOffsetMs);
-        const kstTodayMidnight = new Date(Date.UTC(
-          kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate(), 0, 0, 0, 0
-        ));
-        // KST 자정 → UTC 기준 ISO (예: 오늘 KST 00:00 = 어제 UTC 15:00)
-        const todayKstAsUtc = new Date(kstTodayMidnight.getTime() - kstOffsetMs);
-        const yesterdayKstAsUtc = new Date(todayKstAsUtc.getTime() - 24 * 60 * 60 * 1000);
-        const todayIso = todayKstAsUtc.toISOString();
-        const yesterdayIso = yesterdayKstAsUtc.toISOString();
-
-        // 1) 어제 자정 이전 누적 건수 (created_at < todayIso)
-        //    HEAD + Prefer:count=exact 로 count 만 받아 경량 처리
-        const untilPath = `/rest/v1/properties?select=id&created_at=lt.${encodeURIComponent(todayIso)}`;
-        // 2) 어제 하루 신규 건수 (yesterdayIso <= created_at < todayIso)
-        const ydyPath = `/rest/v1/properties?select=id&created_at=gte.${encodeURIComponent(yesterdayIso)}&created_at=lt.${encodeURIComponent(todayIso)}`;
-
-        async function countRows(path) {
-          // supabaseRest 는 data 반환형이라 count 만 가져오기 어려우므로 HEAD 로 직접 호출.
-          // Prefer: count=exact + Range: 0-0 헤더로 Content-Range 응답 헤더에 총건수 포함.
-          const { url: baseUrl, serviceRoleKey } = getEnv();
-          const r = await fetch(`${baseUrl}${path}`, {
-            method: 'HEAD',
-            headers: {
-              apikey: serviceRoleKey,
-              Authorization: `Bearer ${serviceRoleKey}`,
-              Prefer: 'count=exact',
-              'Range-Unit': 'items',
-              Range: '0-0',
-            },
-          });
-          // Content-Range 형식: "0-0/1234" 또는 "*/1234"
-          const contentRange = r.headers.get('content-range') || '';
-          const m = contentRange.match(/\/(\d+)$/);
-          return m ? Number(m[1]) : 0;
-        }
-
-        const [totalUntilYesterday, yesterdayNewCount] = await Promise.all([
-          countRows(untilPath).catch(() => 0),
-          countRows(ydyPath).catch(() => 0),
-        ]);
-
-        return send(res, 200, {
-          ok: true,
-          totalUntilYesterday,
-          yesterdayNewCount,
-          todayKstIso: todayIso,
-          yesterdayKstIso: yesterdayIso,
-        });
-      } catch (err) {
-        return send(res, err?.status || 500, {
-          ok: false,
-          message: err?.message || '전일 대비 통계를 불러오지 못했습니다.',
-        });
-      }
-    }
-
-    if (mode === 'all_favorites') {
-      // 모든 담당자의 관심물건 property_id 집합 (관리자용 ★/🔥 필터링)
-      // - kind=star|fire|all (기본 all)
-      // - user_id=<uuid> 주면 해당 담당자의 것만
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-      try {
-        if (!hasSupabaseAdminEnv()) {
-          return send(res, 200, { ok: true, propertyIds: [], favorites: [] });
-        }
-        const kindParam = String(url.searchParams.get('kind') || 'all').trim().toLowerCase();
-        const userIdParam = String(url.searchParams.get('user_id') || '').trim();
-        const validKinds = new Set(['star', 'fire']);
-        const selectFields = 'property_id,user_id,kind';
-        let path = `/rest/v1/user_favorites?select=${selectFields}`;
-        if (validKinds.has(kindParam)) path += `&kind=eq.${encodeURIComponent(kindParam)}`;
-        if (userIdParam) path += `&user_id=eq.${encodeURIComponent(userIdParam)}`;
-        const data = await supabaseRest(path);
-        const set = new Set();
-        const favorites = [];
-        if (Array.isArray(data)) {
-          for (const r of data) {
-            const pid = String(r?.property_id || '').trim();
-            if (!pid) continue;
-            set.add(pid);
-            favorites.push({
-              propertyId: pid,
-              userId: String(r?.user_id || '').trim(),
-              kind: String(r?.kind || 'star').trim(),
-            });
-          }
-        }
-        return send(res, 200, { ok: true, propertyIds: [...set], favorites });
-      } catch (err) {
-        return send(res, err?.status || 500, {
-          ok: false,
-          message: err?.message || '관심물건 목록을 불러오지 못했습니다.',
-        });
-      }
-    }
-    if (mode === 'map') {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      const source = String(url.searchParams.get('source') || 'all').trim().toLowerCase();
-      const status = String(url.searchParams.get('status') || '').trim();
-      const q = String(url.searchParams.get('q') || '').trim();
-      const offset = Number(url.searchParams.get('offset') || 0);
-      const limit = Number(url.searchParams.get('limit') || 300);
-      const markerLimit = Number(url.searchParams.get('markerLimit') || 1200);
-      const swLat = url.searchParams.get('swLat');
-      const swLng = url.searchParams.get('swLng');
-      const neLat = url.searchParams.get('neLat');
-      const neLng = url.searchParams.get('neLng');
-      try {
-        if (hasSupabaseAdminEnv()) {
-          const payload = await buildSupabaseMapResponse({ source, status, q, offset, limit, markerLimit, swLat, swLng, neLat, neLng });
-          return send(res, 200, { ok: true, ...payload });
-        }
-        return send(res, 200, { ok: true, ...buildStoreMapResponse(store.properties, { source, status, q, offset, limit, markerLimit, swLat, swLng, neLat, neLng }) });
-      } catch (err) {
-        return send(res, err?.status || 500, {
-          ok: false,
-          message: err?.message || '지도 데이터를 불러오지 못했습니다.',
-          details: err?.data || null,
-        });
-      }
-    }
-    if (mode === 'detail') {
-      const targetId = String(url.searchParams.get('id') || '').trim();
-      if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
-      try {
-        if (hasSupabaseAdminEnv()) {
-          const col = targetId.includes(':') ? 'global_id' : 'id';
-          const rows = await fetchSupabaseRowsWithSafeSelect((select) => `/rest/v1/properties?select=${encodeURIComponent(select)}&${col}=eq.${encodeURIComponent(targetId)}&limit=1`, MAP_DETAIL_SELECT);
-          const row = Array.isArray(rows) ? rows[0] : rows;
-          if (!row) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
-          return send(res, 200, { ok: true, item: buildMapRow(row) });
-        }
-        const item = Array.isArray(store.properties) ? store.properties.find((row) => String(row?.id || row?.global_id || '').trim() === targetId || String(row?.global_id || '').trim() === targetId) : null;
-        if (!item) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
-        return send(res, 200, { ok: true, item: buildMapRow(item) });
-      } catch (err) {
-        return send(res, err?.status || 500, { ok: false, message: err?.message || '상세 데이터를 불러오지 못했습니다.', details: err?.data || null });
-      }
-    }
-    if (mode === 'overview') {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      try {
-        if (hasSupabaseAdminEnv()) {
-          const overview = await buildOverviewFastFromSupabase();
-          return send(res, 200, { ok: true, overview });
-        }
-        const fallbackRows = Array.isArray(store.properties) ? store.properties : [];
-        if (!fallbackRows.length) {
-          return send(res, 503, { ok: false, message: '집계용 서버 환경이 준비되지 않았습니다.' });
-        }
-        return send(res, 200, { ok: true, overview: buildOverviewFromRows(fallbackRows) });
-      } catch (err) {
-        return send(res, err?.status || 500, {
-          ok: false,
-          message: err?.message || '집계 데이터를 불러오지 못했습니다.',
-          details: err?.data || null,
-        });
-      }
-    }
-    const source = (url.searchParams.get('source') || 'all').toLowerCase();
-    const q = (url.searchParams.get('q') || '').trim().toLowerCase();
-    let items = [...store.properties];
-    if (source !== 'all') items = items.filter(v => v.source === source);
-    if (q) items = items.filter(v => JSON.stringify(v).toLowerCase().includes(q));
-    return send(res, 200, { ok: true, items, total: items.length });
   }
 
   if (req.method === 'POST') {
-    const body = getJsonBody(req);
+    try {
+      const body = req.__jsonBody || getJsonBody(req);
+      const entries = Array.isArray(body?.entries) ? body.entries : [body];
+      // insertActivityEntries 는 내부에서 normalizeActivityEntry 를 수행하고,
+      // MERGE_TYPES(daily_issue / opinion / site_inspection) 는 같은 날 같은
+      // (actor_id + action_type + action_date + property_id) 조합의 기존 row 를
+      // 찾아 PATCH, 없으면 INSERT 한다. 즉 하루에 여러 번 저장해도 해당 세 유형은
+      // 최종본 1 건만 유지되고, 그 외 유형(new_property/property_update/
+      // rights_analysis)은 원래 동작대로 매번 신규 INSERT 된다.
+      // (이전에는 이 지점에서 insertActivityEntries 를 거치지 않고 직접 bulk
+      //  insert 했기 때문에 MERGE_TYPES 머지 로직이 동작하지 않아 매 저장마다
+      //  행이 누적되는 버그가 있었다.)
+      const { createdCount, items } = await insertActivityEntries(entries, ctx);
+      if (!createdCount && (!Array.isArray(items) || !items.length)) {
+        return send(res, 400, { ok: false, message: '기록할 업무일지 항목이 없습니다.' });
+      }
+      return send(res, 201, {
+        ok: true,
+        createdCount: Number(createdCount) || (Array.isArray(items) ? items.length : 0),
+        items: Array.isArray(items) ? items : [],
+        actorId: ctx.userId,
+        actorName: cleanText(ctx.name || ctx.email || '', 120),
+      });
+    } catch (err) {
+      const info = describePropertyActivityLogError(err, '일일업무일지 기록 실패');
+      return send(res, err?.status || 500, { ok: false, message: info.message, code: info.category, debug: info.debug });
+    }
+  }
 
-    const address = String(body.address || '').trim();
-    const source = String(body.source || 'general').trim().toLowerCase();
-    const price = Number(body.price || 0);
-    if (!address || !['auction', 'onbid', 'realtor', 'general'].includes(source)) {
-      return send(res, 400, { ok: false, message: 'address, source 값이 올바르지 않습니다.' });
+  return send(res, 405, { ok: false, message: 'Method Not Allowed' });
+}
+
+function buildSupabasePropertyRow(input = {}, { role = '', userId = '', userName = '', isPatch = false } = {}) {
+  const lowpriceValue = parseNumberOrNull(input.lowprice ?? input.low_price);
+  const normalizedSourceType = PropertyDomain.normalizeSourceType(input.source_type ?? input.sourceType, { fallback: '' }) || undefined;
+  const normalizedSubmitterType = PropertyDomain.normalizeSubmitterType(input.submitter_type ?? input.submitterType, { fallback: '' }) || undefined;
+  const derivedIsGeneral = normalizedSourceType ? PropertyDomain.isGeneralSourceType(normalizedSourceType) : undefined;
+  const baseRaw = input.raw !== undefined ? sanitizePropertyRaw(input.raw) : undefined;
+  const preserveImportedMemo = PropertyDomain && typeof PropertyDomain.usesDedicatedSourceNote === 'function'
+    ? PropertyDomain.usesDedicatedSourceNote(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '')
+    : ['auction', 'realtor'].includes(String(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '').trim().toLowerCase());
+  const existingSourceNote = PropertyDomain && typeof PropertyDomain.extractDedicatedSourceNote === 'function'
+    ? PropertyDomain.extractDedicatedSourceNote(normalizedSourceType || baseRaw?.source_type || baseRaw?.sourceType || '', input, baseRaw || {})
+    : { label: baseRaw?.sourceNoteLabel || baseRaw?.importedSourceLabel || '', text: baseRaw?.sourceNoteText || baseRaw?.importedSourceText || '' };
+  if (preserveImportedMemo && existingSourceNote?.text) {
+    baseRaw.importedSourceLabel = baseRaw.importedSourceLabel || existingSourceNote.label || '';
+    baseRaw.sourceNoteLabel = baseRaw.sourceNoteLabel || existingSourceNote.label || '';
+    baseRaw.importedSourceText = baseRaw.importedSourceText || existingSourceNote.text || '';
+    baseRaw.sourceNoteText = baseRaw.sourceNoteText || existingSourceNote.text || '';
+  }
+  const row = omitUndefined({
+    item_no: input.item_no ?? input.itemNo,
+    source_type: normalizedSourceType,
+    assignee_id: input.assignee_id ?? input.assigneeId,
+    assignee_name: input.assignee_name ?? input.assigneeName,
+    submitter_type: normalizedSubmitterType,
+    address: input.address != null ? String(input.address || '').trim() : undefined,
+    asset_type: input.asset_type ?? input.assetType,
+    floor: input.floor != null ? String(input.floor || '').trim() : undefined,
+    total_floor: (input.total_floor ?? input.totalfloor) != null ? String(input.total_floor ?? input.totalfloor ?? '').trim() : undefined,
+    common_area: parseNumberOrNull(input.common_area ?? input.commonarea),
+    exclusive_area: parseNumberOrNull(input.exclusive_area ?? input.exclusivearea),
+    site_area: parseNumberOrNull(input.site_area ?? input.sitearea),
+    use_approval: input.use_approval ?? input.useapproval,
+    status: input.status != null ? String(input.status || '').trim() : undefined,
+    price_main: parseNumberOrNull(input.price_main ?? input.priceMain),
+    lowprice: parseNumberOrNull(input.lowprice ?? input.low_price),
+    date_main: input.date_main ?? input.dateMain,
+    source_url: input.source_url ?? input.sourceUrl,
+    broker_office_name: input.broker_office_name ?? input.brokerOfficeName ?? input.realtorname,
+    submitter_name: input.submitter_name ?? input.submitterName,
+    submitter_phone: input.submitter_phone ?? input.submitterPhone ?? input.realtorcell,
+    memo: input.memo !== undefined ? input.memo : (preserveImportedMemo ? undefined : input.opinion),
+    latitude: parseNumberOrNull(input.latitude),
+    longitude: parseNumberOrNull(input.longitude),
+    result_status: input.result_status ?? input.resultStatus,
+    result_price: parseNumberOrNull(input.result_price ?? input.resultPrice),
+    result_date: input.result_date ?? input.resultDate,
+    is_general: input.is_general !== undefined ? !!input.is_general : derivedIsGeneral,
+    raw: baseRaw,
+  });
+
+  if (lowpriceValue !== null) {
+    row.raw = sanitizePropertyRaw(row.raw || {});
+    if (row.raw.lowprice === undefined) row.raw.lowprice = lowpriceValue;
+  }
+
+  if (normalizedSourceType || normalizedSubmitterType || derivedIsGeneral !== undefined) {
+    row.raw = sanitizePropertyRaw(row.raw || {});
+    if (normalizedSourceType) row.raw.source_type = normalizedSourceType;
+    if (normalizedSourceType && row.raw.sourceType === undefined) row.raw.sourceType = normalizedSourceType;
+    if (normalizedSubmitterType) row.raw.submitter_type = normalizedSubmitterType;
+    if (normalizedSubmitterType && row.raw.submitterType === undefined) row.raw.submitterType = normalizedSubmitterType;
+    if (derivedIsGeneral !== undefined && row.raw.is_general === undefined) row.raw.is_general = derivedIsGeneral;
+  }
+
+  if (role === 'staff') {
+    if (!isPatch || row.assignee_id === undefined) row.assignee_id = userId || row.assignee_id || null;
+    if (!isPatch || row.assignee_name === undefined) row.assignee_name = userName || row.assignee_name || '';
+    if (row.raw && typeof row.raw === 'object') {
+      row.raw.assigneeId = userId || row.raw.assigneeId || '';
+      row.raw.assignedAgentId = userId || row.raw.assignedAgentId || '';
+      row.raw.registeredByAgent = true;
+      if (userName) row.raw.registeredByName = userName;
+    }
+  }
+
+  return omitUndefined(row);
+}
+
+async function getSupabaseProperty(targetId) {
+  const col = String(targetId).includes(':') ? 'global_id' : 'id';
+  const rows = await supabaseRest(`/rest/v1/properties?select=*&${col}=eq.${encodeURIComponent(targetId)}&limit=1`);
+  return Array.isArray(rows) ? (rows[0] || null) : null;
+}
+
+function isAllowedNonGetRole(role) {
+  return role === 'admin' || role === 'staff';
+}
+
+function buildLegacySessionContext(req, res) {
+  const session = getSession(req);
+  if (!session) {
+    send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+    return null;
+  }
+  const role = session.role === 'admin' ? 'admin' : (session.role === 'staff' ? 'staff' : '');
+  if (!isAllowedNonGetRole(role)) {
+    send(res, 403, { ok: false, message: '권한이 없습니다.' });
+    return null;
+  }
+  return {
+    userId: session.userId || '',
+    role,
+    name: session.name || '',
+    email: session.email || '',
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 주소 기반 중복 매물 탐색 (신규 물건 등록 모달의 실시간 감지용)
+//
+// 배경: 담당자 세션에서는 RLS 정책에 의해 sb.from('properties').select() 가
+// 본인 배정 매물만 반환하므로, 다른 담당자/미배정 매물을 볼 수 없다.
+// 이 엔드포인트는 service_role 로 동작해 RLS 우회 후, 주소 파싱 결과가
+// 동일한 건물(dong + mainNo + subNo) 매물을 반환한다.
+//
+// 요청: POST /properties { action: 'search_duplicates', address: '...' }
+// 응답: { ok: true, matches: [ { id, address, floor, assignee_id,
+//        assignee_name, raw, source_type, item_no }, ... ] }
+// ═══════════════════════════════════════════════════════════════════════════
+async function handleSearchDuplicates(req, res) {
+  // 로그인 확인 (담당자·관리자 모두 허용 — 조회만 가능)
+  let ctx = null;
+  try {
+    ctx = await resolveCurrentUserContext(req);
+  } catch (err) {
+    return send(res, 500, { ok: false, message: err.message || '사용자 확인에 실패했습니다.' });
+  }
+  if (!ctx?.userId) return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+
+  const body = req.__jsonBody || getJsonBody(req) || {};
+  const address = String(body.address || '').trim();
+  if (!address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
+
+  // 주소에서 dong, mainNo, subNo 추출 (클라이언트의 parseAddressIdentityParts 와 동일 함수 사용)
+  const parts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === 'function')
+    ? PropertyDomain.parseAddressIdentityParts(address)
+    : { dong: '', mainNo: '', subNo: '' };
+  if (!parts?.dong || !parts?.mainNo) {
+    // 지번 주소로 파싱이 안 되는 경우(도로명 등) → 빈 결과로 응답
+    return send(res, 200, { ok: true, matches: [] });
+  }
+  const targetKey = `${parts.dong}|${parts.mainNo}|${parts.subNo || '0'}`;
+
+  // service_role 로 dong 을 포함하는 모든 매물 조회 (최대 500건)
+  const dongEnc = encodeURIComponent(parts.dong);
+  const selectCols = 'id,global_id,address,floor,assignee_id,assignee_name,raw,source_type,item_no';
+  const path = `/rest/v1/properties?select=${selectCols}&address=ilike.*${dongEnc}*&limit=500`;
+
+  let rows = [];
+  try {
+    rows = await supabaseRest(path);
+    if (!Array.isArray(rows)) rows = [];
+  } catch (err) {
+    return send(res, 500, { ok: false, message: '매물 조회 실패: ' + (err?.message || '') });
+  }
+
+  // 같은 건물만 필터 (dong + mainNo + subNo 일치)
+  const matches = rows.filter((row) => {
+    const rowParts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === 'function')
+      ? PropertyDomain.parseAddressIdentityParts(row?.address || '')
+      : null;
+    if (!rowParts?.dong || !rowParts?.mainNo) return false;
+    const rowKey = `${rowParts.dong}|${rowParts.mainNo}|${rowParts.subNo || '0'}`;
+    return rowKey === targetKey;
+  }).map((r) => ({
+    id: r.id,
+    global_id: r.global_id,
+    address: r.address,
+    floor: r.floor,
+    assignee_id: r.assignee_id,
+    assignee_name: r.assignee_name,
+    raw: r.raw,
+    source_type: r.source_type,
+    item_no: r.item_no,
+  }));
+
+  return send(res, 200, { ok: true, matches });
+}
+
+async function handleSupabaseWrite(req, res) {
+  let ctx = null;
+  try {
+    ctx = await resolveCurrentUserContext(req);
+  } catch (err) {
+    return send(res, 500, { ok: false, message: err.message || '사용자 확인에 실패했습니다.' });
+  }
+  if (!ctx?.userId) return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+  if (!isAllowedNonGetRole(ctx.role)) return send(res, 403, { ok: false, message: '권한이 없습니다.' });
+
+  if (req.method === 'POST') {
+    const body = req.__jsonBody || getJsonBody(req);
+    const rowInput = body.row && typeof body.row === 'object' ? body.row : body;
+    const row = buildSupabasePropertyRow(rowInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: false });
+    if (!row.address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
+    const created = await supabasePropertyWriteWithRetry('/rest/v1/properties', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      json: row,
+    });
+    const item = Array.isArray(created) ? (created[0] || null) : created;
+    return send(res, 201, { ok: true, item });
+  }
+
+  if (req.method === 'PATCH') {
+    const body = req.__jsonBody || getJsonBody(req);
+    const targetId = String(body.targetId || body.id || body.globalId || '').trim();
+    if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(targetId)가 필요합니다.' });
+
+    const current = await getSupabaseProperty(targetId);
+    if (!current) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
+
+    if (ctx.role === 'staff') {
+      const currentAssigneeId = String(current.assignee_id || '').trim();
+      if (currentAssigneeId && currentAssigneeId !== ctx.userId) {
+        return send(res, 403, { ok: false, message: '본인에게 배정된 물건만 수정할 수 있습니다.' });
+      }
     }
 
+    const patchInput = body.patch && typeof body.patch === 'object' ? body.patch : body;
+    const patch = buildSupabasePropertyRow(patchInput, { role: ctx.role, userId: ctx.userId, userName: ctx.name, isPatch: true });
+    const currentRaw = sanitizePropertyRaw(current?.raw || {});
+    const currentSourceType = PropertyDomain.normalizeSourceType(
+      current?.source_type ?? currentRaw.source_type ?? currentRaw.sourceType,
+      { fallback: '' }
+    ) || undefined;
+    const currentSubmitterType = PropertyDomain.normalizeSubmitterType(
+      current?.submitter_type ?? currentRaw.submitter_type ?? currentRaw.submitterType,
+      { fallback: '' }
+    ) || undefined;
+    if (!patch.source_type && currentSourceType) patch.source_type = currentSourceType;
+    if (patch.is_general === undefined && currentSourceType) patch.is_general = PropertyDomain.isGeneralSourceType(currentSourceType);
+    if (!patch.submitter_type && currentSubmitterType) patch.submitter_type = currentSubmitterType;
+    patch.raw = sanitizePropertyRaw({
+      ...currentRaw,
+      ...(patch.raw && typeof patch.raw === 'object' ? patch.raw : {}),
+    });
+    if (currentSourceType) {
+      if (patch.raw.source_type === undefined) patch.raw.source_type = currentSourceType;
+      if (patch.raw.sourceType === undefined) patch.raw.sourceType = currentSourceType;
+      if (patch.raw.is_general === undefined) patch.raw.is_general = PropertyDomain.isGeneralSourceType(currentSourceType);
+    }
+    if (currentSubmitterType) {
+      if (patch.raw.submitter_type === undefined) patch.raw.submitter_type = currentSubmitterType;
+      if (patch.raw.submitterType === undefined) patch.raw.submitterType = currentSubmitterType;
+    }
+    if (patch.assignee_id !== undefined) {
+      const aid = patch.assignee_id;
+      const aname = patch.assignee_name || '';
+      patch.raw.assigneeId = aid || '';
+      patch.raw.assignee_id = aid || '';
+      patch.raw.assignedAgentId = aid || '';
+      patch.raw.assigneeName = aname;
+      patch.raw.assignee_name = aname;
+      patch.raw.assignedAgentName = aname;
+    }
+    if (ctx.role === 'staff') { delete patch.assignee_id; delete patch.assignee_name; }
+
+    // ── registrationLog 의 false-positive change 최종 필터링 ──
+    // 면적 필드: 소수점 정밀도 차이(20.116250... vs 20.12) 로 인한 거짓 변경 제거
+    // 날짜 필드: 타임존/시간 포맷 차이(2026-05-14T00:00:00+00:00 vs 2026-05-14) 로 인한 거짓 변경 제거
+    if (patch.raw && Array.isArray(patch.raw.registrationLog)) {
+      const extractDateOnly = (v) => {
+        if (v == null) return '';
+        const s = String(v).trim();
+        if (!s) return '';
+        const m = s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+        if (!m) return s;
+        return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+      };
+      const roundArea = (v) => {
+        const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/,/g, '').trim());
+        if (!Number.isFinite(n)) return null;
+        return Math.round(n * 100) / 100;
+      };
+      const AREA_FIELDS = new Set(['commonArea', 'exclusiveArea', 'siteArea']);
+      const DATE_FIELDS = new Set(['dateMain', 'useapproval']);
+      patch.raw.registrationLog = patch.raw.registrationLog.reduce((acc, entry) => {
+        if (!entry || typeof entry !== 'object') { acc.push(entry); return acc; }
+        if (entry.type !== 'changed' || !Array.isArray(entry.changes)) { acc.push(entry); return acc; }
+        const filtered = entry.changes.filter((change) => {
+          if (!change || typeof change !== 'object') return true;
+          const f = String(change.field || '');
+          if (AREA_FIELDS.has(f)) {
+            const b = roundArea(change.before);
+            const a = roundArea(change.after);
+            if (b !== null && a !== null && b === a) return false;
+          }
+          if (DATE_FIELDS.has(f)) {
+            const b = extractDateOnly(change.before);
+            const a = extractDateOnly(change.after);
+            if (b && a && b === a) return false;
+          }
+          return true;
+        });
+        if (!filtered.length) return acc; // 엔트리 전체 제거
+        acc.push({ ...entry, changes: filtered });
+        return acc;
+      }, []);
+    }
+
+    const col = targetId.includes(':') ? 'global_id' : 'id';
+    const rows = await supabasePropertyWriteWithRetry(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      json: patch,
+    });
+    const item = Array.isArray(rows) ? (rows[0] || null) : rows;
+
+    let activityLogError = '';
+    let activityLoggedCount = 0;
+    if (Array.isArray(body.activityEntries) && body.activityEntries.length) {
+      try {
+        const mappedEntries = body.activityEntries.map((entry) => ({
+          ...entry,
+          propertyId: entry?.propertyId || entry?.property_id || item?.id || current?.id || targetId,
+          propertyIdentityKey: entry?.propertyIdentityKey || entry?.property_identity_key || item?.raw?.registrationIdentityKey || current?.raw?.registrationIdentityKey || null,
+          propertyItemNo: entry?.propertyItemNo || entry?.property_item_no || item?.item_no || current?.item_no || null,
+          propertyAddress: entry?.propertyAddress || entry?.property_address || item?.address || current?.address || null,
+        }));
+        const activityRes = await insertActivityEntries(mappedEntries, ctx);
+        activityLoggedCount = Number(activityRes?.createdCount || 0);
+      } catch (logErr) {
+        activityLogError = logErr?.message || '일일업무일지 기록 실패';
+      }
+    }
+
+    return send(res, 200, { ok: true, item, activityLoggedCount, activityLogError: activityLogError || null });
+  }
+
+  return send(res, 405, { ok: false, message: 'Method Not Allowed' });
+}
+
+function handleLegacyWrite(req, res) {
+  const ctx = buildLegacySessionContext(req, res);
+  if (!ctx) return;
+  const store = getStore();
+
+  if (req.method === 'POST') {
+    const body = req.__jsonBody || getJsonBody(req);
+    const row = body.row && typeof body.row === 'object' ? body.row : body;
+    const address = String(row.address || '').trim();
+    if (!address) return send(res, 400, { ok: false, message: '주소가 필요합니다.' });
     const normalizedAddress = normalizeAddress(address);
-    if (store.properties.some(p => p.normalizedAddress === normalizedAddress)) {
-      return send(res, 409, { ok: false, message: '동일 주소 물건이 이미 등록되어 있습니다.' });
-    }
-
     const geo = extractGuDong(address);
     const item = {
       id: id('prop'),
-      source,
+      source: String(row.source_type || row.sourceType || row.source || 'general').trim().toLowerCase() || 'general',
       address,
       normalizedAddress,
-      price,
-      region: String(body.region || '').trim(),
-      district: String(body.district || geo.gu || '').trim(),
-      dong: String(body.dong || geo.dong || '').trim(),
-      ownerName: String(body.ownerName || '').trim(),
-      phone: normalizePhone(body.phone || ''),
-      assigneeId: body.assigneeId || null,
-      assigneeName: String(body.assigneeName || '').trim(),
-      status: normalizeStatus(body.status),
-      createdByType: 'admin',
-      createdByName: session.name,
+      price: parseNumberOrNull(row.price_main ?? row.priceMain ?? row.price) || 0,
+      region: String(row.region || '').trim(),
+      district: String(row.district || geo.gu || '').trim(),
+      dong: String(row.dong || geo.dong || '').trim(),
+      ownerName: String(row.submitter_name || row.submitterName || '').trim(),
+      phone: normalizePhone(row.submitter_phone || row.submitterPhone || ''),
+      assigneeId: ctx.role === 'staff' ? ctx.userId : (row.assignee_id || row.assigneeId || null),
+      assigneeName: ctx.name || String(row.assigneeName || '').trim(),
+      status: normalizeStatus(row.status),
+      createdByType: ctx.role,
+      createdByName: ctx.name,
       createdAt: nowIso(),
       updatedAt: nowIso(),
-      note: String(body.note || '').trim(),
+      note: String(row.memo || row.opinion || '').trim(),
+      raw: sanitizePropertyRaw(row.raw || {}),
     };
     store.properties.unshift(item);
     return send(res, 201, { ok: true, item });
   }
 
   if (req.method === 'PATCH') {
-    if (hasSupabaseAdminEnv()) {
-      const body = getJsonBody(req);
-      const targetId = String(body.id || body.globalId || '').trim();
-      if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
-
-      const patch = buildSupabasePropertyPatch(body);
-      if (patch.assignee_id !== undefined) {
-        const aid = patch.assignee_id;
-        const aname = patch.assignee_name || '';
-        if (!patch.raw || typeof patch.raw !== 'object') {
-          const col0 = targetId.includes(':') ? 'global_id' : 'id';
-          const cur = await supabaseRest(`/rest/v1/properties?select=raw&${col0}=eq.${encodeURIComponent(targetId)}&limit=1`);
-          const curRow = Array.isArray(cur) ? cur[0] : cur;
-          patch.raw = (curRow?.raw && typeof curRow.raw === 'object') ? { ...curRow.raw } : {};
-        }
-        patch.raw.assigneeId = aid || '';
-        patch.raw.assignee_id = aid || '';
-        patch.raw.assignedAgentId = aid || '';
-        patch.raw.assigneeName = aname;
-        patch.raw.assignee_name = aname;
-        patch.raw.assignedAgentName = aname;
-      }
-      const col = targetId.includes(':') ? 'global_id' : 'id';
-      const rows = await supabaseRest(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=representation' },
-        json: patch,
-      });
-      const item = Array.isArray(rows) ? rows[0] : rows;
-      if (!item) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
-      return send(res, 200, { ok: true, item });
-    }
-    const body = getJsonBody(req);
-    const targetId = String(body.id || '').trim();
-    const item = store.properties.find(p => p.id === targetId);
+    const body = req.__jsonBody || getJsonBody(req);
+    const targetId = String(body.targetId || body.id || '').trim();
+    const item = store.properties.find((v) => String(v.id || '') === targetId);
     if (!item) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
-
-    if (body.address && normalizeAddress(body.address) !== item.normalizedAddress) {
-      const nextNorm = normalizeAddress(body.address);
-      const dup = store.properties.some(p => p.id !== item.id && p.normalizedAddress === nextNorm);
-      if (dup) return send(res, 409, { ok: false, message: '동일 주소 물건이 이미 등록되어 있습니다.' });
-      item.address = String(body.address).trim();
-      item.normalizedAddress = nextNorm;
-      const geo = extractGuDong(item.address);
-      if (!body.district && geo.gu) item.district = geo.gu;
-      if (!body.dong && geo.dong) item.dong = geo.dong;
+    if (ctx.role === 'staff' && item.assigneeId && item.assigneeId !== ctx.userId) {
+      return send(res, 403, { ok: false, message: '본인에게 배정된 물건만 수정할 수 있습니다.' });
     }
-    if (body.price != null) item.price = Number(body.price || 0);
-    if (body.region != null) item.region = String(body.region || '').trim();
-    if (body.district != null) item.district = String(body.district || '').trim();
-    if (body.dong != null) item.dong = String(body.dong || '').trim();
-    if (body.ownerName != null) item.ownerName = String(body.ownerName || '').trim();
-    if (body.phone != null) item.phone = normalizePhone(body.phone);
-    if (body.assigneeId !== undefined) item.assigneeId = body.assigneeId || null;
-    if (body.assigneeName !== undefined) item.assigneeName = String(body.assigneeName || '').trim();
-    if (body.status != null) item.status = normalizeStatus(body.status);
-    if (body.note != null) item.note = String(body.note || '').trim();
+    const patch = body.patch && typeof body.patch === 'object' ? body.patch : body;
+    if (patch.status !== undefined) item.status = normalizeStatus(patch.status);
+    if (patch.memo !== undefined) item.note = String(patch.memo || patch.opinion || '').trim();
+    if (patch.raw !== undefined) item.raw = sanitizePropertyRaw(patch.raw);
     item.updatedAt = nowIso();
-
     return send(res, 200, { ok: true, item });
   }
 
-  if (req.method === 'DELETE') {
-    const body = getJsonBody(req);
-    const deleteAll = !!body.all;
+  return send(res, 405, { ok: false, message: 'Method Not Allowed' });
+}
 
-    if (deleteAll) {
-      if (hasSupabaseAdminEnv()) {
-        await supabaseRest('/rest/v1/properties?id=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-        return send(res, 200, { ok: true, removedAll: true });
+
+
+async function handlePhotoAction(req, res, action) {
+  if (!hasSupabaseAdminEnv()) {
+    return send(res, 501, { ok: false, message: '사진 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
+  }
+  const body = req.__jsonBody || getJsonBody(req);
+  const propertyId = req.__photoPropertyId || body?.propertyId;
+  const photoId = String(req.__photoId || body?.photoId || '').trim();
+  const access = await PropertyPhotos.requirePropertyAccess(req, res, propertyId);
+  if (!access) return;
+  try {
+    if (action === 'list') {
+      const rows = await PropertyPhotos.listPhotoRows(access.propertyId);
+      const items = await Promise.all(rows.map(async (row) => ({
+        id: row.id,
+        propertyId: row.property_id,
+        propertyGlobalId: row.property_global_id,
+        thumbUrl: await PropertyPhotos.createSignedUrl(row.thumb_path).catch(() => ''),
+        originalUrl: await PropertyPhotos.createSignedUrl(row.storage_path).catch(() => ''),
+        thumbPath: row.thumb_path,
+        storagePath: row.storage_path,
+        mimeType: row.mime_type,
+        width: row.width,
+        height: row.height,
+        sizeBytes: row.size_bytes,
+        sortOrder: row.sort_order,
+        isPrimary: !!row.is_primary,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })));
+      return send(res, 200, { ok: true, items });
+    }
+
+    if (action === 'prepare') {
+      const count = Math.max(1, Math.min(10, Number(body?.count || 1)));
+      const existingCount = await PropertyPhotos.getActivePhotoCount(access.propertyId);
+      if (existingCount + count > PropertyPhotos.MAX_PHOTOS_PER_PROPERTY) {
+        return send(res, 400, { ok: false, message: `사진은 매물당 최대 ${PropertyPhotos.MAX_PHOTOS_PER_PROPERTY}장까지 등록할 수 있습니다.` });
       }
-      const removedCount = store.properties.length;
-      store.properties = [];
-      return send(res, 200, { ok: true, removedAll: true, removedCount });
-    }
-
-    const ids = Array.isArray(body.ids) ? body.ids.map(v => String(v || '').trim()).filter(Boolean) : [];
-    if (ids.length) {
-      if (hasSupabaseAdminEnv()) {
-        const pureIds = ids.filter((v) => !String(v).includes(':'));
-        const globalIds = ids.filter((v) => String(v).includes(':'));
-        if (pureIds.length) {
-          await supabaseRest(`/rest/v1/properties?id=in.(${pureIds.map(encodeURIComponent).join(',')})`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-        }
-        if (globalIds.length) {
-          await supabaseRest(`/rest/v1/properties?global_id=in.(${globalIds.map(encodeURIComponent).join(',')})`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-        }
-        return send(res, 200, { ok: true, removedCount: ids.length, removedIds: ids });
+      const uploads = [];
+      for (let i = 0; i < count; i += 1) {
+        uploads.push(PropertyPhotos.buildPhotoPaths(access.propertyId, PropertyPhotos.makeId()));
       }
-      const before = store.properties.length;
-      store.properties = store.properties.filter((p) => !ids.includes(String(p.id || '')));
-      const removedCount = before - store.properties.length;
-      return send(res, 200, { ok: true, removedCount, removedIds: ids });
+      return send(res, 200, { ok: true, uploads, existingCount, maxPhotos: PropertyPhotos.MAX_PHOTOS_PER_PROPERTY });
     }
 
-    const targetId = String(body.id || '').trim();
-    if (hasSupabaseAdminEnv()) {
-      if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
-      const col = targetId.includes(':') ? 'global_id' : 'id';
-      await supabaseRest(`/rest/v1/properties?${col}=eq.${encodeURIComponent(targetId)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-      return send(res, 200, { ok: true, removedId: targetId });
+    if (action === 'commit') {
+      const photos = Array.isArray(body?.photos) ? body.photos : [];
+      if (!photos.length) return send(res, 400, { ok: false, message: '저장할 사진 데이터가 비어 있습니다. 요청 본문이 누락되었거나 너무 커서 처리되지 않았을 수 있습니다.' });
+      const existing = await PropertyPhotos.listPhotoRows(access.propertyId);
+      let nextSort = existing.reduce((max, row) => Math.max(max, Number(row?.sort_order || 0)), -1) + 1;
+      const hasPrimary = existing.some((row) => !!row.is_primary);
+      const items = [];
+      for (let i = 0; i < photos.length; i += 1) {
+        const entry = photos[i] || {};
+        if (!entry.photoId || !entry.storagePath || !entry.thumbPath || !entry.originalDataUrl || !entry.thumbDataUrl) throw new Error('사진 업로드 데이터가 올바르지 않습니다.');
+        const originalMeta = await PropertyPhotos.uploadObject(entry.storagePath, entry.originalDataUrl, entry.mimeType || 'image/webp');
+        await PropertyPhotos.uploadObject(entry.thumbPath, entry.thumbDataUrl, 'image/webp');
+        const inserted = await PropertyPhotos.insertPhotoRow({
+          id: entry.photoId,
+          property_id: access.propertyId,
+          property_global_id: access.property?.global_id || null,
+          storage_path: entry.storagePath,
+          thumb_path: entry.thumbPath,
+          mime_type: entry.mimeType || originalMeta.mimeType || 'image/webp',
+          width: Number(entry.width || 0) || null,
+          height: Number(entry.height || 0) || null,
+          size_bytes: Number(entry.sizeBytes || originalMeta.sizeBytes || 0) || null,
+          sort_order: nextSort,
+          is_primary: !hasPrimary && i === 0,
+          uploaded_by: access.ctx?.userId || null,
+        });
+        items.push(inserted);
+        nextSort += 1;
+      }
+      return send(res, 200, { ok: true, items });
     }
-    const idx = store.properties.findIndex(p => p.id === targetId);
-    if (idx < 0) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
-    const removed = store.properties.splice(idx, 1)[0];
-    return send(res, 200, { ok: true, removedId: removed.id });
+
+    if (action === 'set_primary') {
+      if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
+      const photo = await PropertyPhotos.getPhotoRow(photoId);
+      if (!photo || String(photo.property_id || '').trim() !== String(access.propertyId || '').trim() || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      await PropertyPhotos.patchPhotoRows(`property_id=eq.${encodeURIComponent(access.propertyId)}&deleted_at=is.null`, { is_primary: false, updated_at: new Date().toISOString() });
+      const updated = await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { is_primary: true, updated_at: new Date().toISOString() });
+      return send(res, 200, { ok: true, item: Array.isArray(updated) ? (updated[0] || null) : updated });
+    }
+
+    if (action === 'reorder') {
+      const orderedPhotoIds = Array.isArray(body?.orderedPhotoIds) ? body.orderedPhotoIds.map((v) => String(v || '').trim()).filter(Boolean) : [];
+      const rows = await PropertyPhotos.listPhotoRows(access.propertyId);
+      const rowIds = new Set(rows.map((row) => String(row.id || '').trim()));
+      const finalOrder = orderedPhotoIds.filter((id) => rowIds.has(id));
+      rows.forEach((row) => { const id = String(row.id || '').trim(); if (!finalOrder.includes(id)) finalOrder.push(id); });
+      await Promise.all(finalOrder.map((pid, index) => PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(pid)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { sort_order: index, updated_at: new Date().toISOString() })));
+      return send(res, 200, { ok: true, orderedPhotoIds: finalOrder });
+    }
+
+    if (action === 'delete') {
+      if (!photoId) return send(res, 400, { ok: false, message: 'photoId가 필요합니다.' });
+      const photo = await PropertyPhotos.getPhotoRow(photoId);
+      if (!photo || String(photo.property_id || '').trim() !== String(access.propertyId || '').trim() || photo.deleted_at) return send(res, 404, { ok: false, message: '사진을 찾을 수 없습니다.' });
+      await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(photoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { deleted_at: new Date().toISOString(), is_primary: false, updated_at: new Date().toISOString() });
+      await PropertyPhotos.removeObjects([photo.storage_path, photo.thumb_path]).catch(() => null);
+      if (photo.is_primary) {
+        const remaining = await PropertyPhotos.listPhotoRows(access.propertyId);
+        const next = remaining.find((row) => String(row.id || '') !== photoId);
+        if (next) await PropertyPhotos.patchPhotoRows(`id=eq.${encodeURIComponent(next.id)}&property_id=eq.${encodeURIComponent(access.propertyId)}`, { is_primary: true, updated_at: new Date().toISOString() });
+      }
+      return send(res, 200, { ok: true, removedId: photoId });
+    }
+
+    return send(res, 400, { ok: false, message: '지원하지 않는 photo_action 입니다.' });
+  } catch (err) {
+    const raw = [err?.message, err?.data?.message, err?.data?.error, err?.data?.hint, err?.data?.details].filter(Boolean).join(' ');
+    const lowered = String(raw || '').toLowerCase();
+    let message = err?.message || '사진 처리 중 오류가 발생했습니다.';
+    if (lowered.includes('property_photos') && (lowered.includes('does not exist') || lowered.includes('relation'))) {
+      message = 'property_photos 테이블이 없어 사진 기능을 사용할 수 없습니다. Supabase SQL을 먼저 실행해 주세요.';
+    } else if (lowered.includes('bucket') && lowered.includes('not found')) {
+      message = 'property-photos 스토리지 버킷이 없어 사진 기능을 사용할 수 없습니다. Supabase SQL을 먼저 실행해 주세요.';
+    } else if (lowered.includes('invalid input syntax for type bigint') || lowered.includes('column "property_id" is of type bigint')) {
+      message = 'property_photos.property_id 타입이 현재 매물 id와 맞지 않습니다. 사진 기능용 SQL 보정 스크립트를 먼저 실행해 주세요.';
+    }
+    return send(res, err?.status || 500, { ok: false, message, details: err?.data || null });
+  }
+}
+
+module.exports = async function handler(req, res) {
+  if (applyCors(req, res)) return;
+
+  const url = new URL(req.url, 'http://localhost');
+  const dailyReportRequested = ['1', 'true', 'yes'].includes(String(url.searchParams.get('daily_report') || '').trim().toLowerCase());
+  if ((req.method === 'POST' || req.method === 'PATCH') && !req.__jsonBody) {
+    req.__jsonBody = getJsonBody(req);
+  }
+  const action = String(req.__jsonBody?.action || '').trim().toLowerCase();
+  const dailyReportPost = req.method === 'POST' && action === 'daily_report_log';
+
+  if ((req.method === 'GET' && dailyReportRequested) || dailyReportPost) {
+    return handleActivityLog(req, res);
   }
 
-  return send(res, 405, { ok: false, message: 'Method Not Allowed' });
+  const inferredPhotoAction = (() => {
+    const body = req.__jsonBody || req.body || {};
+    if (body && typeof body === 'object' && body.photo_action) return String(body.photo_action || '').trim().toLowerCase();
+    if (!body || typeof body !== 'object') return '';
+    if (Array.isArray(body.photos) && body.photos.length) return 'commit';
+    if (Array.isArray(body.orderedPhotoIds) && body.orderedPhotoIds.length) return 'reorder';
+    if (body.photoId && body.propertyId) return 'set_primary';
+    if (body.propertyId && Number(body.count || 0) > 0) return 'prepare';
+    return '';
+  })();
+  const photoAction = String(url.searchParams.get('photo_action') || inferredPhotoAction || '').trim().toLowerCase();
+  if (photoAction) {
+    req.__photoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || req.body?.propertyId || '';
+    req.__photoId = url.searchParams.get('photoId') || req.__jsonBody?.photoId || req.body?.photoId || '';
+    return handlePhotoAction(req, res, photoAction);
+  }
+
+  if (req.method === 'GET') {
+    const store = getStore();
+    const session = getSession(req);
+    const source = (url.searchParams.get('source') || 'all').toLowerCase();
+    const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+    const status = (url.searchParams.get('status') || '').trim().toLowerCase();
+
+    let items = [...store.properties];
+
+    if (session?.role === 'staff') {
+      items = items.filter((p) => p.assigneeId === session.userId);
+    } else if (!session) {
+      items = items.filter((p) => p.status === 'active');
+    }
+
+    if (source && source !== 'all') {
+      items = items.filter((p) => p.source === source);
+    }
+    if (status) {
+      items = items.filter((p) => String(p.status || '').toLowerCase() === status);
+    }
+    if (q) {
+      items = items.filter((p) =>
+        [p.address, p.region, p.district, p.dong, p.assigneeName, p.note]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q))
+      );
+    }
+
+    const grouped = {
+      all: items,
+      auction: items.filter((v) => v.source === 'auction'),
+      onbid: items.filter((v) => v.source === 'onbid' || v.source === 'public'),
+      realtor: items.filter((v) => v.source === 'realtor'),
+      general: items.filter((v) => v.source === 'general'),
+    };
+
+    return send(res, 200, {
+      ok: true,
+      roleView: session?.role || 'public',
+      counts: {
+        all: grouped.all.length,
+        auction: grouped.auction.length,
+        onbid: grouped.onbid.length,
+        realtor: grouped.realtor.length,
+        general: grouped.general.length,
+      },
+      items,
+      grouped,
+    });
+  }
+
+  try {
+    if (req.method === 'POST') {
+      const body = req.__jsonBody || getJsonBody(req);
+      const action = String(body?.action || '').trim().toLowerCase();
+      if (action === 'daily_report_log' || action === 'daily-report-log' || action === 'dailyreportlog') {
+        req.__jsonBody = body;
+        return handleActivityLog(req, res);
+      }
+      if (action === 'search_duplicates' || action === 'searchduplicates' || action === 'search-duplicates') {
+        req.__jsonBody = body;
+        return handleSearchDuplicates(req, res);
+      }
+      req.__jsonBody = body;
+    }
+    if (hasSupabaseAdminEnv()) return await handleSupabaseWrite(req, res);
+    return handleLegacyWrite(req, res);
+  } catch (err) {
+    const duplicateErr = normalizePropertyDuplicateError(err);
+    if (duplicateErr) {
+      return send(res, duplicateErr.status, {
+        ok: false,
+        message: duplicateErr.message,
+        code: duplicateErr.code,
+      });
+    }
+    return send(res, err?.status || 500, {
+      ok: false,
+      message: err?.message || '요청 처리 중 오류가 발생했습니다.',
+      details: err?.data || null,
+    });
+  }
 };
