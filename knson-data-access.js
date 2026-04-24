@@ -352,6 +352,27 @@
     return api('/properties', { method: 'PATCH', auth, body: { targetId, patch } });
   }
 
+  // 신규 물건 등록 모달의 주소 기반 중복 감지 — 서버 API 경유
+  // (담당자 세션의 RLS 제한을 우회해 DB 전체에서 같은 건물 매물을 찾음)
+  async function searchBuildingDuplicatesViaApi(api, { address } = {}, { auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    const addr = String(address || '').trim();
+    if (!addr) return { ok: true, matches: [] };
+    try {
+      const result = await api('/properties', {
+        method: 'POST',
+        auth,
+        body: { action: 'search_duplicates', address: addr },
+      });
+      return {
+        ok: !!result?.ok,
+        matches: Array.isArray(result?.matches) ? result.matches : [],
+      };
+    } catch (err) {
+      return { ok: false, matches: [], error: err?.message || String(err || '') };
+    }
+  }
+
   async function recordDailyReportEntriesViaApi(api, entries, { auth = true } = {}) {
     if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
     const safeEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && (entry.actionType || entry.action_type));
@@ -754,6 +775,7 @@
     fetchDailyReportViaApi,
     createPropertyViaApi,
     updatePropertyViaApi,
+    searchBuildingDuplicatesViaApi,
     recordDailyReportEntriesViaApi,
     deletePropertiesViaAdminApi,
     deleteAllPropertiesViaAdminApi,

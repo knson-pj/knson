@@ -3166,21 +3166,16 @@ function renderPagination(totalPages) {
     return out;
   }
 
-  // 서버에서 같은 동 매물을 가져와 필터
-  async function findBuildingMatchesRemote(sb, address) {
-    const parts = (PropertyDomain && typeof PropertyDomain.parseAddressIdentityParts === "function")
-      ? PropertyDomain.parseAddressIdentityParts(address || "")
-      : parseAddressIdentityParts(address || "");
-    if (!parts?.dong || !parts?.mainNo) return [];
-    const target = `${parts.dong}|${parts.mainNo}|${parts.subNo || "0"}`;
+  // 서버 API 경유로 같은 건물 매물 조회 (담당자 RLS 우회용)
+  // 주의: 담당자 세션으로 sb.from('properties') 을 직접 치면 본인 매물만 반환되므로
+  // /api/properties (action=search_duplicates) 로 service_role 서버 경로를 사용한다.
+  async function findBuildingMatchesRemote(_sb, address) {
+    if (!DataAccess || typeof DataAccess.searchBuildingDuplicatesViaApi !== "function") return [];
     try {
-      const { data, error } = await sb.from("properties")
-        .select("id, global_id, address, floor, assignee_id, assignee_name, raw, source_type, item_no")
-        .ilike("address", `%${parts.dong}%`)
-        .limit(400);
-      if (error || !Array.isArray(data)) return [];
-      return data.filter((row) => buildBuildingKey(row?.address || "") === target);
-    } catch {
+      const result = await DataAccess.searchBuildingDuplicatesViaApi(api, { address });
+      return Array.isArray(result?.matches) ? result.matches : [];
+    } catch (err) {
+      console.warn("[findBuildingMatchesRemote] 실패:", err?.message || err);
       return [];
     }
   }
@@ -3241,22 +3236,10 @@ function renderPagination(totalPages) {
       if (kind === "own") return;
     }
 
-    // 2단계: 서버 탐색
+    // 2단계: 서버 API 탐색 (RLS 우회를 위해 /api/properties 경유)
     renderNpmDupPreview({ kind: "searching" });
-    let sb = null;
-    try { sb = isSupabaseMode() ? K.initSupabase() : null; } catch {}
-    if (!sb) {
-      // Supabase 불가 → 로컬 결과로만 판단
-      if (localBuilding.length > 0) {
-        const summary = summarizeBuildingMatches(localBuilding, currentUserId);
-        renderNpmDupPreview({ kind: "building", counts: summary });
-      } else {
-        renderNpmDupPreview({ kind: "new" });
-      }
-      return;
-    }
 
-    const remoteBuilding = await findBuildingMatchesRemote(sb, address);
+    const remoteBuilding = await findBuildingMatchesRemote(null, address);
     // 레이스 방어: 최신 요청이 아니면 무시
     if (myGen !== npmDupState.generation) return;
 
