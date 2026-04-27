@@ -11,7 +11,11 @@
     "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
     "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
-    "geocode_status", "geocoded_at"
+    "geocode_status", "geocoded_at",
+    // [추가 2026-04-27] 매각 결과 컬럼들 — 자동배정에서 종결 물건(낙찰/매각/취하/기각) 제외
+    // 판정에 사용. 리스트 select 에 누락되어 있어 admin-tab-staff-regions 의
+    // isAuctionLikeFinalized 판정이 raw JSON 의 시그널만 의존하던 문제를 해결.
+    "result_status", "result_price", "result_date"
   ].join(",");
 
   const PROPERTY_HOME_SUMMARY_SELECT = [

@@ -560,7 +560,13 @@
       const typeLabel = escHtmlLocal(SOURCE_TYPE_LABEL[it.sourceType] || it.sourceType || '-');
       const assetLabel = escHtmlLocal(it.assetType || '');
       const fullType = assetLabel ? `${typeLabel} · ${assetLabel}` : typeLabel;
-      const itemNo = escHtmlLocal(it.itemNo || '-');
+      const itemNoText = escHtmlLocal(it.itemNo || '-');
+      // [추가 2026-04-27] 물건번호 → 탱크옥션 URL 링크 적용.
+      // sourceUrl 이 있을 때만 a 태그로 감쌈. target/rel 은 보안상 noopener 필수.
+      const sourceUrl = String(it.sourceUrl || '').trim();
+      const itemNo = sourceUrl
+        ? `<a href="${escHtmlLocal(sourceUrl)}" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">${itemNoText}</a>`
+        : itemNoText;
       const address = escHtmlLocal(it.address || '-');
       const priceMain = formatWon(it.priceMain);
       const resultPrice = formatWon(it.resultPrice);

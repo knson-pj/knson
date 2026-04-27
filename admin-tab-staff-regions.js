@@ -613,6 +613,19 @@
         if (s.startsWith(finalized)) return true;
       }
     }
+    // [추가 2026-04-27] 보조 판정: result_status 가 누락됐거나 변형됐어도
+    // 결과가격(result_price) 과 결과일자(result_date) 가 모두 채워진 경매/공매는
+    // 사실상 낙찰/매각이 일어난 종결 물건. 미배정 자동배정 풀에서 제외.
+    // 백엔드에서 값이 들어오는 경로가 다양해 두 후보(camel/snake) 모두 검사.
+    let resultPrice = 0;
+    let resultDate = '';
+    for (const c of containers) {
+      const rp = c.result_price ?? c.resultPrice;
+      const rd = c.result_date ?? c.resultDate;
+      if (!resultPrice && rp) resultPrice = Number(rp) || 0;
+      if (!resultDate && rd) resultDate = String(rd).trim();
+    }
+    if (resultPrice > 0 && resultDate) return true;
     return false;
   }
 
