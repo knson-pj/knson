@@ -1219,30 +1219,46 @@
     if (els.agPriceFilter) els.agPriceFilter.addEventListener("change", (e) => { state.filters.priceRange = e.target.value; state.page = 1; renderTable(); });
     if (els.agRatioFilter) els.agRatioFilter.addEventListener("change", (e) => { state.filters.ratio50 = e.target.value; state.page = 1; renderTable(); });
     if (els.agKeyword) els.agKeyword.addEventListener("input", debounce((e) => { state.filters.keyword = String(e.target.value || "").trim(); state.page = 1; renderTable(); }, 150));
+    // ── 상호 배타 필터 (★ / 🔥 / D / n 는 단독 선택만 가능) ─────────────────
+    // [수정 내역 2026-04-27] 기존에는 4개 버튼이 각자 독립 토글되어 동시 활성화되면
+    // AND 누적 필터로 동작 → 모든 행이 사라지는 사용자 혼란 발생. 관리자페이지의
+    // setExclusivePropertyFilter (admin-app.js) 와 동일 패턴으로 통일해 단독 선택만
+    // 가능하도록 수정. 이미 활성화된 버튼을 다시 누르면 해제되어 전체 보기로 복귀.
+    // which ∈ { null, 'favOnly', 'fireOnly', 'todayBid', 'todayAssigned' }
+    //   null 을 넘기면 4개 모두 해제.
+    function setExclusiveAgListFilter(which) {
+      const keys = ['favOnly', 'fireOnly', 'todayBid', 'todayAssigned'];
+      keys.forEach((k) => { state.filters[k] = (which === k); });
+      if (els.agFavFilter) els.agFavFilter.classList.toggle('is-active', which === 'favOnly');
+      if (els.agFireFilter) els.agFireFilter.classList.toggle('is-active', which === 'fireOnly');
+      if (els.agDayFilter) els.agDayFilter.classList.toggle('is-active', which === 'todayBid');
+      if (els.agAssignedFilter) els.agAssignedFilter.classList.toggle('is-active', which === 'todayAssigned');
+    }
+
     if (els.agFavFilter) els.agFavFilter.addEventListener("click", () => {
-      state.filters.favOnly = !state.filters.favOnly;
-      els.agFavFilter.classList.toggle("is-active", state.filters.favOnly);
+      const turningOn = !state.filters.favOnly;
+      setExclusiveAgListFilter(turningOn ? 'favOnly' : null);
       state.page = 1;
       renderTable();
     });
 
     if (els.agFireFilter) els.agFireFilter.addEventListener("click", () => {
-      state.filters.fireOnly = !state.filters.fireOnly;
-      els.agFireFilter.classList.toggle("is-active", state.filters.fireOnly);
+      const turningOn = !state.filters.fireOnly;
+      setExclusiveAgListFilter(turningOn ? 'fireOnly' : null);
       state.page = 1;
       renderTable();
     });
 
     if (els.agDayFilter) els.agDayFilter.addEventListener("click", () => {
-      state.filters.todayBid = !state.filters.todayBid;
-      els.agDayFilter.classList.toggle("is-active", state.filters.todayBid);
+      const turningOn = !state.filters.todayBid;
+      setExclusiveAgListFilter(turningOn ? 'todayBid' : null);
       state.page = 1;
       renderTable();
     });
 
     if (els.agAssignedFilter) els.agAssignedFilter.addEventListener("click", () => {
-      state.filters.todayAssigned = !state.filters.todayAssigned;
-      els.agAssignedFilter.classList.toggle("is-active", state.filters.todayAssigned);
+      const turningOn = !state.filters.todayAssigned;
+      setExclusiveAgListFilter(turningOn ? 'todayAssigned' : null);
       state.page = 1;
       renderTable();
     });
@@ -1989,11 +2005,14 @@
     els.agTableBody.innerHTML = "";
     if (!paged.length) {
       if (els.agEmpty) {
-        // 필터 상태에 따라 메시지 다르게 표시 (D 버튼이 왜 비어있는지 사용자가 바로 알 수 있도록)
+        // 필터 상태에 따라 메시지 다르게 표시 (어떤 필터 때문에 비어있는지 사용자가 바로 알 수 있도록)
+        // [수정 내역 2026-04-27] 4개 단독 선택 필터(★/🔥/D/n) 모두 라벨 표시
         const f = state.filters || {};
         const activeFilters = [];
-        if (f.todayBid) activeFilters.push('당일 입찰기일(D)');
         if (f.favOnly) activeFilters.push('관심물건(★)');
+        if (f.fireOnly) activeFilters.push('강추매물(🔥)');
+        if (f.todayBid) activeFilters.push('당일 입찰기일(D)');
+        if (f.todayAssigned) activeFilters.push('오늘 내 배정(n)');
         if (f.keyword) activeFilters.push(`검색어 "${String(f.keyword).trim()}"`);
         if (f.activeCard && f.activeCard !== 'all' && f.activeCard !== '') activeFilters.push('구분 필터');
         if (f.area) activeFilters.push('면적 필터');
