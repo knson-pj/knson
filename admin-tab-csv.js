@@ -622,6 +622,16 @@
       const lowestPrice = toNum(pick("최저가", "lowprice"));
       lowprice = salePrice || lowestPrice || null;
       assetType = pick("종별", "부동산유형", "assetType");
+      // [신규 2026-04-27] 자동차/중기 매물은 업로드 대상 제외
+      // CSV 의 "종별" 컬럼이 "자동차" 또는 "자동차,중기" 인 행은 부동산 매물이 아니므로
+      // mapPropertyCsvRow 단계에서 null 반환해 탈락시킨다 (호출부의 if (!m) continue 로 스킵).
+      {
+        const assetTokens = String(assetType || "").split(/[,\/\s]+/).map((s) => s.trim()).filter(Boolean);
+        const VEHICLE_TYPES = new Set(["자동차", "중기"]);
+        if (assetTokens.length > 0 && assetTokens.every((t) => VEHICLE_TYPES.has(t))) {
+          return null;
+        }
+      }
       dateMain = toISO(pick("입찰일자", "입찰일", "dateMain")) || null;
       // [신규] 법원+계 정규화 — 같은 사건번호 중복 시 지역 구분 키
       const csvCourt = pick("담당법원", "court");
