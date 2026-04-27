@@ -756,7 +756,7 @@ module.exports = async function handler(req, res) {
         weekEndKst.setUTCDate(weekStartKst.getUTCDate() + 6);
         const weekEndStr = weekEndKst.toISOString().slice(0, 10);
 
-        const select = 'id,item_no,address,source_type,asset_type,result_status,result_price,result_date,price_main';
+        const select = 'id,item_no,address,source_type,asset_type,result_status,result_price,result_date,price_main,source_url,court_dept';
         const path = `/rest/v1/properties`
           + `?select=${encodeURIComponent(select)}`
           + `&result_status=in.(낙찰,매각,유찰,취하,기각)`
@@ -803,6 +803,10 @@ module.exports = async function handler(req, res) {
               priceMain: appraisal || 0,
               resultPrice: resultPrice || 0,
               ratio,
+              // [추가 2026-04-27] 모달의 물건번호를 탱크옥션 URL 로 링크하기 위해 추가.
+              // court_dept 는 향후 매칭 정확도 보강용 메타 (현재 클라이언트에서는 표시만).
+              sourceUrl: r.source_url || '',
+              courtDept: r.court_dept || '',
             };
           });
         return send(res, 200, {
