@@ -487,6 +487,40 @@
     buildPropMultiSelect(els.propRatioFilter, 'propRatioFilter', onChange);
   };
 
+  // ── 다중선택 필터 4종 일괄 초기화 ─────────────────────────────────────
+  // [추가 2026-04-27] 다른 탭 → '전체 리스트' 탭으로 재진입할 때 사용.
+  // _propMultiState 의 Set, 모든 체크박스, "전체 선택" 체크박스, 버튼 라벨을
+  // 모두 placeholder 상태로 되돌린다. 패널이 열려있다면 닫는다.
+  // 호출 시점: admin-app.js 의 탭 핸들러에서 prevTab !== 'properties' 일 때만.
+  mod.resetPropMultiSelectFilters = function resetPropMultiSelectFilters() {
+    closePropPanels();
+    Object.keys(PROP_FILTER_DEFS).forEach(function(filterKey) {
+      // 1) 내부 state Set 비우기
+      const set = _propMultiState[filterKey];
+      if (set && typeof set.clear === 'function') set.clear();
+      // 2) 옵션 체크박스 모두 unchecked
+      const list = _propMultiCheckboxes[filterKey] || [];
+      list.forEach(function(item) {
+        if (item && item.cb) item.cb.checked = false;
+      });
+      // 3) "전체 선택" 체크박스 동기화
+      const allCb = _propMultiAllCheckboxes[filterKey];
+      if (allCb) {
+        allCb.checked = false;
+        allCb.indeterminate = false;
+      }
+      // 4) 버튼 라벨을 placeholder 로 복귀
+      const def = PROP_FILTER_DEFS[filterKey];
+      const container = (window.KNSN_ADMIN_RUNTIME?.els || {})[filterKey] || document.getElementById(filterKey);
+      if (container && typeof container._syncBtnText === 'function') {
+        container._syncBtnText();
+      } else if (container && def) {
+        const btnEl = container.querySelector('button');
+        if (btnEl) btnEl.textContent = def.placeholder;
+      }
+    });
+  };
+
   function truncateAddressText(value, maxLength = 30) {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
     const limit = Number(maxLength || 0);

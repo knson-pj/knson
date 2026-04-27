@@ -796,6 +796,15 @@ function bindEvents() {
         setGlobalMsg("");
         setActiveTab(key);
 
+        // [추가 2026-04-27] 다른 탭 → 'properties' (전체 리스트) 진입 시 필터 초기화.
+        // 사용자가 검색/필터/페이지 작업 후 다른 메뉴로 이동했다가 다시 들어왔을 때
+        // 깨끗한 전체 보기로 시작하기 위함. 같은 탭에 머무르면 (prevTab === 'properties')
+        // 호출되지 않으므로 사용자의 진행 상태가 보존됨. 정렬(propertySort)은 의도적으로
+        // 보존 — 필터 누적과는 다른 카테고리.
+        if (key === "properties" && prevTab !== "properties") {
+          resetPropertyFiltersOnEnter();
+        }
+
         if (state.session?.user?.role === "admin") {
           if (key === "home") {
             if (!state.propertyOverview) {
@@ -1024,6 +1033,58 @@ function bindEvents() {
     document.querySelectorAll(".summary-card[data-card]").forEach((card) => {
       card.classList.toggle("is-active", arr.length === 1 && card.dataset.card === arr[0]);
     });
+  }
+
+  // ── 전체리스트 진입 시 필터 일괄 초기화 ─────────────────────────────────
+  // [추가 2026-04-27] 다른 탭에서 'properties' (전체 리스트) 탭으로 들어올 때 호출.
+  // 사용자가 작업 흐름을 끊고 메뉴 이동 후 다시 진입했을 때 누적된 필터로 인해
+  // "빈 화면 / 보고 싶은 게 안 보임" 문제를 방지. 정렬(propertySort)은 보존.
+  function resetPropertyFiltersOnEnter() {
+    // 1) state.propertyFilters 모든 키를 디폴트로 초기화
+    const pf = state.propertyFilters;
+    if (pf) {
+      pf.activeCard = "";
+      pf.status = "";
+      pf.keyword = "";
+      pf.assignee = "";
+      pf.area = "";
+      pf.priceRange = "";
+      pf.ratio50 = "";
+      pf.todayBid = false;
+      pf.todayNew = false;
+      pf.favOnly = false;
+      pf.fireOnly = false;
+      pf.fireAssignee = "";
+    }
+    state.propertyPage = 1;
+    if (state.selectedPropertyIds && typeof state.selectedPropertyIds.clear === 'function') {
+      state.selectedPropertyIds.clear();
+    }
+
+    // 2) 다중선택 필터 4종 (구분/면적/가격/비율) UI 초기화 — 모듈 측 헬퍼
+    try {
+      const propsTab = (window.KNSN_ADMIN_MODULES || {}).propertiesTab;
+      if (propsTab && typeof propsTab.resetPropMultiSelectFilters === 'function') {
+        propsTab.resetPropMultiSelectFilters();
+      }
+    } catch (_) {}
+
+    // 3) 단일 select / keyword input 초기화
+    if (els.propAssigneeFilter) els.propAssigneeFilter.value = '';
+    if (els.propStatusFilter) els.propStatusFilter.value = '';
+    if (els.propKeyword) els.propKeyword.value = '';
+
+    // 4) 토글 버튼 4종 (★ / 🔥 / N / D) is-active 해제
+    if (els.propFavFilter) els.propFavFilter.classList.remove('is-active');
+    if (els.propFireFilter) els.propFireFilter.classList.remove('is-active');
+    if (els.propNewFilter) els.propNewFilter.classList.remove('is-active');
+    if (els.propDayFilter) els.propDayFilter.classList.remove('is-active');
+
+    // 5) summary-card active 클래스 동기화 (activeCard 가 비었으므로 모두 해제됨)
+    syncPropertySourceFilterUi();
+
+    // 6) 상단 글로벌 검색 박스도 초기화 (있다면)
+    if (els.adminGlobalSearch) els.adminGlobalSearch.value = '';
   }
 
   async function warmPropertyFullCacheForFilters() {

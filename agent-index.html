@@ -311,7 +311,7 @@
 <script src="./knson-property-renderers.js?v=20260403-photo1"></script>
 <script src="./knson-data-access.js?v=20260424-dup1"></script>
 <script src="./knson-property-photos.js?v=20260420-photo-fix2"></script>
-<script src="./agent-app.js?v=20260427-radio1"></script>
+<script src="./agent-app.js?v=20260427-resetf1"></script>
 
 <script>
 (function(){
@@ -329,6 +329,11 @@
 
   var titleEl=document.getElementById('agTopbarTitle');
   function switchView(viewName){
+    // [추가 2026-04-27] 다른 뷰 → '전체리스트(list)' 진입 시 필터 자동 초기화 트리거
+    // prevView 는 토글 직전의 active 사이드바 항목에서 읽음
+    var prevActiveItem = document.querySelector('#agentSidebarNav .sidebar-nav-item.is-active');
+    var prevView = prevActiveItem ? (prevActiveItem.dataset.view || '') : '';
+
     document.querySelectorAll('.ag-view').forEach(function(v){v.classList.toggle('hidden',v.id!=='ag-view-'+viewName);});
     document.querySelectorAll('#agentSidebarNav .sidebar-nav-item').forEach(function(si){si.classList.toggle('is-active',si.dataset.view===viewName);});
     var active=document.querySelector('#agentSidebarNav .sidebar-nav-item.is-active');
@@ -336,6 +341,10 @@
     if(titleEl){ titleEl.textContent = Object.prototype.hasOwnProperty.call(TITLES, viewName) ? TITLES[viewName] : ''; }
     if(viewName==='dailyreport' && typeof window.refreshAgentDailyReportView==='function'){window.refreshAgentDailyReportView();}
     if(viewName==='schedule' && typeof window.refreshAgentScheduleView==='function'){window.refreshAgentScheduleView();}
+    // [추가 2026-04-27] 다른 메뉴 → 전체리스트 진입 시에만 필터 일괄 초기화 (정렬 보존)
+    if(viewName==='list' && prevView!=='list' && typeof window.knsnAgentResetListFilters==='function'){
+      try { window.knsnAgentResetListFilters(); } catch(e) {}
+    }
     // 모바일: 뷰 전환 시 드로어 자동 닫기
     closeMobileDrawer();
   }

@@ -1186,6 +1186,48 @@
     });
   }
 
+  // ── 전체리스트 진입 시 필터 일괄 초기화 ─────────────────────────────────
+  // [추가 2026-04-27] 다른 메뉴에서 '전체리스트' 뷰로 들어올 때 호출.
+  // sidebar 의 인라인 switchView() 에서 prevView !== 'list' && next === 'list'
+  // 일 때만 발동. 정렬(propertySort)은 보존 — 사용자의 작업 흐름 선호이지 필터
+  // 누적과는 다른 카테고리.
+  function resetListFiltersOnEnter() {
+    const f = state.filters;
+    if (f) {
+      f.activeCard = "";
+      f.status = "";
+      f.keyword = "";
+      f.area = "";
+      f.priceRange = "";
+      f.ratio50 = "";
+      f.favOnly = false;
+      f.fireOnly = false;
+      f.todayBid = false;
+      f.todayAssigned = false;
+    }
+    state.page = 1;
+
+    // 단일 select / keyword input 초기화
+    if (els.agSourceFilter) els.agSourceFilter.value = '';
+    if (els.agAreaFilter) els.agAreaFilter.value = '';
+    if (els.agPriceFilter) els.agPriceFilter.value = '';
+    if (els.agRatioFilter) els.agRatioFilter.value = '';
+    if (els.agKeyword) els.agKeyword.value = '';
+
+    // 토글 버튼 4종 (★ / 🔥 / D / n) is-active 해제
+    if (els.agFavFilter) els.agFavFilter.classList.remove('is-active');
+    if (els.agFireFilter) els.agFireFilter.classList.remove('is-active');
+    if (els.agDayFilter) els.agDayFilter.classList.remove('is-active');
+    if (els.agAssignedFilter) els.agAssignedFilter.classList.remove('is-active');
+
+    // summary-card active 동기화 + 테이블 재렌더
+    syncSourceFilterUi();
+    try { renderTable(); } catch (_) {}
+  }
+
+  // sidebar 인라인 스크립트가 호출할 수 있도록 window 에 노출
+  window.knsnAgentResetListFilters = resetListFiltersOnEnter;
+
   function bindEvents() {
     // Logout
     if (els.btnAgentLogout) {
