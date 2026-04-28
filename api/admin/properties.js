@@ -57,14 +57,14 @@ const OVERVIEW_SELECT = [
 
 const MAP_SCAN_SELECT = [
   'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
-  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
+  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type', 'tankauction_category',
   'exclusive_area', 'status', 'price_main',
   'latitude', 'longitude', 'created_at', 'date_uploaded', 'raw'
 ].join(',');
 
 const MAP_DETAIL_SELECT = [
   'id', 'global_id', 'item_no', 'source_type', 'source_url', 'is_general',
-  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type',
+  'submitter_type', 'submitter_name', 'broker_office_name', 'address', 'asset_type', 'tankauction_category',
   'exclusive_area', 'status', 'price_main', 'latitude', 'longitude',
   'created_at', 'date_uploaded', 'memo', 'raw'
 ].join(',');
