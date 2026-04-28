@@ -347,7 +347,7 @@
         ? null
         : toNullableNumber(item && (item.lowprice ?? item.low_price ?? raw.lowprice ?? raw.low_price ?? raw["최저가"] ?? raw["최저입찰가(원)"] ?? raw["매각가"] ?? item.currentPrice ?? item.current_price ?? raw.currentPrice ?? raw.current_price)),
       status: pickFirstText(item && item.status, raw.status, ""),
-      assetType: pickFirstText(item && item.assetType, item && item.asset_type, item && item.type, item && item.propertyType, item && item.kind, raw.assetType, raw.asset_type, raw["세부유형"], "-"),
+      assetType: pickFirstText(item && item.tankauctionCategory, item && item.tankauction_category, raw.tankauctionCategory, raw.tankauction_category, item && item.assetType, item && item.asset_type, item && item.type, item && item.propertyType, item && item.kind, raw.assetType, raw.asset_type, raw["세부유형"], "-"),
       floor: pickFirstText(item && item.floor, item && item.floor_text, item && item.floor_korean, raw.floor, raw.floorText, raw["해당층"], extractFloorText(address, raw["물건명"], raw.address)),
       totalfloor: pickFirstText(item && item.totalfloor, item && item.total_floor, item && item.totalfloor_text, item && item.totalfloor_snake, item && item.totalfloor_camel, item && item.totalfloor_korean, raw.totalfloor, raw.total_floor, raw.totalFloor, raw["총층"], ""),
       useapproval: pickFirstText(item && item.useapproval, item && item.use_approval, raw.useapproval, raw.use_approval, raw.useApproval, raw["사용승인일"], ""),
@@ -1438,7 +1438,7 @@
       kindClass: getSourceBucketClass(bucket),
       itemNo: pickFirstText(item?.itemNo, item?.item_no, item?.globalId, item?.global_id, '-'),
       address: pickFirstText(item?.address, item?.roadAddress, item?.road_address, item?.raw?.address, item?._raw?.address, '-'),
-      assetType: pickFirstText(item?.assetType, item?.asset_type, item?.type, item?.raw?.assetType, item?.raw?.asset_type, item?._raw?.assetType, item?._raw?.asset_type, '-'),
+      assetType: pickFirstText(item?.tankauctionCategory, item?.tankauction_category, item?.raw?.tankauctionCategory, item?.raw?.tankauction_category, item?._raw?.tankauctionCategory, item?._raw?.tankauction_category, item?.assetType, item?.asset_type, item?.type, item?.raw?.assetType, item?.raw?.asset_type, item?._raw?.assetType, item?._raw?.asset_type, '-'),
       floorText: getFloorDisplayValue(item),
       appraisalPriceValue: toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main),
       currentPriceValue: getCurrentPriceValue(item),
