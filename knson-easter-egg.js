@@ -40,41 +40,26 @@
   };
   const CLICK_WINDOW_MS = 1000;
 
-  // RPC 호출 — Supabase REST endpoint 사용 (sync RPC 와 동일 패턴)
+  // RPC 호출 — supabase-js 클라이언트 사용 (anon key + 토큰 자동 처리)
   async function callRpc(propertyId, newUrl) {
     const K = window.KNSN || null;
-    const Shared = window.KNSN_SHARED || null;
-    let session = null;
-    if (Shared && typeof Shared.loadSession === 'function') session = Shared.loadSession();
-    else if (K && typeof K.loadSession === 'function') session = K.loadSession();
-    const token = session?.access_token || session?.token || null;
-
-    const SB_URL = (K && typeof K.getSupabaseUrl === 'function')
-      ? K.getSupabaseUrl()
-      : (window.SUPABASE_URL || 'https://sdkiwbzpllyqqlvdtimz.supabase.co');
-    const SB_KEY = (K && typeof K.getSupabaseAnonKey === 'function')
-      ? K.getSupabaseAnonKey()
-      : (window.SUPABASE_ANON_KEY || '');
-
-    const headers = {
-      'Content-Type': 'application/json',
-      'apikey': SB_KEY,
-      'Authorization': 'Bearer ' + (token || SB_KEY),
-    };
-
-    const r = await fetch(SB_URL + '/rest/v1/rpc/update_property_source_url', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({
-        p_property_id: propertyId,
-        p_new_url: newUrl || null,
-      }),
-    });
-    if (!r.ok) {
-      const t = await r.text();
-      throw new Error('RPC error (' + r.status + '): ' + t);
+    if (!K || typeof K.initSupabase !== 'function') {
+      throw new Error('Supabase 클라이언트를 초기화할 수 없습니다 (KNSN 미로드).');
     }
-    return r.json();
+    const sb = K.initSupabase();
+    if (!sb) {
+      throw new Error('Supabase 클라이언트 초기화 실패. 로그인 상태를 확인하세요.');
+    }
+
+    const { data, error } = await sb.rpc('update_property_source_url', {
+      p_property_id: propertyId,
+      p_new_url: newUrl || null,
+    });
+
+    if (error) {
+      throw new Error('RPC error: ' + (error.message || error.code || JSON.stringify(error)));
+    }
+    return data;
   }
 
   function getCurrentUser() {
