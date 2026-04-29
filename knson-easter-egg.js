@@ -291,6 +291,22 @@
     if (STATE.clickCount >= 3) {
       STATE.clickCount = 0;
       STATE.lastTargetId = null;
+
+      // [가드] 경매/공매 매물에만 발동.
+      // realtor/general 매물에 url 을 채우면 도메인 분류 로직(url 유무 기반)
+      // 때문에 화면 표시가 일반중개 ↔ 네이버중개로 잘못 바뀌는 부작용이 있어 차단.
+      // 중개/일반 매물의 url 은 매물 등록/수정 폼에서 변경하도록 안내.
+      const sourceType = String(
+        property?.sourceType
+          || property?.source_type
+          || property?.raw?.source_type
+          || ''
+      ).toLowerCase();
+      if (sourceType !== 'auction' && sourceType !== 'onbid') {
+        alert('URL 편집은 경매/공매 매물에만 가능합니다.\n중개/일반 매물의 URL은 매물 등록/수정 폼에서 변경하세요.');
+        return;
+      }
+
       openModal(propertyId, property);
     }
   }
