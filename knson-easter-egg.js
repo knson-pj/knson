@@ -271,7 +271,7 @@
     }
     const currentUrl = property?.sourceUrl || property?.source_url || '';
     const itemNo = property?.itemNo || property?.item_no || '(매물)';
-    const input = prompt('[' + itemNo + '] url 편집\n\n허용: tankauction.com, onbid.co.kr, land.naver.com, naver.me', currentUrl);
+    const input = prompt('[' + itemNo + '] url 편집\n\n허용: tankauction.com, onbid.co.kr, land.naver.com, naver.me, kko.to, map.kakao.com', currentUrl);
     if (input === null) return;
     const trimmed = input.trim();
     if (trimmed === (currentUrl || '').trim()) return;
