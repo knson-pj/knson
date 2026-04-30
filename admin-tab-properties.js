@@ -1426,7 +1426,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     tr.innerHTML = usePlainLayout
       ? `
       <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
-      <td><span class="kind-text ${utils.escapeAttr(kindClass)}" data-property-id="${utils.escapeAttr(rowId)}" data-trigger="kind-edit" title="3회 연속 클릭 시 url 편집">${utils.escapeHtml(kindLabel)}</span></td>
+      <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
       <td>${(p.sourceUrl || p.source_url) ? '<a href="' + utils.escapeAttr(p.sourceUrl || p.source_url) + '" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">' + utils.escapeHtml(listView?.itemNo || p.itemNo || '-') + '</a>' : utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
       <td class="text-cell"><button type="button" class="address-trigger" title="${utils.escapeAttr(fullAddress)}">${utils.escapeHtml(addressText)}</button></td>
       <td>${utils.escapeHtml(assetTypeText)}</td>
@@ -1443,7 +1443,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
     `
       : `
       <td class="check-col"><label class="check-wrap"><input class="prop-row-check" type="checkbox" data-prop-id="${utils.escapeAttr(rowId)}" ${rowId && state.selectedPropertyIds.has(rowId) ? 'checked' : ''} /><span></span></label></td>
-      <td><span class="kind-text ${utils.escapeAttr(kindClass)}" data-property-id="${utils.escapeAttr(rowId)}" data-trigger="kind-edit" title="3회 연속 클릭 시 url 편집">${utils.escapeHtml(kindLabel)}</span></td>
+      <td><span class="kind-text ${utils.escapeAttr(kindClass)}">${utils.escapeHtml(kindLabel)}</span></td>
       <td>${(p.sourceUrl || p.source_url) ? '<a href="' + utils.escapeAttr(p.sourceUrl || p.source_url) + '" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">' + utils.escapeHtml(listView?.itemNo || p.itemNo || '-') + '</a>' : utils.escapeHtml(listView?.itemNo || p.itemNo || '-')}</td>
       <td class="text-cell"><button type="button" class="address-trigger" title="${utils.escapeAttr(fullAddress)}">${utils.escapeHtml(addressText)}</button></td>
       <td>${utils.escapeHtml(assetTypeText)}</td>
@@ -1487,18 +1487,6 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
         wrap.classList.toggle('is-open', willOpen);
       });
     });
-
-    // [v3.7-easter] 구분 라벨 3연속 클릭 → url 편집
-    const kindEl = tr.querySelector('.kind-text[data-trigger="kind-edit"]');
-    if (kindEl) {
-      kindEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (typeof window.handleKindLabelTripleClick === 'function') {
-          window.handleKindLabelTripleClick(kindEl, p);
-        }
-      });
-    }
-
     frag.appendChild(tr);
   }
   els.propertiesTableBody.appendChild(frag);
@@ -1903,6 +1891,10 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
           lowprice: patch.lowprice,
           date_main: patch.dateMain,
           broker_office_name: patch.realtorname,
+          // [bugfix 20260430] submitter_name 누락으로 인해 LOG 비교 시
+          // next snapshot 이 raw.registeredByName 으로 fallback → 가짜 "등록자명 변경" 감지.
+          // 기존 DB 컬럼 값을 그대로 보존하여 변경 감지 대상에서 제외.
+          submitter_name: item?._raw?.submitter_name || item?.submitter_name || null,
           submitter_phone: patch.realtorcell,
           memo: patch.opinion,
           latitude: patch.latitude,
