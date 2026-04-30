@@ -1173,7 +1173,7 @@ function bindEvents() {
   const PROPERTY_LIST_SELECT = [
     "id", "global_id", "item_no", "source_type", "source_url", "is_general", "address", "assignee_id",
     "submitter_type", "broker_office_name", "submitter_name", "submitter_phone",
-    "asset_type", "tankauction_category", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
+    "asset_type", "floor", "total_floor", "common_area", "exclusive_area", "site_area", "use_approval",
     "status", "price_main", "lowprice", "date_main", "rights_analysis", "site_inspection",
     "memo", "latitude", "longitude", "date_uploaded", "created_at", "raw",
     "geocode_status", "geocoded_at"
@@ -2076,6 +2076,21 @@ function bindEvents() {
     return s.replace("T", " ").slice(0, 16);
   }
 
+  // 모달 LOG 탭의 개별 entry 메타 표시용 — 시간만 (그룹 헤더에 이미 날짜가 있어 중복 방지)
+  function formatRegLogAtTimeOnly(value) {
+    const s = String(value || "").trim();
+    if (!s) return "";
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mi = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mi}`;
+    }
+    // ISO 포맷 fallback: "2026-04-30T11:21:..." → "11:21"
+    const m = s.match(/T(\d{2}:\d{2})/);
+    return m ? m[1] : s.slice(11, 16);
+  }
+
   function buildRegisterLogContext(route, user) {
     const actorUser = user && typeof user === 'object' && user.user ? user.user : user;
     if (PropertyDomain && typeof PropertyDomain.buildRegisterLogContext === "function") return PropertyDomain.buildRegisterLogContext(route, { user: actorUser });
@@ -2538,7 +2553,7 @@ function bindEvents() {
         const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => renderCombinedLogBadge(badge)).join('');
         const canEdit = entry.kind !== 'registration' && Number.isInteger(entry.sourceIndex);
         const actionHtml = canEdit ? `<div class="history-actions"><button type="button" class="history-edit-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="수정">✎</button><button type="button" class="history-del-btn" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}" title="삭제">✕</button></div>` : '';
-        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', renderCombinedLogActorChip(entry), actionHtml].filter(Boolean).join('');
+        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAtTimeOnly(entry.at))}</span>` : '', renderCombinedLogActorChip(entry), actionHtml].filter(Boolean).join('');
         if (entry.kind !== 'registration') {
           return `<div class="agent-combined-log-entry" data-log-kind="opinion" data-log-idx="${entry.sourceIndex}">` +
             `<div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div>` +

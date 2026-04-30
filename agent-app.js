@@ -2157,7 +2157,7 @@ function renderRow(p) {
         <div class="ag-card-head">
           <button type="button" class="btn-fav${isFav ? ' is-active' : ''}" title="${isFav ? '관심 해제' : '관심 등록'}">${isFav ? '★' : '☆'}</button>
           <button type="button" class="btn-fire${isFire ? ' is-active' : ''}" title="${isFire ? '강추매물 해제' : '강추매물 등록'}">🔥</button>
-          <span class="kind-text ${kindClass}" data-property-id="${esc(p.id || '')}" data-trigger="kind-edit" title="3회 연속 클릭 시 url 편집">${esc(kindLabel)}</span>
+          <span class="kind-text ${kindClass}">${esc(kindLabel)}</span>
           <span class="ag-card-itemno">#${_itemNoHtml}</span>
         </div>
         <div class="ag-card-addr">${esc(addressText)}</div>
@@ -2207,17 +2207,6 @@ function renderRow(p) {
     }
     tr.addEventListener("click", () => openEditModal(p));
     tr.querySelectorAll(".item-no-link").forEach((a) => a.addEventListener("click", (e) => e.stopPropagation()));
-
-    // [v3.7-easter] 구분 라벨 3연속 클릭 → url 편집 (기존 행 클릭과 충돌 방지)
-    const kindEl = tr.querySelector('.kind-text[data-trigger="kind-edit"]');
-    if (kindEl) {
-      kindEl.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (typeof window.handleKindLabelTripleClick === 'function') {
-          window.handleKindLabelTripleClick(kindEl, p);
-        }
-      });
-    }
     return tr;
   }
 
@@ -2269,7 +2258,7 @@ function renderRow(p) {
   tr.insertAdjacentHTML("beforeend",
     usePlainLayout
       ? "<td>" + _itemNoHtml + "</td>" +
-        '<td><span class="kind-text ' + kindClass + '" data-property-id="' + escAttr(p.id || '') + '" data-trigger="kind-edit" title="3회 연속 클릭 시 url 편집">' + esc(kindLabel) + "</span></td>" +
+        '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
         '<td class="text-cell" title="' + escAttr(fullAddress) + '">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
@@ -2283,7 +2272,7 @@ function renderRow(p) {
         "<td>" + (p.siteInspection ? "✓" : "-") + "</td>" +
         "<td>" + esc(createdAtText) + "</td>"
       : "<td>" + _itemNoHtml + "</td>" +
-        '<td><span class="kind-text ' + kindClass + '" data-property-id="' + escAttr(p.id || '') + '" data-trigger="kind-edit" title="3회 연속 클릭 시 url 편집">' + esc(kindLabel) + "</span></td>" +
+        '<td><span class="kind-text ' + kindClass + '">' + esc(kindLabel) + "</span></td>" +
         '<td class="text-cell" title="' + escAttr(fullAddress) + '">' + esc(addressText) + "</td>" +
         "<td>" + esc(assetTypeText) + "</td>" +
         "<td>" + esc(floorText) + "</td>" +
@@ -3704,6 +3693,17 @@ function renderPagination(totalPages) {
     return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
   }
 
+  // 모달 LOG 탭의 개별 entry 메타 표시용 — 시간만 (그룹 헤더에 이미 날짜가 있어 중복 방지)
+  function formatRegLogAtTimeOnly(value) {
+    const s = String(value || "").trim();
+    if (!s) return "";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mi}`;
+  }
+
   function toTimelineTimestamp(value) {
     const s = String(value || "").trim();
     if (!s) return Number.POSITIVE_INFINITY;
@@ -3811,7 +3811,7 @@ function renderPagination(totalPages) {
       const summaryBadges = (Array.isArray(group.badges) ? group.badges : []).map((badge) => renderCombinedLogBadge(badge)).join('');
       const itemsHtml = (Array.isArray(group.items) ? group.items : []).map((entry) => {
         const badgeHtml = (Array.isArray(entry.badges) ? entry.badges : [{ badgeClass: entry.badgeClass, badgeLabel: entry.badgeLabel }]).map((badge) => renderCombinedLogBadge(badge)).join('');
-        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAt(entry.at))}</span>` : '', renderCombinedLogActorChip(entry)].filter(Boolean).join('');
+        const entryMeta = [entry.at ? `<span class="agent-combined-log-author">${esc(formatRegLogAtTimeOnly(entry.at))}</span>` : '', renderCombinedLogActorChip(entry)].filter(Boolean).join('');
         if (entry.kind !== "registration") {
           return `<div class="agent-combined-log-entry"><div class="agent-combined-log-entry-head">${badgeHtml}${entryMeta}</div><div class="agent-combined-log-body"><div class="agent-combined-log-text">${esc(entry.text || "")}</div></div></div>`;
         }
