@@ -193,11 +193,17 @@
     try {
       const res = await callRpc(propertyId, newUrl);
       if (res?.success) {
-        setMsg('저장되었습니다. 페이지를 새로고침합니다.', 'success');
-        setTimeout(() => {
-          closeModal();
-          location.reload();
-        }, 600);
+        // 화면의 해당 행/카드를 즉시 갱신 (페이지 새로고침 없이)
+        updateItemNoLinkInPlace(propertyId, newUrl, property);
+
+        // property 객체의 sourceUrl 도 갱신 (다시 모달 열 때 새 값 표시)
+        if (property) {
+          property.sourceUrl = newUrl || null;
+          property.source_url = newUrl || null;
+        }
+
+        closeModal();
+        showToast(newUrl ? '저장되었습니다 🔗' : 'URL 이 삭제되었습니다', 'success');
       } else {
         const err = res?.error || 'unknown';
         const m = res?.message || '';
@@ -213,6 +219,126 @@
     } finally {
       if (els.saveBtn) els.saveBtn.disabled = false;
     }
+  }
+
+  // ────────────────────────────────────────────
+  // 화면 즉시 갱신 — item_no 링크 반영 (새로고침 회피)
+  // ────────────────────────────────────────────
+  // 화면에 같은 매물의 행/카드가 여러 개 있을 수 있어 모두 순회.
+  // 패턴 3종:
+  //   1) 기존 url 있던 매물 (a.item-no-link 존재) → href 갱신 또는 a 풀기
+  //   2) 테이블뷰에서 url 없던 매물 → <td> 안 itemNo 텍스트를 a 로 감싸기
+  //   3) 카드뷰에서 url 없던 매물 → "#<itemNo>" 패턴 처리
+  function updateItemNoLinkInPlace(propertyId, newUrl, property) {
+    if (!propertyId) return;
+    let safeId;
+    try { safeId = (window.CSS && CSS.escape) ? CSS.escape(propertyId) : String(propertyId).replace(/"/g, '\\"'); }
+    catch (e) { safeId = String(propertyId); }
+
+    const kindEls = document.querySelectorAll('.kind-text[data-trigger="kind-edit"][data-property-id="' + safeId + '"]');
+    if (!kindEls.length) return;
+
+    const itemNoText = String(property?.itemNo || property?.item_no || '').trim();
+
+    kindEls.forEach((kindEl) => {
+      // 매물 행의 컨테이너 — tr / .ag-card / .ag-card-row / 카드 부모
+      const container = kindEl.closest('tr')
+        || kindEl.closest('.ag-card')
+        || kindEl.closest('.ag-card-row')
+        || kindEl.closest('article')
+        || kindEl.closest('li')
+        || kindEl.parentElement?.parentElement
+        || null;
+      if (!container) return;
+
+      // [1] 기존 a.item-no-link 가 있으면 href 만 갱신
+      const existing = container.querySelectorAll('a.item-no-link');
+      if (existing.length > 0) {
+        if (newUrl) {
+          existing.forEach((a) => {
+            try { a.href = newUrl; } catch (e) {}
+          });
+        } else {
+          // url 삭제 → a 를 텍스트 노드로 풀어줌
+          existing.forEach((a) => {
+            const text = a.textContent;
+            a.replaceWith(document.createTextNode(text));
+          });
+        }
+        return;
+      }
+
+      // [2,3] 링크 없음 + 새 url 있음 → itemNo 텍스트를 a 로 감싸기
+      if (!newUrl || !itemNoText) return;
+
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+      let node;
+      while ((node = walker.nextNode())) {
+        const raw = node.nodeValue || '';
+        const trimmed = raw.trim();
+        // 패턴 2: 정확히 itemNo 와 일치 (테이블뷰)
+        // 패턴 3: "#<itemNo>" (카드뷰의 ag-card-itemno)
+        if (trimmed === itemNoText) {
+          const a = createItemNoAnchor(newUrl, itemNoText);
+          node.replaceWith(a);
+          break;
+        } else if (trimmed === '#' + itemNoText) {
+          // 카드뷰: 텍스트는 "#텍스트" 통으로. # 는 그대로 두고 itemNo 만 a 로.
+          node.nodeValue = raw.replace('#' + itemNoText, '#');
+          // # 뒤에 a 를 형제로 추가
+          const a = createItemNoAnchor(newUrl, itemNoText);
+          if (node.parentNode) node.parentNode.appendChild(a);
+          break;
+        }
+      }
+    });
+  }
+
+  function createItemNoAnchor(href, text) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.className = 'item-no-link';
+    a.textContent = text;
+    // 행 클릭 모달 열림 방지 (다른 a.item-no-link 와 동일 동작)
+    a.addEventListener('click', (e) => e.stopPropagation());
+    return a;
+  }
+
+  // ────────────────────────────────────────────
+  // 토스트 알림
+  // ────────────────────────────────────────────
+  function showToast(message, kind) {
+    let toast = document.getElementById('easter-egg-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'easter-egg-toast';
+      Object.assign(toast.style, {
+        position: 'fixed',
+        top: '20px',
+        right: '20px',
+        padding: '12px 18px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: '500',
+        color: '#fff',
+        zIndex: '99999',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        transition: 'opacity 0.25s',
+        pointerEvents: 'none',
+        opacity: '0',
+      });
+      document.body.appendChild(toast);
+    }
+    toast.style.background = kind === 'error' ? '#d33' : '#2a8';
+    toast.textContent = message;
+    // 페이드인 트리거
+    requestAnimationFrame(() => { toast.style.opacity = '1'; });
+    if (toast._hideTimer) clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+      toast.style.opacity = '0';
+    }, 2200);
   }
 
   // 모달 이벤트 바인딩 (페이지에 마크업 있을 때 한 번만)
