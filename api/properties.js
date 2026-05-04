@@ -5,6 +5,7 @@ const { getSession } = require('./_lib/auth');
 const { hasSupabaseAdminEnv, resolveCurrentUserContext, getEnv } = require('./_lib/supabase-admin');
 const PropertyDomain = require('../knson-property-domain.js');
 const PropertyPhotos = require('./_lib/property-photos');
+const PropertyVideos = require('./_lib/property-videos');
 
 function omitUndefined(obj) {
   return Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v !== undefined));
@@ -1138,6 +1139,266 @@ async function handlePhotoAction(req, res, action) {
   }
 }
 
+
+// =============================================================================
+// Video action handler (2026-05-04)
+// =============================================================================
+//
+// 사진 (handlePhotoAction) 과 동일한 권한 / 응답 패턴.
+// 차이점:
+//   - prepare: signed upload URL 을 발급해 클라이언트가 Storage 에 직접 PUT
+//   - commit:  메타데이터(파일명/사이즈/duration/poster path) 만 받아 DB 에 INSERT
+//              실제 바이너리는 이미 Storage 에 있으므로 base64 처리 없음
+//
+// 5개 상한 / 100MB / 5분 / mp4·webm·mov 검증은 모두 서버에서 한 번 더 한다.
+// (클라이언트 검증을 우회한 직접 호출도 차단)
+// =============================================================================
+
+async function handleVideoAction(req, res, action) {
+  if (!hasSupabaseAdminEnv()) {
+    return send(res, 501, { ok: false, message: '동영상 기능은 Supabase 환경에서만 사용할 수 있습니다.' });
+  }
+  const body = req.__jsonBody || getJsonBody(req);
+  const propertyId = req.__videoPropertyId || body?.propertyId;
+  const videoId = String(req.__videoId || body?.videoId || '').trim();
+  const access = await PropertyVideos.requirePropertyAccess(req, res, propertyId);
+  if (!access) return;
+
+  try {
+    // ── list ──────────────────────────────────────────────────────────────
+    if (action === 'list') {
+      const rows = await PropertyVideos.listVideoRows(access.propertyId);
+      const items = await Promise.all(rows.map(async (row) => ({
+        id: row.id,
+        propertyId: row.property_id,
+        propertyGlobalId: row.property_global_id,
+        videoUrl: await PropertyVideos.createSignedReadUrl(row.storage_path).catch(() => ''),
+        posterUrl: row.poster_path ? await PropertyVideos.createSignedReadUrl(row.poster_path).catch(() => '') : '',
+        storagePath: row.storage_path,
+        posterPath: row.poster_path,
+        mimeType: row.mime_type,
+        durationSec: row.duration_sec,
+        width: row.width,
+        height: row.height,
+        sizeBytes: row.size_bytes,
+        sortOrder: row.sort_order,
+        isPrimary: !!row.is_primary,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })));
+      return send(res, 200, { ok: true, items });
+    }
+
+    // ── prepare ───────────────────────────────────────────────────────────
+    // 1개씩 발급한다. 클라이언트는 한 영상 업로드 후 다음을 prepare 한다.
+    if (action === 'prepare') {
+      const videoMime = String(body?.mimeType || '').trim().toLowerCase();
+      const posterMime = String(body?.posterMimeType || '').trim().toLowerCase();
+      const sizeBytes = Number(body?.sizeBytes || 0);
+      const durationSec = Number(body?.durationSec || 0);
+
+      // 사양 검증
+      if (!PropertyVideos.isAllowedVideoMime(videoMime)) {
+        return send(res, 400, { ok: false, message: '지원하지 않는 동영상 형식입니다. (MP4 / WebM / MOV)' });
+      }
+      if (posterMime && !PropertyVideos.isAllowedPosterMime(posterMime)) {
+        return send(res, 400, { ok: false, message: '지원하지 않는 썸네일 이미지 형식입니다.' });
+      }
+      if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > PropertyVideos.MAX_FILE_SIZE_BYTES) {
+        return send(res, 400, {
+          ok: false,
+          message: `동영상 파일 크기는 ${Math.floor(PropertyVideos.MAX_FILE_SIZE_BYTES / 1024 / 1024)}MB 이하로 업로드해 주세요.`,
+        });
+      }
+      if (Number.isFinite(durationSec) && durationSec > PropertyVideos.MAX_DURATION_SEC) {
+        return send(res, 400, {
+          ok: false,
+          message: `동영상은 ${Math.floor(PropertyVideos.MAX_DURATION_SEC / 60)}분 이하만 등록할 수 있습니다.`,
+        });
+      }
+
+      // 5개 상한
+      const existingCount = await PropertyVideos.getActiveVideoCount(access.propertyId);
+      if (existingCount + 1 > PropertyVideos.MAX_VIDEOS_PER_PROPERTY) {
+        return send(res, 400, {
+          ok: false,
+          message: `동영상은 매물당 최대 ${PropertyVideos.MAX_VIDEOS_PER_PROPERTY}개까지 등록할 수 있습니다.`,
+        });
+      }
+
+      const newId = PropertyVideos.makeId();
+      const paths = PropertyVideos.buildVideoPaths(access.propertyId, newId, { videoMime, posterMime });
+
+      // 영상 본체 signed upload URL
+      const videoUpload = await PropertyVideos.createSignedUploadUrl(paths.storagePath);
+      // 포스터(썸네일) signed upload URL — posterMime 이 명시된 경우에만
+      const posterUpload = posterMime
+        ? await PropertyVideos.createSignedUploadUrl(paths.posterPath).catch(() => null)
+        : null;
+
+      return send(res, 200, {
+        ok: true,
+        videoId: newId,
+        storagePath: paths.storagePath,
+        posterPath: posterMime ? paths.posterPath : '',
+        videoUpload: {
+          url: videoUpload.signedUrl,
+          token: videoUpload.token,
+          path: videoUpload.path,
+          method: 'PUT',
+          contentType: videoMime,
+        },
+        posterUpload: posterUpload ? {
+          url: posterUpload.signedUrl,
+          token: posterUpload.token,
+          path: posterUpload.path,
+          method: 'PUT',
+          contentType: posterMime,
+        } : null,
+        existingCount,
+        maxVideos: PropertyVideos.MAX_VIDEOS_PER_PROPERTY,
+        maxFileSizeBytes: PropertyVideos.MAX_FILE_SIZE_BYTES,
+        maxDurationSec: PropertyVideos.MAX_DURATION_SEC,
+      });
+    }
+
+    // ── commit ────────────────────────────────────────────────────────────
+    // prepare 단계에서 받은 path 와 클라이언트가 측정한 메타를 받아 DB 에 INSERT
+    if (action === 'commit') {
+      const meta = body?.video && typeof body.video === 'object' ? body.video : body;
+      const cVideoId = String(meta?.videoId || '').trim();
+      const storagePath = String(meta?.storagePath || '').trim();
+      const posterPath = String(meta?.posterPath || '').trim();
+      const mimeType = String(meta?.mimeType || '').trim().toLowerCase();
+      const durationSec = Number(meta?.durationSec || 0);
+      const sizeBytes = Number(meta?.sizeBytes || 0);
+      const width = Number(meta?.width || 0);
+      const height = Number(meta?.height || 0);
+
+      if (!cVideoId || !storagePath) {
+        return send(res, 400, { ok: false, message: '동영상 메타데이터가 올바르지 않습니다.' });
+      }
+      if (!PropertyVideos.isAllowedVideoMime(mimeType)) {
+        return send(res, 400, { ok: false, message: '지원하지 않는 동영상 형식입니다.' });
+      }
+      if (sizeBytes > 0 && sizeBytes > PropertyVideos.MAX_FILE_SIZE_BYTES) {
+        return send(res, 400, { ok: false, message: '파일 크기가 허용 범위를 초과했습니다.' });
+      }
+      if (durationSec > 0 && durationSec > PropertyVideos.MAX_DURATION_SEC) {
+        return send(res, 400, { ok: false, message: '재생시간이 허용 범위를 초과했습니다.' });
+      }
+
+      // 동시성: commit 시점에 다시 5개 상한 검증
+      const existing = await PropertyVideos.listVideoRows(access.propertyId);
+      if (existing.length + 1 > PropertyVideos.MAX_VIDEOS_PER_PROPERTY) {
+        return send(res, 400, {
+          ok: false,
+          message: `동영상은 매물당 최대 ${PropertyVideos.MAX_VIDEOS_PER_PROPERTY}개까지 등록할 수 있습니다.`,
+        });
+      }
+
+      const nextSort = existing.reduce((max, row) => Math.max(max, Number(row?.sort_order || 0)), -1) + 1;
+      const hasPrimary = existing.some((row) => !!row.is_primary);
+
+      const inserted = await PropertyVideos.insertVideoRow({
+        id: cVideoId,
+        property_id: access.propertyId,
+        property_global_id: access.property?.global_id || null,
+        storage_path: storagePath,
+        poster_path: posterPath || null,
+        mime_type: mimeType,
+        duration_sec: Number.isFinite(durationSec) && durationSec > 0 ? Math.round(durationSec) : null,
+        width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
+        height: Number.isFinite(height) && height > 0 ? Math.round(height) : null,
+        size_bytes: Number.isFinite(sizeBytes) && sizeBytes > 0 ? Math.round(sizeBytes) : null,
+        sort_order: nextSort,
+        is_primary: !hasPrimary,
+        uploaded_by: access.ctx?.userId || null,
+      });
+
+      return send(res, 200, { ok: true, item: inserted });
+    }
+
+    // ── set_primary ───────────────────────────────────────────────────────
+    if (action === 'set_primary') {
+      if (!videoId) return send(res, 400, { ok: false, message: 'videoId가 필요합니다.' });
+      const video = await PropertyVideos.getVideoRow(videoId);
+      if (!video || String(video.property_id || '').trim() !== String(access.propertyId || '').trim() || video.deleted_at) {
+        return send(res, 404, { ok: false, message: '동영상을 찾을 수 없습니다.' });
+      }
+      await PropertyVideos.patchVideoRows(
+        `property_id=eq.${encodeURIComponent(access.propertyId)}&deleted_at=is.null`,
+        { is_primary: false, updated_at: new Date().toISOString() }
+      );
+      const updated = await PropertyVideos.patchVideoRows(
+        `id=eq.${encodeURIComponent(videoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`,
+        { is_primary: true, updated_at: new Date().toISOString() }
+      );
+      return send(res, 200, { ok: true, item: Array.isArray(updated) ? (updated[0] || null) : updated });
+    }
+
+    // ── reorder ───────────────────────────────────────────────────────────
+    if (action === 'reorder') {
+      const orderedVideoIds = Array.isArray(body?.orderedVideoIds)
+        ? body.orderedVideoIds.map((v) => String(v || '').trim()).filter(Boolean)
+        : [];
+      const rows = await PropertyVideos.listVideoRows(access.propertyId);
+      const rowIds = new Set(rows.map((row) => String(row.id || '').trim()));
+      const finalOrder = orderedVideoIds.filter((vid) => rowIds.has(vid));
+      rows.forEach((row) => {
+        const rid = String(row.id || '').trim();
+        if (!finalOrder.includes(rid)) finalOrder.push(rid);
+      });
+      await Promise.all(finalOrder.map((vid, index) =>
+        PropertyVideos.patchVideoRows(
+          `id=eq.${encodeURIComponent(vid)}&property_id=eq.${encodeURIComponent(access.propertyId)}`,
+          { sort_order: index, updated_at: new Date().toISOString() }
+        )
+      ));
+      return send(res, 200, { ok: true, orderedVideoIds: finalOrder });
+    }
+
+    // ── delete (soft delete + storage 즉시 제거) ─────────────────────────
+    if (action === 'delete') {
+      if (!videoId) return send(res, 400, { ok: false, message: 'videoId가 필요합니다.' });
+      const video = await PropertyVideos.getVideoRow(videoId);
+      if (!video || String(video.property_id || '').trim() !== String(access.propertyId || '').trim() || video.deleted_at) {
+        return send(res, 404, { ok: false, message: '동영상을 찾을 수 없습니다.' });
+      }
+      await PropertyVideos.patchVideoRows(
+        `id=eq.${encodeURIComponent(videoId)}&property_id=eq.${encodeURIComponent(access.propertyId)}`,
+        { deleted_at: new Date().toISOString(), is_primary: false, updated_at: new Date().toISOString() }
+      );
+      await PropertyVideos.removeObjects([video.storage_path, video.poster_path]).catch(() => null);
+      // 대표 영상이 사라졌으면 다음 활성 영상을 대표로 승격
+      if (video.is_primary) {
+        const remaining = await PropertyVideos.listVideoRows(access.propertyId);
+        const next = remaining.find((row) => String(row.id || '') !== videoId);
+        if (next) {
+          await PropertyVideos.patchVideoRows(
+            `id=eq.${encodeURIComponent(next.id)}&property_id=eq.${encodeURIComponent(access.propertyId)}`,
+            { is_primary: true, updated_at: new Date().toISOString() }
+          );
+        }
+      }
+      return send(res, 200, { ok: true, removedId: videoId });
+    }
+
+    return send(res, 400, { ok: false, message: '지원하지 않는 video_action 입니다.' });
+  } catch (err) {
+    const raw = [err?.message, err?.data?.message, err?.data?.error, err?.data?.hint, err?.data?.details].filter(Boolean).join(' ');
+    const lowered = String(raw || '').toLowerCase();
+    let message = err?.message || '동영상 처리 중 오류가 발생했습니다.';
+    if (lowered.includes('property_videos') && (lowered.includes('does not exist') || lowered.includes('relation'))) {
+      message = 'property_videos 테이블이 없어 동영상 기능을 사용할 수 없습니다. Supabase migration(20260504_0013) 을 먼저 실행해 주세요.';
+    } else if (lowered.includes('bucket') && lowered.includes('not found')) {
+      message = 'property-videos 스토리지 버킷이 없어 동영상 기능을 사용할 수 없습니다. Supabase migration(20260504_0014) 을 먼저 실행해 주세요.';
+    }
+    return send(res, err?.status || 500, { ok: false, message, details: err?.data || null });
+  }
+}
+
+
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
 
@@ -1168,6 +1429,22 @@ module.exports = async function handler(req, res) {
     req.__photoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || req.body?.propertyId || '';
     req.__photoId = url.searchParams.get('photoId') || req.__jsonBody?.photoId || req.body?.photoId || '';
     return handlePhotoAction(req, res, photoAction);
+  }
+
+  // 동영상 액션 분기 (사진과 동일한 패턴, 별도 query 파라미터 video_action)
+  // body 기반 inferred 분기는 사진과 충돌하지 않도록 "video_action" 키가 명시된 경우만 인정
+  const inferredVideoAction = (() => {
+    const body = req.__jsonBody || req.body || {};
+    if (body && typeof body === 'object' && body.video_action) {
+      return String(body.video_action || '').trim().toLowerCase();
+    }
+    return '';
+  })();
+  const videoAction = String(url.searchParams.get('video_action') || inferredVideoAction || '').trim().toLowerCase();
+  if (videoAction) {
+    req.__videoPropertyId = url.searchParams.get('propertyId') || req.__jsonBody?.propertyId || req.body?.propertyId || '';
+    req.__videoId = url.searchParams.get('videoId') || req.__jsonBody?.videoId || req.body?.videoId || '';
+    return handleVideoAction(req, res, videoAction);
   }
 
   if (req.method === 'GET') {
