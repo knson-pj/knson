@@ -475,36 +475,125 @@
     }
 
     var total = dongs.length;
+    // ── pagination 안전장치 ──
+    // Supabase Edge Function 은 wall-clock 한도(~150s)에 걸리면
+    // 한 번 호출에 처리 가능한 필지만 처리하고 부분 응답을 반환한다.
+    // 따라서 동당 단일 호출(v3 방식) 로는 표제부 수집이 미완료로 끝난다.
+    // 다른 모드(enrich_v2/collect_atch/geocode 등) 와 동일하게
+    // done=true 또는 더 이상 처리할 필지가 없을 때까지 반복 호출한다.
+    var COLLECT_MAX_ROUNDS = 30;       // 동당 최대 라운드 (안전상한)
+    var COLLECT_SLEEP_MS = 300;        // 라운드 간 sleep — 서버/quota 보호
+    var COLLECT_STALL_LIMIT = 2;       // 누적 카운트 정체 시 종료 라운드 수
 
     for (var i = 0; i < total; i++) {
       if (shouldStop) { appendLog("사용자에 의해 중단됨"); break; }
       var code = dongs[i];
       var name = findDongName(code);
-      $("bldProgressLabel").textContent = "표제부 수집: " + name + " (" + (i+1) + "/" + total + ")";
-      $("bldProgressPct").textContent = Math.round(((i+1)/total)*100) + "%";
-      $("bldProgressBar").style.width = Math.round(((i+1)/total)*100) + "%";
+
+      var collectDone = false;
+      var round = 0;
+      var dongCumulativeParcels = 0;
+      var dongCumulativeInserted = 0;
+      var prevReportedParcels = -1;
+      var stallRounds = 0;
 
       appendLog(name + " 표제부 수집 시작...");
-      try {
-        var res = await fetch(baseUrl + "?mode=collect&dongCode=" + code + "&dongName=" + encodeURIComponent(name), { headers: headers });
-        if (res.status === 401) {
-          var errBody = await res.text().catch(function() { return ""; });
-          appendLog(name + " ❌ 인증 실패(401): " + errBody);
-          appendLog("토큰 갱신을 시도합니다...");
-          headers = await getAuthHeaders();
-          if (!headers["Authorization"]) { appendLog("❌ 토큰 갱신 실패. 다시 로그인해 주세요."); break; }
-          // 재시도
-          res = await fetch(baseUrl + "?mode=collect&dongCode=" + code + "&dongName=" + encodeURIComponent(name), { headers: headers });
+
+      while (!collectDone && !shouldStop && round < COLLECT_MAX_ROUNDS) {
+        round++;
+        $("bldProgressLabel").textContent = "표제부 수집: " + name + " (" + (i+1) + "/" + total + " · 라운드 " + round + ")";
+        $("bldProgressPct").textContent = Math.round(((i+1)/total)*100) + "%";
+        $("bldProgressBar").style.width = Math.round(((i+1)/total)*100) + "%";
+
+        try {
+          var collectUrl = baseUrl + "?mode=collect&dongCode=" + encodeURIComponent(code) + "&dongName=" + encodeURIComponent(name);
+          var res = await fetch(collectUrl, { headers: headers });
+          if (res.status === 401) {
+            var errBody = await res.text().catch(function() { return ""; });
+            appendLog(name + " ❌ 인증 실패(401): " + errBody);
+            appendLog("토큰 갱신을 시도합니다...");
+            if (typeof K.sbSyncLocalSession === "function") {
+              try { await K.sbSyncLocalSession(true); } catch (e) {}
+            }
+            headers = await getAuthHeaders();
+            if (!headers["Authorization"]) {
+              appendLog("❌ 토큰 갱신 실패. 다시 로그인해 주세요.");
+              collectDone = true;
+              shouldStop = true;
+              break;
+            }
+            // 재시도
+            res = await fetch(collectUrl, { headers: headers });
+          }
+
+          var data = await res.json();
+
+          if (data && data.error) {
+            appendLog(name + " ❌ " + data.error);
+            collectDone = true;
+            break;
+          }
+
+          if (!data || !data.ok) {
+            appendLog(name + " ❌ 응답 비정상: " + JSON.stringify(data || {}).slice(0, 200));
+            collectDone = true;
+            break;
+          }
+
+          // server-side note 가 있으면 표시
+          if (data.note) appendLog("ℹ️ " + name + ": " + data.note);
+
+          // 필드 추출 — Edge Function 이 round-incremental 을 주든 cumulative 를 주든 모두 안전하게 처리
+          var roundParcels  = Number(data.parcels  || 0);
+          var roundInserted = Number(data.inserted || data.unitsInserted || 0);
+          var totalBldNow   = Number(data.total_buildings || data.totalBuildings || 0);
+          dongCumulativeParcels  += roundParcels;
+          dongCumulativeInserted += roundInserted;
+
+          $("bldProgressDetail").textContent =
+            name + " · 라운드 " + round +
+            " · parcels=" + dongCumulativeParcels +
+            (dongCumulativeInserted ? " inserted=" + dongCumulativeInserted : "") +
+            (totalBldNow ? " total=" + totalBldNow : "");
+
+          // 종료 판정 (3중 안전망)
+          //   1) 서버가 명시적으로 done=true 신호 → 즉시 종료
+          //   2) 이번 라운드에서 처리/삽입 모두 0 → 더 처리할 필지 없음
+          //   3) 누적 응답값이 같은 값으로 stall (cumulative 응답 케이스 대비)
+          if (data.done === true) {
+            collectDone = true;
+          } else if (roundParcels === 0 && roundInserted === 0) {
+            // 서버가 일관되게 round 단위로 응답한 경우: 더 할 일 없음
+            collectDone = true;
+          } else if (roundParcels > 0 && roundParcels === prevReportedParcels) {
+            // 서버가 cumulative 단위로 응답하는 경우: 같은 값이 반복되면 stall
+            stallRounds++;
+            if (stallRounds >= COLLECT_STALL_LIMIT) {
+              appendLog("ℹ️ " + name + " · 진행 정체 감지(라운드 " + round + ") — 다음 동으로 이동");
+              collectDone = true;
+            }
+          } else {
+            stallRounds = 0;
+          }
+          prevReportedParcels = roundParcels;
+
+        } catch (e) {
+          appendLog(name + " ❌ 오류: " + (e && e.message));
+          collectDone = true;
+          break;
         }
-        var data = await res.json();
-        if (data.ok) {
-          appendLog(name + " ✅ " + (data.parcels||0) + "필지 수집 완료");
-        } else {
-          appendLog(name + " ❌ " + (data.error||"실패"));
+
+        if (!collectDone && !shouldStop && COLLECT_SLEEP_MS > 0) {
+          await new Promise(function(r) { setTimeout(r, COLLECT_SLEEP_MS); });
         }
-      } catch (e) {
-        appendLog(name + " ❌ 오류: " + e.message);
       }
+
+      if (!collectDone && round >= COLLECT_MAX_ROUNDS) {
+        appendLog("⚠️ " + name + " · 최대 라운드(" + COLLECT_MAX_ROUNDS + ") 도달 — 다음 동으로 이동 (필요 시 재실행)");
+      }
+      appendLog(name + " ✅ 표제부 수집 종료 · 라운드 " + round +
+                " · 누적 parcels=" + dongCumulativeParcels +
+                (dongCumulativeInserted ? " · inserted=" + dongCumulativeInserted : ""));
     }
 
     // v3 에는 표제부 수집 직후 자동으로 enrich (전유부+지오코딩) 이 실행되었습니다.
