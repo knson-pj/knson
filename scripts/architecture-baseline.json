@@ -34,6 +34,7 @@
     "knson-property-domain.js",
     "knson-property-renderers.js",
     "knson-data-access.js",
+    "knson-property-videos.js",
     "admin-app.js",
     "admin-tab-properties.js",
     "admin-tab-new-property.js",
@@ -44,6 +45,7 @@
     "public-listings.js",
     "api/properties.js",
     "api/public-listings.js",
+    "api/_lib/property-videos.js",
     "scripts/check-architecture.js",
     "scripts/check-html-assets.js",
     "scripts/check-final-boundary.js"
