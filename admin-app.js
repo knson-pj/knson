@@ -3258,6 +3258,14 @@ function bindEvents() {
   function parseFlexibleDate(value) {
     const s = String(value || "").trim();
     if (!s) return null;
+    // [FIX 20260504-tzfix] ISO 8601 timestamptz 우선 처리.
+    // 이후 분기의 \d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})? 매칭은 시간/타임존을 무시하고
+    // 로컬 0시로 만들어버려서 Supabase created_at 의 정확한 시각을 잃는다.
+    // KST 0~9시 사이 created_at(=UTC 전날) 이 전날로 잘못 분류되는 문제 해결.
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+      const iso = new Date(s);
+      if (!Number.isNaN(iso.getTime())) return iso;
+    }
     let m = s.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
     if (m) return new Date(2000 + Number(m[1]), Number(m[2]) - 1, Number(m[3]));
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
