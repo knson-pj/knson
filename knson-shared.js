@@ -140,6 +140,14 @@
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
     const text = String(value).trim();
     if (!text) return null;
+    // [FIX 20260504-tzfix] ISO 8601 timestamptz (Supabase created_at 등 "2028-05-03T17:30:00.123456+00:00") 는
+    // 아래 .replace(/\./g, "-") 가 milliseconds 구분자(.)를 망가뜨리기 전에 new Date() 로 직접 파싱한다.
+    // 기존 로직은 시간/타임존 정보를 잃고 UTC 날짜만 캡처해서, KST 0~9시 사이 created_at 이 전날로 분류되어
+    // 대시보드 신규등록 카운트가 서버(KST HEAD count)와 어긋나는 문제가 있었다.
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text)) {
+      const iso = new Date(text);
+      if (!Number.isNaN(iso.getTime())) return iso;
+    }
     const normalized = text
       .replace(/\./g, "-")
       .replace(/\//g, "-")

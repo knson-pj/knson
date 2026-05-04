@@ -304,7 +304,15 @@
     setProgress(els.homeProgressGeneral, summary.general);
 
     const dateKey = getTodayDateKey();
-    const todayParts = overview && !hasSnapshotRows
+    // [FIX 20260504-tzfix] 신규등록 카운트의 단일 진실 원천 = 서버 overview.today
+    //  · 서버는 KST(UTC+9) 기준 created_at 으로 PostgREST HEAD count 를 정확히 산출한다.
+    //  · 기존에는 hasSnapshotRows 분기에서 props(페이지네이션된 30건/부분 캐시/전체 캐시)
+    //    로 client-side 재집계를 하면서, 탭 이동 시마다 props 가 바뀌어 화면값이 30/555/714
+    //    처럼 들쭉날쭉했고 + parseFlexibleDate 의 ISO 8601 시간 손실로 ~159건 어긋났다.
+    //  · 이제 overview 가 있으면 hasSnapshotRows 와 무관하게 무조건 overview 사용,
+    //    overview 부재 시에만 client-side 재집계로 fallback 한다.
+    const useServerOverview = !!overview;
+    const todayParts = useServerOverview
       ? {
           total: Number(overview?.today?.total || 0),
           auction: Number(overview?.today?.auction || 0),
@@ -314,23 +322,20 @@
           general: Number(overview?.today?.general || 0),
         }
       : { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
-    let geoPending = overview && !hasSnapshotRows ? Number(overview?.geoPending || 0) : 0;
+    let geoPending = useServerOverview ? Number(overview?.geoPending || 0) : 0;
+    const countSource = useServerOverview
+      ? 'server-overview'
+      : (hasSnapshotRows ? 'client-snapshot-fallback' : 'empty');
     // 디버그: 어느 경로로 진입했는지 표시
-    try { console.log('[Dashboard 진입 경로]', { hasSnapshotRows, propsLength: (props||[]).length, hasOverview: !!overview, overviewToday: overview?.today, dateKey }); } catch {}
-    if (hasSnapshotRows) {
-      todayParts.total = 0;
-      todayParts.auction = 0;
-      todayParts.onbid = 0;
-      todayParts.realtor_naver = 0;
-      todayParts.realtor_direct = 0;
-      todayParts.general = 0;
-      geoPending = 0;
-      // ── 디버그 진단: 진짜 createdAt 분포 확인 (콘솔에서 확인 가능) ──
+    try { console.log('[Dashboard 진입 경로]', { countSource, hasSnapshotRows, propsLength: (props||[]).length, hasOverview: !!overview, overviewToday: overview?.today, dateKey }); } catch {}
+    if (!useServerOverview && hasSnapshotRows) {
+      // ── overview 부재 시에만 client-side 재집계 (fallback) ──
+      // 이 경로는 props 가 propertiesFullCache(전체)인 경우에만 신뢰 가능하다.
+      // homeSummarySnapshot/state.properties(부분) 인 경우에는 부정확하지만,
+      // overview 가 없으면 차선책으로라도 0 보다는 부분 카운트를 보여준다.
       let dbg = { total: 0, hadCreatedAt: 0, parsedOk: 0, todayMatch: 0, sample: [] };
       for (const item of Array.isArray(props) ? props : []) {
         dbg.total += 1;
-        // DB 의 created_at (실제 INSERT 시점) 을 최우선.
-        // _raw 가 Supabase row 자체이므로 _raw.created_at 이 진짜 값.
         const rawCreatedAt = item?._raw?.created_at
                           || item?.createdAt
                           || item?._raw?.created_at_utc
@@ -360,8 +365,7 @@
         const address = String(item?.address || item?._raw?.address || '').trim();
         if (!hasCoords && address && status !== 'failed' && status !== 'ok') geoPending += 1;
       }
-      // 콘솔에 진단 출력 (사용자가 F12 로 확인 가능)
-      try { console.log('[Dashboard today 진단]', { dateKey, ...dbg, todayParts }); } catch {}
+      try { console.log('[Dashboard today 진단:fallback]', { dateKey, ...dbg, todayParts }); } catch {}
     }
     if (els.sumTodayTotal) els.sumTodayTotal.textContent = fmt(todayParts.total);
     if (els.sumTodayAuction) els.sumTodayAuction.textContent = fmt(todayParts.auction);
@@ -371,7 +375,8 @@
     if (els.sumTodayGeneral) els.sumTodayGeneral.textContent = fmt(todayParts.general);
     if (els.homeGeoPending) els.homeGeoPending.textContent = fmt(geoPending);
     if (els.sumTodayDetail) {
-      const usingFullData = Array.isArray(state.propertiesFullCache) || hasSnapshotRows;
+      // overview 사용 시에는 서버 정확 카운트이므로 무조건 full data 로 표기
+      const usingFullData = useServerOverview || Array.isArray(state.propertiesFullCache) || hasSnapshotRows;
       els.sumTodayDetail.innerHTML = formatTodayDetail(todayParts, usingFullData);
     }
 
