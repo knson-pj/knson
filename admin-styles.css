@@ -1886,6 +1886,86 @@ html[data-theme="dark"] .property-photo-viewer-nav{background:rgba(15,23,42,.88)
 }
 
 
+/* ══════════════════════════════════════════════════
+   PROPERTY VIDEO  (2026-05-04)
+   사진 섹션과 동일 룩앤필 + 동영상 전용 요소
+     - 진행률 바 (업로드 0~100%)
+     - 카드의 ▶ 오버레이
+     - 재생시간 배지
+     - <video> 풀스크린 뷰어
+══════════════════════════════════════════════════ */
+.property-video-section{margin-top:18px;padding:14px;border:1px solid rgba(15,23,42,.08);border-radius:16px;background:#fff}
+.property-video-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.property-video-title{margin:0;font-size:15px;font-weight:800;color:#0f172a}
+.property-video-desc{margin:4px 0 0;color:#64748b;font-size:12px;line-height:1.5}
+.property-video-wifi-hint{color:#b45309;font-weight:700}
+.property-video-head-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+
+.property-video-message{margin:0 0 10px;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.45}
+.property-video-message.is-success{background:#ecfdf5;color:#166534}
+.property-video-message.is-error{background:#fef2f2;color:#b91c1c}
+.property-video-message.is-info{background:#eff6ff;color:#1d4ed8}
+
+.property-video-loading{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#f8fafc;color:#334155;font-size:13px}
+
+/* 진행률 바 */
+.property-video-progress{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#eef2ff;border:1px solid #c7d2fe}
+.property-video-progress-meta{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px;font-size:12px;color:#1e3a8a;font-weight:600}
+.property-video-progress-label{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.property-video-progress-counter{flex-shrink:0;font-variant-numeric:tabular-nums}
+.property-video-progress-track{height:6px;border-radius:999px;background:#e0e7ff;overflow:hidden}
+.property-video-progress-bar{height:100%;background:linear-gradient(90deg,#4f46e5,#0ea5e9);transition:width .15s ease;width:0%}
+
+/* 그리드 */
+.property-video-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.property-video-empty{padding:18px 12px;border:1px dashed #cbd5e1;border-radius:14px;color:#64748b;font-size:13px;text-align:center}
+
+/* 카드 */
+.property-video-card{border:1px solid rgba(15,23,42,.08);border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 8px 20px rgba(15,23,42,.04)}
+.property-video-card.is-primary{border-color:#16a34a;box-shadow:0 10px 20px rgba(22,163,74,.12)}
+.property-video-thumb-btn{position:relative;display:block;width:100%;border:0;background:#0f172a;padding:0;cursor:pointer;overflow:hidden}
+.property-video-thumb{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#0f172a}
+.property-video-thumb.placeholder{display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:32px}
+.property-video-play-icon{font-size:36px;color:rgba(255,255,255,.78)}
+.property-video-play-overlay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(15,23,42,.55);color:#fff;font-size:20px;line-height:1;padding-left:4px;pointer-events:none;backdrop-filter:blur(2px);transition:transform .15s ease,background .15s ease}
+.property-video-thumb-btn:hover .property-video-play-overlay{transform:translate(-50%,-50%) scale(1.08);background:rgba(15,23,42,.72)}
+.property-video-duration{position:absolute;right:8px;bottom:8px;padding:2px 8px;border-radius:6px;background:rgba(15,23,42,.78);color:#fff;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;pointer-events:none}
+.property-video-badge{display:inline-flex;align-items:center;justify-content:center;padding:3px 10px;border-radius:999px;background:#16a34a;color:#fff;font-size:11px;font-weight:700;line-height:1;box-shadow:0 6px 14px rgba(22,163,74,.24)}
+.property-video-badge.is-corner{position:absolute;left:10px;top:10px;z-index:2;pointer-events:none}
+.property-video-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:10px}
+
+/* 모바일: 그리드 1줄로 전환 */
+@media (max-width: 768px){
+  .property-video-section{padding:12px}
+  .property-video-grid{grid-template-columns:repeat(1,minmax(0,1fr))}
+  .property-video-head{flex-direction:column;align-items:stretch}
+}
+
+/* 풀스크린 뷰어 */
+.property-video-viewer{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center}
+.property-video-viewer.hidden{display:none !important}
+.property-video-viewer-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.94);backdrop-filter:blur(2px)}
+.property-video-viewer-dialog{position:relative;z-index:1;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:min(96vw,1200px);height:min(90vh,900px);padding:18px}
+.property-video-viewer-stage{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;height:100%;border-radius:18px;background:rgba(0,0,0,.22);overflow:hidden}
+.property-video-viewer-player{max-width:100%;max-height:100%;display:block;background:#000;border-radius:12px}
+.property-video-viewer-empty{color:#fff;font-size:14px}
+.property-video-viewer-counter{position:absolute;left:16px;bottom:16px;padding:6px 10px;border-radius:999px;background:rgba(15,23,42,.72);color:#fff;font-size:12px;font-weight:700}
+.property-video-viewer-close{position:absolute;right:18px;top:18px;z-index:2;width:42px;height:42px;border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#0f172a;font-size:28px;line-height:1;cursor:pointer;box-shadow:0 8px 20px rgba(15,23,42,.18)}
+.property-video-viewer-nav{width:54px;height:54px;border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#0f172a;font-size:36px;line-height:1;cursor:pointer;box-shadow:0 8px 20px rgba(15,23,42,.18)}
+.property-video-viewer-nav:disabled{opacity:.45;cursor:default}
+html[data-theme="dark"] .property-video-viewer-stage{background:rgba(0,0,0,.3)}
+html[data-theme="dark"] .property-video-viewer-close,
+html[data-theme="dark"] .property-video-viewer-nav{background:rgba(15,23,42,.88);color:#fff}
+@media (max-width: 768px){
+  .property-video-viewer-dialog{width:100vw;height:100vh;padding:12px;grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr) auto}
+  .property-video-viewer-stage{height:auto;min-height:0}
+  .property-video-viewer-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:46px;height:46px;font-size:30px}
+  .property-video-viewer-nav.is-prev{left:12px}
+  .property-video-viewer-nav.is-next{right:12px}
+  .property-video-viewer-close{right:12px;top:12px}
+}
+
+
 .source-note-display {
   min-height: 106px;
   resize: vertical;

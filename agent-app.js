@@ -2598,6 +2598,13 @@ function renderPagination(totalPages) {
         console.warn('agent photo section mount failed', err);
       });
     }
+    // 동영상 모듈 마운트 (사진 직후, 동일 propertyId / api 사용)
+    const VideoManager = window.KNSN_PROPERTY_VIDEOS || null;
+    if (VideoManager && propertyId && typeof VideoManager.mountSection === 'function') {
+      VideoManager.mountSection({ form: f, propertyId, api }).catch((err) => {
+        console.warn('agent video section mount failed', err);
+      });
+    }
   }
 
   function closeEditModal() {

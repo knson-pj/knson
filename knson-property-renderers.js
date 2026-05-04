@@ -572,6 +572,95 @@
   }
 
 
+  // ───────────────────────────────────────────────────────────────────────
+  // 동영상 (2026-05-04)
+  // 사진 카드와 동일한 구조 + <video poster> 플레이스홀더 + 재생시간 배지
+  // ───────────────────────────────────────────────────────────────────────
+  function formatVideoSize(value) {
+    return formatPhotoSize(value);
+  }
+
+  function formatVideoDuration(seconds) {
+    const num = Number(seconds || 0);
+    if (!Number.isFinite(num) || num <= 0) return '';
+    const total = Math.round(num);
+    const mm = Math.floor(total / 60);
+    const ss = total % 60;
+    return `${mm}:${String(ss).padStart(2, '0')}`;
+  }
+
+  function renderPropertyVideoCard(video) {
+    const item = video && typeof video === 'object' ? video : {};
+    const title = item.isPrimary ? '대표동영상' : '대표 지정';
+    const badge = item.isPrimary ? '<span class="property-video-badge is-corner">대표</span>' : '';
+    const durationLabel = formatVideoDuration(item.durationSec);
+    const durationBadge = durationLabel ? `<span class="property-video-duration">${escapeHtml(durationLabel)}</span>` : '';
+    // poster 가 있으면 <img>, 없으면 빈 placeholder. 클릭 시 viewer 모달이 열림.
+    const posterHtml = item.posterUrl
+      ? `<img src="${escapeAttr(item.posterUrl)}" alt="동영상 썸네일" class="property-video-thumb" loading="lazy" />`
+      : '<div class="property-video-thumb placeholder"><span class="property-video-play-icon" aria-hidden="true">▶</span></div>';
+    const playOverlay = '<span class="property-video-play-overlay" aria-hidden="true">▶</span>';
+    return `
+      <article class="property-video-card${item.isPrimary ? ' is-primary' : ''}" data-video-id="${escapeAttr(item.id || '')}">
+        <button type="button" class="property-video-thumb-btn" data-video-action="view" data-video-id="${escapeAttr(item.id || '')}" aria-label="동영상 재생">
+          ${badge}
+          ${posterHtml}
+          ${playOverlay}
+          ${durationBadge}
+        </button>
+        <div class="property-video-card-actions">
+          <button type="button" class="btn btn-ghost btn-xs" data-video-action="move-left" data-video-id="${escapeAttr(item.id || '')}">◀</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-video-action="move-right" data-video-id="${escapeAttr(item.id || '')}">▶</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-video-action="primary" data-video-id="${escapeAttr(item.id || '')}">${escapeHtml(title)}</button>
+          <button type="button" class="btn btn-danger btn-xs" data-video-action="delete" data-video-id="${escapeAttr(item.id || '')}">삭제</button>
+        </div>
+      </article>`;
+  }
+
+  function renderPropertyVideoGrid(items) {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) return '<div class="property-video-empty">등록된 동영상이 없습니다.</div>';
+    return rows.map((row) => renderPropertyVideoCard(row)).join('');
+  }
+
+  function setVideoSectionLoading(root, isLoading, text = '동영상을 불러오는 중입니다.') {
+    if (!root) return;
+    root.classList.toggle('is-loading', !!isLoading);
+    const loadingEl = root.querySelector('[data-video-role="loading"]');
+    if (loadingEl) {
+      loadingEl.textContent = String(text || '');
+      loadingEl.classList.toggle('hidden', !isLoading);
+    }
+  }
+
+  function setVideoSectionMessage(root, text, kind = 'info') {
+    if (!root) return;
+    const msgEl = root.querySelector('[data-video-role="message"]');
+    if (!msgEl) return;
+    const raw = String(text || '').trim();
+    msgEl.className = `property-video-message${raw ? '' : ' hidden'} is-${escapeAttr(kind)}`;
+    msgEl.textContent = raw;
+  }
+
+  function setVideoSectionProgress(root, { active = false, percent = 0, fileName = '', current = 0, total = 0 } = {}) {
+    if (!root) return;
+    const wrap = root.querySelector('[data-video-role="progress"]');
+    if (!wrap) return;
+    wrap.classList.toggle('hidden', !active);
+    if (!active) return;
+    const bar = wrap.querySelector('[data-video-role="progress-bar"]');
+    const label = wrap.querySelector('[data-video-role="progress-label"]');
+    const counter = wrap.querySelector('[data-video-role="progress-counter"]');
+    const safePct = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    if (bar) bar.style.width = `${safePct}%`;
+    if (label) label.textContent = String(fileName || '동영상');
+    if (counter) {
+      const pctText = `${safePct}%`;
+      counter.textContent = total > 1 ? `${current}/${total} · ${pctText}` : pctText;
+    }
+  }
+
+
   window.KNSN_PROPERTY_RENDERERS = {
     truncateDisplayText,
     getFloorDisplayValue,
@@ -621,6 +710,13 @@
     renderPropertyPhotoGrid,
     setPhotoSectionLoading,
     setPhotoSectionMessage,
+    renderPropertyVideoCard,
+    renderPropertyVideoGrid,
+    setVideoSectionLoading,
+    setVideoSectionMessage,
+    setVideoSectionProgress,
+    formatVideoDuration,
+    formatVideoSize,
     escapeHtml,
     escapeAttr,
   };

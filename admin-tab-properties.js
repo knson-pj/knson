@@ -1685,6 +1685,13 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
         console.warn('admin photo section mount failed', err);
       });
     }
+    // 동영상 모듈 마운트 (사진 직후, 동일 propertyId / api 사용)
+    const VideoManager = window.KNSN_PROPERTY_VIDEOS || null;
+    if (VideoManager && propertyId && typeof VideoManager.mountSection === 'function' && typeof adminApi === 'function') {
+      VideoManager.mountSection({ form: f, propertyId, api: adminApi }).catch((err) => {
+        console.warn('admin video section mount failed', err);
+      });
+    }
   };
 
   mod.populateAssigneeSelect = function populateAssigneeSelect(selectedId) {

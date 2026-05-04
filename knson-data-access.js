@@ -492,6 +492,56 @@
     });
   }
 
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 동영상 (2026-05-04)
+  // 사진 API 와 동일 패턴이지만 prepare 응답 구조가 달라
+  // (signed upload URL + token 직접 PUT) 클라이언트 모듈에서 별도 처리.
+  // ─────────────────────────────────────────────────────────────────────────
+  async function listPropertyVideosViaApi(api, { propertyId, auth = true } = {}) {
+    return api(`/properties?${encodeQueryParams({ video_action: 'list', propertyId })}`, { auth });
+  }
+
+  async function preparePropertyVideoViaApi(api, { propertyId, mimeType, posterMimeType, sizeBytes, durationSec, auth = true } = {}) {
+    return api(`/properties?${encodeQueryParams({ video_action: 'prepare', propertyId })}`, {
+      method: 'POST',
+      auth,
+      body: { video_action: 'prepare', propertyId, mimeType, posterMimeType, sizeBytes, durationSec },
+    });
+  }
+
+  async function commitPropertyVideoViaApi(api, { propertyId, video, auth = true } = {}) {
+    return api(`/properties?${encodeQueryParams({ video_action: 'commit', propertyId })}`, {
+      method: 'POST',
+      auth,
+      body: { video_action: 'commit', propertyId, video: video || {} },
+    });
+  }
+
+  async function setPrimaryPropertyVideoViaApi(api, { propertyId, videoId, auth = true } = {}) {
+    return api(`/properties?${encodeQueryParams({ video_action: 'set_primary', propertyId, videoId })}`, {
+      method: 'POST',
+      auth,
+      body: { video_action: 'set_primary', propertyId, videoId },
+    });
+  }
+
+  async function reorderPropertyVideosViaApi(api, { propertyId, orderedVideoIds, auth = true } = {}) {
+    return api(`/properties?${encodeQueryParams({ video_action: 'reorder', propertyId })}`, {
+      method: 'POST',
+      auth,
+      body: { video_action: 'reorder', propertyId, orderedVideoIds: Array.isArray(orderedVideoIds) ? orderedVideoIds : [] },
+    });
+  }
+
+  async function deletePropertyVideoViaApi(api, { propertyId, videoId, auth = true } = {}) {
+    return api(`/properties?${encodeQueryParams({ video_action: 'delete', propertyId, videoId })}`, {
+      method: 'POST',
+      auth,
+      body: { video_action: 'delete', propertyId, videoId },
+    });
+  }
+
   async function fetchAdminStaffViaApi(api, { auth = true } = {}) {
     if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
     return api('/admin/staff', { auth });
@@ -801,5 +851,11 @@
     setPrimaryPropertyPhotoViaApi,
     reorderPropertyPhotosViaApi,
     deletePropertyPhotoViaApi,
+    listPropertyVideosViaApi,
+    preparePropertyVideoViaApi,
+    commitPropertyVideoViaApi,
+    setPrimaryPropertyVideoViaApi,
+    reorderPropertyVideosViaApi,
+    deletePropertyVideoViaApi,
   };
 })();

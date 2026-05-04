@@ -1910,6 +1910,54 @@
     };
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 동영상 (2026-05-04)
+  // 사진(normalizePropertyPhoto) 과 동일한 패턴.
+  // 차이점: thumbUrl/originalUrl → posterUrl/videoUrl, durationSec 추가
+  // propertyId 는 사진과 같은 이유로 number 캐스팅 (text 컬럼이지만 numeric 식별자)
+  // ─────────────────────────────────────────────────────────────────────────
+  function normalizePropertyVideo(row) {
+    const item = row && typeof row === 'object' ? row : {};
+    return {
+      id: String(item.id || '').trim(),
+      propertyId: String(item.propertyId ?? item.property_id ?? '').trim() || null,
+      propertyGlobalId: String(item.propertyGlobalId || item.property_global_id || '').trim() || null,
+      videoUrl: String(item.videoUrl || item.video_url || '').trim(),
+      posterUrl: String(item.posterUrl || item.poster_url || '').trim(),
+      storagePath: String(item.storagePath || item.storage_path || '').trim(),
+      posterPath: String(item.posterPath || item.poster_path || '').trim(),
+      mimeType: String(item.mimeType || item.mime_type || 'video/mp4').trim(),
+      durationSec: Number(item.durationSec ?? item.duration_sec ?? 0) || null,
+      width: Number(item.width || 0) || null,
+      height: Number(item.height || 0) || null,
+      sizeBytes: Number(item.sizeBytes || item.size_bytes || 0) || null,
+      sortOrder: Number(item.sortOrder ?? item.sort_order ?? 0) || 0,
+      isPrimary: !!(item.isPrimary ?? item.is_primary),
+      createdAt: item.createdAt || item.created_at || '',
+      updatedAt: item.updatedAt || item.updated_at || '',
+    };
+  }
+
+  function normalizePropertyVideoList(rows) {
+    return (Array.isArray(rows) ? rows : []).map(normalizePropertyVideo).filter((row) => row.id).sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+    });
+  }
+
+  function buildPropertyVideoCommitPayload(prepared, meta) {
+    return {
+      videoId: String(prepared?.videoId || '').trim(),
+      storagePath: String(prepared?.storagePath || '').trim(),
+      posterPath: String(prepared?.posterPath || '').trim(),
+      mimeType: String(meta?.mimeType || 'video/mp4').trim().toLowerCase(),
+      durationSec: Number(meta?.durationSec || 0) || null,
+      width: Number(meta?.width || 0) || null,
+      height: Number(meta?.height || 0) || null,
+      sizeBytes: Number(meta?.sizeBytes || 0) || null,
+    };
+  }
+
   function normalizePropertyPhotoList(rows) {
     return (Array.isArray(rows) ? rows : []).map(normalizePropertyPhoto).filter((row) => row.id).sort((a, b) => {
       if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
@@ -2024,5 +2072,8 @@
     normalizePropertyPhoto,
     normalizePropertyPhotoList,
     buildPropertyPhotoCommitPayload,
+    normalizePropertyVideo,
+    normalizePropertyVideoList,
+    buildPropertyVideoCommitPayload,
   };
 });
