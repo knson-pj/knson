@@ -688,8 +688,13 @@
     const text = String(entry.text || entry.note || "").trim();
     const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
     const title = String(entry.title || entry.label || "").trim();
+    // [FIX 20260506-loglog] at/date 우선순위 정정.
+    //   기존: date 가 ISO `at` 을 덮어쓰는 버그가 있어, KST 11:28 에 작성된 entry 가
+    //         entry.date = "2026-05-06" (date-only) 로 at 을 덮어쓴 뒤 new Date()
+    //         파싱 시 UTC 자정 → KST 09:00 으로 잘못 표시되었다.
+    //   수정: at 은 ISO 8601 시각이 우선, date 는 보조. date 는 종전대로 YYYY-MM-DD.
+    const at = String(entry.at || entry.date || "").trim();
     const date = String(entry.date || entry.at || "").trim();
-    const at = date || String(entry.at || "").trim();
     const author = String(entry.author || entry.actor || "").trim();
     // [수정 내역] 이전에는 text 가 빈 문자열이면 null 을 반환해 history 에서 제외했다.
     // 이로 인해 두 가지 버그가 발생했다:
