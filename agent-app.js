@@ -3650,10 +3650,25 @@ function renderPagination(totalPages) {
         setNpmMsg("등록되었습니다.", false);
       }
       try {
-        await recordDailyReportEntries(buildActivityLogEntries(["newProperty"], payload, {
+        // [FIX 20260506-loglog] 신규 등록 시 동시에 입력된 의견(opinion) 도
+        // property_activity_logs 에 별도 row 로 기록한다.
+        // 기존: ["newProperty"] 만 호출 → 신규 등록 + 동시 의견 작성 케이스에서
+        //       opinion activity row 가 생성되지 않아 업무관리 탭에 표시되지 않는 버그.
+        // 수정: payload.memo (= core.opinion) 또는 payload.raw.opinion 에 본문이 있으면
+        //       "opinion" 카테고리도 함께 push 한다. opinion 도 changedFields 에 동봉
+        //       해야 buildActivityLogEntries 가 entry 를 만들어낸다.
+        const newPropertyOpinionText = String(payload?.memo || payload?.raw?.opinion || "").trim();
+        const initialCategories = ["newProperty"];
+        const initialChangedFields = { newProperty: ["registration"] };
+        if (newPropertyOpinionText) {
+          initialCategories.push("opinion");
+          initialChangedFields.opinion = ["opinion"];
+        }
+        await recordDailyReportEntries(buildActivityLogEntries(initialCategories, payload, {
           propertyId: savedPropertyId,
           identityKey: savedIdentityKey,
-          changedFields: { newProperty: ["registration"] },
+          changedFields: initialChangedFields,
+          opinionText: newPropertyOpinionText,
         }));
       } catch (logErr) {
         const baseMsg = logErr?.message || "일일업무일지 기록 실패";

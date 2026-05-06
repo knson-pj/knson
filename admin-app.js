@@ -2644,9 +2644,12 @@ function bindEvents() {
     if (!text) return null;
     const kind = String(entry.kind || entry.type || "opinion").trim() || "opinion";
     const title = String(entry.title || entry.label || "").trim();
+    // [FIX 20260506-loglog] at/date 우선순위 정정 — knson-property-domain.js 와 동일.
+    // 기존: date 가 ISO `at` 을 덮어쓰는 버그로 LOG 시각이 KST 09:00 으로 잘못 표시.
+    const at = String(entry.at || entry.date || "").trim();
     const date = String(entry.date || entry.at || "").trim();
     const author = String(entry.author || entry.actor || "").trim();
-    return { ...entry, kind, title, date, at: date || String(entry.at || "").trim(), text, author };
+    return { ...entry, kind, title, date, at, text, author };
   }
 
   function buildOpinionHistoryEntry(kind, text, user, options = {}) {
