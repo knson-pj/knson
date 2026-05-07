@@ -33,6 +33,14 @@
     if (!row || typeof row !== "object") return 0;
     const low = row.lowprice ?? row.lowPrice ?? row?._raw?.lowprice ?? row?._raw?.low_price;
     if (low === null || low === undefined || low === "") {
+      // [추가 2026-05-07] domain 레이어의 getCurrentPriceValue 와 동일한 안전망.
+      // 탱크옥션 RPC 가 채우는 min_bid_price 를 priceMain 폴백 직전에 우선 시도해,
+      // lowprice 미동기화 상황에서 화면이 감정가(비율 100%) 로 회귀하지 않도록 한다.
+      const minBid = row.minBidPrice ?? row.min_bid_price ?? row?._raw?.minBidPrice ?? row?._raw?.min_bid_price;
+      if (minBid !== null && minBid !== undefined && minBid !== "") {
+        const minBidNum = Number(minBid || 0) || 0;
+        if (minBidNum > 0) return minBidNum;
+      }
       const base = Number(row?.priceMain ?? row?.price_main ?? 0) || 0;
       return base;
     }

@@ -15,7 +15,14 @@
     // [추가 2026-04-27] 매각 결과 컬럼들 — 자동배정에서 종결 물건(낙찰/매각/취하/기각) 제외
     // 판정에 사용. 리스트 select 에 누락되어 있어 admin-tab-staff-regions 의
     // isAuctionLikeFinalized 판정이 raw JSON 의 시그널만 의존하던 문제를 해결.
-    "result_status", "result_price", "result_date"
+    "result_status", "result_price", "result_date",
+    // [추가 2026-05-07] 탱크옥션 동기화(sync_tankauction_data) 가 채우는 현재 회차
+    // 최저입찰가. 정상 흐름에서는 같은 RPC 가 lowprice 도 동시에 갱신하므로 화면 표시
+    // (getCurrentPriceValue) 는 lowprice 만 보면 되지만, 캐시·롤백·지연 동기화 등
+    // 예외 상황에서 화면이 감정가(=비율 100%) 로 회귀하는 것을 막기 위한 안전망 폴백
+    // 으로 도메인 레이어에서 참조한다. 컬럼이 SELECT 에 없으면 폴백이 영구 NULL 이라
+    // 이 라인이 누락되면 안전망이 작동하지 않는다.
+    "min_bid_price"
   ].join(",");
 
   const PROPERTY_HOME_SUMMARY_SELECT = [

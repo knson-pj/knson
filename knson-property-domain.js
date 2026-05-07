@@ -1413,6 +1413,17 @@
       item?.raw?.lowprice ?? item?.raw?.low_price ?? item?.raw?.lowPrice
     );
     if (low != null && low > 0) return low;
+    // [추가 2026-05-07] 탱크옥션 RPC sync_tankauction_data 가 채우는 min_bid_price
+    // 컬럼 폴백. 정상 흐름에서는 같은 RPC 가 lowprice 도 함께 갱신해 이 분기가 거의
+    // 타지 않으나, ① RPC 패치 적용 전 누적된 min_bid_price-only 데이터, ② 일회성
+    // 백필 누락 행, ③ 동기화 지연/캐시 등 예외 상황에서 화면이 priceMain(감정가)
+    // 으로 폴백되어 비율이 100% 로 굳어지는 회귀를 차단한다.
+    const minBid = toNullableNumber(
+      item?.minBidPrice ?? item?.min_bid_price ??
+      item?._raw?.minBidPrice ?? item?._raw?.min_bid_price ??
+      item?.raw?.minBidPrice ?? item?.raw?.min_bid_price
+    );
+    if (minBid != null && minBid > 0) return minBid;
     return toNullableNumber(item?.priceMain ?? item?.price_main ?? item?.appraisalPrice ?? item?.appraisal_price ?? item?._raw?.priceMain ?? item?._raw?.price_main) || 0;
   }
 
