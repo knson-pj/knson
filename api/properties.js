@@ -543,11 +543,155 @@ async function handleActivityLog(req, res) {
   if (req.method === 'GET') {
     try {
       const url = new URL(req.url, 'http://localhost');
+      const aggregateBy = String(url.searchParams.get('aggregate') || '').trim().toLowerCase();
+      const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
+
+      // ── 기간별 담당자 집계 (admin 전용) ─────────────────────────────────
+      // GET /api/properties?daily_report=1&admin_view=1&aggregate=by_actor
+      //                  &start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+      // 응답: { ok, range, actors: [{ actor_id, actor_name, counts: {...} }] }
+      // - 데이터 소스: property_activity_logs + property_photos + property_videos
+      // - 카운팅:
+      //   · newProperty / propertyUpdate : 고유 물건 수
+      //   · dailyIssue / siteInspection / opinion : row 수 (MERGE_TYPES, 1행=1작성)
+      //   · photoUpload / videoUpload : 고유 물건 수 (사진/동영상은 여러 개 올려도 물건 1개로 카운팅)
+      if (adminViewRequested && aggregateBy === 'by_actor') {
+        const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+        const startDate = String(url.searchParams.get('start_date') || '').trim();
+        const endDate = String(url.searchParams.get('end_date') || '').trim();
+        if (!dateRe.test(startDate) || !dateRe.test(endDate)) {
+          return send(res, 400, { ok: false, message: 'start_date / end_date 는 YYYY-MM-DD 형식이어야 합니다.' });
+        }
+        if (startDate > endDate) {
+          return send(res, 400, { ok: false, message: '시작일이 종료일보다 늦을 수 없습니다.' });
+        }
+        const dayMs = 24 * 60 * 60 * 1000;
+        const rangeDays = Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / dayMs) + 1;
+        if (rangeDays > 366) {
+          return send(res, 400, { ok: false, message: '조회 기간은 최대 366일까지 가능합니다.' });
+        }
+
+        // KST 자정을 UTC ISO 로 변환 (사진/동영상은 timestamptz 컬럼이라 timezone-aware 비교 필요)
+        // KST 'YYYY-MM-DD' 00:00 → UTC ISO. end 는 종료일 다음날 00:00 (exclusive 경계).
+        const startUtcIso = new Date(`${startDate}T00:00:00+09:00`).toISOString();
+        const endNext = new Date(`${endDate}T00:00:00+09:00`);
+        endNext.setUTCDate(endNext.getUTCDate() + 1);
+        const endUtcIsoExclusive = endNext.toISOString();
+
+        // 3개 테이블 병렬 조회 (각각 별도 RLS / 인덱스)
+        const activitySelect = 'actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date';
+        const mediaSelect = 'property_id,uploaded_by';
+        const [activityRows, photoRows, videoRows] = await Promise.all([
+          supabaseRest(
+            `/rest/v1/property_activity_logs?select=${activitySelect}`
+            + `&action_date=gte.${encodeURIComponent(startDate)}`
+            + `&action_date=lte.${encodeURIComponent(endDate)}`
+            + `&order=actor_name.asc.nullslast`
+          ).catch((e) => { throw Object.assign(new Error('활동 로그 조회 실패: ' + (e?.message || '')), { status: e?.status || 500 }); }),
+          supabaseRest(
+            `/rest/v1/property_photos?select=${mediaSelect}`
+            + `&created_at=gte.${encodeURIComponent(startUtcIso)}`
+            + `&created_at=lt.${encodeURIComponent(endUtcIsoExclusive)}`
+            + `&deleted_at=is.null`
+            + `&uploaded_by=not.is.null`
+          ).catch((e) => { throw Object.assign(new Error('사진 통계 조회 실패: ' + (e?.message || '')), { status: e?.status || 500 }); }),
+          supabaseRest(
+            `/rest/v1/property_videos?select=${mediaSelect}`
+            + `&created_at=gte.${encodeURIComponent(startUtcIso)}`
+            + `&created_at=lt.${encodeURIComponent(endUtcIsoExclusive)}`
+            + `&deleted_at=is.null`
+            + `&uploaded_by=not.is.null`
+          ).catch((e) => { throw Object.assign(new Error('동영상 통계 조회 실패: ' + (e?.message || '')), { status: e?.status || 500 }); }),
+        ]);
+
+        // 담당자별 집계
+        const actorMap = new Map();
+        const ensureActor = (actorId, actorName) => {
+          const id = String(actorId || '').trim();
+          if (!id) return null;
+          let actor = actorMap.get(id);
+          if (!actor) {
+            actor = {
+              actor_id: id,
+              actor_name: String(actorName || '').trim(),
+              _newPropSet: new Set(),
+              _updateSet: new Set(),
+              _photoSet: new Set(),
+              _videoSet: new Set(),
+              counts: {
+                newProperty: 0,
+                propertyUpdate: 0,
+                dailyIssue: 0,
+                siteInspection: 0,
+                opinion: 0,
+                photoUpload: 0,
+                videoUpload: 0,
+              },
+            };
+            actorMap.set(id, actor);
+          }
+          if (!actor.actor_name && actorName) actor.actor_name = String(actorName).trim();
+          return actor;
+        };
+        const pickPropKey = (row) => String(
+          row?.property_id
+          || row?.property_identity_key
+          || row?.property_item_no
+          || row?.property_address
+          || ''
+        ).trim();
+
+        for (const row of Array.isArray(activityRows) ? activityRows : []) {
+          const actor = ensureActor(row?.actor_id, row?.actor_name);
+          if (!actor) continue;
+          const type = String(row?.action_type || '').trim();
+          const key = pickPropKey(row);
+          if (type === 'new_property') { if (key) actor._newPropSet.add(key); }
+          else if (type === 'property_update') { if (key) actor._updateSet.add(key); }
+          else if (type === 'daily_issue') { actor.counts.dailyIssue += 1; }
+          else if (type === 'site_inspection') { actor.counts.siteInspection += 1; }
+          else if (type === 'opinion') { actor.counts.opinion += 1; }
+          // rights_analysis / 기타는 무시 (사용자 요구사항: 5개 행동 + 사진/동영상)
+        }
+        for (const row of Array.isArray(photoRows) ? photoRows : []) {
+          const actor = ensureActor(row?.uploaded_by, '');
+          if (!actor) continue;
+          const key = String(row?.property_id || '').trim();
+          if (key) actor._photoSet.add(key);
+        }
+        for (const row of Array.isArray(videoRows) ? videoRows : []) {
+          const actor = ensureActor(row?.uploaded_by, '');
+          if (!actor) continue;
+          const key = String(row?.property_id || '').trim();
+          if (key) actor._videoSet.add(key);
+        }
+
+        // Set 크기로 고유 카운트 확정 + 내부 Set 정리
+        const actors = [...actorMap.values()].map((a) => {
+          a.counts.newProperty = a._newPropSet.size;
+          a.counts.propertyUpdate = a._updateSet.size;
+          a.counts.photoUpload = a._photoSet.size;
+          a.counts.videoUpload = a._videoSet.size;
+          delete a._newPropSet;
+          delete a._updateSet;
+          delete a._photoSet;
+          delete a._videoSet;
+          return a;
+        });
+        actors.sort((a, b) => String(a.actor_name || '').localeCompare(String(b.actor_name || ''), 'ko'));
+
+        return send(res, 200, {
+          ok: true,
+          range: { start: startDate, end: endDate, days: rangeDays },
+          adminView: true,
+          actors,
+        });
+      }
+      // ── 기존 단일 날짜 조회 로직 ─────────────────────────────────────────
       const date = /^\d{4}-\d{2}-\d{2}$/.test(String(url.searchParams.get('date') || '').trim())
         ? String(url.searchParams.get('date')).trim()
         : kstDateKey();
       const requestedActorId = cleanText(url.searchParams.get('actor_id'), 120);
-      const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
       const actorId = ctx.role === 'admin' && requestedActorId ? requestedActorId : ctx.userId;
       const actorName = cleanText(ctx.name || ctx.email || '', 120);
       const baseSelect = 'id,actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date,changed_fields,note,created_at';
