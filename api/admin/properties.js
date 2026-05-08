@@ -12,6 +12,7 @@ const {
 } = require('../_lib/utils');
 const { requireAdmin } = require('../_lib/auth');
 const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../_lib/supabase-admin');
+const { requireTierWrite } = require('../_lib/admin-tier');
 const PropertyDomain = require('../../knson-property-domain.js');
 
 function omitUndefined(obj) {
@@ -136,6 +137,44 @@ function getKstTodayRangeIso() {
   return { startIso, endIso };
 }
 
+// KST 이번주 월요일 00:00 ~ 다음주 월요일 00:00 (월~일 7일)
+// 월요일이 시작일이라 월요일 당일에는 1일치만 포함됨 (사용자 합의 사항, 2026-05-08)
+function getKstWeekRangeIso() {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const y = Number(parts.find((p) => p.type === 'year')?.value || 1970);
+  const m = Number(parts.find((p) => p.type === 'month')?.value || 1);
+  const d = Number(parts.find((p) => p.type === 'day')?.value || 1);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay(); // 0=Sun ~ 6=Sat
+  const offsetToMonday = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(dt);
+  monday.setUTCDate(dt.getUTCDate() + offsetToMonday);
+  const nextMonday = new Date(monday);
+  nextMonday.setUTCDate(monday.getUTCDate() + 7);
+  const fmt = (date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+  const startIso = new Date(`${fmt(monday)}T00:00:00+09:00`).toISOString();
+  const endIso = new Date(`${fmt(nextMonday)}T00:00:00+09:00`).toISOString();
+  return { startIso, endIso };
+}
+
+// KST 이번달 1일 00:00 ~ 다음달 1일 00:00
+function getKstMonthRangeIso() {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const y = Number(parts.find((p) => p.type === 'year')?.value || 1970);
+  const m = Number(parts.find((p) => p.type === 'month')?.value || 1);
+  const startIso = new Date(`${y}-${String(m).padStart(2, '0')}-01T00:00:00+09:00`).toISOString();
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  const endIso = new Date(`${ny}-${String(nm).padStart(2, '0')}-01T00:00:00+09:00`).toISOString();
+  return { startIso, endIso };
+}
+
 async function fetchSupabaseOverviewCountsExact() {
   const countSafe = async (path) => {
     try {
@@ -147,12 +186,15 @@ async function fetchSupabaseOverviewCountsExact() {
 
   const base = '/rest/v1/properties?select=id';
 
-  // KST(Asia/Seoul) 기준 "오늘" 구간을 서버가 UTC여도 정확히 계산.
-  // startIso/endIso 는 UTC ISO(Z)로 변환된 KST 0시~24시.
+  // KST(Asia/Seoul) 기준 "오늘/이번주/이번달" 구간을 서버가 UTC여도 정확히 계산.
   // PostgREST 는 동일 컬럼 필터 중복 시 AND 로 결합되므로
-  // created_at=gte.{start}&created_at=lt.{end} 로 오늘 범위를 제한.
+  // created_at=gte.{start}&created_at=lt.{end} 로 범위를 제한.
   const { startIso, endIso } = getKstTodayRangeIso();
+  const { startIso: weekStart, endIso: weekEnd } = getKstWeekRangeIso();
+  const { startIso: monthStart, endIso: monthEnd } = getKstMonthRangeIso();
   const todayFilter = `&created_at=gte.${encodeURIComponent(startIso)}&created_at=lt.${encodeURIComponent(endIso)}`;
+  const weekFilter = `&created_at=gte.${encodeURIComponent(weekStart)}&created_at=lt.${encodeURIComponent(weekEnd)}`;
+  const monthFilter = `&created_at=gte.${encodeURIComponent(monthStart)}&created_at=lt.${encodeURIComponent(monthEnd)}`;
   const realtorDirectOr = `or=${encodeURIComponent('(source_url.is.null,source_url.eq.)')}`;
 
   const [
@@ -169,6 +211,18 @@ async function fetchSupabaseOverviewCountsExact() {
     todayGeneral,
     todayRealtorTotal,
     todayRealtorDirect,
+    weekTotal,
+    weekAuction,
+    weekOnbid,
+    weekGeneral,
+    weekRealtorTotal,
+    weekRealtorDirect,
+    monthTotal,
+    monthAuction,
+    monthOnbid,
+    monthGeneral,
+    monthRealtorTotal,
+    monthRealtorDirect,
   ] = await Promise.all([
     countSafe(base),
     countSafe(`${base}&source_type=eq.auction`),
@@ -183,6 +237,18 @@ async function fetchSupabaseOverviewCountsExact() {
     countSafe(`${base}&source_type=eq.general${todayFilter}`),
     countSafe(`${base}&source_type=eq.realtor${todayFilter}`),
     countSafe(`${base}&source_type=eq.realtor&${realtorDirectOr}${todayFilter}`),
+    countSafe(`${base}${weekFilter}`),
+    countSafe(`${base}&source_type=eq.auction${weekFilter}`),
+    countSafe(`${base}&source_type=eq.onbid${weekFilter}`),
+    countSafe(`${base}&source_type=eq.general${weekFilter}`),
+    countSafe(`${base}&source_type=eq.realtor${weekFilter}`),
+    countSafe(`${base}&source_type=eq.realtor&${realtorDirectOr}${weekFilter}`),
+    countSafe(`${base}${monthFilter}`),
+    countSafe(`${base}&source_type=eq.auction${monthFilter}`),
+    countSafe(`${base}&source_type=eq.onbid${monthFilter}`),
+    countSafe(`${base}&source_type=eq.general${monthFilter}`),
+    countSafe(`${base}&source_type=eq.realtor${monthFilter}`),
+    countSafe(`${base}&source_type=eq.realtor&${realtorDirectOr}${monthFilter}`),
   ]);
 
   const realtor_naver = Math.max(0, Number(realtorTotal || 0) - Number(realtorDirect || 0));
@@ -190,6 +256,12 @@ async function fetchSupabaseOverviewCountsExact() {
   const today_realtor_total = Number(todayRealtorTotal || 0);
   const today_realtor_direct = Math.max(0, Number(todayRealtorDirect || 0));
   const today_realtor_naver = Math.max(0, today_realtor_total - today_realtor_direct);
+  const week_realtor_total = Number(weekRealtorTotal || 0);
+  const week_realtor_direct = Math.max(0, Number(weekRealtorDirect || 0));
+  const week_realtor_naver = Math.max(0, week_realtor_total - week_realtor_direct);
+  const month_realtor_total = Number(monthRealtorTotal || 0);
+  const month_realtor_direct = Math.max(0, Number(monthRealtorDirect || 0));
+  const month_realtor_naver = Math.max(0, month_realtor_total - month_realtor_direct);
 
   return {
     summary: {
@@ -208,6 +280,24 @@ async function fetchSupabaseOverviewCountsExact() {
       realtor_naver: today_realtor_naver,
       realtor_direct: today_realtor_direct,
       general: Number(todayGeneral || 0),
+    },
+    weekly: {
+      total: Number(weekTotal || 0),
+      auction: Number(weekAuction || 0),
+      onbid: Number(weekOnbid || 0),
+      realtor: week_realtor_total,
+      realtor_naver: week_realtor_naver,
+      realtor_direct: week_realtor_direct,
+      general: Number(weekGeneral || 0),
+    },
+    monthly: {
+      total: Number(monthTotal || 0),
+      auction: Number(monthAuction || 0),
+      onbid: Number(monthOnbid || 0),
+      realtor: month_realtor_total,
+      realtor_naver: month_realtor_naver,
+      realtor_direct: month_realtor_direct,
+      general: Number(monthGeneral || 0),
     },
     geoPending: Number(geoPending || 0),
     filterCounts: {
@@ -229,6 +319,8 @@ async function fetchSupabaseOverviewCountsExact() {
     scanCount: 0,
     source: 'supabase_exact_head_count',
     kstRange: { start: startIso, end: endIso },
+    kstWeekRange: { start: weekStart, end: weekEnd },
+    kstMonthRange: { start: monthStart, end: monthEnd },
   };
 }
 
@@ -326,6 +418,8 @@ function createEmptyOverview() {
   return {
     summary: { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
     today: { total: 0, auction: 0, onbid: 0, realtor: 0, general: 0 },
+    weekly: { total: 0, auction: 0, onbid: 0, realtor: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
+    monthly: { total: 0, auction: 0, onbid: 0, realtor: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
     geoPending: 0,
     filterCounts: {
       source: { '': 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 },
@@ -1013,6 +1107,7 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
+    if (!requireTierWrite(session, 'properties', res)) return;
     const body = getJsonBody(req);
 
     const address = String(body.address || '').trim();
@@ -1053,6 +1148,7 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === 'PATCH') {
+    if (!requireTierWrite(session, 'properties', res)) return;
     if (hasSupabaseAdminEnv()) {
       const body = getJsonBody(req);
       const targetId = String(body.id || body.globalId || '').trim();
@@ -1116,6 +1212,7 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
+    if (!requireTierWrite(session, 'properties', res)) return;
     const body = getJsonBody(req);
     const deleteAll = !!body.all;
 

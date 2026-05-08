@@ -8,6 +8,7 @@ const {
   listStaff,
   updateStaff,
 } = require('../_lib/supabase-admin');
+const { requireTierWrite } = require('../_lib/admin-tier');
 
 function normalizeRegions(values) {
   return Array.isArray(values)
@@ -42,6 +43,8 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === 'POST' || req.method === 'PATCH') {
+      // 물건 배정은 master / list 만 가능 (2026-05-08 admin_tier 도입)
+      if (!requireTierWrite(session, 'regions', res)) return;
       const body = getJsonBody(req);
       const assignments = Array.isArray(body.assignments) ? body.assignments : [];
 

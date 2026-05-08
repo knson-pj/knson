@@ -14,6 +14,7 @@
 const { applyCors } = require('../_lib/cors');
 const { send, getJsonBody } = require('../_lib/utils');
 const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../_lib/supabase-admin');
+const { requireTierWrite } = require('../_lib/admin-tier');
 
 // ──────────────────────────────────────────────────────────────────
 // 공통 헬퍼
@@ -368,10 +369,13 @@ module.exports = async function handler(req, res) {
     if (method === 'GET') {
       return await handleList(req, res);
     }
+    // POST(신규 배치) / POST?action=rollback 모두 배정 변경 → master/list 만 가능 (2026-05-08)
     if (method === 'POST' && id && action === 'rollback') {
+      if (!requireTierWrite(admin, 'regions', res)) return;
       return await handleRollback(req, res, admin, id);
     }
     if (method === 'POST') {
+      if (!requireTierWrite(admin, 'regions', res)) return;
       return await handleCreate(req, res, admin);
     }
     return send(res, 405, { ok: false, message: '지원하지 않는 메서드입니다.' });

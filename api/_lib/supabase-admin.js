@@ -210,11 +210,23 @@ async function resolveCurrentUserContext(req) {
 
   const role = mergeRoles(authRole, profile?.role) || 'staff';
 
+  // admin_tier 추출 (2026-05-08): admin 만 의미 있음, staff/기타는 null
+  let adminTier = null;
+  if (role === 'admin') {
+    const rawTier = String(
+      authUser?.app_metadata?.admin_tier ||
+      bearerUser?.app_metadata?.admin_tier ||
+      ''
+    ).trim().toLowerCase();
+    adminTier = ['master', 'basic', 'list'].includes(rawTier) ? rawTier : 'basic';
+  }
+
   return {
     userId: bearerUser.id,
     email: authUser?.email || bearerUser?.email || '',
     name: pickDisplayName({ profile, user: authUser || bearerUser }),
     role,
+    adminTier,
     assignedRegions: pickAssignedRegionsFromUser(authUser || bearerUser),
     authUser,
     bearerUser,
@@ -253,9 +265,11 @@ async function requireSupabaseAdmin(req, res) {
     return null;
   }
 
+  // adminTier 는 resolveCurrentUserContext 에서 이미 정규화하여 전달됨 (basic 강등 포함)
   return {
     userId: ctx.userId,
     role: ctx.role,
+    adminTier: ctx.adminTier || 'basic',
     name: ctx.name,
     email: ctx.email,
   };

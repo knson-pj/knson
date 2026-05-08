@@ -12,6 +12,7 @@ const {
   deleteAuthUser,
   getEnv,
 } = require('../../_lib/supabase-admin');
+const { requireTierWrite } = require('../../_lib/admin-tier');
 
 function normalizeRoleValue(value) {
   return value === 'admin' ? 'admin' : (value === 'other' ? 'other' : 'staff');
@@ -83,6 +84,8 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
+      // 담당자 신규 생성은 master 만 가능 (2026-05-08 admin_tier 도입)
+      if (!requireTierWrite(session, 'staff', res)) return;
       const email = String(body?.email || '').trim().toLowerCase();
       const name = String(body?.name || '').trim();
       const password = String(body?.password || '').trim();
@@ -121,6 +124,9 @@ module.exports = async function handler(req, res) {
 
     if (req.method === 'PATCH') {
       if (!targetId) return send(res, 400, { ok: false, message: 'id가 필요합니다.' });
+      // 자기 자신 수정은 self (basic 도 가능), 타인 수정은 staff (master 만 가능) — 2026-05-08
+      const resourceKey = (targetId === session.userId) ? 'self' : 'staff';
+      if (!requireTierWrite(session, resourceKey, res)) return;
       const patch = {};
       if (body?.name != null) patch.name = body.name;
       if (body?.role != null) patch.role = body.role;
@@ -140,6 +146,8 @@ module.exports = async function handler(req, res) {
 
     if (req.method === 'DELETE') {
       if (!targetId) return send(res, 400, { ok: false, message: 'id가 필요합니다.' });
+      // 담당자 삭제는 master 만 가능 (2026-05-08 admin_tier 도입)
+      if (!requireTierWrite(session, 'staff', res)) return;
       const items = await listStaff();
       const target = items.find((row) => row.id === targetId);
       if (!target) return send(res, 404, { ok: false, message: '계정을 찾을 수 없습니다.' });
