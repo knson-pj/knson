@@ -618,6 +618,7 @@ async function handleActivityLog(req, res) {
               _updateSet: new Set(),
               _photoSet: new Set(),
               _videoSet: new Set(),
+              _managedSet: new Set(), // 합집합: 기간 내 어떤 활동이라도 한 고유 물건 (관리중 카운팅용)
               counts: {
                 newProperty: 0,
                 propertyUpdate: 0,
@@ -626,6 +627,7 @@ async function handleActivityLog(req, res) {
                 opinion: 0,
                 photoUpload: 0,
                 videoUpload: 0,
+                managed: 0, // 관리중 = _managedSet.size
               },
             };
             actorMap.set(id, actor);
@@ -646,24 +648,32 @@ async function handleActivityLog(req, res) {
           if (!actor) continue;
           const type = String(row?.action_type || '').trim();
           const key = pickPropKey(row);
+          // 모든 action_type 에서 property key 가 있으면 _managedSet 에 누적 (관리중 = 합집합)
+          if (key) actor._managedSet.add(key);
           if (type === 'new_property') { if (key) actor._newPropSet.add(key); }
           else if (type === 'property_update') { if (key) actor._updateSet.add(key); }
           else if (type === 'daily_issue') { actor.counts.dailyIssue += 1; }
           else if (type === 'site_inspection') { actor.counts.siteInspection += 1; }
           else if (type === 'opinion') { actor.counts.opinion += 1; }
-          // rights_analysis / 기타는 무시 (사용자 요구사항: 5개 행동 + 사진/동영상)
+          // rights_analysis / 기타는 카운팅 컬럼은 없지만 _managedSet 에는 포함되어 "관리한 물건" 으로 인정
         }
         for (const row of Array.isArray(photoRows) ? photoRows : []) {
           const actor = ensureActor(row?.uploaded_by, '');
           if (!actor) continue;
           const key = String(row?.property_id || '').trim();
-          if (key) actor._photoSet.add(key);
+          if (key) {
+            actor._photoSet.add(key);
+            actor._managedSet.add(key);
+          }
         }
         for (const row of Array.isArray(videoRows) ? videoRows : []) {
           const actor = ensureActor(row?.uploaded_by, '');
           if (!actor) continue;
           const key = String(row?.property_id || '').trim();
-          if (key) actor._videoSet.add(key);
+          if (key) {
+            actor._videoSet.add(key);
+            actor._managedSet.add(key);
+          }
         }
 
         // Set 크기로 고유 카운트 확정 + 내부 Set 정리
@@ -672,10 +682,12 @@ async function handleActivityLog(req, res) {
           a.counts.propertyUpdate = a._updateSet.size;
           a.counts.photoUpload = a._photoSet.size;
           a.counts.videoUpload = a._videoSet.size;
+          a.counts.managed = a._managedSet.size;
           delete a._newPropSet;
           delete a._updateSet;
           delete a._photoSet;
           delete a._videoSet;
+          delete a._managedSet;
           return a;
         });
         actors.sort((a, b) => String(a.actor_name || '').localeCompare(String(b.actor_name || ''), 'ko'));
