@@ -1229,13 +1229,20 @@
     // 총배정 산출용: state.properties 기반 actor → 배정 물건 Set 맵
     const assignedMap = (typeof getAssignedPropertyMap === 'function') ? getAssignedPropertyMap() : new Map();
 
-    // 현재 dbms 담당자(staff) 기준으로 머지: 활동 0인 담당자도 표시
+    // 현재 dbms 담당자(staff role 만) 기준으로 머지: 활동 0인 담당자도 표시
+    // 관리자(admin) 는 통계 집계 대상에서 제외 — 운영 요구사항(2026-05-08)
     const apiById = new Map(apiActors.map((a) => [String(a.actor_id || ''), a]));
     const merged = [];
     const seen = new Set();
     for (const staff of staffRows) {
       const id = String(staff?.id || '').trim();
       if (!id) continue;
+      if (normalizeRole(staff?.role) !== 'staff') {
+        // admin / 기타 역할은 표시하지 않으면서 seen 에 등록하여
+        // 아래 orphan 루프에서도 다시 추가되지 않도록 차단
+        seen.add(id);
+        continue;
+      }
       const fromApi = apiById.get(id);
       merged.push({
         actor_id: id,
