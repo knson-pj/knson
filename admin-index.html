@@ -399,6 +399,44 @@
 
     <!-- 업무 관리 -->
     <section id="tab-workmgmt" class="panel tab-panel hidden">
+      <!-- 업무 통계 패널 (기간별 담당자 활동 집계) — 페이지 최상단 단독 카드 -->
+      <section class="workmgmt-stats-panel" id="workMgmtStatsPanel">
+        <div class="workmgmt-stats-head">
+          <div class="workmgmt-stats-period" role="tablist" aria-label="조회 기간">
+            <button type="button" class="workmgmt-period-btn is-active" data-period="week">이번주</button>
+            <button type="button" class="workmgmt-period-btn" data-period="today">오늘</button>
+            <button type="button" class="workmgmt-period-btn" data-period="month">이번달</button>
+            <button type="button" class="workmgmt-period-btn" data-period="custom">사용자지정</button>
+          </div>
+          <div class="workmgmt-stats-custom hidden" id="workMgmtStatsCustom">
+            <input type="date" id="workMgmtStatsStart" class="input" aria-label="시작일" />
+            <span aria-hidden="true">~</span>
+            <input type="date" id="workMgmtStatsEnd" class="input" aria-label="종료일" />
+            <button id="btnWorkMgmtStatsApply" class="btn btn-secondary" type="button">조회</button>
+          </div>
+          <div class="workmgmt-stats-meta" id="workMgmtStatsMeta" aria-live="polite"></div>
+        </div>
+        <div class="workmgmt-stats-table-wrap">
+          <table class="workmgmt-stats-table">
+            <thead>
+              <tr>
+                <th class="is-actor" scope="col">담당자</th>
+                <th scope="col">신규물건</th>
+                <th scope="col">물건수정</th>
+                <th scope="col">금일이슈</th>
+                <th scope="col">현장실사</th>
+                <th scope="col">담당자의견</th>
+                <th scope="col">사진등록</th>
+                <th scope="col">동영상등록</th>
+              </tr>
+            </thead>
+            <tbody id="workMgmtStatsBody">
+              <tr><td colspan="8" class="workmgmt-stats-empty">집계 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <div class="panel-title-row workmgmt-header-row is-compact">
         <div class="panel-actions-inline work-mgmt-actions">
           <input id="workMgmtDate" class="input work-mgmt-date-input" type="date" />
@@ -406,43 +444,6 @@
         </div>
       </div>
       <div class="workmgmt-shell-v2">
-        <!-- 업무 통계 패널 (기간별 담당자 활동 집계) -->
-        <section class="workmgmt-stats-panel" id="workMgmtStatsPanel">
-          <div class="workmgmt-stats-head">
-            <div class="workmgmt-stats-period" role="tablist" aria-label="조회 기간">
-              <button type="button" class="workmgmt-period-btn is-active" data-period="week">이번주</button>
-              <button type="button" class="workmgmt-period-btn" data-period="today">오늘</button>
-              <button type="button" class="workmgmt-period-btn" data-period="month">이번달</button>
-              <button type="button" class="workmgmt-period-btn" data-period="custom">사용자지정</button>
-            </div>
-            <div class="workmgmt-stats-custom hidden" id="workMgmtStatsCustom">
-              <input type="date" id="workMgmtStatsStart" class="input" aria-label="시작일" />
-              <span aria-hidden="true">~</span>
-              <input type="date" id="workMgmtStatsEnd" class="input" aria-label="종료일" />
-              <button id="btnWorkMgmtStatsApply" class="btn btn-secondary" type="button">조회</button>
-            </div>
-            <div class="workmgmt-stats-meta" id="workMgmtStatsMeta" aria-live="polite"></div>
-          </div>
-          <div class="workmgmt-stats-table-wrap">
-            <table class="workmgmt-stats-table">
-              <thead>
-                <tr>
-                  <th class="is-actor" scope="col">담당자</th>
-                  <th scope="col">신규물건</th>
-                  <th scope="col">물건수정</th>
-                  <th scope="col">금일이슈</th>
-                  <th scope="col">현장실사</th>
-                  <th scope="col">담당자의견</th>
-                  <th scope="col">사진등록</th>
-                  <th scope="col">동영상등록</th>
-                </tr>
-              </thead>
-              <tbody id="workMgmtStatsBody">
-                <tr><td colspan="8" class="workmgmt-stats-empty">집계 중...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
         <div id="workMgmtMeta" class="workmgmt-meta-v2 hidden"></div>
         <div id="workMgmtBoard" class="workmgmt-board">
           <section class="workmgmt-col workmgmt-col-actors">

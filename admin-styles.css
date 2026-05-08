@@ -1123,6 +1123,7 @@ td.fav-col .btn-fav,td.fav-col .btn-fire{display:inline-flex;vertical-align:midd
   border-radius:24px;padding:20px;
   box-shadow:0 8px 22px rgba(0,0,0,.045);
   display:grid;gap:16px;
+  margin-bottom:24px;
 }
 .workmgmt-stats-head{
   display:flex;flex-wrap:wrap;gap:12px;align-items:center;
@@ -1176,7 +1177,7 @@ td.fav-col .btn-fav,td.fav-col .btn-fire{display:inline-flex;vertical-align:midd
 
 /* 모바일 (720px↓) — 표를 카드 스택으로 변환 */
 @media(max-width:720px){
-  .workmgmt-stats-panel{padding:16px;border-radius:20px;}
+  .workmgmt-stats-panel{padding:16px;border-radius:20px;margin-bottom:18px;}
   .workmgmt-stats-head{flex-direction:column;align-items:stretch;gap:10px;}
   .workmgmt-stats-meta{margin-left:0;}
   .workmgmt-stats-period{overflow-x:auto;flex-wrap:nowrap;width:100%;justify-content:flex-start;}
