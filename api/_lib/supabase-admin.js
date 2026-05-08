@@ -236,6 +236,18 @@ async function requireSupabaseAdmin(req, res) {
     return null;
   }
 
+  // DBMS 전용 가드 — platform 소속 계정은 admin API 접근 불가
+  // (app 메타가 비어있는 레거시 계정은 통과시키고, platform으로 명시된 경우만 차단)
+  const userApp = String(
+    ctx.authUser?.app_metadata?.app ||
+    ctx.bearerUser?.app_metadata?.app ||
+    ''
+  ).trim();
+  if (userApp && userApp !== 'dbms') {
+    send(res, 403, { ok: false, message: 'DBMS 접근 권한이 없는 계정입니다.' });
+    return null;
+  }
+
   if (ctx.role !== 'admin') {
     send(res, 403, { ok: false, message: '관리자 권한이 필요합니다.' });
     return null;
@@ -292,9 +304,16 @@ function normalizeStaffItem({ profile, user }) {
   };
 }
 
-async function listStaff() {
+async function listStaff({ app = 'dbms' } = {}) {
   const users = await listAuthUsers();
-  const needProfiles = users.some((user) => {
+
+  // app_metadata.app 기준으로 필터링 (기본: dbms 사용자만)
+  // platform 사용자가 담당자 배정/관리 화면에 노출되지 않도록 차단
+  const filteredUsers = users.filter((user) => {
+    return (user?.app_metadata?.app || '') === app;
+  });
+
+  const needProfiles = filteredUsers.some((user) => {
     const role = mergeRoles(extractRoleCandidate(user));
     const name = pickDisplayName({ profile: null, user });
     return !role || !name;
@@ -304,7 +323,7 @@ async function listStaff() {
   const profileMap = new Map((profiles || []).map((row) => [String(row.id), row]));
   const items = [];
 
-  for (const user of users) {
+  for (const user of filteredUsers) {
     const id = String(user?.id || '');
     if (!id) continue;
     const role = mergeRoles(extractRoleCandidate(user));
@@ -314,9 +333,8 @@ async function listStaff() {
     if (profile) profileMap.delete(id);
   }
 
-  for (const [id, profile] of profileMap.entries()) {
-    items.push(normalizeStaffItem({ profile, user: { id } }));
-  }
+  // ※ profileMap 잔여 항목은 더 이상 추가하지 않음
+  // (auth.users에 없는 profile 레코드는 app 분류가 불가능하므로 제외)
 
   items.sort((a, b) => {
     const ad = new Date(a.createdAt || 0).getTime();
@@ -329,11 +347,21 @@ async function listStaff() {
 
 async function createAuthUser({ email, password, name, role, position, phone }) {
   const normalizedRole = normalizeRole(role) || 'staff';
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  // 이메일 도메인 기반으로 user_type 자동 판단
+  // - @hmkholdings.com  → 일반 직원 (staff)
+  // - 그 외 도메인       → 관리자의 담당자 (manager_agent)
+  const isInternalDomain = normalizedEmail.endsWith('@hmkholdings.com');
+  const userType = isInternalDomain ? 'staff' : 'manager_agent';
+
   const body = {
     email,
     password,
     email_confirm: true,
     app_metadata: {
+      app: 'dbms',           // DBMS 소속 명시 (auth 경계 분리용)
+      user_type: userType,   // 내부직원 / 관리자의 담당자 구분
       role: normalizedRole,
     },
     user_metadata: {
