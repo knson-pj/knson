@@ -1214,18 +1214,20 @@
     if (custom) custom.classList.toggle('hidden', localState.statsRange !== 'custom');
 
     if (loading) {
-      tbody.innerHTML = '<tr><td colspan="8" class="workmgmt-stats-empty">집계 중...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="workmgmt-stats-empty">집계 중...</td></tr>';
       if (meta) meta.textContent = '';
       return;
     }
     if (error) {
-      tbody.innerHTML = `<tr><td colspan="8" class="workmgmt-stats-empty">${esc(error)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="workmgmt-stats-empty">${esc(error)}</td></tr>`;
       return;
     }
 
     const apiActors = (data && Array.isArray(data.actors)) ? data.actors : [];
     const { state } = ctx();
     const staffRows = Array.isArray(state.staff) ? state.staff : [];
+    // 총배정 산출용: state.properties 기반 actor → 배정 물건 Set 맵
+    const assignedMap = (typeof getAssignedPropertyMap === 'function') ? getAssignedPropertyMap() : new Map();
 
     // 현재 dbms 담당자(staff) 기준으로 머지: 활동 0인 담당자도 표시
     const apiById = new Map(apiActors.map((a) => [String(a.actor_id || ''), a]));
@@ -1241,6 +1243,7 @@
         counts: fromApi?.counts || {
           newProperty: 0, propertyUpdate: 0, dailyIssue: 0,
           siteInspection: 0, opinion: 0, photoUpload: 0, videoUpload: 0,
+          managed: 0,
         },
       });
       seen.add(id);
@@ -1254,7 +1257,7 @@
     merged.sort((a, b) => String(a.actor_name || '').localeCompare(String(b.actor_name || ''), 'ko'));
 
     if (!merged.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="workmgmt-stats-empty">담당자가 없습니다.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="workmgmt-stats-empty">담당자가 없습니다.</td></tr>';
       if (meta) meta.textContent = '';
       return;
     }
@@ -1264,12 +1267,27 @@
       const cls = v === 0 ? 'is-zero' : '';
       return `<td class="${cls}" data-label="${esc(label)}">${v.toLocaleString('ko-KR')}</td>`;
     };
+    const rateCell = (managed, assigned) => {
+      const a = Number(assigned) || 0;
+      const m = Number(managed) || 0;
+      if (a <= 0) {
+        return `<td class="is-zero" data-label="관리율">-</td>`;
+      }
+      const rate = (m / a) * 100;
+      const cls = m === 0 ? 'is-zero' : '';
+      return `<td class="${cls}" data-label="관리율">${rate.toFixed(1)}%</td>`;
+    };
 
     tbody.innerHTML = merged.map((a) => {
       const c = a.counts || {};
+      const assignedTotal = (assignedMap.get(a.actor_id) || new Set()).size;
+      const managedTotal = Number(c.managed) || 0;
       return `
         <tr>
           <td class="is-actor" data-label="담당자">${esc(a.actor_name || '미상')}</td>
+          ${cell(assignedTotal, '총배정')}
+          ${cell(managedTotal, '관리중')}
+          ${rateCell(managedTotal, assignedTotal)}
           ${cell(c.newProperty, '신규물건')}
           ${cell(c.propertyUpdate, '물건수정')}
           ${cell(c.dailyIssue, '금일이슈')}
