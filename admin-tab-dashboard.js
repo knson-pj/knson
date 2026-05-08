@@ -7,6 +7,12 @@
     dateKey: '',
     data: null,
     loading: false,
+    // 업무 통계 패널 (2026-05-08)
+    statsRange: 'week',   // 'today' | 'week' | 'month' | 'custom'
+    statsStart: '',       // 'YYYY-MM-DD' (KST)
+    statsEnd: '',         // 'YYYY-MM-DD' (KST)
+    statsData: null,      // { range, actors }
+    statsLoading: false,
   };
 
   function runtime() {
@@ -1104,6 +1110,10 @@
   mod.refreshWorkMgmt = async function refreshWorkMgmt(options = {}) {
     const { els, api, utils } = ctx();
     if (localState.loading && !options.force) return localState.data;
+    // 통계 패널은 일일 보기와 독립적이므로 병렬로 트리거 (실패해도 일일 보기는 정상 진행)
+    if (!options.skipStats) {
+      mod.refreshWorkMgmtStats({ force: !!options.force }).catch(() => {});
+    }
     const dateKey = String(options.dateKey || els.workMgmtDate?.value || localState.dateKey || getTodayDateKey()).trim() || getTodayDateKey();
     localState.loading = true;
     localState.dateKey = dateKey;
@@ -1128,6 +1138,195 @@
     } finally {
       localState.loading = false;
       if (typeof utils.setAdminLoading === 'function') utils.setAdminLoading('workmgmt', false);
+    }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 업무 통계 패널 (2026-05-08)
+  //   - 기간(오늘/이번주/이번달/사용자지정) 단위로 담당자별 활동 집계 표시
+  //   - 백엔드: GET /api/properties?daily_report=1&admin_view=1&aggregate=by_actor
+  //   - 카운팅: 신규물건/물건수정/사진/동영상은 고유 물건 수, 그 외는 row 수
+  // ══════════════════════════════════════════════════════════════════════
+  function getKstWeekRange(baseKey) {
+    // 월요일 시작 ~ 일요일 종료 (KST 기준)
+    const key = baseKey || getTodayDateKey();
+    const m = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return { start: '', end: '' };
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    const dow = dt.getUTCDay(); // 0=Sun ~ 6=Sat
+    const offsetToMonday = dow === 0 ? -6 : 1 - dow;
+    const start = new Date(dt);
+    start.setUTCDate(dt.getUTCDate() + offsetToMonday);
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 6);
+    const fmt = (date) => {
+      const yy = date.getUTCFullYear();
+      const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(date.getUTCDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    };
+    return { start: fmt(start), end: fmt(end) };
+  }
+
+  function getKstMonthRange(baseKey) {
+    const key = baseKey || getTodayDateKey();
+    const m = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return { start: '', end: '' };
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const start = `${y}-${String(mo).padStart(2, '0')}-01`;
+    // 다음달 0일 = 현재 달의 말일
+    const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    const end = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    return { start, end };
+  }
+
+  function computeStatsRange(rangeType, customStart, customEnd) {
+    if (rangeType === 'today') {
+      const t = getTodayDateKey();
+      return { start: t, end: t };
+    }
+    if (rangeType === 'month') return getKstMonthRange();
+    if (rangeType === 'custom') {
+      return {
+        start: String(customStart || '').trim(),
+        end: String(customEnd || '').trim(),
+      };
+    }
+    // default: week
+    return getKstWeekRange();
+  }
+
+  function renderStatsPanel({ loading, error, data } = {}) {
+    const tbody = document.getElementById('workMgmtStatsBody');
+    if (!tbody) return;
+    const meta = document.getElementById('workMgmtStatsMeta');
+    const custom = document.getElementById('workMgmtStatsCustom');
+
+    // 기간 버튼 활성 상태 동기화
+    const periodBtns = document.querySelectorAll('.workmgmt-period-btn');
+    periodBtns.forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.period === localState.statsRange);
+    });
+    if (custom) custom.classList.toggle('hidden', localState.statsRange !== 'custom');
+
+    if (loading) {
+      tbody.innerHTML = '<tr><td colspan="8" class="workmgmt-stats-empty">집계 중...</td></tr>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+    if (error) {
+      tbody.innerHTML = `<tr><td colspan="8" class="workmgmt-stats-empty">${esc(error)}</td></tr>`;
+      return;
+    }
+
+    const apiActors = (data && Array.isArray(data.actors)) ? data.actors : [];
+    const { state } = ctx();
+    const staffRows = Array.isArray(state.staff) ? state.staff : [];
+
+    // 현재 dbms 담당자(staff) 기준으로 머지: 활동 0인 담당자도 표시
+    const apiById = new Map(apiActors.map((a) => [String(a.actor_id || ''), a]));
+    const merged = [];
+    const seen = new Set();
+    for (const staff of staffRows) {
+      const id = String(staff?.id || '').trim();
+      if (!id) continue;
+      const fromApi = apiById.get(id);
+      merged.push({
+        actor_id: id,
+        actor_name: String(staff?.name || staff?.email || '').trim() || '미상',
+        counts: fromApi?.counts || {
+          newProperty: 0, propertyUpdate: 0, dailyIssue: 0,
+          siteInspection: 0, opinion: 0, photoUpload: 0, videoUpload: 0,
+        },
+      });
+      seen.add(id);
+    }
+    // staff 목록에 없지만 활동 로그에는 있는 (예: 삭제된 계정) 담당자도 포함
+    for (const actor of apiActors) {
+      const id = String(actor.actor_id || '').trim();
+      if (!id || seen.has(id)) continue;
+      merged.push(actor);
+    }
+    merged.sort((a, b) => String(a.actor_name || '').localeCompare(String(b.actor_name || ''), 'ko'));
+
+    if (!merged.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="workmgmt-stats-empty">담당자가 없습니다.</td></tr>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+
+    const cell = (n, label) => {
+      const v = Number(n) || 0;
+      const cls = v === 0 ? 'is-zero' : '';
+      return `<td class="${cls}" data-label="${esc(label)}">${v.toLocaleString('ko-KR')}</td>`;
+    };
+
+    tbody.innerHTML = merged.map((a) => {
+      const c = a.counts || {};
+      return `
+        <tr>
+          <td class="is-actor" data-label="담당자">${esc(a.actor_name || '미상')}</td>
+          ${cell(c.newProperty, '신규물건')}
+          ${cell(c.propertyUpdate, '물건수정')}
+          ${cell(c.dailyIssue, '금일이슈')}
+          ${cell(c.siteInspection, '현장실사')}
+          ${cell(c.opinion, '담당자의견')}
+          ${cell(c.photoUpload, '사진등록')}
+          ${cell(c.videoUpload, '동영상등록')}
+        </tr>`;
+    }).join('');
+
+    if (meta && data && data.range) {
+      meta.textContent = `${data.range.start} ~ ${data.range.end} (${data.range.days}일)`;
+    }
+  }
+
+  mod.refreshWorkMgmtStats = async function refreshWorkMgmtStats(options = {}) {
+    const { api, utils } = ctx();
+    if (localState.statsLoading && !options.force) return localState.statsData;
+
+    const rangeType = options.range || localState.statsRange || 'week';
+    const customStart = options.start != null ? options.start : localState.statsStart;
+    const customEnd = options.end != null ? options.end : localState.statsEnd;
+    const range = computeStatsRange(rangeType, customStart, customEnd);
+
+    if (!range.start || !range.end) {
+      localState.statsRange = rangeType;
+      renderStatsPanel({ error: '시작일과 종료일을 모두 입력해 주세요.' });
+      return null;
+    }
+    if (range.start > range.end) {
+      localState.statsRange = rangeType;
+      renderStatsPanel({ error: '시작일이 종료일보다 늦을 수 없습니다.' });
+      return null;
+    }
+
+    localState.statsRange = rangeType;
+    localState.statsStart = range.start;
+    localState.statsEnd = range.end;
+    localState.statsLoading = true;
+    renderStatsPanel({ loading: true });
+
+    try {
+      const data = await api(
+        `/properties?daily_report=1&admin_view=1&aggregate=by_actor`
+        + `&start_date=${encodeURIComponent(range.start)}`
+        + `&end_date=${encodeURIComponent(range.end)}`,
+        { auth: true }
+      );
+      localState.statsData = data;
+      renderStatsPanel({ data });
+      return data;
+    } catch (err) {
+      if (typeof utils.setGlobalMsg === 'function') utils.setGlobalMsg(err?.message || '업무 통계 로드 실패');
+      renderStatsPanel({ error: err?.message || '업무 통계 로드 실패' });
+      throw err;
+    } finally {
+      localState.statsLoading = false;
     }
   };
 
@@ -1168,6 +1367,46 @@
         if (!btn) return;
         localState.activeGroupKey = String(btn.dataset.groupKey || '').trim();
         renderWorkMgmt();
+      });
+    }
+    // ── 업무 통계 패널 이벤트 바인딩 (2026-05-08) ──────────────────────
+    const statsPanel = document.getElementById('workMgmtStatsPanel');
+    if (statsPanel && statsPanel.dataset.bound !== 'true') {
+      statsPanel.dataset.bound = 'true';
+      // 기간 버튼 (오늘/이번주/이번달/사용자지정) - 이벤트 위임
+      statsPanel.addEventListener('click', (e) => {
+        const btn = e.target.closest('.workmgmt-period-btn');
+        if (!btn) return;
+        const period = String(btn.dataset.period || '').trim();
+        if (!period) return;
+        if (period === 'custom') {
+          // 사용자지정: 입력 칸만 표시하고 즉시 호출하지 않음
+          localState.statsRange = 'custom';
+          // 기본값: 현재 statsStart/statsEnd 가 비어있으면 이번주로 채워줌
+          if (!localState.statsStart || !localState.statsEnd) {
+            const w = getKstWeekRange();
+            localState.statsStart = w.start;
+            localState.statsEnd = w.end;
+          }
+          const startInput = document.getElementById('workMgmtStatsStart');
+          const endInput = document.getElementById('workMgmtStatsEnd');
+          if (startInput) startInput.value = localState.statsStart || '';
+          if (endInput) endInput.value = localState.statsEnd || '';
+          renderStatsPanel({ data: localState.statsData });
+          return;
+        }
+        mod.refreshWorkMgmtStats({ range: period, force: true }).catch(() => {});
+      });
+    }
+    const btnApply = document.getElementById('btnWorkMgmtStatsApply');
+    if (btnApply && btnApply.dataset.bound !== 'true') {
+      btnApply.dataset.bound = 'true';
+      btnApply.addEventListener('click', () => {
+        const startInput = document.getElementById('workMgmtStatsStart');
+        const endInput = document.getElementById('workMgmtStatsEnd');
+        const start = String(startInput?.value || '').trim();
+        const end = String(endInput?.value || '').trim();
+        mod.refreshWorkMgmtStats({ range: 'custom', start, end, force: true }).catch(() => {});
       });
     }
   };

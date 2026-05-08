@@ -459,6 +459,14 @@
       workMgmtActors: $("#workMgmtActors"),
       workMgmtRows: $("#workMgmtRows"),
       workMgmtEmpty: $("#workMgmtEmpty"),
+      // 업무 통계 패널 (2026-05-08)
+      workMgmtStatsPanel: $("#workMgmtStatsPanel"),
+      workMgmtStatsBody: $("#workMgmtStatsBody"),
+      workMgmtStatsCustom: $("#workMgmtStatsCustom"),
+      workMgmtStatsStart: $("#workMgmtStatsStart"),
+      workMgmtStatsEnd: $("#workMgmtStatsEnd"),
+      workMgmtStatsMeta: $("#workMgmtStatsMeta"),
+      btnWorkMgmtStatsApply: $("#btnWorkMgmtStatsApply"),
 
       // properties table
       btnDeleteSelectedProperties: $("#btnDeleteSelectedProperties"),

@@ -1117,6 +1117,97 @@ td.fav-col .btn-fav,td.fav-col .btn-fire{display:inline-flex;vertical-align:midd
 .workmgmt-stat-card.is-warm .workmgmt-stat-value{color:var(--c-general);}
 .workmgmt-stat-card.is-danger .workmgmt-stat-value{color:var(--danger);}
 
+/* ── 업무 통계 패널 (기간별 담당자 활동 집계, 2026-05-08) ─────────────── */
+.workmgmt-stats-panel{
+  border:1px solid var(--border);background:var(--surface);
+  border-radius:24px;padding:20px;
+  box-shadow:0 8px 22px rgba(0,0,0,.045);
+  display:grid;gap:16px;
+}
+.workmgmt-stats-head{
+  display:flex;flex-wrap:wrap;gap:12px;align-items:center;
+}
+.workmgmt-stats-period{
+  display:inline-flex;background:#f5f6f8;border-radius:999px;padding:4px;gap:2px;
+}
+.workmgmt-period-btn{
+  appearance:none;border:none;background:transparent;
+  padding:7px 14px;border-radius:999px;
+  font-size:13px;font-weight:700;color:var(--text-2);
+  cursor:pointer;transition:color .14s ease,background-color .14s ease,box-shadow .14s ease;
+  font-family:inherit;
+}
+.workmgmt-period-btn:hover{color:var(--text);}
+.workmgmt-period-btn.is-active{
+  background:#fff;color:var(--brand);
+  box-shadow:0 2px 6px rgba(0,0,0,.06);
+}
+.workmgmt-stats-custom{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.workmgmt-stats-custom .input{width:140px;}
+.workmgmt-stats-custom span{color:var(--text-3);font-weight:700;}
+.workmgmt-stats-custom.hidden{display:none;}
+.workmgmt-stats-meta{font-size:12px;color:var(--text-2);font-weight:600;margin-left:auto;}
+.workmgmt-stats-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.workmgmt-stats-table{
+  width:100%;border-collapse:collapse;font-size:13px;min-width:600px;
+}
+.workmgmt-stats-table thead th{
+  padding:12px 14px;background:#fafbfc;border-bottom:2px solid var(--border);
+  text-align:right;font-weight:800;color:var(--text-2);font-size:12px;
+  white-space:nowrap;letter-spacing:-.01em;
+}
+.workmgmt-stats-table thead th.is-actor{text-align:left;}
+.workmgmt-stats-table tbody td{
+  padding:12px 14px;border-bottom:1px solid var(--border);
+  text-align:right;font-weight:700;color:var(--text);
+  white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+.workmgmt-stats-table tbody td.is-actor{
+  text-align:left;font-weight:800;color:var(--text);
+}
+.workmgmt-stats-table tbody tr:hover{background:#fafbfc;}
+.workmgmt-stats-table tbody tr:last-child td{border-bottom:none;}
+.workmgmt-stats-table tbody td.is-zero{color:var(--text-3);font-weight:600;}
+.workmgmt-stats-empty{
+  text-align:center !important;
+  color:var(--text-3);padding:32px !important;
+  font-weight:600;
+}
+
+/* 모바일 (720px↓) — 표를 카드 스택으로 변환 */
+@media(max-width:720px){
+  .workmgmt-stats-panel{padding:16px;border-radius:20px;}
+  .workmgmt-stats-head{flex-direction:column;align-items:stretch;gap:10px;}
+  .workmgmt-stats-meta{margin-left:0;}
+  .workmgmt-stats-period{overflow-x:auto;flex-wrap:nowrap;width:100%;justify-content:flex-start;}
+  .workmgmt-period-btn{flex:0 0 auto;}
+  .workmgmt-stats-custom .input{flex:1;min-width:0;width:auto;}
+  .workmgmt-stats-table-wrap{overflow-x:visible;}
+  .workmgmt-stats-table{display:block;min-width:0;}
+  .workmgmt-stats-table thead{display:none;}
+  .workmgmt-stats-table tbody{display:grid;gap:10px;}
+  .workmgmt-stats-table tbody tr{
+    display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;
+    padding:14px;border-radius:14px;background:#fafbfc;
+    border:1px solid var(--border);
+  }
+  .workmgmt-stats-table tbody tr:hover{background:#fafbfc;}
+  .workmgmt-stats-table tbody td{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:6px 0;border:none;font-size:12px;text-align:right;
+  }
+  .workmgmt-stats-table tbody td:before{
+    content:attr(data-label);
+    font-weight:700;color:var(--text-2);font-size:11px;
+  }
+  .workmgmt-stats-table tbody td.is-actor{
+    grid-column:1 / -1;
+    border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:4px;
+    font-size:14px;justify-content:flex-start;
+  }
+  .workmgmt-stats-table tbody td.is-actor:before{display:none;}
+}
+
 @media(max-width:1280px){
   .workmgmt-board{grid-template-columns:minmax(220px,250px) minmax(240px,320px) minmax(280px,1fr);gap:20px;}
 
