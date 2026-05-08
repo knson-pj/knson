@@ -379,6 +379,39 @@
     if (els.sumTodayRealtor) els.sumTodayRealtor.textContent = fmt(todayParts.realtor_naver);
     if (els.sumTodayDirect) els.sumTodayDirect.textContent = fmt(todayParts.realtor_direct);
     if (els.sumTodayGeneral) els.sumTodayGeneral.textContent = fmt(todayParts.general);
+
+    // ── 신규 업데이트 Weekly / Monthly 카운터 (2026-05-08) ──────────────
+    // 서버 overview 가 있을 때만 정확한 값 표시. fallback 없음 — overview 부재시 0.
+    const weeklyParts = useServerOverview
+      ? {
+          auction: Number(overview?.weekly?.auction || 0),
+          onbid: Number(overview?.weekly?.onbid || 0),
+          realtor_naver: Number(overview?.weekly?.realtor_naver || 0),
+          realtor_direct: Number(overview?.weekly?.realtor_direct || 0),
+          general: Number(overview?.weekly?.general || 0),
+        }
+      : { auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+    const monthlyParts = useServerOverview
+      ? {
+          auction: Number(overview?.monthly?.auction || 0),
+          onbid: Number(overview?.monthly?.onbid || 0),
+          realtor_naver: Number(overview?.monthly?.realtor_naver || 0),
+          realtor_direct: Number(overview?.monthly?.realtor_direct || 0),
+          general: Number(overview?.monthly?.general || 0),
+        }
+      : { auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+
+    if (els.sumWeekAuction) els.sumWeekAuction.textContent = fmt(weeklyParts.auction);
+    if (els.sumWeekOnbid) els.sumWeekOnbid.textContent = fmt(weeklyParts.onbid);
+    if (els.sumWeekRealtor) els.sumWeekRealtor.textContent = fmt(weeklyParts.realtor_naver);
+    if (els.sumWeekDirect) els.sumWeekDirect.textContent = fmt(weeklyParts.realtor_direct);
+    if (els.sumWeekGeneral) els.sumWeekGeneral.textContent = fmt(weeklyParts.general);
+    if (els.sumMonthAuction) els.sumMonthAuction.textContent = fmt(monthlyParts.auction);
+    if (els.sumMonthOnbid) els.sumMonthOnbid.textContent = fmt(monthlyParts.onbid);
+    if (els.sumMonthRealtor) els.sumMonthRealtor.textContent = fmt(monthlyParts.realtor_naver);
+    if (els.sumMonthDirect) els.sumMonthDirect.textContent = fmt(monthlyParts.realtor_direct);
+    if (els.sumMonthGeneral) els.sumMonthGeneral.textContent = fmt(monthlyParts.general);
+
     if (els.homeGeoPending) els.homeGeoPending.textContent = fmt(geoPending);
     if (els.sumTodayDetail) {
       // overview 사용 시에는 서버 정확 카운트이므로 무조건 full data 로 표기

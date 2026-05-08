@@ -1527,6 +1527,35 @@ body{
 .admin-home-progress-fill.is-direct,
 .admin-home-progress-fill.is-general{background:linear-gradient(90deg,#c59d45 0%,#d8b062 100%);}
 .admin-home-updates-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(260px,.8fr) minmax(280px,.9fr);gap:20px;align-items:stretch;}
+
+/* ── 신규 업데이트 (Today/Weekly/Monthly 3컬럼) — 2026-05-08 ───────────── */
+.admin-home-updates-period-grid{
+  display:grid;grid-template-columns:repeat(3, minmax(0,1fr));
+  gap:20px;align-items:stretch;margin-bottom:20px;
+}
+.admin-home-period-card{
+  display:flex;flex-direction:column;gap:16px;
+  padding:24px;min-height:270px;
+}
+.admin-home-period-title{
+  font-size:18px;font-weight:800;color:var(--text);
+  letter-spacing:-.02em;margin:0 0 4px 0;
+}
+/* period 카드 안의 list 는 카드 폭에 맞춰 자연스럽게 펼치기
+   (page-admin .admin-home-updates-list 의 inline-grid 56px gap 을 카드 내에서는 무효화) */
+.page-admin .admin-home-period-card .admin-home-updates-list{
+  display:grid;grid-template-columns:1fr auto;
+  column-gap:16px;row-gap:14px;width:100%;align-self:stretch;
+}
+.page-admin .admin-home-period-card .admin-home-updates-row{display:contents;}
+.page-admin .admin-home-period-card .admin-home-updates-row > strong{justify-self:end;}
+
+/* 사이드 카드들 (담당자 수 / 지오코딩 / 금주 낙찰) - 별도 행 */
+.admin-home-updates-side-row{
+  display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);
+  gap:20px;align-items:stretch;
+}
+
 /* [수정 내역] 신규 등록 카드 내부 '좌(라벨+숫자) | 우(세부 리스트)' 가로 2분할.
    리스트는 레이블과 숫자 사이의 간격이 카드 폭에 관계없이 일정하도록
    'display:grid + grid-template-columns: auto auto + gap' 구조로 재작성.
@@ -1666,6 +1695,8 @@ body{
      금주 낙찰/매각을 2열로 배치한다. */
   .admin-home-updates-grid{grid-template-columns:1fr 1fr;}
   .admin-home-updates-main{grid-column:1 / -1;}
+  /* 신규 업데이트 — 중간 크기에서도 3열 유지 가능하면 유지, 아니면 2열 */
+  .admin-home-updates-period-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
 }
 
 @media (max-width: 980px){
@@ -1682,6 +1713,9 @@ body{
   .page-admin .admin-home-source-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 18px;}
   .page-admin .admin-home-updates-grid{grid-template-columns:1fr;}
   .page-admin .admin-home-side-stack{grid-template-columns:1fr 1fr;}
+  /* 신규 업데이트 — 980px 이하에서는 2열로 축소 */
+  .page-admin .admin-home-updates-period-grid{grid-template-columns:1fr 1fr;}
+  .page-admin .admin-home-updates-side-row{grid-template-columns:1fr;}
   /* [수정 내역] mobile 에서는 weekly-large 를 원래 mini-card 크기로 축소해
      다른 카드들과 비례 맞춤 */
   .page-admin .admin-home-weekly-large{min-height:150px;padding:24px;gap:16px;}
@@ -1724,6 +1758,10 @@ body{
      분할이 비좁아지므로 세로 스택으로 전환 */
   .page-admin .admin-home-updates-main{flex-direction:column;align-items:stretch;gap:16px;min-height:auto;}
   .page-admin .admin-home-updates-main-left{min-width:0;}
+  /* 신규 업데이트 — 모바일에서는 1열 */
+  .page-admin .admin-home-updates-period-grid{grid-template-columns:1fr;gap:14px;}
+  .page-admin .admin-home-period-card{min-height:auto;padding:20px;}
+  .page-admin .admin-home-period-title{font-size:16px;}
 }
 
 .sidebar-bottom{display:none;}

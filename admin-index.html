@@ -177,16 +177,11 @@
         </article>
 
         <section class="admin-home-updates-block">
-          <h3 class="admin-page-heading admin-page-heading-sm">오늘의 업데이트</h3>
-          <div class="admin-home-updates-grid">
-            <article class="card-unit admin-home-updates-main">
-              <div class="admin-home-updates-main-left">
-                <p class="admin-mini-label">신규 등록</p>
-                <div class="admin-home-today-number-row">
-                  <div class="admin-mini-number" id="sumTodayTotal">-</div>
-                  <span class="admin-home-delta-chip" id="sumTodayDeltaChip"></span>
-                </div>
-              </div>
+          <h3 class="admin-page-heading admin-page-heading-sm">신규 업데이트</h3>
+          <!-- Today / Weekly / Monthly 3컬럼 카드 (2026-05-08) -->
+          <div class="admin-home-updates-period-grid">
+            <article class="card-unit admin-home-period-card">
+              <h4 class="admin-home-period-title">Today</h4>
               <div class="admin-home-updates-list">
                 <div class="admin-home-updates-row is-auction"><span>경매</span><strong id="sumTodayAuction">-</strong></div>
                 <div class="admin-home-updates-row is-onbid"><span>공매</span><strong id="sumTodayOnbid">-</strong></div>
@@ -194,9 +189,31 @@
                 <div class="admin-home-updates-row is-direct"><span>일반중개</span><strong id="sumTodayDirect">-</strong></div>
                 <div class="admin-home-updates-row is-general"><span>일반</span><strong id="sumTodayGeneral">-</strong></div>
               </div>
-              <p id="sumTodayDetail" class="admin-home-updates-footnote hidden"></p>
             </article>
+            <article class="card-unit admin-home-period-card">
+              <h4 class="admin-home-period-title">Weekly</h4>
+              <div class="admin-home-updates-list">
+                <div class="admin-home-updates-row is-auction"><span>경매</span><strong id="sumWeekAuction">-</strong></div>
+                <div class="admin-home-updates-row is-onbid"><span>공매</span><strong id="sumWeekOnbid">-</strong></div>
+                <div class="admin-home-updates-row is-naver"><span>네이버중개</span><strong id="sumWeekRealtor">-</strong></div>
+                <div class="admin-home-updates-row is-direct"><span>일반중개</span><strong id="sumWeekDirect">-</strong></div>
+                <div class="admin-home-updates-row is-general"><span>일반</span><strong id="sumWeekGeneral">-</strong></div>
+              </div>
+            </article>
+            <article class="card-unit admin-home-period-card">
+              <h4 class="admin-home-period-title">Monthly</h4>
+              <div class="admin-home-updates-list">
+                <div class="admin-home-updates-row is-auction"><span>경매</span><strong id="sumMonthAuction">-</strong></div>
+                <div class="admin-home-updates-row is-onbid"><span>공매</span><strong id="sumMonthOnbid">-</strong></div>
+                <div class="admin-home-updates-row is-naver"><span>네이버중개</span><strong id="sumMonthRealtor">-</strong></div>
+                <div class="admin-home-updates-row is-direct"><span>일반중개</span><strong id="sumMonthDirect">-</strong></div>
+                <div class="admin-home-updates-row is-general"><span>일반</span><strong id="sumMonthGeneral">-</strong></div>
+              </div>
+            </article>
+          </div>
 
+          <!-- 사이드 카드 / 금주 낙찰 카드 (별도 영역, 기존 유지) -->
+          <div class="admin-home-updates-side-row">
             <div class="admin-home-side-stack">
               <article class="card-unit admin-home-mini-card">
                 <div class="admin-home-mini-icon is-staff">⌚</div>
