@@ -85,6 +85,9 @@
     const row = (Array.isArray(state.staff) ? state.staff : []).find((staff) => String(staff.id) === String(id || ''));
     if (!row) return;
 
+    // 담당자 편집/삭제는 master 만 가능 (2026-05-08 admin_tier 도입)
+    if ((act === 'edit' || act === 'delete') && utils.ensureAdminWrite && !utils.ensureAdminWrite('staff')) return;
+
     if (act === 'edit') {
       mod.fillStaffForm(row);
       setActiveTab('staff');
@@ -176,6 +179,10 @@
     const form = e.currentTarget;
     const fd = new FormData(form);
     const id = String(fd.get("id") || "").trim();
+
+    // 담당자 신규/수정은 master 만 가능 (자기 자신 수정은 별도 흐름이라 여기서는 항상 staff 권한)
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('staff')) return;
+
     const payload = {
       email: String(fd.get("email") || "").trim(),
       name: String(fd.get("name") || "").trim(),
@@ -1089,6 +1096,8 @@
 
   // ── 메인: 자동 배정 실행 ──
   mod.handleAutoAssign = async function handleAutoAssign() {
+    const { utils } = ctx();
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('regions')) return;
     const plan = computeAssignments();
     if (plan.error) return alert(plan.error);
 

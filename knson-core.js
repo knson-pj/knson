@@ -380,6 +380,14 @@
       } catch {}
     }
 
+    // admin_tier 추출 (2026-05-08): admin role 인 경우에만 의미 있음
+    // 미설정 / 알 수 없는 값은 'basic' 으로 강등 (보안 fail-safe, 백엔드와 동일 정책)
+    let adminTier = null;
+    if (role === "admin") {
+      const raw = String(authUser?.app_metadata?.admin_tier || "").trim().toLowerCase();
+      adminTier = ["master", "basic", "list"].includes(raw) ? raw : "basic";
+    }
+
     return {
       backend: "supabase",
       token: sess.access_token,
@@ -388,6 +396,7 @@
         email: authUser.email,
         name: displayName || authUser.email || "",
         role: role || "staff",
+        adminTier,
       },
       at: Date.now(),
     };

@@ -244,6 +244,9 @@
         setFormBusy,
         showResultBox,
         setGlobalMsg,
+        showToast,
+        ensureAdminWrite,
+        canAdminWrite,
         goLoginPage,
         handleAsyncError,
         setModalOpen,
@@ -680,6 +683,56 @@
     } finally {
       if (els.pwdSave) els.pwdSave.disabled = false;
     }
+  }
+
+  // ── Toast 알림 (2026-05-08): 권한 거부 등 일시적 메시지 ────────────────
+  // 우측 하단에 떠 있다가 자동으로 사라지는 toast. setGlobalMsg 와 달리
+  // 일정 시간 후 자동 해제되어 사용자 흐름을 방해하지 않는다.
+  let _toastTimer = null;
+  function showToast(message, options = {}) {
+    const { type = "error", duration = 3500 } = options;
+    let el = document.getElementById("adminToast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "adminToast";
+      el.className = "admin-toast";
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      document.body.appendChild(el);
+    }
+    el.textContent = String(message || "");
+    el.classList.remove("admin-toast-error", "admin-toast-info", "admin-toast-success");
+    el.classList.add("admin-toast-" + type);
+    // 강제 reflow 후 visible 클래스 토글 (재호출 시에도 transition 다시 트리거)
+    void el.offsetWidth;
+    el.classList.add("is-visible");
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => {
+      el.classList.remove("is-visible");
+    }, Math.max(1000, Number(duration) || 3500));
+  }
+
+  // ── 관리자 권한(admin_tier) 체크 헬퍼 (2026-05-08) ──────────────────────
+  // 매트릭스: master=all, list=[properties/regions/self], basic=[self]
+  // 백엔드(api/_lib/admin-tier.js)와 동일 정책 — 클라이언트 사전 차단으로
+  // 네트워크 호출 없이 즉시 toast 표시. RLS 가 최종 방어선.
+  function getCurrentAdminTier() {
+    return String(state.session?.user?.adminTier || "").trim().toLowerCase() || "basic";
+  }
+  function canAdminWrite(resourceKey) {
+    const tier = getCurrentAdminTier();
+    if (tier === "master") return true;
+    const key = String(resourceKey || "").trim().toLowerCase();
+    if (tier === "list") return ["properties", "regions", "self"].includes(key);
+    return key === "self"; // basic 또는 unknown
+  }
+  // 권한 체크 + 거부 시 toast 표시 (admin role 인 경우에만 적용 — staff 는 통과)
+  // 호출부 패턴:  if (!ensureAdminWrite('properties')) return;
+  function ensureAdminWrite(resourceKey, customMessage) {
+    if (state.session?.user?.role !== "admin") return true; // staff/기타: caller 자체 권한 처리
+    if (canAdminWrite(resourceKey)) return true;
+    showToast(customMessage || "이 작업을 수행할 권한이 없습니다.", { type: "error" });
+    return false;
   }
 
   function setGlobalMsg(msg = "") {

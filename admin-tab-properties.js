@@ -1292,6 +1292,8 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
 
   mod.deleteSelectedProperties = async function deleteSelectedProperties() {
     const { state, els, K, api, utils } = ctx();
+    // 권한 사전 차단 (BASIC: 즉시 toast / MASTER·LIST: 통과) — 2026-05-08
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
     const ids = [...state.selectedPropertyIds].filter(Boolean);
     if (!ids.length) {
       alert('삭제할 물건을 먼저 선택해 주세요.');
@@ -1349,6 +1351,7 @@ function applyAdminPropertyFormMode(els, utils, item, sourceType, submitterType,
 
   mod.deleteAllProperties = async function deleteAllProperties() {
     const { state, api, utils } = ctx();
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
     const total = Number(state.propertySummary?.total || state.propertyTotalCount || ((state.properties || []).length));
     if (!total) {
       alert('삭제할 물건이 없습니다.');
@@ -1733,6 +1736,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
 
   mod.savePropertyEditModal = async function savePropertyEditModal() {
     const { state, els, utils } = ctx();
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
     const item = state.editingProperty;
     if (!item || !els.aemForm) return;
     const user = state.session?.user;
@@ -1875,6 +1879,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
 
   mod.updatePropertyAdmin = async function updatePropertyAdmin(targetId, patch, isAdmin, item) {
     const { state, K, api, utils } = ctx();
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
     const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
     const currentRawForLog = utils.mergePropertyRaw(item, patch);
     const regContext = utils.buildRegisterLogContext(isAdmin ? '관리자 수정' : '담당자 수정', { user: state.session?.user });
@@ -1982,6 +1987,7 @@ mod.renderPropertiesTable = function renderPropertiesTable() {
 
   mod.handleDeleteProperty = async function handleDeleteProperty() {
     const { state, els, K, api, utils } = ctx();
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
     const item = state.editingProperty;
     if (!item) return;
     const targetId = String(item.id || item.globalId || '').trim();

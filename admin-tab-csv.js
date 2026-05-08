@@ -230,6 +230,8 @@
 
   mod.handleCsvUpload = async function handleCsvUpload() {
     const { state, els, K, api, utils } = ctx();
+    // CSV 업로드는 물건 등록 (master / list 가능, basic 차단) — 2026-05-08
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
     const {
       buildRegisterLogContext,
       ensureAuxiliaryPropertiesForAdmin,
