@@ -257,4 +257,17 @@
     if (role === "staff" || role === "agent") return "./agent-index.html";
     return "./index.html";
   }
+
+  // ── 자동 로그아웃 안내 (?reason=idle) — 2026-05-08 ─────────────────
+  // knson-idle-timeout.js 가 30분 무활동 시 ?reason=idle 로 redirect 시키면
+  // 로그인 페이지에서 사용자에게 안내 메시지 표시.
+  (function showIdleNoticeIfPresent() {
+    try {
+      const params = new URLSearchParams(location.search);
+      const reason = params.get("reason");
+      if (reason === "idle" && msgEl) {
+        msgEl.textContent = "장시간 미사용으로 자동 로그아웃되었습니다. 다시 로그인해 주세요.";
+      }
+    } catch {}
+  })();
 })();
