@@ -546,17 +546,22 @@ async function handleActivityLog(req, res) {
       const url = new URL(req.url, 'http://localhost');
       const aggregateBy = String(url.searchParams.get('aggregate') || '').trim().toLowerCase();
       const adminViewRequested = ctx.role === 'admin' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('admin_view') || '').trim().toLowerCase());
+      // staff self 모드: 담당자가 자기 통계만 조회 (2026-05-08 추가)
+      // 보안: actor_id 는 ctx.userId 로 강제 — 쿼리 파라미터로 다른 사람 actor_id 지정 불가
+      const selfStatsRequested = ctx.role === 'staff' && ['1', 'true', 'yes'].includes(String(url.searchParams.get('self') || '').trim().toLowerCase());
 
-      // ── 기간별 담당자 집계 (admin 전용) ─────────────────────────────────
-      // GET /api/properties?daily_report=1&admin_view=1&aggregate=by_actor
-      //                  &start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+      // ── 기간별 담당자 집계 (admin / staff-self) ─────────────────────────
+      // GET /api/properties?daily_report=1&admin_view=1&aggregate=by_actor&start_date=...&end_date=...
+      //   → admin 전용, 모든 담당자 집계
+      // GET /api/properties?daily_report=1&self=1&aggregate=by_actor&start_date=...&end_date=...
+      //   → staff 본인 통계만 (actor_id = ctx.userId 강제 필터)
       // 응답: { ok, range, actors: [{ actor_id, actor_name, counts: {...} }] }
       // - 데이터 소스: property_activity_logs + property_photos + property_videos
       // - 카운팅:
       //   · newProperty / propertyUpdate : 고유 물건 수
       //   · dailyIssue / siteInspection / opinion : row 수 (MERGE_TYPES, 1행=1작성)
       //   · photoUpload / videoUpload : 고유 물건 수 (사진/동영상은 여러 개 올려도 물건 1개로 카운팅)
-      if (adminViewRequested && aggregateBy === 'by_actor') {
+      if ((adminViewRequested || selfStatsRequested) && aggregateBy === 'by_actor') {
         const dateRe = /^\d{4}-\d{2}-\d{2}$/;
         const startDate = String(url.searchParams.get('start_date') || '').trim();
         const endDate = String(url.searchParams.get('end_date') || '').trim();
@@ -579,6 +584,10 @@ async function handleActivityLog(req, res) {
         endNext.setUTCDate(endNext.getUTCDate() + 1);
         const endUtcIsoExclusive = endNext.toISOString();
 
+        // staff self 모드: actor_id = ctx.userId 강제 필터 (다른 사용자 데이터 누출 방지)
+        const selfActorFilter = selfStatsRequested ? `&actor_id=eq.${encodeURIComponent(ctx.userId || '')}` : '';
+        const selfMediaFilter = selfStatsRequested ? `&uploaded_by=eq.${encodeURIComponent(ctx.userId || '')}` : '';
+
         // 3개 테이블 병렬 조회 (각각 별도 RLS / 인덱스)
         const activitySelect = 'actor_id,actor_name,property_id,property_identity_key,property_item_no,property_address,action_type,action_date';
         const mediaSelect = 'property_id,uploaded_by';
@@ -587,6 +596,7 @@ async function handleActivityLog(req, res) {
             `/rest/v1/property_activity_logs?select=${activitySelect}`
             + `&action_date=gte.${encodeURIComponent(startDate)}`
             + `&action_date=lte.${encodeURIComponent(endDate)}`
+            + selfActorFilter
             + `&order=actor_name.asc.nullslast`
           ).catch((e) => { throw Object.assign(new Error('활동 로그 조회 실패: ' + (e?.message || '')), { status: e?.status || 500 }); }),
           supabaseRest(
@@ -595,6 +605,7 @@ async function handleActivityLog(req, res) {
             + `&created_at=lt.${encodeURIComponent(endUtcIsoExclusive)}`
             + `&deleted_at=is.null`
             + `&uploaded_by=not.is.null`
+            + selfMediaFilter
           ).catch((e) => { throw Object.assign(new Error('사진 통계 조회 실패: ' + (e?.message || '')), { status: e?.status || 500 }); }),
           supabaseRest(
             `/rest/v1/property_videos?select=${mediaSelect}`
@@ -602,6 +613,7 @@ async function handleActivityLog(req, res) {
             + `&created_at=lt.${encodeURIComponent(endUtcIsoExclusive)}`
             + `&deleted_at=is.null`
             + `&uploaded_by=not.is.null`
+            + selfMediaFilter
           ).catch((e) => { throw Object.assign(new Error('동영상 통계 조회 실패: ' + (e?.message || '')), { status: e?.status || 500 }); }),
         ]);
 
@@ -696,7 +708,8 @@ async function handleActivityLog(req, res) {
         return send(res, 200, {
           ok: true,
           range: { start: startDate, end: endDate, days: rangeDays },
-          adminView: true,
+          adminView: adminViewRequested,
+          selfStats: selfStatsRequested,
           actors,
         });
       }

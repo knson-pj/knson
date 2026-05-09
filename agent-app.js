@@ -515,6 +515,19 @@
     els.agTodayAssignedGeneral = $("#agTodayAssignedGeneral");
     els.agTodayAssignedDetail = $("#agTodayAssignedDetail");
 
+    // 내 관리율 카드 (2026-05-08)
+    els.agMyRatioCard      = $("#agMyRatioCard");
+    els.agMyRatioTotal     = $("#agMyRatioTotal");
+    els.agMyRatioManaged   = $("#agMyRatioManaged");
+    els.agMyRatioPercent   = $("#agMyRatioPercent");
+    els.agMyRatioNew       = $("#agMyRatioNew");
+    els.agMyRatioUpdate    = $("#agMyRatioUpdate");
+    els.agMyRatioIssue     = $("#agMyRatioIssue");
+    els.agMyRatioSiteinsp  = $("#agMyRatioSiteinsp");
+    els.agMyRatioOpinion   = $("#agMyRatioOpinion");
+    els.agMyRatioPhoto     = $("#agMyRatioPhoto");
+    els.agMyRatioVideo     = $("#agMyRatioVideo");
+
     // Table
     els.agTableBody = $("#agTableBody");
     els.agEmpty = $("#agEmpty");
@@ -1229,6 +1242,9 @@
   window.knsnAgentResetListFilters = resetListFiltersOnEnter;
 
   function bindEvents() {
+    // 내 관리율 토글 (2026-05-08)
+    bindMyRatioToggle();
+
     // Logout
     if (els.btnAgentLogout) {
       els.btnAgentLogout.addEventListener("click", async () => {
@@ -1869,10 +1885,16 @@
   }
 
   // ── Render ──
+  let _myRatioInitialLoaded = false;
   function renderAll() {
     renderSummary();
     renderTable();
     if (els.dailyReportModal && !els.dailyReportModal.classList.contains("hidden")) renderDailyReport();
+    // 내 관리율: 첫 렌더 시 한 번 fetch (이후는 토글로만 갱신)
+    if (!_myRatioInitialLoaded && els.agMyRatioCard) {
+      _myRatioInitialLoaded = true;
+      loadMyRatio(myRatioState.period);
+    }
   }
 
   function extractDateKeyFromValue(value) {
@@ -1941,6 +1963,130 @@
         ? "금일 등록일 기준으로 집계됩니다."
         : "오늘 새로 배정된 물건이 없습니다.";
     }
+
+    // 내 관리율 카드 — 총배정은 즉시 표시 (state.properties 기반)
+    // 활동 통계는 비동기 fetch (loadMyRatio 가 별도 호출)
+    if (els.agMyRatioTotal) els.agMyRatioTotal.textContent = fmt(summary.total);
+  }
+
+  // ═══ 내 관리율 카드 (2026-05-08) ════════════════════════════════════
+  // 본인 actor_id 기준 활동 통계를 fetch 하여 카드에 렌더링한다.
+  // 토글: 오늘 / 이번주 / 이번달 (KST 기준)
+  // 백엔드: GET /api/properties?daily_report=1&self=1&aggregate=by_actor&start_date=...&end_date=...
+  const myRatioState = { period: "today", loading: false, lastLoadedAt: 0 };
+
+  function getKstYmd(date) {
+    // KST(UTC+9) 기준 'YYYY-MM-DD' 생성
+    const d = (date instanceof Date) ? date : new Date();
+    const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
+    const kst = new Date(utcMs + 9 * 60 * 60000);
+    const y = kst.getUTCFullYear();
+    const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(kst.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  }
+
+  function computeMyRatioRange(period) {
+    // 모두 KST 기준. 결과는 YYYY-MM-DD 문자열 (start, end 포함)
+    const nowKstStr = getKstYmd(new Date());
+    const [yy, mm, dd] = nowKstStr.split("-").map((v) => parseInt(v, 10));
+    if (period === "today") {
+      return { start: nowKstStr, end: nowKstStr };
+    }
+    if (period === "month") {
+      const start = `${yy}-${String(mm).padStart(2, "0")}-01`;
+      // 다음달 1일에서 -1일 = 이번달 마지막일
+      const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate(); // mm = 1-12, mm월의 마지막일
+      const end = `${yy}-${String(mm).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      return { start, end };
+    }
+    // week: 월요일 ~ 일요일 (KST)
+    // KST 기준 요일 산출 (0=일, 1=월, ...)
+    const baseUtc = Date.UTC(yy, mm - 1, dd);
+    const dow = new Date(baseUtc).getUTCDay(); // 0=일 ~ 6=토
+    const offsetToMonday = (dow === 0) ? -6 : (1 - dow); // 월요일까지 offset
+    const monMs = baseUtc + offsetToMonday * 24 * 60 * 60 * 1000;
+    const sunMs = monMs + 6 * 24 * 60 * 60 * 1000;
+    const fmt = (ms) => {
+      const d = new Date(ms);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    };
+    return { start: fmt(monMs), end: fmt(sunMs) };
+  }
+
+  function renderMyRatioPlaceholders(text) {
+    const ids = [
+      "agMyRatioManaged", "agMyRatioPercent",
+      "agMyRatioNew", "agMyRatioUpdate", "agMyRatioIssue",
+      "agMyRatioSiteinsp", "agMyRatioOpinion", "agMyRatioPhoto", "agMyRatioVideo",
+    ];
+    ids.forEach((id) => { if (els[id]) els[id].textContent = text; });
+  }
+
+  function renderMyRatioCounts(counts, totalAssigned) {
+    const fmt = (n) => Number(n || 0).toLocaleString("ko-KR");
+    const c = counts || {};
+    const managed = Number(c.managed || 0);
+    const ratio = totalAssigned > 0 ? (managed / totalAssigned) * 100 : 0;
+    const ratioText = totalAssigned > 0 ? `${ratio.toFixed(1)}%` : "0%";
+
+    if (els.agMyRatioManaged) els.agMyRatioManaged.textContent = fmt(managed);
+    if (els.agMyRatioPercent) els.agMyRatioPercent.textContent = ratioText;
+    if (els.agMyRatioNew)      els.agMyRatioNew.textContent      = fmt(c.newProperty);
+    if (els.agMyRatioUpdate)   els.agMyRatioUpdate.textContent   = fmt(c.propertyUpdate);
+    if (els.agMyRatioIssue)    els.agMyRatioIssue.textContent    = fmt(c.dailyIssue);
+    if (els.agMyRatioSiteinsp) els.agMyRatioSiteinsp.textContent = fmt(c.siteInspection);
+    if (els.agMyRatioOpinion)  els.agMyRatioOpinion.textContent  = fmt(c.opinion);
+    if (els.agMyRatioPhoto)    els.agMyRatioPhoto.textContent    = fmt(c.photoUpload);
+    if (els.agMyRatioVideo)    els.agMyRatioVideo.textContent    = fmt(c.videoUpload);
+  }
+
+  async function loadMyRatio(period) {
+    if (!els.agMyRatioCard) return;
+    if (myRatioState.loading) return;
+    myRatioState.loading = true;
+    myRatioState.period = period || myRatioState.period || "today";
+
+    const range = computeMyRatioRange(myRatioState.period);
+    renderMyRatioPlaceholders("…");
+
+    try {
+      const qs = new URLSearchParams({
+        daily_report: "1",
+        self: "1",
+        aggregate: "by_actor",
+        start_date: range.start,
+        end_date: range.end,
+      });
+      const data = await api(`/properties?${qs.toString()}`, { method: "GET", auth: true });
+      const actor = (data && Array.isArray(data.actors) && data.actors[0]) || null;
+      const counts = actor && actor.counts ? actor.counts : {};
+      const totalAssigned = Array.isArray(state.properties) ? state.properties.length : 0;
+      renderMyRatioCounts(counts, totalAssigned);
+      myRatioState.lastLoadedAt = Date.now();
+    } catch (err) {
+      console.error("loadMyRatio failed", err);
+      renderMyRatioPlaceholders("-");
+    } finally {
+      myRatioState.loading = false;
+    }
+  }
+
+  function bindMyRatioToggle() {
+    if (!els.agMyRatioCard) return;
+    const buttons = els.agMyRatioCard.querySelectorAll(".agent-myratio-toggle-btn");
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const next = btn.dataset.period || "today";
+        if (next === myRatioState.period) return;
+        buttons.forEach((b) => {
+          const isActive = b === btn;
+          b.classList.toggle("is-active", isActive);
+          b.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+        loadMyRatio(next);
+      });
+    });
   }
 
   function getFilteredProps(options = {}) {

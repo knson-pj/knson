@@ -2874,3 +2874,117 @@ html.modal-open-lock-html{
 @media(max-width:640px){
   .admin-toast{ font-size:13px; padding:12px 18px; bottom:24px; min-width:0; }
 }
+
+/* ── 담당자 홈 — 내 물건 관리 현황 (2026-05-08) ──────────────────────── */
+/* 데스크탑: 좌(오늘의 배정 물건) / 우(내 관리율) 2컬럼 */
+.page-agent .admin-home-updates-grid{
+  display:grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap:18px;
+  align-items:stretch;
+}
+.page-agent .agent-home-updates-main{
+  /* 기존 main 카드 — 그리드 자식 1번 */
+  min-height:100%;
+}
+
+/* ── 내 관리율 카드 ──────────────────────────────────────────────── */
+.agent-myratio-card{
+  display:flex; flex-direction:column;
+  background:#fff; border-radius:24px;
+  padding:24px 26px;
+  border:1px solid #f3f4f6;
+  box-shadow:0 1px 0 rgba(15,23,42,.04);
+  min-height:100%;
+}
+.agent-myratio-header{
+  display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:10px; margin:0 0 18px;
+}
+.agent-myratio-title{
+  margin:0; font-size:15px; font-weight:700;
+  letter-spacing:-.01em; color:#111827;
+}
+.agent-myratio-toggle{
+  display:inline-flex; background:#f3f4f6;
+  border-radius:999px; padding:3px;
+}
+.agent-myratio-toggle-btn{
+  appearance:none; border:none; background:transparent;
+  color:#6b7280; font-size:12px; font-weight:600;
+  padding:6px 14px; border-radius:999px;
+  cursor:pointer; font-family:inherit;
+  transition:background-color .15s, color .15s;
+}
+.agent-myratio-toggle-btn:hover{ color:#111827; }
+.agent-myratio-toggle-btn.is-active{
+  background:#111827; color:#fff; font-weight:700;
+}
+
+/* 핵심 3 박스 */
+.agent-myratio-keys{
+  display:grid; grid-template-columns:repeat(3, 1fr);
+  gap:14px; margin:0 0 18px;
+}
+.agent-myratio-keybox{
+  background:#f9fafb; border-radius:14px;
+  padding:14px 16px;
+}
+.agent-myratio-keybox-label{
+  margin:0 0 4px; font-size:11px; font-weight:600;
+  letter-spacing:.02em; color:#6b7280;
+}
+.agent-myratio-keybox-value{
+  margin:0; font-size:26px; font-weight:800;
+  letter-spacing:-.02em; color:#111827;
+  font-variant-numeric:tabular-nums;
+}
+.agent-myratio-keybox.is-highlight{
+  background:#fff7ed; border:1px solid #fed7aa;
+}
+.agent-myratio-keybox.is-highlight .agent-myratio-keybox-label{ color:#9a3412; }
+.agent-myratio-keybox.is-highlight .agent-myratio-keybox-value{ color:#ea580c; }
+
+/* 활동 지표 */
+.agent-myratio-section-label{
+  margin:0 0 10px; font-size:11px; font-weight:600;
+  letter-spacing:.06em; text-transform:uppercase;
+  color:#9ca3af;
+}
+.agent-myratio-activity-grid{
+  display:grid; grid-template-columns:1fr 1fr;
+  column-gap:18px; row-gap:0;
+}
+.agent-myratio-activity-row{
+  display:flex; justify-content:space-between;
+  padding:8px 0; border-bottom:1px solid #f3f4f6;
+  font-size:13px;
+}
+.agent-myratio-activity-row:last-child,
+.agent-myratio-activity-row:nth-last-child(2){
+  /* 마지막 두 행 (홀수개 항목 7개라 마지막 줄 1개) — 하단 보더 제거 */
+}
+.agent-myratio-activity-row span{ color:#6b7280; }
+.agent-myratio-activity-row strong{
+  color:#111827; font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+
+/* 모바일 — 1컬럼 stack */
+@media (max-width: 880px){
+  .page-agent .admin-home-updates-grid{
+    grid-template-columns: 1fr !important;
+    gap:12px;
+  }
+}
+@media (max-width: 480px){
+  .agent-myratio-card{ padding:18px 18px; border-radius:18px; }
+  .agent-myratio-keys{ gap:10px; }
+  .agent-myratio-keybox{ padding:12px 12px; border-radius:12px; }
+  .agent-myratio-keybox-label{ font-size:10px; }
+  .agent-myratio-keybox-value{ font-size:22px; }
+  .agent-myratio-activity-grid{
+    grid-template-columns:1fr; column-gap:0;
+  }
+  .agent-myratio-toggle-btn{ font-size:11px; padding:5px 10px; }
+}
