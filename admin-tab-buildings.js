@@ -799,12 +799,17 @@
           } else if (doneWhenProcessedZero && processed === 0 && inserted === 0 && enriched === 0) {
             // 더 이상 처리할 대상 없음
             done = true;
-          } else if (typeof data.remaining === "number" && data.remaining === prevRemaining) {
-            // [개선 2026-05-11] remaining 정체 stall 감지
-            //   서버가 같은 remaining 을 반복 응답한다는 건 더 줄지 않는다는 뜻 → 무한 루프 방지
+          } else if (
+            typeof data.remaining === "number" &&
+            data.remaining === prevRemaining &&
+            processed === 0 && inserted === 0 && enriched === 0
+          ) {
+            // [수정 2026-05-11] stall 감지는 "처리 진척이 0건일 때만" 작동.
+            //   서버의 remaining 값은 PostgREST 기본 한도(1,000건)에 캡될 수 있어
+            //   실제 진척이 일어나고 있어도 값이 같아 보일 수 있음 → processed/inserted 조건 추가.
             stallRounds++;
             if (stallRounds >= stallLimit) {
-              appendLog("⚠️ " + name + " · 진행 정체 감지 (remaining=" + data.remaining + ", 라운드 " + round + ") — 다음 동으로 이동");
+              appendLog("⚠️ " + name + " · 진행 정체 감지 (처리 0건이 " + stallLimit + "라운드 연속, 라운드 " + round + ") — 다음 동으로 이동");
               done = true;
             }
           } else {
