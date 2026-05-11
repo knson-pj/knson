@@ -1196,7 +1196,8 @@
       return '<tr data-id="' + esc(r.id) + '" class="' + (selected.has(r.id) ? 'row-selected' : '') + '">' +
         '<td class="csv-unmatched-col-check"><input type="checkbox" class="unmatched-row-check" data-id="' + esc(r.id) + '"' + isChecked + ' /></td>' +
         '<td><span class="csv-unmatched-item-no">' + esc(r.item_no || '-') + '</span></td>' +
-        '<td class="csv-unmatched-addr">' + esc(r.address || '-') + '</td>' +
+        // [추가 2026-05-11] 주소 클릭 시 물건정보수정 모달 열림 (.address-trigger 클래스 + data-id)
+        '<td class="csv-unmatched-addr"><a href="#" class="address-trigger unmatched-address-trigger" data-id="' + esc(r.id) + '" title="물건 정보 수정">' + esc(r.address || '-') + '</a></td>' +
         '<td>' + esc(r.asset_type || '-') + '</td>' +
         '<td class="csv-unmatched-col-num">' + esc(fmtPrice(r.price_main)) + '</td>' +
         '<td>' + esc(fmtDate(r.date_uploaded)) + '</td>' +
@@ -1255,6 +1256,8 @@
   };
 
   // 삭제 실행
+  // [수정 2026-05-11] 1,000건 같은 대량 삭제 시 fetch 실패(URL/Body 너무 큼)를 방지하기 위해
+  //   100건씩 배치 분할 순차 호출. 진행 상황을 버튼 텍스트에 실시간 표시.
   mod.deleteSelectedUnmatched = async function deleteSelectedUnmatched() {
     const { state, K, api, utils } = ctx();
     if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
@@ -1265,39 +1268,57 @@
     const ids = Array.from(selected);
     const cnt = ids.length;
     if (!window.confirm('선택된 ' + cnt.toLocaleString('ko-KR') + '건을 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
-    if (cnt >= 100 && !window.confirm('정말 ' + cnt.toLocaleString('ko-KR') + '건을 일괄 삭제할까요?')) return;
+    if (cnt >= 100 && !window.confirm('정말 ' + cnt.toLocaleString('ko-KR') + '건을 일괄 삭제할까요?\n(100건씩 나눠서 순차 처리됩니다)')) return;
 
     const btnDelete = document.getElementById('btnDeleteUnmatched');
-    if (btnDelete) { btnDelete.disabled = true; btnDelete.textContent = '삭제 중...'; }
+    const btnLoad = document.getElementById('btnLoadUnmatched');
+    if (btnDelete) btnDelete.disabled = true;
+    if (btnLoad)   btnLoad.disabled   = true;
 
-    let deleteError = null;
-    try {
-      // 기존 admin-tab-properties.js 의 패턴과 동일 — DataAccess → api fallback
-      const DA = window.KNSN_DATA_ACCESS;
-      if (DA && typeof DA.deletePropertiesViaAdminApi === 'function') {
-        await DA.deletePropertiesViaAdminApi(api, ids, { auth: true });
-      } else {
-        await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
-      }
-    } catch (err) {
-      deleteError = err;
-      console.error('deleteSelectedUnmatched failed', err);
+    // 100건씩 배치 분할 (운영 환경에서 검증된 안전 크기)
+    const BATCH_SIZE = 100;
+    const batches = [];
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      batches.push(ids.slice(i, i + BATCH_SIZE));
     }
 
-    // 캐시 무효화 (다른 페이지의 properties 목록과 동기화)
+    const DA = window.KNSN_DATA_ACCESS;
+    const successIds = [];
+    const failedBatches = [];   // [{ idx, ids, error }]
+
+    for (let bi = 0; bi < batches.length; bi++) {
+      const chunk = batches[bi];
+      const processedSoFar = bi * BATCH_SIZE;
+      if (btnDelete) {
+        btnDelete.textContent = '삭제 중... ' +
+          processedSoFar.toLocaleString('ko-KR') + ' / ' + cnt.toLocaleString('ko-KR');
+      }
+      try {
+        if (DA && typeof DA.deletePropertiesViaAdminApi === 'function') {
+          await DA.deletePropertiesViaAdminApi(api, chunk, { auth: true });
+        } else {
+          await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids: chunk } });
+        }
+        for (const id of chunk) successIds.push(id);
+      } catch (err) {
+        console.error('deleteSelectedUnmatched batch ' + bi + ' failed', err);
+        failedBatches.push({ idx: bi, ids: chunk, error: err });
+        // 한 배치 실패해도 다음 배치 계속 시도 (가능한 한 많이 삭제)
+      }
+    }
+
+    // 캐시 무효화
     if (utils && typeof utils.invalidatePropertyCollections === 'function') {
       try { utils.invalidatePropertyCollections(); } catch {}
     }
 
-    if (deleteError) {
-      alert('삭제 실패: ' + (deleteError.message || '알 수 없는 오류'));
-      if (btnDelete) btnDelete.disabled = false;
-      return;
+    // 성공한 ID 들만 화면에서 제거
+    if (successIds.length > 0) {
+      const successSet = new Set(successIds);
+      state.unmatchedProperties = (state.unmatchedProperties || []).filter(function(r) { return !successSet.has(r.id); });
+      // 선택 상태에서도 제거 (실패한 건은 다시 선택 시도 가능하도록 유지)
+      for (const id of successIds) state.selectedUnmatchedIds.delete(id);
     }
-
-    // 성공 → 결과 목록에서 제거하고 카운트 갱신
-    state.unmatchedProperties = (state.unmatchedProperties || []).filter(function(r) { return !selected.has(r.id); });
-    state.selectedUnmatchedIds = new Set();
     mod.renderUnmatchedTable();
 
     const countEl = document.getElementById('unmatchedCount');
@@ -1313,8 +1334,23 @@
       if (empty) { empty.classList.remove('hidden'); empty.textContent = '✅ 선택된 매물이 모두 삭제되었습니다.'; }
     }
 
-    if (btnDelete) { btnDelete.disabled = true; btnDelete.textContent = '선택 삭제'; }
-    alert(cnt.toLocaleString('ko-KR') + '건이 삭제되었습니다.');
+    if (btnLoad)   btnLoad.disabled   = false;
+    if (btnDelete) { btnDelete.disabled = state.selectedUnmatchedIds.size === 0; btnDelete.textContent = '선택 삭제'; }
+    mod.updateUnmatchedControls();
+
+    // 결과 알림
+    if (failedBatches.length === 0) {
+      alert(successIds.length.toLocaleString('ko-KR') + '건이 삭제되었습니다.');
+    } else {
+      const failCount = failedBatches.reduce(function(s, b) { return s + b.ids.length; }, 0);
+      const firstErr = failedBatches[0].error;
+      alert(
+        '일부 삭제 실패 — 성공: ' + successIds.length.toLocaleString('ko-KR') + '건 / ' +
+        '실패: ' + failCount.toLocaleString('ko-KR') + '건\n\n' +
+        '오류: ' + ((firstErr && firstErr.message) || '알 수 없는 오류') + '\n\n' +
+        '실패한 건은 선택 상태를 유지했습니다. 잠시 후 [선택 삭제] 를 다시 눌러주세요.'
+      );
+    }
   };
 
   AdminModules.csvTab = mod;

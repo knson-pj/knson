@@ -1055,6 +1055,17 @@ function bindEvents() {
         toggleUnmatchedRow(t.dataset.id, t.checked);
       }
     });
+    // [추가 2026-05-11] 주소 클릭 → 물건정보수정 모달 (위임 방식)
+    if (els.unmatchedTableBody) els.unmatchedTableBody.addEventListener("click", (e) => {
+      const trigger = e.target && e.target.closest && e.target.closest(".unmatched-address-trigger");
+      if (!trigger) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const id = trigger.dataset.id;
+      if (!id) return;
+      // openPropertyEditModal 내부에서 id 로 상세 조회 → 모달에 채워줌
+      openPropertyEditModal({ id }).catch((err) => handleAsyncError(err, "물건 정보 열기 실패"));
+    });
 
     // staff/regions (관리자만)
     if (els.staffForm) els.staffForm.addEventListener("submit", (e) => {

@@ -3440,6 +3440,23 @@ html.modal-open-lock-html{
   max-width:340px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
+/* [추가 2026-05-11] 주소 클릭 → 물건정보수정 모달 트리거 시각화 */
+.unmatched-address-trigger{
+  color:var(--text);
+  text-decoration:none;
+  cursor:pointer;
+  border-bottom:1px dashed transparent;
+  transition:border-color .12s,color .12s;
+}
+.unmatched-address-trigger:hover{
+  color:var(--brand);
+  border-bottom-color:var(--brand);
+}
+.unmatched-address-trigger:focus-visible{
+  outline:2px solid var(--brand);
+  outline-offset:2px;
+  border-radius:2px;
+}
 .csv-unmatched-empty{
   padding:32px 16px;
   text-align:center;
