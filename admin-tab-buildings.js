@@ -1055,8 +1055,9 @@
       // [UX 개선 2026-05-11] C안 — 미니바 + 분수 칩
       //   denom > 0  : 비율 기반 (분모 표시 + 진행바)
       //   denom = 0  : binary (있음/없음만)
+      //   description (선택): 호버 툴팁에 모드 의미를 명시 → 0건이 "안 된 것"인지 "원래 없음"인지 구분
       //   색상은 CSS 클래스(.bld-pchip--idle/low/mid/done/has) 로 분리 → 다크모드 자동 대응
-      function pchip(label, n, denom) {
+      function pchip(label, n, denom, description) {
         var cls = "bld-pchip--idle", pct = 0;
         var nFmt = Number(n).toLocaleString("ko-KR");
         var countText, tooltipText;
@@ -1068,12 +1069,14 @@
           else                    cls = "bld-pchip--low";
           countText = nFmt + "/" + Number(denom).toLocaleString("ko-KR");
           tooltipText = label + ": " + nFmt + " / " + Number(denom).toLocaleString("ko-KR") + " (" + pct + "%)";
+          if (description) tooltipText = description + "\n" + tooltipText;
         } else {
           // binary 모드: n > 0 → has(녹색), 0 → idle(회색)
           cls = n > 0 ? "bld-pchip--has" : "bld-pchip--idle";
           pct = n > 0 ? 100 : 0;
           countText = nFmt + "건";
-          tooltipText = n > 0 ? (label + " 수집됨: " + nFmt + "건") : (label + " 미수집");
+          tooltipText = label + ": " + nFmt + "건";
+          if (description) tooltipText = description + "\n" + tooltipText;
         }
         var barWidth = pct + "%";
         return '<span class="bld-pchip ' + cls + '" title="' + escHtml(tooltipText) + '">' +
@@ -1085,14 +1088,18 @@
         '</span>';
       }
 
+      // [UX 개선 2026-05-11] 모드별 표시 방식 차별화
+      //   - 표제부 / 지오코딩: 모든 건물 대상이라 분수(미니바) 표시가 의미 있음
+      //   - 전유+공용 / 부속지번 / 총괄표제 / 층별등 / 공시가: 일부 건물에만 해당하는 데이터.
+      //     분모를 표제부 수로 잡으면 "거짓 미흡" 으로 표시되므로 절대 건수만 표시 (binary)
       var chips =
-        pchip("표제부",     titleCnt,  totalBld) +
-        pchip("전유+공용",  v2Cnt,     titleCnt) +
-        pchip("지오코딩",   geoCnt,    titleCnt) +
-        pchip("부속지번",   atchCnt,   titleCnt) +
-        pchip("총괄표제",   recapCnt,  0) +
-        pchip("층별등",     extrasCnt, titleCnt) +
-        pchip("공시가",     priceCnt,  0);
+        pchip("표제부",     titleCnt,  totalBld, "동 전체 건물 중 표제부가 수집된 비율") +
+        pchip("전유+공용",  v2Cnt,     0,        "전유부 호실 데이터가 저장된 건물 수 (집합건축물만 해당)") +
+        pchip("지오코딩",   geoCnt,    totalBld, "좌표 변환이 완료된 건물 비율") +
+        pchip("부속지번",   atchCnt,   0,        "부속 지번 정보가 있는 건물 수 (합필된 건물만 해당)") +
+        pchip("총괄표제",   recapCnt,  0,        "단지 단위 총괄 정보가 있는 건물 수 (대단지만 해당)") +
+        pchip("층별등",     extrasCnt, 0,        "층별·지역지구·오수정화 정보가 있는 건물 수") +
+        pchip("공시가",     priceCnt,  0,        "공시가격 정보가 있는 호실/건물 수 (집합·거주만 해당)");
 
       // 마지막 모드 한글 변환
       var lastModeLabel = "";
