@@ -429,7 +429,11 @@
 
   function updateSelectedCount() {
     var el = $("bldSelectedCount");
-    if (el) el.textContent = selectedDongs.size + "개 선택";
+    if (el) {
+      el.textContent = selectedDongs.size + "개 선택";
+      // [UX 개선 2026-05-11] 0개일 때 회색, 1개 이상이면 브랜드 강조
+      el.setAttribute("data-empty", selectedDongs.size === 0 ? "true" : "false");
+    }
     var disabled = selectedDongs.size === 0 || isRunning;
     var ids = [
       "bldBtnCollect", "bldBtnEnrich",
@@ -1009,49 +1013,61 @@
       var priceCnt    = Number(j.price_count      || 0);
       var totalBld    = Number(j.total_buildings  || titleCnt || 0);
 
-      // 칩 생성 헬퍼
-      //   denom > 0  : 비율 기반 색상 (회색→빨강→노랑→녹색)
-      //   denom = 0  : binary 모드 (0 이면 회색, 1+ 이면 녹색)
-      function chip(label, n, denom) {
-        var bg = "#E5E7EB", fg = "#6B7280";  // 회색 (미수집)
+      // [UX 개선 2026-05-11] C안 — 미니바 + 분수 칩
+      //   denom > 0  : 비율 기반 (분모 표시 + 진행바)
+      //   denom = 0  : binary (있음/없음만)
+      //   색상은 CSS 클래스(.bld-pchip--idle/low/mid/done/has) 로 분리 → 다크모드 자동 대응
+      function pchip(label, n, denom) {
+        var cls = "bld-pchip--idle", pct = 0;
+        var nFmt = Number(n).toLocaleString("ko-KR");
+        var countText, tooltipText;
         if (denom > 0) {
-          // 비율 기반
-          if (n > 0) {
-            var pct = Math.round((n / denom) * 100);
-            if (pct >= 95)      { bg = "#DCFCE7"; fg = "#15803D"; }  // 녹색 (완료)
-            else if (pct >= 50) { bg = "#FEF9C3"; fg = "#A16207"; }  // 노랑 (진행중)
-            else                { bg = "#FEE2E2"; fg = "#B91C1C"; }  // 빨강 (미흡)
-          }
+          pct = Math.min(100, Math.round((n / denom) * 100));
+          if (n === 0)            cls = "bld-pchip--idle";
+          else if (pct >= 95)     cls = "bld-pchip--done";
+          else if (pct >= 50)     cls = "bld-pchip--mid";
+          else                    cls = "bld-pchip--low";
+          countText = nFmt + "/" + Number(denom).toLocaleString("ko-KR");
+          tooltipText = label + ": " + nFmt + " / " + Number(denom).toLocaleString("ko-KR") + " (" + pct + "%)";
         } else {
-          // binary 모드: n > 0 이면 녹색 (있음), 0 이면 회색 (없음)
-          if (n > 0) { bg = "#DCFCE7"; fg = "#15803D"; }
+          // binary 모드: n > 0 → has(녹색), 0 → idle(회색)
+          cls = n > 0 ? "bld-pchip--has" : "bld-pchip--idle";
+          pct = n > 0 ? 100 : 0;
+          countText = nFmt + "건";
+          tooltipText = n > 0 ? (label + " 수집됨: " + nFmt + "건") : (label + " 미수집");
         }
-        var title = denom > 0 ? (n + "/" + denom) : (n > 0 ? ("수집됨: " + n + "건") : "미수집");
-        return '<span title="' + escHtml(title) + '" style="display:inline-block;padding:1px 6px;margin:1px;border-radius:10px;font-size:9px;font-weight:600;background:' + bg + ';color:' + fg + ';">' + escHtml(label) + ' ' + n + '</span>';
+        var barWidth = pct + "%";
+        return '<span class="bld-pchip ' + cls + '" title="' + escHtml(tooltipText) + '">' +
+          '<span class="bld-pchip__top">' +
+            '<span class="bld-pchip__label">' + escHtml(label) + '</span>' +
+            '<span class="bld-pchip__count">' + escHtml(countText) + '</span>' +
+          '</span>' +
+          '<span class="bld-pchip__bar"><i style="width:' + barWidth + '"></i></span>' +
+        '</span>';
       }
 
       var chips =
-        chip("표제부",     titleCnt,  totalBld) +
-        chip("전유+공용",  v2Cnt,     titleCnt) +
-        chip("지오코딩",   geoCnt,    titleCnt) +
-        chip("부속지번",   atchCnt,   titleCnt) +
-        chip("총괄표제",   recapCnt,  0) +
-        chip("층별등",     extrasCnt, titleCnt) +
-        chip("공시가",     priceCnt,  0);
+        pchip("표제부",     titleCnt,  totalBld) +
+        pchip("전유+공용",  v2Cnt,     titleCnt) +
+        pchip("지오코딩",   geoCnt,    titleCnt) +
+        pchip("부속지번",   atchCnt,   titleCnt) +
+        pchip("총괄표제",   recapCnt,  0) +
+        pchip("층별등",     extrasCnt, titleCnt) +
+        pchip("공시가",     priceCnt,  0);
 
       // 마지막 모드 한글 변환
       var lastModeLabel = "";
       if (j.last_mode) {
         var label = MODE_LABEL[j.last_mode] || j.last_mode;
-        lastModeLabel = '<span style="font-size:10px;color:var(--muted);">' + escHtml(label) + '</span>';
+        lastModeLabel = '<span style="font-size:10px;color:var(--text-3);">' + escHtml(label) + '</span>';
       }
 
       return '<tr>' +
         '<td>' + escHtml(j.dong_name || j.dong_code) + '</td>' +
-        '<td>' + totalBld + '</td>' +
-        '<td style="line-height:1.8;">' + chips + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-weight:600;">' + Number(totalBld).toLocaleString("ko-KR") + '</td>' +
+        '<td><div class="bld-chip-row">' + chips + '</div></td>' +
         '<td>' + lastModeLabel + '</td>' +
-        '<td style="font-size:10px;">' + fmtDate(j.last_run_at || j.finished_at) + '</td>' +
+        '<td style="font-size:10px;color:var(--text-3);">' + fmtDate(j.last_run_at || j.finished_at) + '</td>' +
         '</tr>';
     }).join("");
   }
@@ -1101,6 +1117,12 @@
     "getBrBasisOulnInfo","getBrExposInfo"
   ];
 
+  // [UX 개선 2026-05-11] 주요/보조 그룹 분할
+  //   주요: 일괄 실행 기본 체크 4종 + 지오코딩 = 일상 모니터링 대상
+  //   보조: 가끔 쓰거나 향후 확장용 = 접기보다는 시각적 비중만 낮춤
+  var ENDPOINT_GROUP_PRIMARY = ["getBrTitleInfo","getBrExposPubuseAreaInfo","vworld_geocode","getBrRecapTitleInfo","getBrAtchJibunInfo"];
+  var ENDPOINT_GROUP_SECONDARY = ["getBrFlrOulnInfo","getBrJijiguInfo","getBrWclfInfo","getBrHsprcInfo","getBrBasisOulnInfo","getBrExposInfo"];
+
   function renderUsage(summary) {
     var $date = $("bldUsageDate");
     var $endpoints = $("bldUsageEndpoints");
@@ -1115,49 +1137,60 @@
 
     if ($date) $date.textContent = summary && summary.today_date ? summary.today_date : new Date().toISOString().slice(0,10);
 
-    // ── 엔드포인트별 카드 그리드 ──
+    // ── 엔드포인트별 카드 그리드 (주요/보조 2그룹) ──
+    // [UX 개선 2026-05-11]
+    //   1) 모든 인라인 스타일을 CSS 클래스(.bld-usage-card 등)로 이관 → 다크모드 자동 대응
+    //   2) ENDPOINT_GROUP_PRIMARY/SECONDARY 로 시각적 그룹 분리
     if ($endpoints) {
       $endpoints.style.display = "";
       var byEp = (summary && summary.today_by_endpoint) || {};
-      var bySuccessEp = (summary && summary.today_success_by_endpoint) || {};  // optional (Edge Function 에 있으면 사용)
-      var byErrorEp = (summary && summary.today_error_by_endpoint) || {};
 
-      var cards = ENDPOINT_ORDER.map(function(ep) {
+      function cardHtml(ep) {
         var meta = ENDPOINT_LABELS[ep] || { label: ep, quota: 10000 };
         var used = Number(byEp[ep] || 0);
         var quota = meta.quota;
         var pct = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
         var remaining = Math.max(0, quota - used);
 
-        // 색상: 80%+ 빨강, 60%+ 주황, 호출 0 은 회색, 나머지 초록
-        var barColor = "#E5E7EB", barFg = "#9CA3AF";
-        if (used === 0) { barColor = "#E5E7EB"; barFg = "#9CA3AF"; }
-        else if (pct >= 80) { barColor = "#F44336"; barFg = "#B91C1C"; }
-        else if (pct >= 60) { barColor = "#FF9800"; barFg = "#B45309"; }
-        else                { barColor = "#4CAF50"; barFg = "#15803D"; }
+        // 상태 결정 (CSS 클래스가 색을 결정)
+        var state = "idle";
+        if (used === 0)        state = "idle";
+        else if (pct >= 80)    state = "high";
+        else if (pct >= 60)    state = "mid";
+        else                   state = "low";
 
-        return '<div style="padding:8px 10px;border:1px solid var(--line,#E5E7EB);border-radius:6px;background:var(--surface,#fff);">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+        return '<div class="bld-usage-card" data-state="' + state + '">' +
+          '<div class="bld-usage-card__head">' +
             '<div>' +
-              '<span style="font-weight:700;font-size:11px;color:var(--text);">' + escHtml(meta.label) + '</span>' +
-              '<span style="font-size:9px;color:var(--muted);margin-left:4px;">' + escHtml(ep) + '</span>' +
+              '<span class="bld-usage-card__name">' + escHtml(meta.label) + '</span> ' +
+              '<span class="bld-usage-card__ep">' + escHtml(ep) + '</span>' +
             '</div>' +
-            '<span style="font-size:11px;font-weight:700;color:' + barFg + ';">' + pct + '%</span>' +
+            '<span class="bld-usage-card__pct">' + pct + '%</span>' +
           '</div>' +
-          '<div style="background:#F3F4F6;height:6px;border-radius:3px;overflow:hidden;margin-bottom:4px;">' +
-            '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';transition:width .3s;"></div>' +
-          '</div>' +
-          '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);">' +
+          '<div class="bld-usage-card__bar"><i style="width:' + pct + '%"></i></div>' +
+          '<div class="bld-usage-card__nums">' +
             '<span>' + used.toLocaleString("ko-KR") + ' / ' + quota.toLocaleString("ko-KR") + '</span>' +
             '<span>잔여 ' + remaining.toLocaleString("ko-KR") + '</span>' +
           '</div>' +
         '</div>';
-      }).join("");
+      }
 
-      $endpoints.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">' + cards + '</div>';
+      var primaryHtml = ENDPOINT_GROUP_PRIMARY.map(cardHtml).join("");
+      var secondaryHtml = ENDPOINT_GROUP_SECONDARY.map(cardHtml).join("");
+
+      $endpoints.innerHTML =
+        '<div class="bld-usage-section bld-usage-section--primary">' +
+          '<div class="bld-usage-section__title">주요 엔드포인트</div>' +
+          '<div class="bld-usage-grid">' + primaryHtml + '</div>' +
+        '</div>' +
+        '<div class="bld-usage-section">' +
+          '<div class="bld-usage-section__title">보조 엔드포인트</div>' +
+          '<div class="bld-usage-grid">' + secondaryHtml + '</div>' +
+        '</div>';
     }
 
     // ── 최근 7일 추이 ──
+    // [UX 개선 2026-05-11] 막대 위 호버 시 숫자 노출, 오늘/평균/최고 요약 통계 추가, 오늘은 강조
     if ($recent) {
       var recent = Array.isArray(summary && summary.recent_days) ? summary.recent_days : [];
       var totalRecent = Number(summary && summary.total_recent || 0);
@@ -1171,26 +1204,44 @@
                   String(d.getDate()).padStart(2,"0");
         days7.push(ymd);
       }
+      var todayYmd = days7[days7.length - 1];
 
       var byDate = {};
       recent.forEach(function(r){ byDate[r.date] = Number(r.count || 0); });
 
-      // 7일 막대: quota 는 "가장 많이 쓴 단일 엔드포인트 기준"이 아니라 합산이므로
-      // 각 엔드포인트당 10,000 * 엔드포인트 수 로 가정하긴 애매함. 일단 가장 큰 값 기준 정규화.
-      var maxInWeek = Math.max(1, Math.max.apply(null, days7.map(function(y){ return Number(byDate[y]||0); })));
+      var counts7 = days7.map(function(y){ return Number(byDate[y]||0); });
+      var maxInWeek = Math.max(1, Math.max.apply(null, counts7));
+      var todayCnt = Number(byDate[todayYmd] || 0);
+      var nonZero = counts7.filter(function(c){ return c > 0; });
+      var avgInWeek = nonZero.length > 0 ? Math.round(nonZero.reduce(function(a,b){return a+b;},0) / nonZero.length) : 0;
 
-      $recent.innerHTML = '<div style="margin-bottom:4px;font-weight:700;color:var(--text);font-size:11px;">최근 7일 (총 ' + totalRecent.toLocaleString("ko-KR") + '건)</div>' +
-        '<div style="display:flex;gap:2px;align-items:flex-end;height:36px;">' +
-        days7.map(function(ymd) {
-          var cnt = Number(byDate[ymd] || 0);
-          var h = cnt > 0 ? Math.max(2, Math.round((cnt / maxInWeek) * 32)) : 0;
-          var color = cnt > 0 ? "#4CAF50" : "transparent";
-          var datestr = ymd.slice(5);
-          return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;" title="' + escHtml(ymd) + ': ' + cnt.toLocaleString("ko-KR") + '건">' +
-            '<div style="width:100%;background:' + color + ';height:' + h + 'px;border-radius:2px 2px 0 0;"></div>' +
-            '<div style="font-size:8px;white-space:nowrap;color:' + (cnt > 0 ? "var(--text)" : "var(--muted)") + ';">' + escHtml(datestr) + '</div>' +
-            '</div>';
-        }).join("") +
+      var bars = days7.map(function(ymd) {
+        var cnt = Number(byDate[ymd] || 0);
+        var h = cnt > 0 ? Math.max(2, Math.round((cnt / maxInWeek) * 38)) : 0;
+        var datestr = ymd.slice(5).replace("-",".");
+        var modCls = "";
+        if (cnt === 0) modCls = " bld-trend__bar--zero";
+        if (ymd === todayYmd) modCls += " bld-trend__bar--today";
+        return '<div class="bld-trend__bar' + modCls + '" title="' + escHtml(ymd) + ': ' + cnt.toLocaleString("ko-KR") + '건">' +
+          '<div class="bld-trend__bar-fill-wrap">' +
+            '<span class="bld-trend__bar-value">' + cnt.toLocaleString("ko-KR") + '</span>' +
+            '<div class="bld-trend__bar-fill" style="height:' + h + 'px"></div>' +
+          '</div>' +
+          '<div class="bld-trend__bar-label">' + escHtml(datestr) + '</div>' +
+          '</div>';
+      }).join("");
+
+      $recent.innerHTML =
+        '<div class="bld-trend">' +
+          '<div class="bld-trend__head">' +
+            '<div class="bld-trend__title">최근 7일 사용량 (총 ' + totalRecent.toLocaleString("ko-KR") + '건)</div>' +
+            '<div class="bld-trend__stats">' +
+              '<span>오늘 <b>' + todayCnt.toLocaleString("ko-KR") + '</b></span>' +
+              '<span>일평균 <b>' + avgInWeek.toLocaleString("ko-KR") + '</b></span>' +
+              '<span>최고 <b>' + maxInWeek.toLocaleString("ko-KR") + '</b></span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="bld-trend__chart">' + bars + '</div>' +
         '</div>';
     }
   }

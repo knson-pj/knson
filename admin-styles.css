@@ -2988,3 +2988,365 @@ html.modal-open-lock-html{
   }
   .agent-myratio-toggle-btn{ font-size:11px; padding:5px 10px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   BUILDINGS TAB — 카드 시스템 / 진행 칩 / 사용량 그리드
+   추가 일자: 2026-05-11
+   목적: admin-index.html 의 .card / .card-header / .card-body 가
+         정의되어 있지 않아 화면 경계가 흐릿했던 문제 해결.
+         + 진행 상태 칩에 분모 + 미니 프로그레스 바 (C안)
+         + 사용량 카드 그룹화 + 7일 그래프 개선
+         + 모바일 반응형
+   다크모드: --surface, --border, --text 등 기존 토큰 그대로 사용 → 자동 대응
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── 카드 시스템 ───────────────────────────────────── */
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  overflow:hidden;
+  position:relative;
+}
+.card-header{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:var(--sp-3);flex-wrap:wrap;
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+}
+.card-header strong{
+  font-size:13px;font-weight:700;color:var(--text);
+  letter-spacing:-.01em;
+}
+.card-body{
+  padding:16px;
+  background:var(--surface);
+}
+
+/* ── 카드 좌측 액센트 (영역 성격 식별) ───────────────────── */
+/* 영역마다 좌측 4px 컬러 바로 직관적 구분.
+   접근성: 색맹 사용자 대비 카드 헤더의 텍스트도 함께 변별력 확보. */
+.card[data-accent]{padding-left:0;}
+.card[data-accent]::before{
+  content:"";
+  position:absolute;top:0;left:0;bottom:0;
+  width:3px;
+  background:var(--border);
+  border-radius:var(--r-lg) 0 0 var(--r-lg);
+}
+.card[data-accent="info"]::before{background:var(--info);}
+.card[data-accent="warn"]::before{background:var(--warning);}
+.card[data-accent="brand"]::before{background:var(--brand);}
+.card[data-accent="success"]::before{background:var(--success);}
+
+/* ── 건축물대장 탭 — 진행 칩 (C안: 미니바 + 분수) ─────────── */
+.bld-chip-row{
+  display:flex;flex-wrap:wrap;gap:6px;
+  align-items:stretch;
+  line-height:1.2;
+}
+.bld-pchip{
+  display:inline-flex;flex-direction:column;
+  gap:3px;
+  padding:5px 9px;
+  min-width:108px;
+  border-radius:8px;
+  font-size:10.5px;font-weight:600;
+  border:1px solid transparent;
+  background:var(--surface-2);color:var(--text-2);
+  transition:transform .12s,box-shadow .12s;
+  cursor:default;
+}
+.bld-pchip:hover{transform:translateY(-1px);box-shadow:var(--shadow-xs);}
+.bld-pchip__top{
+  display:flex;justify-content:space-between;align-items:baseline;
+  gap:6px;
+}
+.bld-pchip__label{font-weight:700;letter-spacing:-.01em;}
+.bld-pchip__count{font-variant-numeric:tabular-nums;opacity:.85;font-size:10px;}
+.bld-pchip__bar{
+  display:block;height:3px;border-radius:2px;
+  background:currentColor;opacity:.18;
+  overflow:hidden;position:relative;
+}
+.bld-pchip__bar > i{
+  display:block;height:100%;
+  background:currentColor;opacity:1;
+  border-radius:2px;
+  transition:width .35s ease;
+}
+/* 상태별 색상 — 토큰 기반(다크모드 자동) */
+.bld-pchip--idle{
+  background:var(--surface-2);color:var(--text-3);
+  border-color:var(--border);
+}
+.bld-pchip--low{
+  background:var(--danger-bg);color:var(--danger);
+  border-color:color-mix(in srgb,var(--danger) 25%,transparent);
+}
+.bld-pchip--mid{
+  background:var(--warning-bg);color:var(--warning);
+  border-color:color-mix(in srgb,var(--warning) 25%,transparent);
+}
+.bld-pchip--done{
+  background:var(--success-bg);color:var(--success);
+  border-color:color-mix(in srgb,var(--success) 30%,transparent);
+}
+/* binary 모드(분모 없음, 0/n) — 회색 또는 녹색 */
+.bld-pchip--has{
+  background:var(--success-bg);color:var(--success);
+  border-color:color-mix(in srgb,var(--success) 30%,transparent);
+}
+
+/* ── 사용량 카드 그리드 — 그룹화 ─────────────────────── */
+.bld-usage-section{margin-bottom:14px;}
+.bld-usage-section:last-child{margin-bottom:0;}
+.bld-usage-section__title{
+  display:flex;align-items:center;gap:6px;
+  font-size:10.5px;font-weight:700;
+  color:var(--text-2);
+  margin-bottom:8px;
+  text-transform:uppercase;letter-spacing:.04em;
+}
+.bld-usage-section__title::before{
+  content:"";display:inline-block;
+  width:3px;height:10px;border-radius:2px;
+  background:var(--border-strong);
+}
+.bld-usage-section--primary .bld-usage-section__title::before{background:var(--brand);}
+.bld-usage-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  gap:8px;
+}
+.bld-usage-card{
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  background:var(--surface);
+  transition:border-color .12s;
+}
+.bld-usage-card:hover{border-color:var(--border-strong);}
+.bld-usage-card__head{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:6px;gap:8px;min-height:18px;
+}
+.bld-usage-card__name{
+  font-size:11.5px;font-weight:700;color:var(--text);
+  letter-spacing:-.01em;
+}
+.bld-usage-card__ep{
+  font-size:9.5px;color:var(--text-3);font-weight:500;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.bld-usage-card__pct{
+  font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;
+}
+.bld-usage-card__bar{
+  height:5px;border-radius:3px;
+  background:var(--surface-2);
+  overflow:hidden;margin-bottom:5px;
+}
+.bld-usage-card__bar > i{
+  display:block;height:100%;
+  border-radius:3px;
+  transition:width .35s ease;
+}
+.bld-usage-card__nums{
+  display:flex;justify-content:space-between;
+  font-size:10px;color:var(--text-3);
+  font-variant-numeric:tabular-nums;
+}
+.bld-usage-card[data-state="idle"]{opacity:.7;}
+.bld-usage-card[data-state="idle"] .bld-usage-card__pct{color:var(--text-3);}
+.bld-usage-card[data-state="idle"] .bld-usage-card__bar > i{background:var(--gray-300);}
+.bld-usage-card[data-state="low"] .bld-usage-card__pct{color:var(--success);}
+.bld-usage-card[data-state="low"] .bld-usage-card__bar > i{background:var(--success);}
+.bld-usage-card[data-state="mid"] .bld-usage-card__pct{color:var(--warning);}
+.bld-usage-card[data-state="mid"] .bld-usage-card__bar > i{background:var(--warning);}
+.bld-usage-card[data-state="high"] .bld-usage-card__pct{color:var(--danger);}
+.bld-usage-card[data-state="high"] .bld-usage-card__bar > i{background:var(--danger);}
+
+/* ── 7일 사용 추이 그래프 ──────────────────────────── */
+.bld-trend{
+  display:flex;flex-direction:column;gap:8px;
+  padding-top:12px;border-top:1px solid var(--border);
+}
+.bld-trend__head{
+  display:flex;justify-content:space-between;align-items:center;
+  flex-wrap:wrap;gap:8px;
+}
+.bld-trend__title{
+  font-size:11.5px;font-weight:700;color:var(--text);
+}
+.bld-trend__stats{
+  display:flex;gap:10px;font-size:10.5px;color:var(--text-2);
+  font-variant-numeric:tabular-nums;
+}
+.bld-trend__stats b{color:var(--text);font-weight:700;}
+.bld-trend__chart{
+  display:flex;gap:3px;align-items:flex-end;
+  height:56px;padding:4px 0 0;
+  position:relative;
+}
+.bld-trend__bar{
+  flex:1;min-width:0;
+  display:flex;flex-direction:column;
+  align-items:center;gap:3px;
+  cursor:default;
+}
+.bld-trend__bar-fill-wrap{
+  width:100%;height:42px;
+  display:flex;align-items:flex-end;justify-content:center;
+  position:relative;
+}
+.bld-trend__bar-fill{
+  width:100%;max-width:24px;
+  background:var(--brand);
+  border-radius:3px 3px 0 0;
+  min-height:2px;
+  transition:height .35s ease;
+}
+.bld-trend__bar--today .bld-trend__bar-fill{
+  background:var(--brand);
+  box-shadow:0 0 0 1px var(--brand-muted);
+}
+.bld-trend__bar--zero .bld-trend__bar-fill{
+  background:var(--border);
+}
+.bld-trend__bar-value{
+  font-size:9px;font-weight:700;color:var(--text-2);
+  font-variant-numeric:tabular-nums;
+  position:absolute;top:-2px;left:50%;transform:translate(-50%,-100%);
+  white-space:nowrap;
+  background:var(--surface);padding:1px 4px;border-radius:3px;
+  opacity:0;transition:opacity .15s;
+  pointer-events:none;
+}
+.bld-trend__bar:hover .bld-trend__bar-value{opacity:1;}
+.bld-trend__bar-label{
+  font-size:9px;color:var(--text-3);font-weight:500;
+  white-space:nowrap;
+}
+.bld-trend__bar--today .bld-trend__bar-label{color:var(--brand);font-weight:700;}
+
+/* ── 지역 선택 영역 정돈 ──────────────────────────── */
+.bld-region-toolbar{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:10px 12px;margin-bottom:10px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+}
+.bld-region-toolbar__label{
+  font-size:10.5px;color:var(--text-2);font-weight:700;
+}
+.bld-region-toolbar__divider{
+  width:1px;height:18px;background:var(--border);
+}
+.bld-region-toolbar__count{
+  font-size:11px;color:var(--text);font-weight:700;
+  margin-left:auto;
+  padding:3px 8px;border-radius:10px;
+  background:var(--brand-muted);color:var(--brand);
+}
+.bld-region-toolbar__count[data-empty="true"]{
+  background:var(--surface);color:var(--text-3);
+  border:1px solid var(--border);
+}
+
+/* ── 일괄 실행 바 정돈 (인라인 스타일 대체용) ─────────── */
+.bld-batch-bar{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  padding:10px 12px;margin-bottom:12px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  font-size:11.5px;
+}
+.bld-batch-bar__title{
+  font-weight:700;color:var(--text);
+  display:flex;align-items:center;gap:4px;
+}
+.bld-batch-bar label{
+  display:flex;align-items:center;gap:5px;cursor:pointer;
+  color:var(--text-2);font-weight:500;
+  padding:3px 6px;border-radius:5px;
+  transition:background .12s;
+}
+.bld-batch-bar label:hover{background:var(--surface);}
+.bld-batch-bar label:has(input:checked){
+  color:var(--brand);font-weight:700;
+}
+
+/* ── 진행 로그 영역 정돈 ──────────────────────────── */
+.bld-log{
+  font-size:10.5px;color:var(--text-2);
+  max-height:160px;overflow-y:auto;
+  padding:10px 12px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  line-height:1.55;
+}
+.bld-log:empty{display:none;}
+.bld-log > div{padding:1px 0;}
+
+/* ── 진행 바 정돈 ────────────────────────────────── */
+.bld-progress{
+  margin-bottom:10px;
+  padding:10px 12px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+}
+.bld-progress__head{
+  display:flex;justify-content:space-between;
+  font-size:11.5px;font-weight:600;color:var(--text);
+  margin-bottom:6px;
+}
+.bld-progress__track{
+  height:5px;background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:3px;overflow:hidden;
+}
+.bld-progress__fill{
+  height:100%;background:var(--brand);border-radius:3px;
+  transition:width .3s;
+}
+.bld-progress__detail{
+  font-size:10px;color:var(--text-3);margin-top:5px;
+  font-variant-numeric:tabular-nums;
+}
+
+/* ── 모바일 반응형 ───────────────────────────────── */
+@media (max-width: 768px){
+  .card-header{padding:12px 14px;gap:8px;}
+  .card-body{padding:12px;}
+  .card[data-accent]::before{width:3px;}
+
+  .bld-region-toolbar{padding:8px 10px;gap:6px;}
+  .bld-region-toolbar__count{margin-left:0;width:100%;text-align:center;}
+
+  .bld-usage-grid{
+    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:6px;
+  }
+  .bld-usage-card{padding:8px 10px;}
+  .bld-usage-card__ep{display:none;}
+
+  .bld-pchip{min-width:96px;padding:4px 8px;font-size:10px;}
+  .bld-pchip__count{font-size:9.5px;}
+
+  .bld-trend__chart{height:48px;}
+  .bld-trend__stats{font-size:10px;gap:8px;}
+
+  .bld-batch-bar{font-size:11px;gap:6px;}
+}
+@media (max-width: 480px){
+  .bld-usage-grid{grid-template-columns:1fr 1fr;}
+  .bld-pchip{min-width:88px;flex:1 1 calc(50% - 3px);}
+  .bld-region-toolbar select.input{width:100% !important;}
+}
