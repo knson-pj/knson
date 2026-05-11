@@ -702,9 +702,13 @@
 
     opts = opts || {};
     var limitPerCall = opts.limitPerCall || 15;   // 한 번 호출에 처리할 건물 수
-    var maxRounds = opts.maxRounds || 50;          // 동당 최대 반복 호출
+    var maxRounds = opts.maxRounds || 50;          // 동당 최대 반복 호출 (안전 상한)
     var sleepBetween = opts.sleepBetween || 300;   // ms
     var doneWhenProcessedZero = opts.doneWhenProcessedZero !== false;  // 기본 true
+    // [개선 2026-05-11] 한도(maxRounds)에 의존하지 않고 자연스럽게 끝까지 진행하기 위한 옵션
+    //  - stallLimit: 서버 remaining 값이 N라운드 연속으로 같으면 진행 정체로 보고 종료
+    //  - autoContinue: 한도 도달 시 즉시 종료 대신 콘솔에 명확히 안내
+    var stallLimit = opts.stallLimit || 3;
 
     var K = window.KNSN || {};
     if (typeof K.sbSyncLocalSession === "function") {
@@ -732,6 +736,10 @@
       var done = false;
       var round = 0;
       var dongTotals = { processed: 0, inserted: 0, enriched: 0, geocoded: 0 };
+      // [개선 2026-05-11] 진행 정체 감지용 상태 — 동마다 초기화
+      var prevRemaining = -1;
+      var stallRounds = 0;
+      var hitMaxRounds = false;
 
       while (!done && !shouldStop && round < maxRounds) {
         round++;
@@ -776,11 +784,14 @@
           dongTotals.enriched += enriched;
           dongTotals.geocoded += geocoded;
 
+          // [개선 2026-05-11] 진행 상황 표시에 remaining 도 포함 → 사용자가 끝까지 갈지 가늠 가능
+          var remainingTxt = (typeof data.remaining === "number") ? (" · remaining=" + data.remaining) : "";
           $("bldProgressDetail").textContent =
             "processed=" + dongTotals.processed +
             " inserted=" + dongTotals.inserted +
             (dongTotals.enriched ? " enriched=" + dongTotals.enriched : "") +
-            (dongTotals.geocoded ? " geocoded=" + dongTotals.geocoded : "");
+            (dongTotals.geocoded ? " geocoded=" + dongTotals.geocoded : "") +
+            remainingTxt;
 
           // 종료 조건
           if (data.done === true) {
@@ -788,7 +799,19 @@
           } else if (doneWhenProcessedZero && processed === 0 && inserted === 0 && enriched === 0) {
             // 더 이상 처리할 대상 없음
             done = true;
+          } else if (typeof data.remaining === "number" && data.remaining === prevRemaining) {
+            // [개선 2026-05-11] remaining 정체 stall 감지
+            //   서버가 같은 remaining 을 반복 응답한다는 건 더 줄지 않는다는 뜻 → 무한 루프 방지
+            stallRounds++;
+            if (stallRounds >= stallLimit) {
+              appendLog("⚠️ " + name + " · 진행 정체 감지 (remaining=" + data.remaining + ", 라운드 " + round + ") — 다음 동으로 이동");
+              done = true;
+            }
+          } else {
+            // 정상적으로 진행 중이면 stall 카운터 리셋
+            stallRounds = 0;
           }
+          if (typeof data.remaining === "number") prevRemaining = data.remaining;
         } catch (e) {
           appendLog(name + " " + label + " 네트워크 오류: " + e.message);
           done = true;
@@ -799,7 +822,16 @@
         }
       }
 
-      appendLog(name + " " + label + " 완료 · processed=" + dongTotals.processed +
+      // [개선 2026-05-11] 한도(maxRounds) 도달로 끝난 경우 명확히 안내
+      if (!done && round >= maxRounds) {
+        hitMaxRounds = true;
+        appendLog("⚠️ " + name + " · 한 번에 처리 가능한 한도(" + maxRounds + "라운드 = 약 " +
+                  (maxRounds * limitPerCall).toLocaleString("ko-KR") + "건) 도달. " +
+                  "남은 분은 같은 버튼을 한 번 더 눌러주세요.");
+      }
+
+      appendLog(name + " " + label + (hitMaxRounds ? " 일부 완료" : " 완료") +
+                " · processed=" + dongTotals.processed +
                 " inserted=" + dongTotals.inserted +
                 (dongTotals.enriched ? " enriched=" + dongTotals.enriched : "") +
                 (dongTotals.geocoded ? " geocoded=" + dongTotals.geocoded : ""));
@@ -835,14 +867,16 @@
     if (!dongs.length) return;
 
     // 체크된 모드 수집
+    // [개선 2026-05-11] maxRounds 확대 — 한 번 일괄 실행으로 동당 5,000~10,000건 처리.
+    //   stall 감지가 있어 더 처리할 게 없으면 자동 종료. maxRounds 는 안전 상한선.
     var sequence = [
       { id: "bldBatchOpt_collect",       mode: "collect",       label: "표제부",         isCollect: true },
-      { id: "bldBatchOpt_enrich_v2",     mode: "enrich_v2",     label: "전유부+공용면적", isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
+      { id: "bldBatchOpt_enrich_v2",     mode: "enrich_v2",     label: "전유부+공용면적", isV4: true, opts: { limitPerCall: 10, maxRounds: 1000 } },
       { id: "bldBatchOpt_geocode",       mode: "geocode",       label: "지오코딩",       isGeo: true },
-      { id: "bldBatchOpt_collect_atch",  mode: "collect_atch",  label: "부속지번",       isV4: true, opts: { limitPerCall: 20, maxRounds: 50 } },
-      { id: "bldBatchOpt_enrich_recap",  mode: "enrich_recap",  label: "총괄표제부",     isV4: true, opts: { limitPerCall: 10, maxRounds: 30 } },
-      { id: "bldBatchOpt_enrich_extras", mode: "enrich_extras", label: "층별·지역·오수", isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
-      { id: "bldBatchOpt_enrich_price",  mode: "enrich_price",  label: "공시가격",       isV4: true, opts: { limitPerCall: 10, maxRounds: 100 } },
+      { id: "bldBatchOpt_collect_atch",  mode: "collect_atch",  label: "부속지번",       isV4: true, opts: { limitPerCall: 20, maxRounds: 500 } },
+      { id: "bldBatchOpt_enrich_recap",  mode: "enrich_recap",  label: "총괄표제부",     isV4: true, opts: { limitPerCall: 10, maxRounds: 500 } },
+      { id: "bldBatchOpt_enrich_extras", mode: "enrich_extras", label: "층별·지역·오수", isV4: true, opts: { limitPerCall: 10, maxRounds: 1000 } },
+      { id: "bldBatchOpt_enrich_price",  mode: "enrich_price",  label: "공시가격",       isV4: true, opts: { limitPerCall: 10, maxRounds: 1000 } },
     ];
     var selected = sequence.filter(function(s) {
       var cb = $(s.id);
@@ -1338,20 +1372,23 @@
     if ($("bldBtnRefreshUsage")) $("bldBtnRefreshUsage").addEventListener("click", function() { loadUsage(); });
 
     // v4 확장 모드 버튼
+    // [개선 2026-05-11] maxRounds 를 충분히 크게 늘려 한 번 클릭으로 한 동을 끝까지 처리.
+    //   실제 종료는 서버의 done=true (remaining===0) 신호 또는 stall 감지로 자연스럽게 일어남.
+    //   maxRounds 는 무한 루프 방지용 안전망 (정상 동작에선 거의 도달하지 않음).
     if ($("bldBtnEnrichV2")) $("bldBtnEnrichV2").addEventListener("click", function() {
-      runEnrichV4("enrich_v2", "전유부+공용면적", { limitPerCall: 10, maxRounds: 100 });
+      runEnrichV4("enrich_v2", "전유부+공용면적", { limitPerCall: 10, maxRounds: 2000 });
     });
     if ($("bldBtnCollectAtch")) $("bldBtnCollectAtch").addEventListener("click", function() {
-      runEnrichV4("collect_atch", "부속지번", { limitPerCall: 20, maxRounds: 50 });
+      runEnrichV4("collect_atch", "부속지번", { limitPerCall: 20, maxRounds: 1000 });
     });
     if ($("bldBtnEnrichRecap")) $("bldBtnEnrichRecap").addEventListener("click", function() {
-      runEnrichV4("enrich_recap", "총괄표제부", { limitPerCall: 10, maxRounds: 30 });
+      runEnrichV4("enrich_recap", "총괄표제부", { limitPerCall: 10, maxRounds: 1000 });
     });
     if ($("bldBtnEnrichExtras")) $("bldBtnEnrichExtras").addEventListener("click", function() {
-      runEnrichV4("enrich_extras", "층별·지역·오수", { limitPerCall: 10, maxRounds: 100 });
+      runEnrichV4("enrich_extras", "층별·지역·오수", { limitPerCall: 10, maxRounds: 2000 });
     });
     if ($("bldBtnEnrichPrice")) $("bldBtnEnrichPrice").addEventListener("click", function() {
-      runEnrichV4("enrich_price", "공시가격", { limitPerCall: 10, maxRounds: 100 });
+      runEnrichV4("enrich_price", "공시가격", { limitPerCall: 10, maxRounds: 2000 });
     });
 
     // 일괄 실행
