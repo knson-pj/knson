@@ -1086,5 +1086,236 @@
     return "";
   };
 
+  // ════════════════════════════════════════════════════════════════
+  // [추가 2026-05-11] URL 매칭 안된 매물 관리 (탱크옥션)
+  // ════════════════════════════════════════════════════════════════
+  //   탱크옥션 RPC (sync_tankauction_data) 가 source_url 을 채우지 못한
+  //   경매 매물 (source_type='auction' AND source_url 비어있음) 을 모아서
+  //   표시하고 일괄 삭제하는 기능.
+  //
+  //   상태: 카드 자체는 항상 보이지만 데이터는 [조회] 버튼을 눌러야 로드됨.
+  //   캐시: state.unmatchedProperties 에 마지막 조회 결과 보관.
+
+  // 조회: source_type='auction' + (source_url IS NULL OR source_url='') 인 행 가져오기
+  mod.loadUnmatchedProperties = async function loadUnmatchedProperties() {
+    const { state, els, K, utils } = ctx();
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
+
+    const btnLoad = document.getElementById('btnLoadUnmatched');
+    const btnDelete = document.getElementById('btnDeleteUnmatched');
+    const wrap = document.getElementById('unmatchedTableWrap');
+    const empty = document.getElementById('unmatchedEmpty');
+    const countEl = document.getElementById('unmatchedCount');
+
+    if (btnLoad) { btnLoad.disabled = true; btnLoad.textContent = '조회 중...'; }
+    if (btnDelete) btnDelete.disabled = true;
+
+    try {
+      // 세션 동기화
+      try { await K.sbSyncLocalSession(); } catch {}
+      if (state.session?.user?.role !== 'admin') {
+        throw new Error('관리자만 사용할 수 있습니다.');
+      }
+
+      const sb = (K && K.supabaseEnabled && K.supabaseEnabled()) ? K.initSupabase() : null;
+      if (!sb) throw new Error('Supabase 클라이언트 사용 불가');
+
+      // 경매(auction) + URL 비어있음 (NULL 또는 빈 문자열)
+      // limit 2000: 100~1000건 규모 + 여유. 그 이상이면 다음 호출에서 끊김 안내.
+      const { data, error } = await sb
+        .from('properties')
+        .select('id, item_no, address, asset_type, price_main, date_uploaded, assignee_name, assignee_id, source_url')
+        .eq('source_type', 'auction')
+        .or('source_url.is.null,source_url.eq.')
+        .order('date_uploaded', { ascending: false })
+        .limit(2000);
+
+      if (error) throw error;
+
+      const rows = Array.isArray(data) ? data : [];
+      state.unmatchedProperties = rows;
+      state.selectedUnmatchedIds = new Set();
+
+      mod.renderUnmatchedTable();
+
+      if (countEl) {
+        countEl.textContent = rows.length.toLocaleString('ko-KR') + '건';
+        countEl.setAttribute('data-empty', rows.length === 0 ? 'true' : 'false');
+      }
+      if (rows.length > 0) {
+        if (wrap) wrap.classList.remove('hidden');
+        if (empty) empty.classList.add('hidden');
+      } else {
+        if (wrap) wrap.classList.add('hidden');
+        if (empty) {
+          empty.classList.remove('hidden');
+          empty.textContent = '✅ URL 매칭 안 된 경매 매물이 없습니다.';
+        }
+      }
+    } catch (err) {
+      console.error('loadUnmatchedProperties failed', err);
+      alert('조회 실패: ' + (err.message || '알 수 없는 오류'));
+      if (empty) {
+        empty.classList.remove('hidden');
+        empty.textContent = '조회 중 오류가 발생했습니다.';
+      }
+    } finally {
+      if (btnLoad) { btnLoad.disabled = false; btnLoad.textContent = '새로고침'; }
+    }
+  };
+
+  // 렌더링: 마지막 조회 결과로 테이블 본문 그리기
+  mod.renderUnmatchedTable = function renderUnmatchedTable() {
+    const { state, utils } = ctx();
+    const tbody = document.getElementById('unmatchedTableBody');
+    if (!tbody) return;
+
+    const rows = state.unmatchedProperties || [];
+    const selected = state.selectedUnmatchedIds || new Set();
+    const esc = (utils && utils.escapeHtml) ? utils.escapeHtml : (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '';
+      return;
+    }
+
+    function fmtDate(s) {
+      if (!s) return '-';
+      try { return new Date(s).toLocaleDateString('ko-KR'); } catch { return String(s).slice(0,10); }
+    }
+    function fmtPrice(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n === 0) return '-';
+      if (n >= 100000000) return (n / 100000000).toFixed(1).replace(/\.0$/, '') + '억';
+      if (n >= 10000)     return Math.round(n / 10000).toLocaleString('ko-KR') + '만';
+      return n.toLocaleString('ko-KR');
+    }
+
+    tbody.innerHTML = rows.map(function(r) {
+      const isChecked = selected.has(r.id) ? ' checked' : '';
+      return '<tr data-id="' + esc(r.id) + '" class="' + (selected.has(r.id) ? 'row-selected' : '') + '">' +
+        '<td class="csv-unmatched-col-check"><input type="checkbox" class="unmatched-row-check" data-id="' + esc(r.id) + '"' + isChecked + ' /></td>' +
+        '<td><span class="csv-unmatched-item-no">' + esc(r.item_no || '-') + '</span></td>' +
+        '<td class="csv-unmatched-addr">' + esc(r.address || '-') + '</td>' +
+        '<td>' + esc(r.asset_type || '-') + '</td>' +
+        '<td class="csv-unmatched-col-num">' + esc(fmtPrice(r.price_main)) + '</td>' +
+        '<td>' + esc(fmtDate(r.date_uploaded)) + '</td>' +
+        '<td>' + esc(r.assignee_name || '-') + '</td>' +
+        '</tr>';
+    }).join('');
+
+    mod.updateUnmatchedControls();
+  };
+
+  // 선택 컨트롤 상태 업데이트 (전체선택 체크박스 / 삭제 버튼 활성화)
+  mod.updateUnmatchedControls = function updateUnmatchedControls() {
+    const { state } = ctx();
+    const rows = state.unmatchedProperties || [];
+    const selected = state.selectedUnmatchedIds || new Set();
+    const total = rows.length;
+    const selCount = selected.size;
+
+    const selectAll = document.getElementById('unmatchedSelectAll');
+    if (selectAll) {
+      if (selCount === 0) { selectAll.checked = false; selectAll.indeterminate = false; }
+      else if (selCount === total) { selectAll.checked = true; selectAll.indeterminate = false; }
+      else { selectAll.checked = false; selectAll.indeterminate = true; }
+    }
+
+    const btnDelete = document.getElementById('btnDeleteUnmatched');
+    if (btnDelete) {
+      btnDelete.disabled = selCount === 0;
+      btnDelete.textContent = selCount > 0
+        ? '선택 삭제 (' + selCount.toLocaleString('ko-KR') + '건)'
+        : '선택 삭제';
+    }
+  };
+
+  // 개별 체크박스 토글
+  mod.toggleUnmatchedRow = function toggleUnmatchedRow(id, checked) {
+    const { state } = ctx();
+    if (!state.selectedUnmatchedIds) state.selectedUnmatchedIds = new Set();
+    if (checked) state.selectedUnmatchedIds.add(id);
+    else         state.selectedUnmatchedIds.delete(id);
+    const tr = document.querySelector('#unmatchedTableBody tr[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+    if (tr) tr.classList.toggle('row-selected', checked);
+    mod.updateUnmatchedControls();
+  };
+
+  // 전체선택 토글
+  mod.toggleUnmatchedSelectAll = function toggleUnmatchedSelectAll(checked) {
+    const { state } = ctx();
+    const rows = state.unmatchedProperties || [];
+    if (!state.selectedUnmatchedIds) state.selectedUnmatchedIds = new Set();
+    state.selectedUnmatchedIds.clear();
+    if (checked) {
+      for (const r of rows) state.selectedUnmatchedIds.add(r.id);
+    }
+    mod.renderUnmatchedTable();
+  };
+
+  // 삭제 실행
+  mod.deleteSelectedUnmatched = async function deleteSelectedUnmatched() {
+    const { state, K, api, utils } = ctx();
+    if (utils.ensureAdminWrite && !utils.ensureAdminWrite('properties')) return;
+
+    const selected = state.selectedUnmatchedIds || new Set();
+    if (selected.size === 0) return;
+
+    const ids = Array.from(selected);
+    const cnt = ids.length;
+    if (!window.confirm('선택된 ' + cnt.toLocaleString('ko-KR') + '건을 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
+    if (cnt >= 100 && !window.confirm('정말 ' + cnt.toLocaleString('ko-KR') + '건을 일괄 삭제할까요?')) return;
+
+    const btnDelete = document.getElementById('btnDeleteUnmatched');
+    if (btnDelete) { btnDelete.disabled = true; btnDelete.textContent = '삭제 중...'; }
+
+    let deleteError = null;
+    try {
+      // 기존 admin-tab-properties.js 의 패턴과 동일 — DataAccess → api fallback
+      const DA = window.KNSN_DATA_ACCESS;
+      if (DA && typeof DA.deletePropertiesViaAdminApi === 'function') {
+        await DA.deletePropertiesViaAdminApi(api, ids, { auth: true });
+      } else {
+        await api('/admin/properties', { method: 'DELETE', auth: true, body: { ids } });
+      }
+    } catch (err) {
+      deleteError = err;
+      console.error('deleteSelectedUnmatched failed', err);
+    }
+
+    // 캐시 무효화 (다른 페이지의 properties 목록과 동기화)
+    if (utils && typeof utils.invalidatePropertyCollections === 'function') {
+      try { utils.invalidatePropertyCollections(); } catch {}
+    }
+
+    if (deleteError) {
+      alert('삭제 실패: ' + (deleteError.message || '알 수 없는 오류'));
+      if (btnDelete) btnDelete.disabled = false;
+      return;
+    }
+
+    // 성공 → 결과 목록에서 제거하고 카운트 갱신
+    state.unmatchedProperties = (state.unmatchedProperties || []).filter(function(r) { return !selected.has(r.id); });
+    state.selectedUnmatchedIds = new Set();
+    mod.renderUnmatchedTable();
+
+    const countEl = document.getElementById('unmatchedCount');
+    const remain = state.unmatchedProperties.length;
+    if (countEl) {
+      countEl.textContent = remain.toLocaleString('ko-KR') + '건';
+      countEl.setAttribute('data-empty', remain === 0 ? 'true' : 'false');
+    }
+    if (remain === 0) {
+      const wrap = document.getElementById('unmatchedTableWrap');
+      const empty = document.getElementById('unmatchedEmpty');
+      if (wrap) wrap.classList.add('hidden');
+      if (empty) { empty.classList.remove('hidden'); empty.textContent = '✅ 선택된 매물이 모두 삭제되었습니다.'; }
+    }
+
+    if (btnDelete) { btnDelete.disabled = true; btnDelete.textContent = '선택 삭제'; }
+    alert(cnt.toLocaleString('ko-KR') + '건이 삭제되었습니다.');
+  };
+
   AdminModules.csvTab = mod;
 })();

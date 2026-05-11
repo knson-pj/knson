@@ -3048,7 +3048,6 @@ html.modal-open-lock-html{
 }
 .bld-pchip{
   display:inline-flex;flex-direction:column;
-  align-items:stretch;          /* [FIX 2026-05-11] inline-flex 자식 너비 stretch 명시 */
   gap:3px;
   padding:5px 9px;
   min-width:108px;
@@ -3066,30 +3065,14 @@ html.modal-open-lock-html{
 }
 .bld-pchip__label{font-weight:700;letter-spacing:-.01em;}
 .bld-pchip__count{font-variant-numeric:tabular-nums;opacity:.85;font-size:10px;}
-/* [FIX 2026-05-11] 트랙(::before)과 채움(>i)을 분리하여
-   - 부모 opacity 상속으로 자식 i까지 흐려지던 현상 제거
-   - width:100% 명시로 inline-flex 안에서 트랙이 0폭으로 축소되는 현상 제거 */
 .bld-pchip__bar{
-  position:relative;
-  display:block;
-  width:100%;
-  height:3px;
-  border-radius:2px;
-  overflow:hidden;
-  background:transparent;
-}
-.bld-pchip__bar::before{
-  content:"";
-  position:absolute;inset:0;
-  background:currentColor;
-  opacity:.18;
-  border-radius:2px;
+  display:block;height:3px;border-radius:2px;
+  background:currentColor;opacity:.18;
+  overflow:hidden;position:relative;
 }
 .bld-pchip__bar > i{
-  position:relative;     /* ::before 위에 표시 */
-  display:block;
-  height:100%;
-  background:currentColor;
+  display:block;height:100%;
+  background:currentColor;opacity:1;
   border-radius:2px;
   transition:width .35s ease;
 }
@@ -3366,4 +3349,119 @@ html.modal-open-lock-html{
   .bld-usage-grid{grid-template-columns:1fr 1fr;}
   .bld-pchip{min-width:88px;flex:1 1 calc(50% - 3px);}
   .bld-region-toolbar select.input{width:100% !important;}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   [추가 2026-05-11] URL 매칭 안된 매물 관리 (탱크옥션)
+   위치: 관리자 → 물건 등록 탭 → CSV 업로드 카드 바로 아래
+   다크모드: 기존 토큰(--surface, --border, --text 등) 사용 → 자동 대응
+   ══════════════════════════════════════════════════════════════════ */
+.csv-unmatched-card{
+  margin-top:12px;
+  position:relative;
+  /* 좌측 액센트로 "정리/관리" 영역임을 표시 (warning 톤) */
+}
+.csv-unmatched-card::before{
+  content:"";
+  position:absolute;top:0;left:0;bottom:0;
+  width:3px;
+  background:var(--warning);
+  border-radius:var(--r-lg) 0 0 var(--r-lg);
+}
+.csv-unmatched-toolbar{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  gap:12px;flex-wrap:wrap;
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+}
+.csv-unmatched-title{
+  display:flex;flex-direction:column;gap:2px;
+  min-width:0;flex:1 1 auto;
+}
+.csv-unmatched-title strong{
+  font-size:13px;font-weight:700;color:var(--text);
+  letter-spacing:-.01em;
+}
+.csv-unmatched-hint{
+  font-size:10.5px;color:var(--text-3);font-weight:400;
+}
+.csv-unmatched-controls{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+.csv-unmatched-count{
+  font-size:11px;font-weight:700;
+  padding:3px 10px;border-radius:10px;
+  background:var(--surface-2);color:var(--text-3);
+  border:1px solid var(--border);
+  font-variant-numeric:tabular-nums;
+}
+.csv-unmatched-count[data-empty="false"]{
+  background:color-mix(in srgb,var(--warning) 18%,transparent);
+  color:var(--warning);
+  border-color:color-mix(in srgb,var(--warning) 35%,transparent);
+}
+
+.csv-unmatched-table-wrap{
+  padding:0;
+  max-height:480px;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.csv-unmatched-table{
+  width:100%;
+  font-size:11.5px;
+  border-collapse:collapse;
+}
+.csv-unmatched-table thead th{
+  position:sticky;top:0;z-index:1;
+  background:var(--surface-2);
+  font-size:10.5px;font-weight:700;color:var(--text-2);
+  padding:8px 10px;text-align:left;
+  border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.csv-unmatched-table tbody td{
+  padding:8px 10px;
+  border-bottom:1px solid var(--border);
+  color:var(--text);
+  vertical-align:middle;
+}
+.csv-unmatched-table tbody tr:hover{ background:var(--surface-2); }
+.csv-unmatched-table tbody tr.row-selected{
+  background:color-mix(in srgb,var(--brand) 8%,transparent);
+}
+.csv-unmatched-col-check{ width:36px; text-align:center; }
+.csv-unmatched-col-num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.csv-unmatched-item-no{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11px;font-weight:600;color:var(--text);
+}
+.csv-unmatched-addr{
+  max-width:340px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.csv-unmatched-empty{
+  padding:32px 16px;
+  text-align:center;
+  color:var(--text-3);
+  font-size:12px;
+}
+
+/* 모바일 반응형 */
+@media (max-width: 768px){
+  .csv-unmatched-toolbar{ padding:10px 12px; gap:8px; }
+  .csv-unmatched-controls{ width:100%; justify-content:space-between; }
+  .csv-unmatched-table-wrap{ max-height:360px; }
+  .csv-unmatched-table{ font-size:11px; }
+  .csv-unmatched-table thead th,
+  .csv-unmatched-table tbody td{ padding:6px 8px; }
+  .csv-unmatched-addr{ max-width:160px; }
+}
+@media (max-width: 480px){
+  /* 좁은 화면에서 세부유형 / 담당자 컬럼 숨겨 가독성 확보 */
+  .csv-unmatched-table thead th:nth-child(4),
+  .csv-unmatched-table tbody td:nth-child(4),
+  .csv-unmatched-table thead th:nth-child(7),
+  .csv-unmatched-table tbody td:nth-child(7){ display:none; }
+  .csv-unmatched-addr{ max-width:120px; }
 }

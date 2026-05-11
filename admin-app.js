@@ -507,6 +507,15 @@
       btnCsvUpload: $("#btnCsvUpload"),
       csvResultBox: $("#csvResultBox"),
 
+      // [추가 2026-05-11] URL 매칭 안된 매물 관리 (탱크옥션)
+      btnLoadUnmatched: $("#btnLoadUnmatched"),
+      btnDeleteUnmatched: $("#btnDeleteUnmatched"),
+      unmatchedTableBody: $("#unmatchedTableBody"),
+      unmatchedTableWrap: $("#unmatchedTableWrap"),
+      unmatchedEmpty: $("#unmatchedEmpty"),
+      unmatchedCount: $("#unmatchedCount"),
+      unmatchedSelectAll: $("#unmatchedSelectAll"),
+
       // staff
       staffForm: $("#staffForm"),
       staffFormHint: $("#staffFormHint"),
@@ -1025,6 +1034,26 @@ function bindEvents() {
     if (els.btnCsvUpload) els.btnCsvUpload.addEventListener("click", () => {
       if (state.session?.user?.role !== "admin") return alert("CSV 업로드는 관리자만 가능합니다.");
       handleCsvUpload().catch((e)=>handleAsyncError(e,"업로드 실패"));
+    });
+
+    // [추가 2026-05-11] URL 매칭 안된 매물 관리 (관리자만)
+    if (els.btnLoadUnmatched) els.btnLoadUnmatched.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return alert("관리자만 사용할 수 있습니다.");
+      loadUnmatchedProperties().catch((e)=>handleAsyncError(e,"매칭 안된 매물 조회 실패"));
+    });
+    if (els.btnDeleteUnmatched) els.btnDeleteUnmatched.addEventListener("click", () => {
+      if (state.session?.user?.role !== "admin") return alert("관리자만 사용할 수 있습니다.");
+      deleteSelectedUnmatched().catch((e)=>handleAsyncError(e,"매칭 안된 매물 삭제 실패"));
+    });
+    if (els.unmatchedSelectAll) els.unmatchedSelectAll.addEventListener("change", (e) => {
+      toggleUnmatchedSelectAll(e.target.checked);
+    });
+    // 테이블 행 체크박스: 위임 방식 (테이블이 재렌더링되어도 동작)
+    if (els.unmatchedTableBody) els.unmatchedTableBody.addEventListener("change", (e) => {
+      const t = e.target;
+      if (t && t.classList && t.classList.contains("unmatched-row-check")) {
+        toggleUnmatchedRow(t.dataset.id, t.checked);
+      }
     });
 
     // staff/regions (관리자만)
@@ -3079,6 +3108,19 @@ function bindEvents() {
   // ---------------------------
   async function handleCsvUpload(...args) {
     return callAdminModule("csvTab", "handleCsvUpload", args);
+  }
+  // [추가 2026-05-11] URL 매칭 안된 매물 관리 (탱크옥션) 래퍼
+  async function loadUnmatchedProperties(...args) {
+    return callAdminModule("csvTab", "loadUnmatchedProperties", args);
+  }
+  async function deleteSelectedUnmatched(...args) {
+    return callAdminModule("csvTab", "deleteSelectedUnmatched", args);
+  }
+  function toggleUnmatchedRow(...args) {
+    return callAdminModule("csvTab", "toggleUnmatchedRow", args);
+  }
+  function toggleUnmatchedSelectAll(...args) {
+    return callAdminModule("csvTab", "toggleUnmatchedSelectAll", args);
   }
   function mapPropertyCsvRow(...args) {
     return callAdminModule("csvTab", "mapPropertyCsvRow", args);
