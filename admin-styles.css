@@ -3048,6 +3048,7 @@ html.modal-open-lock-html{
 }
 .bld-pchip{
   display:inline-flex;flex-direction:column;
+  align-items:stretch;          /* [FIX 2026-05-11] inline-flex 자식 너비 stretch 명시 */
   gap:3px;
   padding:5px 9px;
   min-width:108px;
@@ -3065,14 +3066,30 @@ html.modal-open-lock-html{
 }
 .bld-pchip__label{font-weight:700;letter-spacing:-.01em;}
 .bld-pchip__count{font-variant-numeric:tabular-nums;opacity:.85;font-size:10px;}
+/* [FIX 2026-05-11] 트랙(::before)과 채움(>i)을 분리하여
+   - 부모 opacity 상속으로 자식 i까지 흐려지던 현상 제거
+   - width:100% 명시로 inline-flex 안에서 트랙이 0폭으로 축소되는 현상 제거 */
 .bld-pchip__bar{
-  display:block;height:3px;border-radius:2px;
-  background:currentColor;opacity:.18;
-  overflow:hidden;position:relative;
+  position:relative;
+  display:block;
+  width:100%;
+  height:3px;
+  border-radius:2px;
+  overflow:hidden;
+  background:transparent;
+}
+.bld-pchip__bar::before{
+  content:"";
+  position:absolute;inset:0;
+  background:currentColor;
+  opacity:.18;
+  border-radius:2px;
 }
 .bld-pchip__bar > i{
-  display:block;height:100%;
-  background:currentColor;opacity:1;
+  position:relative;     /* ::before 위에 표시 */
+  display:block;
+  height:100%;
+  background:currentColor;
   border-radius:2px;
   transition:width .35s ease;
 }
