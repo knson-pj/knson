@@ -220,7 +220,88 @@ async function handlePublicMapRequest(req, res) {
   });
 }
 // =============================================================================
-// platform 회원용 지도 매물 조회 — 끝
+// platform 회원용 마이페이지 데이터 (GET ?mode=mylist) — 2026-05-12 Phase C-4
+// =============================================================================
+// 관심매물 + 최근 조회한 매물을 한 번에 응답.
+// service_role 로 properties 와 JOIN 후 PII 제거.
+//
+// 응답:
+//   {
+//     ok: true,
+//     favorites: [{ id, address, type, status, latitude, longitude, createdAt }, ...],
+//     recent:    [{ id, address, type, viewedAt, viewCount }, ...]
+//   }
+async function handlePublicMyListRequest(req, res, user) {
+  const url = new URL(req.url, 'http://localhost');
+  const userId = user.id;
+
+  // 1) 관심 매물 — user_favorites where user_id=me AND kind='star'
+  //    properties 와 JOIN — PostgREST embedded resource
+  const favParams = new URLSearchParams();
+  favParams.set(
+    'select',
+    'property_id,created_at,property:property_id(' + PUBLIC_MAP_SELECT_COLUMNS + ')'
+  );
+  favParams.append('user_id', `eq.${userId}`);
+  favParams.append('kind', 'eq.star');
+  favParams.set('order', 'created_at.desc');
+  favParams.set('limit', '100');
+
+  // 2) 최근 조회 — member_property_views where user_id=me
+  const recParams = new URLSearchParams();
+  recParams.set(
+    'select',
+    'property_id,last_viewed_at,view_count,property:property_id(' + PUBLIC_MAP_SELECT_COLUMNS + ')'
+  );
+  recParams.append('user_id', `eq.${userId}`);
+  recParams.set('order', 'last_viewed_at.desc');
+  recParams.set('limit', '30');
+
+  let favRows = [], recRows = [];
+  try {
+    [favRows, recRows] = await Promise.all([
+      supabaseRestForPublicMap(`/rest/v1/user_favorites?${favParams.toString()}`),
+      supabaseRestForPublicMap(`/rest/v1/member_property_views?${recParams.toString()}`),
+    ]);
+  } catch (err) {
+    return send(res, err.status || 500, {
+      ok: false,
+      message: '마이페이지 데이터를 불러오지 못했습니다.',
+      detail: String(err.message || err),
+    });
+  }
+
+  // 정규화 — PII 제외된 컬럼만 노출, JOIN 결과 평탄화
+  const favorites = (Array.isArray(favRows) ? favRows : [])
+    .map((row) => {
+      const p = row && row.property;
+      if (!p) return null;
+      const n = pmNormalizeRow(p);
+      n.favoritedAt = String(row.created_at || '');
+      return n;
+    })
+    .filter(Boolean);
+
+  const recent = (Array.isArray(recRows) ? recRows : [])
+    .map((row) => {
+      const p = row && row.property;
+      if (!p) return null;
+      const n = pmNormalizeRow(p);
+      n.viewedAt = String(row.last_viewed_at || '');
+      n.viewCount = Number(row.view_count || 1);
+      return n;
+    })
+    .filter(Boolean);
+
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  return send(res, 200, {
+    ok: true,
+    favorites,
+    recent,
+  });
+}
+// =============================================================================
+// platform 회원용 마이페이지 데이터 — 끝
 // =============================================================================
 
 
@@ -844,6 +925,21 @@ module.exports = async function handler(req, res) {
     const mode = String(url.searchParams.get('mode') || '').trim().toLowerCase();
     if (mode === 'map') {
       return handlePublicMapRequest(req, res);
+    }
+    if (mode === 'mylist') {
+      // 인증 + DBMS 차단은 map 과 같은 로직 — 중복 회피 위해 여기서 직접
+      let user;
+      try { user = await verifySupabaseUser(req); } catch (e) {
+        return send(res, 401, { ok: false, message: '인증에 실패했습니다.' });
+      }
+      if (!user || !user.id) {
+        return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+      }
+      const userApp = String((user.app_metadata && user.app_metadata.app) || '').trim();
+      if (userApp === 'dbms') {
+        return send(res, 403, { ok: false, message: 'DBMS 계정은 이 API 를 사용할 수 없습니다.' });
+      }
+      return handlePublicMyListRequest(req, res, user);
     }
     // 기본 GET — 도움말 (기존 동작 유지)
     return send(res, 200, {
