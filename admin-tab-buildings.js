@@ -1052,6 +1052,15 @@
       var priceCnt    = Number(j.price_count      || 0);
       var totalBld    = Number(j.total_buildings  || titleCnt || 0);
 
+      // [UX 개선 2026-05-12 v6.4.3] 모드별 정확한 모집단(분모) 적용.
+      //   Edge Function 의 handleStatus 가 job 마다 population 필드(5종 카운트)를 함께 반환.
+      //   population 이 null 이면 모든 분모가 0 → 기존 binary 모드로 자연 fallback (후방 호환).
+      var pop = (j && j.population) ? j.population : {};
+      var aggBld   = Number(pop.agg_buildings   || 0);
+      var bylotBld = Number(pop.bylot_buildings || 0);
+      var titleBld = Number(pop.title_buildings || 0);
+      var recapPar = Number(pop.recap_parcels   || 0);
+
       // [UX 개선 2026-05-11] C안 — 미니바 + 분수 칩
       //   denom > 0  : 비율 기반 (분모 표시 + 진행바)
       //   denom = 0  : binary (있음/없음만)
@@ -1088,18 +1097,21 @@
         '</span>';
       }
 
-      // [UX 개선 2026-05-11] 모드별 표시 방식 차별화
-      //   - 표제부 / 지오코딩: 모든 건물 대상이라 분수(미니바) 표시가 의미 있음
-      //   - 전유+공용 / 부속지번 / 총괄표제 / 층별등 / 공시가: 일부 건물에만 해당하는 데이터.
-      //     분모를 표제부 수로 잡으면 "거짓 미흡" 으로 표시되므로 절대 건수만 표시 (binary)
+      // [UX 개선 2026-05-12 v6.4.3] 모드별 정확한 모집단 분수 표시.
+      //   - 표제부 / 지오코딩: 동 전체 건물 분모 (기존 그대로)
+      //   - 전유+공용 / 공시가: 집합건축물(regstr_gb_cd_nm='집합') 분모
+      //   - 부속지번: 부속지번 보유(bylot_cnt>0) 건물 분모
+      //   - 총괄표제: 집합+주건축물 unique 지번 분모
+      //   - 층별등: 표제부 보유(mgm_bldrgst_pk IS NOT NULL) 건물 분모
+      //   population 이 null 이거나 0 이면 자동으로 binary 표시로 fallback.
       var chips =
-        pchip("표제부",     titleCnt,  totalBld, "동 전체 건물 중 표제부가 수집된 비율") +
-        pchip("전유+공용",  v2Cnt,     0,        "전유부 호실 데이터가 저장된 건물 수 (집합건축물만 해당)") +
-        pchip("지오코딩",   geoCnt,    totalBld, "좌표 변환이 완료된 건물 비율") +
-        pchip("부속지번",   atchCnt,   0,        "부속 지번 정보가 있는 건물 수 (합필된 건물만 해당)") +
-        pchip("총괄표제",   recapCnt,  0,        "단지 단위 총괄 정보가 있는 건물 수 (대단지만 해당)") +
-        pchip("층별등",     extrasCnt, 0,        "층별·지역지구·오수정화 정보가 있는 건물 수") +
-        pchip("공시가",     priceCnt,  0,        "공시가격 정보가 있는 호실/건물 수 (집합·거주만 해당)");
+        pchip("표제부",     titleCnt,  totalBld,  "동 전체 건물 중 표제부가 수집된 비율") +
+        pchip("전유+공용",  v2Cnt,     aggBld,    "전유부 호실 데이터가 저장된 건물 / 집합건축물 모집단") +
+        pchip("지오코딩",   geoCnt,    totalBld,  "좌표 변환이 완료된 건물 비율") +
+        pchip("부속지번",   atchCnt,   bylotBld,  "부속 지번 정보 / 부속지번 보유 건물 모집단") +
+        pchip("총괄표제",   recapCnt,  recapPar,  "단지 단위 총괄 정보 / 집합 주건축물 지번 모집단") +
+        pchip("층별등",     extrasCnt, titleBld,  "층별·지역지구·오수정화 정보 / 표제부 보유 건물 모집단") +
+        pchip("공시가",     priceCnt,  aggBld,    "공시가격 정보 / 집합건축물 모집단");
 
       // 마지막 모드 한글 변환
       var lastModeLabel = "";
