@@ -9,9 +9,220 @@ const {
   id,
   nowIso,
 } = require('./_lib/utils');
-const { hasSupabaseAdminEnv, getEnv } = require('./_lib/supabase-admin');
+const { hasSupabaseAdminEnv, getEnv, verifySupabaseUser } = require('./_lib/supabase-admin');
 const { getClientIp, checkRateLimitMany } = require('./_lib/rate-limit');
 const PropertyDomain = require('../knson-property-domain.js');
+
+// =============================================================================
+// platform 회원용 지도 매물 조회 (GET ?mode=map) — 2026-05-12 Phase C-2 통합
+// =============================================================================
+// Vercel Hobby 플랜의 Serverless Function 12 개 한도 회피를 위해
+// 별도 파일(api/public/properties.js) 대신 본 파일에 통합.
+// POST 의 매물 등록 흐름과 완전히 분리되어 있어 상호 간섭 없음.
+//
+// PII 제거 정책 — DB SELECT 단계에서 안전 컬럼만 추림 + normalize 단계에서 한번 더 차단
+const PUBLIC_MAP_SELECT_COLUMNS = [
+  'id', 'global_id', 'item_no',
+  'source_type', 'source_url', 'is_general',
+  'address', 'asset_type', 'tankauction_category',
+  'floor', 'total_floor', 'use_approval',
+  'common_area', 'exclusive_area', 'site_area',
+  'status', 'price_main', 'lowprice', 'date_main',
+  'latitude', 'longitude',
+  'created_at', 'date_uploaded',
+  'result_status', 'result_price', 'result_date',
+].join(',');
+
+function buildSupabaseHeadersForPublicMap() {
+  const { serviceRoleKey } = getEnv();
+  return {
+    Accept: 'application/json',
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+  };
+}
+
+async function supabaseRestForPublicMap(path) {
+  const { url } = getEnv();
+  if (!url) throw new Error('SUPABASE_URL 이 설정되지 않았습니다.');
+  const res = await fetch(`${url}${path}`, {
+    method: 'GET',
+    headers: buildSupabaseHeadersForPublicMap(),
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text || null; }
+  if (!res.ok) {
+    const message = (data && (data.message || data.msg || data.error_description || data.error))
+      || `Supabase API 오류 (${res.status})`;
+    const err = new Error(message);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function pmToFiniteNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function pmClassifySourceBucket(row) {
+  if (row && row.is_general === true) return 'general';
+  const t = String((row && row.source_type) || '').toLowerCase();
+  if (t === 'auction') return 'auction';
+  if (t === 'onbid') return 'onbid';
+  if (t === 'realtor_naver') return 'realtor_naver';
+  if (t === 'realtor_direct' || t === 'realtor') return 'realtor_direct';
+  return 'general';
+}
+
+function pmNormalizeRow(row) {
+  return {
+    id: String(row.id || ''),
+    globalId: String(row.global_id || ''),
+    itemNo: String(row.item_no || ''),
+    source: String(row.source_type || 'general'),
+    sourceBucket: pmClassifySourceBucket(row),
+    sourceUrl: String(row.source_url || ''),
+    address: String(row.address || ''),
+    type: String(row.asset_type || ''),
+    tankauctionCategory: String(row.tankauction_category || ''),
+    status: String(row.status || ''),
+    floor: String(row.floor || ''),
+    totalFloor: String(row.total_floor || ''),
+    useapproval: String(row.use_approval || ''),
+    exclusivearea: pmToFiniteNumber(row.exclusive_area),
+    commonarea: pmToFiniteNumber(row.common_area),
+    sitearea: pmToFiniteNumber(row.site_area),
+    appraisalPrice: pmToFiniteNumber(row.price_main),
+    currentPrice: pmToFiniteNumber(row.lowprice),
+    bidDate: String(row.date_main || ''),
+    resultStatus: String(row.result_status || ''),
+    resultPrice: pmToFiniteNumber(row.result_price),
+    resultDate: String(row.result_date || ''),
+    latitude: pmToFiniteNumber(row.latitude),
+    longitude: pmToFiniteNumber(row.longitude),
+    createdAt: String(row.created_at || row.date_uploaded || ''),
+    valuation: null,
+  };
+}
+
+async function handlePublicMapRequest(req, res) {
+  // 1) JWT 검증
+  let user;
+  try {
+    user = await verifySupabaseUser(req);
+  } catch (err) {
+    return send(res, 401, { ok: false, message: '인증에 실패했습니다.' });
+  }
+  if (!user || !user.id) {
+    return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+  }
+
+  // 2) DBMS 계정 차단
+  const userApp = String((user.app_metadata && user.app_metadata.app) || '').trim();
+  if (userApp === 'dbms') {
+    return send(res, 403, {
+      ok: false,
+      message: 'DBMS 계정은 이 API 를 사용할 수 없습니다.',
+    });
+  }
+
+  // 3) 쿼리 파라미터
+  const url = new URL(req.url, 'http://localhost');
+  const source = String(url.searchParams.get('source') || 'all').trim().toLowerCase();
+  const status = String(url.searchParams.get('status') || '').trim();
+  const q = String(url.searchParams.get('q') || '').trim();
+  const offset = Math.max(0, Number(url.searchParams.get('offset') || 0));
+  const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get('limit') || 300)));
+  const markerLimit = Math.max(1, Math.min(2000, Number(url.searchParams.get('markerLimit') || 1200)));
+  const swLat = pmToFiniteNumber(url.searchParams.get('swLat'));
+  const swLng = pmToFiniteNumber(url.searchParams.get('swLng'));
+  const neLat = pmToFiniteNumber(url.searchParams.get('neLat'));
+  const neLng = pmToFiniteNumber(url.searchParams.get('neLng'));
+
+  // 4) Supabase REST 쿼리 빌드
+  const params = new URLSearchParams();
+  params.set('select', PUBLIC_MAP_SELECT_COLUMNS);
+  params.set('order', 'date_uploaded.desc.nullslast,id.desc');
+  params.set('limit', String(Math.max(limit, markerLimit, 1200)));
+  params.append('latitude', 'not.is.null');
+  params.append('longitude', 'not.is.null');
+  if (swLat !== null && neLat !== null) {
+    params.append('latitude', `gte.${swLat}`);
+    params.append('latitude', `lte.${neLat}`);
+  }
+  if (swLng !== null && neLng !== null) {
+    params.append('longitude', `gte.${swLng}`);
+    params.append('longitude', `lte.${neLng}`);
+  }
+  if (status) params.append('status', `eq.${status}`);
+
+  let rows;
+  try {
+    rows = await supabaseRestForPublicMap(`/rest/v1/properties?${params.toString()}`);
+  } catch (err) {
+    return send(res, err.status || 500, {
+      ok: false,
+      message: '매물 데이터를 불러오지 못했습니다.',
+      detail: String(err.message || err),
+    });
+  }
+
+  // 5) 정규화 + source/keyword 필터
+  const normalized = (Array.isArray(rows) ? rows : []).map(pmNormalizeRow);
+  const keyword = q.toLowerCase();
+  const filtered = normalized.filter((row) => {
+    if (source && source !== 'all') {
+      if (source === 'realtor') {
+        if (!(row.sourceBucket === 'realtor_naver' || row.sourceBucket === 'realtor_direct')) return false;
+      } else if (row.sourceBucket !== source) return false;
+    }
+    if (keyword) {
+      const hay = [row.address, row.itemNo, row.type]
+        .map((v) => String(v || '').toLowerCase())
+        .join(' ');
+      if (!hay.includes(keyword)) return false;
+    }
+    return true;
+  });
+
+  // 6) 요약
+  const summary = { total: 0, auction: 0, onbid: 0, realtor_naver: 0, realtor_direct: 0, general: 0 };
+  for (const row of filtered) {
+    summary.total += 1;
+    if (Object.prototype.hasOwnProperty.call(summary, row.sourceBucket)) {
+      summary[row.sourceBucket] += 1;
+    }
+  }
+
+  const items = filtered.slice(offset, offset + limit);
+  const markers = filtered.slice(0, markerLimit).map((row) => ({
+    id: row.id,
+    address: row.address,
+    type: row.type,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    sourceBucket: row.sourceBucket,
+    source: row.source,
+  }));
+
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  return send(res, 200, {
+    ok: true,
+    summary,
+    total: summary.total,
+    items,
+    markers,
+  });
+}
+// =============================================================================
+// platform 회원용 지도 매물 조회 — 끝
+// =============================================================================
+
 
 // =============================================================================
 // 공개 등록 스팸 방어 상수 (2026-04-22)
@@ -628,6 +839,13 @@ module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
 
   if (req.method === 'GET') {
+    // platform 회원용 지도 매물 조회 — Phase C-2 통합
+    const url = new URL(req.url, 'http://localhost');
+    const mode = String(url.searchParams.get('mode') || '').trim().toLowerCase();
+    if (mode === 'map') {
+      return handlePublicMapRequest(req, res);
+    }
+    // 기본 GET — 도움말 (기존 동작 유지)
     return send(res, 200, {
       ok: true,
       message: '일반물건 등록 API',
