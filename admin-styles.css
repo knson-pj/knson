@@ -3482,3 +3482,196 @@ html.modal-open-lock-html{
   .csv-unmatched-table tbody td:nth-child(7){ display:none; }
   .csv-unmatched-addr{ max-width:120px; }
 }
+
+/* ────────────────────────────────────────────────────────────────────
+ * 담당자 페이지 — 전체리스트 [리스트/지도] 토글 + 지도 보기 (2026-05-13)
+ * 인플레이스 추가만, 기존 스타일 영향 없음
+ * ──────────────────────────────────────────────────────────────────── */
+
+/* 1) 리스트/지도 토글 (툴바 내부 세그먼트 컨트롤) */
+.ag-view-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:0;
+  margin-left:6px;
+  padding:2px;
+  border:1px solid var(--border, #e5e7eb);
+  background:var(--surface, #fff);
+  border-radius:9999px;
+  height:32px;
+  box-sizing:border-box;
+}
+.ag-view-toggle-btn{
+  appearance:none;
+  border:0;
+  background:transparent;
+  color:var(--muted, #6b7280);
+  font-size:12px;
+  font-weight:500;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:0 12px;
+  height:26px;
+  border-radius:9999px;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+  white-space:nowrap;
+}
+.ag-view-toggle-btn svg{ width:14px; height:14px; flex:0 0 14px; }
+.ag-view-toggle-btn:hover{ color:var(--text, #111827); }
+.ag-view-toggle-btn.is-active{
+  background:var(--brand, #e85d10);
+  color:#fff;
+}
+.ag-view-toggle-btn.is-active:hover{ color:#fff; }
+
+/* 2) 모드별 표시 전환 */
+.agent-list-map-wrap{ display:none; position:relative; }
+.agent-list-panel.is-map-mode .agent-list-table-wrap{ display:none; }
+.agent-list-panel.is-map-mode .pager{ display:none; }
+.agent-list-panel.is-map-mode .agent-list-map-wrap{ display:block; }
+
+/* 3) 지도 컨테이너 */
+.agent-map-container{
+  width:100%;
+  height:640px;
+  min-height:480px;
+  background:#f4f4f4;
+  border-radius:8px;
+  border:1px solid var(--border, #e5e7eb);
+  overflow:hidden;
+}
+.agent-map-empty{
+  padding:48px 20px;
+  text-align:center;
+  color:var(--muted, #6b7280);
+  font-size:13px;
+  background:#f4f4f4;
+  border-radius:8px;
+  border:1px solid var(--border, #e5e7eb);
+}
+
+/* 4) 좌표 미확보 경고 배지 — 지도 우상단 고정 */
+.agent-map-warn-badge{
+  position:absolute;
+  top:14px;
+  right:14px;
+  z-index:5;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:7px 11px;
+  background:#fef3c7;
+  border:1px solid #fcd34d;
+  border-radius:6px;
+  font-size:12px;
+  color:#92400e;
+  font-weight:500;
+  box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  pointer-events:none;
+}
+.agent-map-warn-badge svg{ width:13px; height:13px; flex:0 0 13px; }
+.agent-map-warn-badge strong{ font-weight:600; }
+
+/* 5) 빈 결과 안내 (필터로 0건일 때) */
+.agent-map-empty-state{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%, -50%);
+  z-index:4;
+  padding:14px 22px;
+  background:rgba(255,255,255,0.92);
+  border:1px solid var(--border, #e5e7eb);
+  border-radius:8px;
+  font-size:13px;
+  color:var(--muted, #6b7280);
+  box-shadow:0 2px 8px rgba(0,0,0,0.08);
+}
+
+/* 6) 묶음 마커 InfoWindow 내부 콘텐츠 */
+.ag-map-cluster-popup{
+  font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  min-width:220px;
+  max-width:280px;
+  padding:8px 4px 6px;
+}
+.ag-map-cluster-head{
+  font-size:12px;
+  font-weight:600;
+  color:var(--text, #111827);
+  padding:0 8px 8px;
+  border-bottom:1px solid var(--border, #e5e7eb);
+  margin-bottom:6px;
+}
+.ag-map-cluster-list{
+  max-height:240px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.ag-map-cluster-row{
+  appearance:none;
+  border:0;
+  background:transparent;
+  width:100%;
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:8px;
+  padding:7px 8px;
+  font-size:12px;
+  color:var(--text, #111827);
+  text-align:left;
+  cursor:pointer;
+  border-radius:4px;
+  transition:background .12s;
+}
+.ag-map-cluster-row:hover{ background:rgba(0,0,0,0.04); }
+.ag-map-cluster-row-kind{
+  font-weight:600;
+  font-size:11px;
+  white-space:nowrap;
+  flex:0 0 auto;
+}
+.ag-map-cluster-row-addr{
+  font-size:12px;
+  color:var(--text, #111827);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  min-width:0;
+}
+.ag-map-cluster-row-price{
+  font-size:11px;
+  font-weight:500;
+  color:var(--muted, #6b7280);
+  white-space:nowrap;
+  flex:0 0 auto;
+}
+.ag-map-cluster-more{
+  padding:8px;
+  font-size:11px;
+  color:var(--muted, #6b7280);
+  text-align:center;
+  border-top:1px solid var(--border, #e5e7eb);
+  margin-top:4px;
+}
+
+/* 7) 모바일 반응형 */
+@media (max-width: 768px){
+  .ag-view-toggle{ height:30px; }
+  .ag-view-toggle-btn{ font-size:11px; height:24px; padding:0 10px; gap:4px; }
+  .ag-view-toggle-btn svg{ width:13px; height:13px; flex:0 0 13px; }
+  .agent-map-container{ height:520px; min-height:380px; }
+  .agent-map-warn-badge{ top:10px; right:10px; padding:6px 9px; font-size:11px; }
+  .agent-map-warn-badge svg{ width:12px; height:12px; flex:0 0 12px; }
+  .ag-map-cluster-popup{ min-width:200px; max-width:240px; }
+}
+@media (max-width: 480px){
+  .agent-map-container{ height:440px; min-height:340px; }
+  .ag-view-toggle-btn span{ display:none; }  /* 좁은 화면은 아이콘만 */
+  .ag-view-toggle-btn{ padding:0 9px; }
+}

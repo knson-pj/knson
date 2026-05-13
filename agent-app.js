@@ -307,6 +307,7 @@
     page: 1,
     pageSize: 30,
     propertySort: { key: '', direction: 'desc' },
+    listViewMode: 'list',  // 'list' | 'map' — 전체리스트 보기 방식 (2026-05-13)
     editingProperty: null,
     dailyReport: {
       dateKey: "",
@@ -532,6 +533,15 @@
     els.agTableBody = $("#agTableBody");
     els.agEmpty = $("#agEmpty");
     els.agPagination = $("#agPagination");
+
+    // List/Map view toggle (2026-05-13 신규)
+    els.agViewToggle = $("#agViewToggle");
+    els.agListMapWrap = $("#agListMapWrap");
+    els.agMapContainer = $("#agMapContainer");
+    els.agMapEmpty = $("#agMapEmpty");
+    els.agMapWarnBadge = $("#agMapWarnBadge");
+    els.agMapWarnCount = $("#agMapWarnCount");
+    els.agMapEmptyState = $("#agMapEmptyState");
 
     // Filters
     els.agSourceFilter = $("#agSourceFilter");
@@ -2222,6 +2232,9 @@
     for (const p of paged) frag.appendChild(renderRow(p));
     els.agTableBody.appendChild(frag);
     renderPagination(totalPages);
+
+    // 지도 모드일 때 필터 결과를 지도에도 반영 (2026-05-13)
+    try { if (typeof li_map_renderIfActive === 'function') li_map_renderIfActive(); } catch (_) {}
   }
 
 
@@ -4904,6 +4917,480 @@ function renderPagination(totalPages) {
 
     window.refreshAgentScheduleView = function () { refreshAgentScheduleView({ force: true }); };
   });
+
+  // ────────────────────────────────────────────────────────────────────
+  // 전체리스트 지도 보기 모듈 (2026-05-13 신규)
+  //   - 토글: [리스트 / 지도] 같은 영역에서 전환
+  //   - 현재 필터 결과를 그대로 마커로 표시 (renderTable hook 으로 동기화)
+  //   - 같은 좌표 매물은 묶음 마커, 클릭 시 InfoWindow 로 펼침
+  //   - 좌표 미확보 매물은 지도 우상단 경고 배지로 안내
+  //   - 마커 단일 클릭 → openEditModal 즉시 호출
+  // ────────────────────────────────────────────────────────────────────
+  const LI_MAP_BUCKET_FILL = {
+    auction: '#9333ea',
+    onbid: '#2563eb',
+    realtor_naver: '#03c75a',
+    realtor_direct: '#c59d45',
+    general: '#64748b',
+  };
+  const LI_MAP_BUCKET_TEXT = {
+    auction: '#9333ea',
+    onbid: '#2563eb',
+    realtor_naver: '#03a449',
+    realtor_direct: '#a47a1f',
+    general: '#475569',
+  };
+  const LI_MAP_BUCKET_LABEL = {
+    auction: '경매',
+    onbid: '공매',
+    realtor_naver: '네이버',
+    realtor_direct: '일반중개',
+    general: '일반',
+  };
+
+  const _listMapState = {
+    map: null,
+    mapReady: false,
+    markers: [],
+    infowindow: null,
+    sdkFailed: false,
+    pendingRender: false,
+    resizeBound: false,
+  };
+
+  function li_map_getBucket(p) {
+    if (PropertyDomain && typeof PropertyDomain.getSourceBucket === 'function') {
+      return PropertyDomain.getSourceBucket(p);
+    }
+    const st = String(p?.sourceType || p?.source_type || '').trim();
+    if (st === 'realtor') return p?.isDirectSubmission ? 'realtor_direct' : 'realtor_naver';
+    return st || 'general';
+  }
+
+  function li_map_getLatLng(p) {
+    if (!p) return null;
+    const raw = p._raw || p.raw || {};
+    const lat = Number(p.latitude ?? p.lat ?? raw.latitude ?? raw.lat);
+    const lng = Number(p.longitude ?? p.lng ?? raw.longitude ?? raw.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat === 0 && lng === 0) return null;
+    return { lat, lng };
+  }
+
+  // 마커 본체에 표시할 짧은 가격 — "23.2억" 형태. 1억 미만은 "9,500만". 0이면 빈 문자열.
+  function li_map_formatPriceShort(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return '';
+    if (v >= 100000000) {
+      const eok = v / 100000000;
+      if (eok >= 100) return Math.round(eok) + '억';
+      return eok.toFixed(1).replace(/\.0$/, '') + '억';
+    }
+    if (v >= 10000) return Math.round(v / 10000).toLocaleString() + '만';
+    return v.toLocaleString();
+  }
+
+  function li_map_formatAreaShort(area) {
+    const v = Number(area);
+    if (!Number.isFinite(v) || v <= 0) return '';
+    if (v >= 100) return Math.round(v) + '평';
+    return v.toFixed(1).replace(/\.0$/, '') + '평';
+  }
+
+  function li_map_computeDiscount(p) {
+    const appr = Number(p?.priceMain);
+    const cur = Number(p?.lowprice);
+    if (!Number.isFinite(appr) || appr <= 0) return null;
+    if (!Number.isFinite(cur) || cur <= 0) return null;
+    if (cur >= appr) return null;
+    const pct = Math.round((1 - cur / appr) * 100);
+    return pct >= 1 ? pct : null;
+  }
+
+  function li_map_computeDday(p) {
+    const raw = p?.dateMain || p?._raw?.date_main || '';
+    if (!raw) return null;
+    const target = new Date(String(raw).slice(0, 10) + 'T00:00:00');
+    if (!Number.isFinite(target.getTime())) return null;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const diff = Math.round((target.getTime() - now.getTime()) / 86400000);
+    if (diff < 0) return null;
+    if (diff === 0) return 'D-day';
+    if (diff > 365) return null;
+    return 'D-' + diff;
+  }
+
+  // 단일 매물 마커 SVG 빌더 — 시안 V2 디자인
+  function li_map_buildMarkerSvg(p) {
+    const bucket = li_map_getBucket(p);
+    const fill = LI_MAP_BUCKET_FILL[bucket] || LI_MAP_BUCKET_FILL.general;
+    const textColor = LI_MAP_BUCKET_TEXT[bucket] || LI_MAP_BUCKET_TEXT.general;
+    const label = LI_MAP_BUCKET_LABEL[bucket] || '일반';
+
+    const areaText = li_map_formatAreaShort(p?.exclusivearea);
+    const priceVal = (p?.lowprice != null && Number(p.lowprice) > 0) ? p.lowprice : p?.priceMain;
+    const priceText = li_map_formatPriceShort(priceVal) || '-';
+
+    const hasFav = state.favorites.has(p?.id);
+    const hasFire = !hasFav && state.fires.has(p?.id);
+    const hasInsp = !!(p?.siteInspection && String(p.siteInspection).trim());
+    const discount = li_map_computeDiscount(p);
+    const dday = li_map_computeDday(p);
+
+    const hasLeftBadge = hasFav || hasFire;
+    const hasTopRightBadge = hasInsp;
+    const hasRightInfo = (discount !== null) || (dday !== null);
+
+    const left = hasLeftBadge ? -11 : -1;
+    const right = hasRightInfo ? 128 : (hasTopRightBadge ? 102 : 91);
+    const top = (hasLeftBadge || hasTopRightBadge) ? -11 : -1;
+    const bottom = 65;
+    const width = right - left;
+    const height = bottom - top;
+    const viewBox = left + ' ' + top + ' ' + width + ' ' + height;
+    // anchor: 포인터 끝 (46, 64) → SVG 픽셀 좌표
+    const anchorX = 46 - left;
+    const anchorY = 64 - top;
+
+    let badges = '';
+
+    if (hasFav) {
+      badges += '<circle cx="-2" cy="-2" r="9" fill="#fbbf24" stroke="#fff" stroke-width="1.5"/>';
+      badges += '<path d="M-2 -7 L-0.5 -3.5 L3 -3.2 L0.5 -1 L1.2 2.5 L-2 0.7 L-5.2 2.5 L-4.5 -1 L-7 -3.2 L-3.5 -3.5 Z" fill="#fff"/>';
+    } else if (hasFire) {
+      badges += '<circle cx="-2" cy="-2" r="9" fill="#ea580c" stroke="#fff" stroke-width="1.5"/>';
+      badges += '<path d="M-2 -8 C-3.5 -5 -5 -3 -4 -0.5 C-3.5 1 -2 1 -2.5 -0.5 C-2.8 -1.5 -1.5 -2 -1.5 -0.5 C-1.5 1.5 0 3 2.5 2.5 C5 1 5 -1 4 -3.5 C3 -5 1 -5.5 1 -7 C1 -7.5 0 -8 -1 -8 Z" fill="#fff"/>';
+    }
+    if (hasInsp) {
+      badges += '<circle cx="92" cy="-2" r="9" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>';
+      badges += '<path d="M87.5 -2 L91 1.2 L96.5 -5.5" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
+    }
+    if (discount !== null && dday !== null) {
+      badges += '<rect x="94" y="14" width="32" height="16" rx="3.5" fill="#dc2626"/>';
+      badges += '<text x="110" y="25.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">↓' + discount + '%</text>';
+      badges += '<rect x="94" y="33" width="32" height="16" rx="3.5" fill="#1f2937"/>';
+      badges += '<text x="110" y="44.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">' + esc(dday) + '</text>';
+    } else if (discount !== null) {
+      badges += '<rect x="94" y="22" width="32" height="16" rx="3.5" fill="#dc2626"/>';
+      badges += '<text x="110" y="33.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">↓' + discount + '%</text>';
+    } else if (dday !== null) {
+      badges += '<rect x="94" y="22" width="32" height="16" rx="3.5" fill="#1f2937"/>';
+      badges += '<text x="110" y="33.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">' + esc(dday) + '</text>';
+    }
+
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + viewBox + '" width="' + width + '" height="' + height + '">'
+      + '<rect x="1" y="1" width="90" height="56" rx="9" fill="#fff" stroke="#cfd4dc" stroke-width="0.7"/>'
+      + '<text x="9" y="18" font-size="11.5" font-weight="500" fill="' + textColor + '" font-family="-apple-system,system-ui,sans-serif">' + esc(label) + '</text>'
+      + '<text x="83" y="18" text-anchor="end" font-size="10" fill="#6b7280" font-family="-apple-system,system-ui,sans-serif">' + esc(areaText) + '</text>'
+      + '<text x="46" y="44" text-anchor="middle" font-size="17" font-weight="500" fill="#111827" font-family="-apple-system,system-ui,sans-serif">' + esc(priceText) + '</text>'
+      + '<path d="M41 57 L51 57 L46 64 Z" fill="' + fill + '"/>'
+      + badges
+      + '</svg>';
+
+    return { svg: svg, width: width, height: height, anchorX: anchorX, anchorY: anchorY };
+  }
+
+  // 묶음 마커(같은 좌표 N건) SVG — 시안 D 디자인 (원형 카운트)
+  function li_map_buildClusterSvg(items) {
+    const buckets = new Set(items.map(li_map_getBucket));
+    const color = buckets.size === 1 ? (LI_MAP_BUCKET_FILL[items[0] ? li_map_getBucket(items[0]) : 'general'] || '#475569') : '#475569';
+    const count = items.length;
+    const fontSize = count >= 100 ? 12 : 14;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="60" height="60">'
+      + '<circle cx="30" cy="30" r="26.5" fill="none" stroke="' + color + '" stroke-width="1" opacity="0.35"/>'
+      + '<circle cx="30" cy="30" r="22" fill="' + color + '" stroke="#fff" stroke-width="3"/>'
+      + '<text x="30" y="35" text-anchor="middle" font-size="' + fontSize + '" fill="#fff" font-family="-apple-system,system-ui,sans-serif" font-weight="500">' + count + '</text>'
+      + '</svg>';
+    return { svg: svg, width: 60, height: 60, anchorX: 30, anchorY: 30 };
+  }
+
+  function li_map_svgToDataUri(svg) {
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  }
+
+  function li_map_loadKakaoSdk() {
+    return new Promise((resolve, reject) => {
+      if (window.kakao && window.kakao.maps && window.kakao.maps.load) {
+        window.kakao.maps.load(() => resolve());
+        return;
+      }
+      const meta = document.querySelector('meta[name="kakao-app-key"]');
+      const key = (meta?.getAttribute('content') || '').trim();
+      if (!key) { reject(new Error('Kakao app key not set')); return; }
+      const exists = document.querySelector('script[data-kakao-sdk]');
+      if (exists) {
+        exists.addEventListener('load', () => {
+          if (window.kakao?.maps?.load) window.kakao.maps.load(() => resolve());
+          else reject(new Error('Kakao SDK load 실패'));
+        });
+        exists.addEventListener('error', () => reject(new Error('Kakao SDK 네트워크 오류')));
+        return;
+      }
+      const s = document.createElement('script');
+      s.dataset.kakaoSdk = '1';
+      s.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + encodeURIComponent(key) + '&autoload=false&libraries=services';
+      s.async = true;
+      s.onload = () => {
+        if (!window.kakao?.maps?.load) { reject(new Error('Kakao SDK 로드 실패')); return; }
+        window.kakao.maps.load(() => resolve());
+      };
+      s.onerror = () => reject(new Error('Kakao SDK 네트워크 오류'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function li_map_ensureMap() {
+    if (_listMapState.map) return _listMapState.map;
+    const container = els.agMapContainer;
+    if (!container) return null;
+    if (_listMapState.sdkFailed) return null;
+    try {
+      await li_map_loadKakaoSdk();
+    } catch (err) {
+      console.error('[list-map] kakao sdk failed:', err);
+      _listMapState.sdkFailed = true;
+      if (els.agMapEmpty) els.agMapEmpty.classList.remove('hidden');
+      container.style.display = 'none';
+      return null;
+    }
+    const center = new kakao.maps.LatLng(37.5665, 126.978);
+    _listMapState.map = new kakao.maps.Map(container, { center: center, level: 7 });
+    _listMapState.mapReady = true;
+    // 지도 외부 클릭 시 InfoWindow 닫힘 동작은 카카오 기본 동작에 위임
+    return _listMapState.map;
+  }
+
+  function li_map_clearMarkers() {
+    if (Array.isArray(_listMapState.markers)) {
+      for (const m of _listMapState.markers) {
+        try { m.setMap(null); } catch (_) {}
+      }
+    }
+    _listMapState.markers = [];
+    if (_listMapState.infowindow) {
+      try { _listMapState.infowindow.close(); } catch (_) {}
+      _listMapState.infowindow = null;
+    }
+  }
+
+  // 좌표 기준 그룹핑 — 소수점 6자리 (약 0.1m 정밀도) 동일 시 같은 그룹
+  function li_map_groupByCoord(properties) {
+    const groups = new Map();
+    const noCoord = [];
+    for (const p of properties) {
+      const ll = li_map_getLatLng(p);
+      if (!ll) { noCoord.push(p); continue; }
+      const key = ll.lat.toFixed(6) + ',' + ll.lng.toFixed(6);
+      let g = groups.get(key);
+      if (!g) {
+        g = { key: key, coord: ll, items: [] };
+        groups.set(key, g);
+      }
+      g.items.push(p);
+    }
+    return { groups: Array.from(groups.values()), noCoord: noCoord };
+  }
+
+  function li_map_openSingleMarkerEdit(p) {
+    if (typeof openEditModal === 'function') {
+      try { openEditModal(p); } catch (e) { console.error('[list-map] openEditModal failed', e); }
+    }
+  }
+
+  function li_map_openClusterInfowindow(map, marker, group) {
+    if (_listMapState.infowindow) {
+      try { _listMapState.infowindow.close(); } catch (_) {}
+    }
+    const items = group.items.slice(0, 50);  // 너무 많은 경우 최대 50건
+    const rows = items.map((p) => {
+      const bucket = li_map_getBucket(p);
+      const color = LI_MAP_BUCKET_TEXT[bucket] || '#475569';
+      const label = LI_MAP_BUCKET_LABEL[bucket] || '일반';
+      const priceVal = (p?.lowprice != null && Number(p.lowprice) > 0) ? p.lowprice : p?.priceMain;
+      const priceText = li_map_formatPriceShort(priceVal) || '-';
+      const areaText = li_map_formatAreaShort(p?.exclusivearea);
+      const addr = String(p?.address || '').trim();
+      const addrShort = addr.length > 18 ? addr.slice(0, 18) + '…' : addr;
+      const pid = escAttr(p?.id || '');
+      return '<button type="button" class="ag-map-cluster-row" data-property-id="' + pid + '">'
+        + '<span class="ag-map-cluster-row-kind" style="color:' + color + ';">' + esc(label) + '</span>'
+        + '<span class="ag-map-cluster-row-addr">' + esc(addrShort) + '</span>'
+        + '<span class="ag-map-cluster-row-price">' + esc(priceText) + (areaText ? ' · ' + esc(areaText) : '') + '</span>'
+        + '</button>';
+    }).join('');
+    const more = group.items.length > items.length
+      ? '<div class="ag-map-cluster-more">외 ' + (group.items.length - items.length) + '건은 줌인하여 확인</div>'
+      : '';
+    const content = '<div class="ag-map-cluster-popup">'
+      + '<div class="ag-map-cluster-head">동일 위치 ' + group.items.length + '건</div>'
+      + '<div class="ag-map-cluster-list">' + rows + '</div>'
+      + more
+      + '</div>';
+
+    const iw = new kakao.maps.InfoWindow({ content: content, removable: true, zIndex: 200 });
+    iw.open(map, marker);
+    _listMapState.infowindow = iw;
+
+    // InfoWindow DOM은 비동기로 attach 됨 → 잠시 후 클릭 핸들러 부착
+    setTimeout(() => {
+      const wraps = document.querySelectorAll('.ag-map-cluster-row');
+      wraps.forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const pid = btn.getAttribute('data-property-id');
+          const found = (Array.isArray(state.properties) ? state.properties : []).find(
+            (it) => String(it?.id || '') === pid
+          );
+          if (found) li_map_openSingleMarkerEdit(found);
+          try { iw.close(); } catch (_) {}
+          _listMapState.infowindow = null;
+        });
+      });
+    }, 30);
+  }
+
+  function li_map_updateWarnBadge(noCoordCount) {
+    if (!els.agMapWarnBadge) return;
+    if (noCoordCount > 0) {
+      if (els.agMapWarnCount) els.agMapWarnCount.textContent = String(noCoordCount);
+      els.agMapWarnBadge.classList.remove('hidden');
+    } else {
+      els.agMapWarnBadge.classList.add('hidden');
+    }
+  }
+
+  function li_map_updateEmptyState(hasAny) {
+    if (!els.agMapEmptyState) return;
+    if (hasAny) els.agMapEmptyState.classList.add('hidden');
+    else els.agMapEmptyState.classList.remove('hidden');
+  }
+
+  async function li_map_render() {
+    const map = await li_map_ensureMap();
+    if (!map) return;
+    li_map_clearMarkers();
+
+    // 현재 필터를 그대로 적용 (renderTable 과 같은 결과)
+    const rows = (typeof getFilteredProps === 'function') ? getFilteredProps() : (Array.isArray(state.properties) ? state.properties : []);
+    const grouped = li_map_groupByCoord(rows);
+
+    li_map_updateWarnBadge(grouped.noCoord.length);
+    li_map_updateEmptyState(grouped.groups.length > 0 || grouped.noCoord.length > 0);
+
+    if (!grouped.groups.length) {
+      // 좌표 있는 매물이 0건이면 마커 없음. 지도는 그대로 둠.
+      return;
+    }
+
+    const bounds = new kakao.maps.LatLngBounds();
+
+    for (const g of grouped.groups) {
+      const pos = new kakao.maps.LatLng(g.coord.lat, g.coord.lng);
+      let img;
+      let marker;
+
+      if (g.items.length === 1) {
+        const p = g.items[0];
+        const built = li_map_buildMarkerSvg(p);
+        img = new kakao.maps.MarkerImage(
+          li_map_svgToDataUri(built.svg),
+          new kakao.maps.Size(built.width, built.height),
+          { offset: new kakao.maps.Point(built.anchorX, built.anchorY) }
+        );
+        marker = new kakao.maps.Marker({ map: map, position: pos, image: img, zIndex: 10 });
+        kakao.maps.event.addListener(marker, 'click', () => {
+          li_map_openSingleMarkerEdit(p);
+        });
+      } else {
+        const built = li_map_buildClusterSvg(g.items);
+        img = new kakao.maps.MarkerImage(
+          li_map_svgToDataUri(built.svg),
+          new kakao.maps.Size(built.width, built.height),
+          { offset: new kakao.maps.Point(built.anchorX, built.anchorY) }
+        );
+        marker = new kakao.maps.Marker({ map: map, position: pos, image: img, zIndex: 20 });
+        kakao.maps.event.addListener(marker, 'click', () => {
+          li_map_openClusterInfowindow(map, marker, g);
+        });
+      }
+      _listMapState.markers.push(marker);
+      bounds.extend(pos);
+    }
+
+    // 처음 진입 또는 마커가 한 개일 때 외에는 bounds 자동 적용
+    if (grouped.groups.length > 1) {
+      try { map.setBounds(bounds, 40, 40, 40, 40); } catch (_) {
+        try { map.setBounds(bounds); } catch (_) {}
+      }
+    } else if (grouped.groups.length === 1) {
+      try {
+        map.setCenter(new kakao.maps.LatLng(grouped.groups[0].coord.lat, grouped.groups[0].coord.lng));
+      } catch (_) {}
+    }
+  }
+
+  function li_map_isActive() {
+    return state.listViewMode === 'map';
+  }
+
+  function li_map_renderIfActive() {
+    if (!li_map_isActive()) return;
+    // 비동기 — DOM이 보인 직후 호출 시 지도 컨테이너 크기 0 문제 회피
+    setTimeout(() => { li_map_render(); }, 30);
+  }
+
+  function li_map_setViewMode(mode) {
+    const normalized = mode === 'map' ? 'map' : 'list';
+    if (state.listViewMode === normalized) return;
+    state.listViewMode = normalized;
+
+    const panel = document.querySelector('#ag-view-list .agent-list-panel');
+    if (panel) panel.classList.toggle('is-map-mode', normalized === 'map');
+
+    // 토글 버튼 active 상태 갱신
+    if (els.agViewToggle) {
+      els.agViewToggle.querySelectorAll('[data-view-mode]').forEach((btn) => {
+        const isActive = btn.getAttribute('data-view-mode') === normalized;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+    }
+
+    if (normalized === 'map') {
+      // 지도 모드 진입: 컨테이너가 화면에 보인 직후 지도 초기화/렌더
+      setTimeout(() => {
+        li_map_render().then(() => {
+          // 컨테이너가 늦게 보였을 때 카카오 지도 relayout
+          if (_listMapState.map && typeof _listMapState.map.relayout === 'function') {
+            try { _listMapState.map.relayout(); } catch (_) {}
+          }
+        });
+      }, 50);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    // 토글 버튼 클릭 이벤트
+    const toggleEl = document.getElementById('agViewToggle');
+    if (toggleEl) {
+      toggleEl.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-view-mode]');
+        if (!btn) return;
+        const mode = btn.getAttribute('data-view-mode');
+        li_map_setViewMode(mode);
+      });
+    }
+    // 창 크기 변동 시 지도 relayout (탭이 보이는 상태에서)
+    window.addEventListener('resize', function () {
+      if (!li_map_isActive()) return;
+      if (_listMapState.map && typeof _listMapState.map.relayout === 'function') {
+        try { _listMapState.map.relayout(); } catch (_) {}
+      }
+    });
+  });
+  // ───────── 전체리스트 지도 보기 모듈 끝 ─────────
 
   // ── Start ──
   if (document.readyState === "loading") {

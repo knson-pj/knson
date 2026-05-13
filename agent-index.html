@@ -8,7 +8,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}try{localStorage.setItem('knson_theme_v1','light');}catch(e){}try{document.documentElement.setAttribute('data-theme','light');}catch(e){}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260424-dup1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260513-listmap" />
 </head>
 <body class="page-agent">
 
@@ -232,6 +232,16 @@
           <button id="agDayFilter" class="btn-add-circle btn-day-circle" type="button" title="당일 입찰기일">D</button>
           <button id="agAssignedFilter" class="btn-add-circle btn-new-circle" type="button" title="오늘 내게 배정된 물건">n</button>
           <button id="btnNewProperty" class="btn-add-circle" type="button" title="신규 물건 등록">+</button>
+          <div class="ag-view-toggle" id="agViewToggle" role="tablist" aria-label="보기 방식">
+            <button type="button" class="ag-view-toggle-btn is-active" data-view-mode="list" role="tab" aria-selected="true" title="리스트 보기">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              <span>리스트</span>
+            </button>
+            <button type="button" class="ag-view-toggle-btn" data-view-mode="map" role="tab" aria-selected="false" title="지도 보기">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+              <span>지도</span>
+            </button>
+          </div>
         </div>
         <div class="table-wrap agent-list-table-wrap">
           <table class="table" id="agPropertiesTable">
@@ -248,6 +258,15 @@
           <div id="agEmpty" class="empty hidden">배정된 물건이 없습니다.</div>
         </div>
         <div id="agPagination" class="pager"></div>
+        <div class="agent-list-map-wrap" id="agListMapWrap">
+          <div class="agent-map-container" id="agMapContainer" aria-label="배정 물건 지도"></div>
+          <div class="agent-map-empty hidden" id="agMapEmpty">지도를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.</div>
+          <div class="agent-map-warn-badge hidden" id="agMapWarnBadge" role="status" aria-live="polite">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M10.36 3.32 2.7 17a2 2 0 0 0 1.73 3h15.14a2 2 0 0 0 1.73-3L13.64 3.32a2 2 0 0 0-3.28 0Z"/><path d="M12 17h.01"/></svg>
+            <span>좌표 미확보 <strong id="agMapWarnCount">0</strong>건</span>
+          </div>
+          <div class="agent-map-empty-state hidden" id="agMapEmptyState">조건에 맞는 물건이 없습니다.</div>
+        </div>
       </section>
     </section>
 
@@ -354,7 +373,7 @@
 <script src="./knson-property-photos.js?v=20260420-photo-fix2"></script>
 <script src="./knson-property-videos.js?v=20260504-video1"></script>
 <script src="./knson-easter-egg.js?v=20260429-noreload"></script>
-<script src="./agent-app.js?v=20260508-myratio"></script>
+<script src="./agent-app.js?v=20260513-listmap"></script>
 <script src="./knson-idle-timeout.js?v=20260508-idle1"></script>
 
 <script>
