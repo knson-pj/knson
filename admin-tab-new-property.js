@@ -198,7 +198,30 @@
           setNpmMsgLocal(els, merged.changes?.length ? '기존 물건을 갱신하고 등록 LOG를 추가했습니다.' : '동일 물건이 있어 기존 물건에 반영했습니다.', false);
         } else {
           const row = utils.buildRegistrationDbRowForCreate?.(payload, regContext);
-          await utils.insertPropertyRowResilient?.(sb, row);
+          const inserted = await utils.insertPropertyRowResilient?.(sb, row);
+          // ── 첫 배정 활동로그 (담당자가 지정된 채로 등록된 경우에만)
+          //    Q1 합의: 모든 배정 경로 기록 / Q4: 운영 적용 시점부터 새 변경만
+          try {
+            const newId = inserted?.id || row?.id || '';
+            const newAssigneeId = String(row?.assignee_id || '').trim();
+            const newAssigneeName = String(row?.assignee_name || '').trim();
+            if (newId && (newAssigneeId || newAssigneeName)
+                && DataAccess && typeof DataAccess.recordAssigneeChangeLogsViaApi === 'function') {
+              await DataAccess.recordAssigneeChangeLogsViaApi(api, [{
+                propertyId: newId,
+                identityKey: row?.raw?.registrationIdentityKey || null,
+                itemNo: row?.item_no || null,
+                address: row?.address || null,
+                prevId: '',
+                prevName: '',
+                nextId: newAssigneeId,
+                nextName: newAssigneeName,
+              }], { reason: 'new_property', auth: true });
+            }
+          } catch (logErr) {
+            // 로그 실패가 등록 자체를 막지 않도록 swallow
+            console.warn('[assignee_change_log] new_property skipped:', logErr?.message || logErr);
+          }
           setNpmMsgLocal(els, '등록되었습니다.', false);
         }
       } else {

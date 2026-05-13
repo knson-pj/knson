@@ -13,6 +13,7 @@ const {
   getEnv,
 } = require('../../_lib/supabase-admin');
 const { requireTierWrite } = require('../../_lib/admin-tier');
+const { recordAssigneeChangeLogs } = require('../../_lib/activity-log');
 
 function normalizeRoleValue(value) {
   return value === 'admin' ? 'admin' : (value === 'other' ? 'other' : 'staff');
@@ -37,17 +38,73 @@ function buildSupabaseHeaders(hasJson = false, extra = {}) {
   return headers;
 }
 
+// 담당자 퇴사 시 그 담당자에게 묶인 매물들의 배정 정보 일괄 해제.
+//
+// 이전 버전 결함 보수 (사용자 합의):
+//   ① assignee_name 컬럼이 비워지지 않음 → 유령 이름 잔존
+//   ② raw jsonb 내 assignee_id / assigneeId / assignee_name / assigneeName / assignedAgentId
+//      / assignedAgentName 6개 키가 비워지지 않음 → 백업본도 유령 데이터
+//   ③ 활동로그 미기록 → 누가 언제 어떤 매물을 퇴사 처리했는지 추적 불가
+//
+// 본 함수는 ①②③ 을 한 번에 해결.
+//   - 단계 1: 영향받는 매물 스냅샷 조회 (item_no/address 메타 포함, 로그용)
+//   - 단계 2: assignee_id + assignee_name + raw 6개 키를 한 번의 PATCH 로 모두 NULL/빈 처리
+//   - 단계 3: 호출부가 활동로그를 기록할 수 있도록 스냅샷 반환
 async function clearAssigneeFromProperties(targetId) {
   const { url } = getEnv();
-  const res = await fetch(`${url}/rest/v1/properties?assignee_id=eq.${encodeURIComponent(targetId)}`, {
-    method: 'PATCH',
-    headers: buildSupabaseHeaders(true, { Prefer: 'return=minimal' }),
-    body: JSON.stringify({ assignee_id: null }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || '담당 물건 연결 해제에 실패했습니다.');
+
+  // 1) 영향받는 매물 스냅샷 수집
+  const selRes = await fetch(
+    `${url}/rest/v1/properties?select=id,item_no,address,assignee_id,assignee_name,raw&assignee_id=eq.${encodeURIComponent(targetId)}`,
+    { method: 'GET', headers: buildSupabaseHeaders(false) }
+  );
+  if (!selRes.ok) {
+    const text = await selRes.text().catch(() => '');
+    throw new Error(text || '담당 물건 조회에 실패했습니다.');
   }
+  const affected = await selRes.json().catch(() => []);
+  if (!Array.isArray(affected) || !affected.length) {
+    // 영향받는 매물이 없으면 더 할 일 없음
+    return { affected: [] };
+  }
+
+  // 2) raw 백업본 키까지 모두 정리해 일괄 PATCH.
+  //    PATCH 는 모든 매칭 행에 동일 raw 객체로 덮어쓰지 못함 → 행별로 raw 머지 후 개별 PATCH.
+  //    (assignee_id/assignee_name 만이면 단일 PATCH 가능하나, raw 머지는 행별이 안전)
+  const errors = [];
+  for (const row of affected) {
+    const cleanedRaw = { ...(row.raw && typeof row.raw === 'object' ? row.raw : {}) };
+    cleanedRaw.assignee_id = null;
+    cleanedRaw.assigneeId = null;
+    cleanedRaw.assigneeName = null;
+    cleanedRaw.assignee_name = null;
+    cleanedRaw.assignedAgentId = null;
+    cleanedRaw.assignedAgentName = null;
+
+    const patchRes = await fetch(
+      `${url}/rest/v1/properties?id=eq.${encodeURIComponent(row.id)}`,
+      {
+        method: 'PATCH',
+        headers: buildSupabaseHeaders(true, { Prefer: 'return=minimal' }),
+        body: JSON.stringify({
+          assignee_id: null,
+          assignee_name: null,
+          raw: cleanedRaw,
+        }),
+      }
+    );
+    if (!patchRes.ok) {
+      const text = await patchRes.text().catch(() => '');
+      errors.push({ id: row.id, error: text || `HTTP ${patchRes.status}` });
+    }
+  }
+
+  if (errors.length && errors.length === affected.length) {
+    // 한 건도 처리 못한 경우만 전체 실패로 간주
+    throw new Error('담당 물건 연결 해제에 실패했습니다: ' + (errors[0]?.error || ''));
+  }
+
+  return { affected, errors };
 }
 
 function clearAssigneeFromStoreProperties(store, targetId) {
@@ -56,9 +113,15 @@ function clearAssigneeFromStoreProperties(store, targetId) {
     if (String(row?.assignee_id || row?.assigneeId || '').trim() !== String(targetId || '').trim()) continue;
     row.assignee_id = null;
     row.assigneeId = null;
+    row.assignee_name = null;
+    row.assigneeName = null;
     if (row.raw && typeof row.raw === 'object') {
       row.raw.assignee_id = null;
       row.raw.assigneeId = null;
+      row.raw.assignee_name = null;
+      row.raw.assigneeName = null;
+      row.raw.assignedAgentId = null;
+      row.raw.assignedAgentName = null;
     }
   }
 }
@@ -156,7 +219,37 @@ module.exports = async function handler(req, res) {
       }
 
       try {
-        await clearAssigneeFromProperties(targetId);
+        // ① 영향받는 매물 스냅샷 + 데이터 정리 (이전 결함 보수 포함)
+        const clearResult = await clearAssigneeFromProperties(targetId);
+
+        // ② 활동로그 기록 (담당자 → 미배정), reason='resignation'
+        //    actor 는 현재 세션의 관리자 (Q3 합의: 삭제 버튼을 누른 관리자)
+        try {
+          const affected = Array.isArray(clearResult?.affected) ? clearResult.affected : [];
+          if (affected.length) {
+            const logEntries = affected.map((row) => ({
+              propertyId: String(row.id || ''),
+              identityKey: row.raw?.registrationIdentityKey || null,
+              itemNo: row.item_no || null,
+              address: row.address || null,
+              prevId: String(row.assignee_id || '').trim(),
+              prevName: String(row.assignee_name || target.name || '').trim(),
+              nextId: '',
+              nextName: '',
+            })).filter((e) => e.propertyId);
+            if (logEntries.length) {
+              await recordAssigneeChangeLogs({
+                entries: logEntries,
+                actor: { id: session.userId || session.user?.id, name: session.name || session.user?.name || '' },
+                reason: 'resignation',
+              });
+            }
+          }
+        } catch (logErr) {
+          console.warn('[assignee_change_log] resignation skipped:', logErr?.message || logErr);
+        }
+
+        // ③ 마지막에 auth 사용자 삭제 (= profiles cascade 삭제)
         await deleteAuthUser(targetId);
         return send(res, 200, { ok: true, removedId: targetId });
       } catch (err) {

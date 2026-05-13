@@ -7,6 +7,7 @@ const { requireCtxTierWrite } = require('./_lib/admin-tier');
 const PropertyDomain = require('../knson-property-domain.js');
 const PropertyPhotos = require('./_lib/property-photos');
 const PropertyVideos = require('./_lib/property-videos');
+const { recordAssigneeChangeLogs } = require('./_lib/activity-log');
 
 function omitUndefined(obj) {
   return Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v !== undefined));
@@ -180,6 +181,8 @@ function normalizeActionType(value) {
     opinion: 'opinion',
     property_update: 'property_update',
     propertyupdate: 'property_update',
+    assignee_change: 'assignee_change',
+    assigneechange: 'assignee_change',
   };
   return map[s] || '';
 }
@@ -1105,6 +1108,34 @@ async function handleSupabaseWrite(req, res) {
       json: patch,
     });
     const item = Array.isArray(rows) ? (rows[0] || null) : rows;
+
+    // ── 담당자 변경 감지 → 자동 로그 (Q1: 모든 경로, Q2: 단일 action_type 'assignee_change')
+    //    patch 에 assignee_id 가 명시적으로 들어왔고 실제로 이전 값과 다르면 1건 기록.
+    //    staff 역할 사용자는 위에서 assignee_id 가 patch 에서 제거되므로 이 분기 진입 안 함.
+    if (patch.assignee_id !== undefined) {
+      const prevId = String(current?.assignee_id || '').trim();
+      const nextId = String(patch.assignee_id || '').trim();
+      const prevName = String(current?.assignee_name || '').trim();
+      const nextName = String(patch.assignee_name || '').trim();
+      if (prevId !== nextId || prevName !== nextName) {
+        try {
+          await recordAssigneeChangeLogs({
+            entries: [{
+              propertyId: item?.id || current?.id || targetId,
+              identityKey: item?.raw?.registrationIdentityKey || current?.raw?.registrationIdentityKey || null,
+              itemNo: item?.item_no || current?.item_no || null,
+              address: item?.address || current?.address || null,
+              prevId, prevName, nextId, nextName,
+            }],
+            actor: { id: ctx.userId, name: ctx.name || '' },
+            reason: 'manual',
+          });
+        } catch (logErr) {
+          // 본 PATCH 작업 자체를 깨뜨리지 않도록 swallow (헬퍼는 일반적으로 throw 안 함)
+          console.warn('[assignee_change_log] api/properties PATCH skipped:', logErr?.message || logErr);
+        }
+      }
+    }
 
     let activityLogError = '';
     let activityLoggedCount = 0;

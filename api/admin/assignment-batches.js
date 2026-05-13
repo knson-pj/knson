@@ -15,6 +15,7 @@ const { applyCors } = require('../_lib/cors');
 const { send, getJsonBody } = require('../_lib/utils');
 const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../_lib/supabase-admin');
 const { requireTierWrite } = require('../_lib/admin-tier');
+const { recordAssigneeChangeLogs } = require('../_lib/activity-log');
 
 // ──────────────────────────────────────────────────────────────────
 // 공통 헬퍼
@@ -124,12 +125,12 @@ async function handleCreate(req, res, admin) {
     return send(res, 500, { ok: false, message: '배치 생성 실패.' });
   }
 
-  // 2) 각 property 의 현재 assignee 스냅샷 조회 (prev 저장용)
+  // 2) 각 property 의 현재 assignee 스냅샷 조회 (prev 저장용 + 활동로그용 메타데이터 동시 수집)
   const propertyIds = assignments.map((a) => String(a.propertyId || '')).filter(Boolean);
   const prevMap = new Map();
   for (const ids of chunk(propertyIds, 200)) {
     const inList = ids.map((v) => `"${v}"`).join(',');
-    const rows = await sbRest(`/rest/v1/properties?select=id,assignee_id,assignee_name&id=in.(${inList})`);
+    const rows = await sbRest(`/rest/v1/properties?select=id,assignee_id,assignee_name,item_no,address,raw&id=in.(${inList})`);
     (rows || []).forEach((r) => prevMap.set(String(r.id), r));
   }
 
@@ -188,6 +189,35 @@ async function handleCreate(req, res, admin) {
         failCount += block.length;
       }
     }
+  }
+
+  // ── 자동 배정 로그 (Q1: 모든 경로, Q-C: 매물별 개별 로그 유지)
+  //    properties PATCH 완료 후, 본 응답을 막지 않게 try/catch.
+  //    같은 담당자로 재배정되는 경우(prev==next)는 헬퍼가 자동 스킵.
+  try {
+    const logEntries = assignments.map((a) => {
+      const pid = String(a.propertyId || '');
+      const prev = prevMap.get(pid) || {};
+      return {
+        propertyId: pid,
+        identityKey: prev.raw?.registrationIdentityKey || null,
+        itemNo: prev.item_no || null,
+        address: prev.address || null,
+        prevId: String(prev.assignee_id || '').trim(),
+        prevName: String(prev.assignee_name || '').trim(),
+        nextId: String(a.agentId || '').trim(),
+        nextName: String(a.agentName || '').trim(),
+      };
+    }).filter((e) => e.propertyId);
+    if (logEntries.length) {
+      await recordAssigneeChangeLogs({
+        entries: logEntries,
+        actor: { id: admin.userId, name: admin.name || admin.email || '' },
+        reason: 'auto_batch',
+      });
+    }
+  } catch (logErr) {
+    console.warn('[assignee_change_log] auto_batch skipped:', logErr?.message || logErr);
   }
 
   return send(res, 200, {
@@ -333,6 +363,45 @@ async function handleRollback(req, res, admin, batchId) {
     });
   } catch (err) {
     console.warn('[update batch status failed]', err?.message);
+  }
+
+  // ── 롤백 활동 로그 (Q1: 모든 경로)
+  //    batch_items 에 들어 있는 agent_id/agent_name 이 "현재(롤백 전) 담당자"
+  //    prev_agent_id/prev_agent_name 이 "롤백 후 복원되는 담당자"
+  //    매물 메타데이터(item_no/address/raw)는 batch_items 에 없으므로 보조 SELECT 1회 추가.
+  try {
+    const propertyIdsForLog = items.map((i) => String(i.property_id || '')).filter(Boolean);
+    const metaMap = new Map();
+    for (const ids of chunk(propertyIdsForLog, 200)) {
+      const inList = ids.map((v) => `"${v}"`).join(',');
+      try {
+        const rows = await sbRest(`/rest/v1/properties?select=id,item_no,address,raw&id=in.(${inList})`);
+        (rows || []).forEach((r) => metaMap.set(String(r.id), r));
+      } catch (_) { /* 메타 조회 실패해도 로그는 ID 기반으로 계속 */ }
+    }
+    const logEntries = items.map((i) => {
+      const pid = String(i.property_id || '');
+      const meta = metaMap.get(pid) || {};
+      return {
+        propertyId: pid,
+        identityKey: meta.raw?.registrationIdentityKey || null,
+        itemNo: meta.item_no || null,
+        address: meta.address || null,
+        prevId: String(i.agent_id || '').trim(),               // 롤백 직전 담당자 (=현재)
+        prevName: String(i.agent_name || '').trim(),
+        nextId: String(i.prev_agent_id || '').trim(),          // 롤백 후 복원될 담당자
+        nextName: String(i.prev_agent_name || '').trim(),
+      };
+    }).filter((e) => e.propertyId);
+    if (logEntries.length) {
+      await recordAssigneeChangeLogs({
+        entries: logEntries,
+        actor: { id: admin.userId, name: admin.name || admin.email || '' },
+        reason: 'rollback',
+      });
+    }
+  } catch (logErr) {
+    console.warn('[assignee_change_log] rollback skipped:', logErr?.message || logErr);
   }
 
   return send(res, 200, {

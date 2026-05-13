@@ -391,6 +391,31 @@
     return api('/properties', { method: 'POST', auth, body: { action: 'daily_report_log', entries: safeEntries } });
   }
 
+  // 담당자 변경(배정/교체/해제) 활동로그 일괄 기록.
+  //   클라이언트가 직접 Supabase INSERT 하는 경로(신규 매물 등록·CSV 업로드)에서
+  //   서버 API 로 한 번 호출해 활동로그를 남긴다.
+  //   서버에서 처리하는 경로(매물 수정 PATCH / 자동배정 / 퇴사 처리)는 본 함수를 거치지 않고
+  //   각 API 내부에서 직접 recordAssigneeChangeLogs 헬퍼를 호출.
+  //
+  //   entries: [{ propertyId, identityKey, itemNo, address, prevId, prevName, nextId, nextName }]
+  //   reason : 'new_property' (현재 호출처 = 첫 배정만)
+  async function recordAssigneeChangeLogsViaApi(api, entries, { reason = 'new_property', auth = true } = {}) {
+    if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
+    const safeEntries = (Array.isArray(entries) ? entries : []).filter((e) => e && e.propertyId);
+    if (!safeEntries.length) return { ok: true, inserted: 0, skipped: 0 };
+    // /api/properties 의 daily_report_log 액션을 재활용 — action_type='assignee_change' 가 normalize 됨
+    const mapped = safeEntries.map((e) => ({
+      actionType: 'assignee_change',
+      propertyId: e.propertyId,
+      propertyIdentityKey: e.identityKey || null,
+      propertyItemNo: e.itemNo || null,
+      propertyAddress: e.address || null,
+      changedFields: ['assignee', 'reason:' + reason],
+      note: `${(e.prevName && String(e.prevName).trim()) || '미배정'} → ${(e.nextName && String(e.nextName).trim()) || '미배정'}`,
+    }));
+    return api('/properties', { method: 'POST', auth, body: { action: 'daily_report_log', entries: mapped } });
+  }
+
   async function deletePropertiesViaAdminApi(api, ids, { auth = true } = {}) {
     if (typeof api !== 'function') throw new Error('API 호출 함수를 찾을 수 없습니다.');
     return api('/admin/properties', { method: 'DELETE', auth, body: { ids: Array.isArray(ids) ? ids.filter(Boolean) : [] } });
@@ -838,6 +863,7 @@
     updatePropertyViaApi,
     searchBuildingDuplicatesViaApi,
     recordDailyReportEntriesViaApi,
+    recordAssigneeChangeLogsViaApi,
     deletePropertiesViaAdminApi,
     deleteAllPropertiesViaAdminApi,
     deletePropertyViaAdminApi,

@@ -394,7 +394,76 @@
 
         const collapsed = collapseImportOutcomeEntries(outcomeEntries);
         const finalRows = collapsed.groups.map((group) => group.row);
+
+        // ── 업로드 전 prev 스냅샷 (담당자 정보가 들어있는 행만 대상으로 1회 SELECT)
+        //    Q1 합의: 모든 배정 경로 기록 / 헬퍼가 prev==next 면 자동 스킵.
+        //    CSV에 assignee 컬럼이 들어오는 경우는 드물지만 안전망으로 유지.
+        const csvAssigneeCandidates = finalRows.filter((r) => {
+          const aid = String(r?.assignee_id || '').trim();
+          const aname = String(r?.assignee_name || '').trim();
+          return (aid || aname) && r?.global_id;
+        });
+        const csvPrevByGlobalId = new Map();
+        if (csvAssigneeCandidates.length) {
+          const gids = csvAssigneeCandidates.map((r) => String(r.global_id));
+          const CHUNK = 100;
+          for (let i = 0; i < gids.length; i += CHUNK) {
+            const slice = gids.slice(i, i + CHUNK);
+            try {
+              const { data } = await sb.from('properties')
+                .select('id, global_id, assignee_id, assignee_name, item_no, address, raw')
+                .in('global_id', slice);
+              (data || []).forEach((r) => csvPrevByGlobalId.set(String(r.global_id), r));
+            } catch (_) { /* 스냅샷 실패해도 업로드 자체는 계속 */ }
+          }
+        }
+
         const importResult = await mod.upsertPropertiesResilient(sb, finalRows, { chunkSize: 200 });
+
+        // ── 업로드 후 활동로그 (담당자 지정·변경 케이스만)
+        //    upsert 가 끝난 후 신규 등록 행은 id 가 새로 생겼을 수 있으므로 한 번 더 SELECT.
+        try {
+          if (csvAssigneeCandidates.length && DataAccess && typeof DataAccess.recordAssigneeChangeLogsViaApi === 'function') {
+            const gids = csvAssigneeCandidates.map((r) => String(r.global_id));
+            const postMap = new Map();
+            const CHUNK = 100;
+            for (let i = 0; i < gids.length; i += CHUNK) {
+              const slice = gids.slice(i, i + CHUNK);
+              try {
+                const { data } = await sb.from('properties')
+                  .select('id, global_id, item_no, address, raw')
+                  .in('global_id', slice);
+                (data || []).forEach((r) => postMap.set(String(r.global_id), r));
+              } catch (_) { /* 일부 실패 OK */ }
+            }
+            const entries = [];
+            for (const r of csvAssigneeCandidates) {
+              const gid = String(r.global_id);
+              const post = postMap.get(gid);
+              if (!post || !post.id) continue;  // 신규 id 못 받았으면 추적 불가, 스킵
+              const prev = csvPrevByGlobalId.get(gid) || {};
+              const prevId = String(prev.assignee_id || '').trim();
+              const prevName = String(prev.assignee_name || '').trim();
+              const nextId = String(r.assignee_id || '').trim();
+              const nextName = String(r.assignee_name || '').trim();
+              if (prevId === nextId && prevName === nextName) continue;  // 변경 없음
+              entries.push({
+                propertyId: post.id,
+                identityKey: post.raw?.registrationIdentityKey || prev.raw?.registrationIdentityKey || null,
+                itemNo: post.item_no || r.item_no || null,
+                address: post.address || r.address || null,
+                prevId, prevName, nextId, nextName,
+              });
+            }
+            if (entries.length) {
+              await DataAccess.recordAssigneeChangeLogsViaApi(api, entries, { reason: 'new_property', auth: true });
+            }
+          }
+        } catch (logErr) {
+          // 로그 실패가 업로드 결과 표시를 막지 않도록 swallow
+          console.warn('[assignee_change_log] csv upload skipped:', logErr?.message || logErr);
+        }
+
         const summaryParts = ["업로드 완료", `처리: ${importResult.okCount}건`];
         if (collapsed.outcomeCounts.create > 0) summaryParts.push(`신규 등록: ${collapsed.outcomeCounts.create}건`);
         if (collapsed.outcomeCounts.update > 0) summaryParts.push(`기존 물건 갱신(LOG): ${collapsed.outcomeCounts.update}건`);

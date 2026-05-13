@@ -10,10 +10,11 @@ const {
   id,
   nowIso,
 } = require('../_lib/utils');
-const { requireAdmin, requireAuth } = require('../_lib/auth');
-const { hasSupabaseAdminEnv, requireSupabaseAdmin, resolveCurrentUserContext, getEnv } = require('../_lib/supabase-admin');
+const { requireAdmin } = require('../_lib/auth');
+const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../_lib/supabase-admin');
 const { requireTierWrite } = require('../_lib/admin-tier');
 const PropertyDomain = require('../../knson-property-domain.js');
+const { recordAssigneeChangeLogs } = require('../_lib/activity-log');
 
 function omitUndefined(obj) {
   return Object.fromEntries(Object.entries(obj || {}).filter(([_, v]) => v !== undefined));
@@ -811,42 +812,11 @@ function buildSupabasePropertyPatch(body = {}) {
 
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
-
-  // [2026-05-13] mode 사전 파싱 — weekly_auction_stats 는 단순 통계 조회로
-  // admin 뿐 아니라 staff(담당자)도 접근 허용. 다른 모든 mode 는 기존대로 admin 전용.
-  let _preMode = '';
-  if (req.method === 'GET') {
-    try {
-      _preMode = String(new URL(req.url, 'http://localhost').searchParams.get('mode') || '').trim().toLowerCase();
-    } catch (_) {}
-  }
-  const _isPublicReadMode = (_preMode === 'weekly_auction_stats');
-
   let session = null;
-  if (_isPublicReadMode) {
-    // 로그인된 사용자(admin 또는 staff)면 통과 — 비로그인은 거부
-    if (hasSupabaseAdminEnv()) {
-      try {
-        const ctx = await resolveCurrentUserContext(req);
-        if (!ctx?.userId) {
-          send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
-          return;
-        }
-        // 통계 조회는 식별 정보 최소화한 가짜 session 으로 진입
-        session = { userId: ctx.userId, role: ctx.role || 'staff', name: ctx.name, email: ctx.email };
-      } catch (err) {
-        send(res, 500, { ok: false, message: err.message || '프로필 조회에 실패했습니다.' });
-        return;
-      }
-    } else {
-      session = requireAuth(req, res);
-    }
+  if (hasSupabaseAdminEnv()) {
+    session = await requireSupabaseAdmin(req, res);
   } else {
-    if (hasSupabaseAdminEnv()) {
-      session = await requireSupabaseAdmin(req, res);
-    } else {
-      session = requireAdmin(req, res);
-    }
+    session = requireAdmin(req, res);
   }
   if (!session) return;
 
@@ -1186,6 +1156,35 @@ module.exports = async function handler(req, res) {
       if (!targetId) return send(res, 400, { ok: false, message: '물건 식별자(id)가 필요합니다.' });
 
       const patch = buildSupabasePropertyPatch(body);
+
+      // ── 담당자 변경 감지를 위해 이전 값을 PATCH 직전에 조회.
+      //    patch 에 assignee_id 가 명시된 경우에만 한 줄 SELECT 추가 (다른 PATCH 는 영향 없음).
+      let prevAssigneeSnapshot = null;
+      if (patch.assignee_id !== undefined) {
+        try {
+          const col0 = targetId.includes(':') ? 'global_id' : 'id';
+          const cur = await supabaseRest(`/rest/v1/properties?select=id,item_no,address,assignee_id,assignee_name,raw&${col0}=eq.${encodeURIComponent(targetId)}&limit=1`);
+          const curRow = Array.isArray(cur) ? cur[0] : cur;
+          if (curRow) {
+            prevAssigneeSnapshot = {
+              id: String(curRow.id || ''),
+              itemNo: curRow.item_no || null,
+              address: curRow.address || null,
+              identityKey: curRow.raw?.registrationIdentityKey || null,
+              prevId: String(curRow.assignee_id || '').trim(),
+              prevName: String(curRow.assignee_name || '').trim(),
+            };
+            // raw 가 비어 있을 때 채우는 기존 로직과 정합성 유지
+            if (!patch.raw || typeof patch.raw !== 'object') {
+              patch.raw = (curRow.raw && typeof curRow.raw === 'object') ? { ...curRow.raw } : {};
+            }
+          }
+        } catch (snapErr) {
+          // 스냅샷 실패해도 PATCH 자체는 계속 진행
+          console.warn('[assignee_change_log] prev snapshot failed:', snapErr?.message || snapErr);
+        }
+      }
+
       if (patch.assignee_id !== undefined) {
         const aid = patch.assignee_id;
         const aname = patch.assignee_name || '';
@@ -1210,6 +1209,32 @@ module.exports = async function handler(req, res) {
       });
       const item = Array.isArray(rows) ? rows[0] : rows;
       if (!item) return send(res, 404, { ok: false, message: '물건을 찾을 수 없습니다.' });
+
+      // ── 담당자 변경 로그 — PATCH 성공 후, 본 응답을 깨뜨리지 않게 try/catch
+      if (prevAssigneeSnapshot && patch.assignee_id !== undefined) {
+        const nextId = String(patch.assignee_id || '').trim();
+        const nextName = String(patch.assignee_name || '').trim();
+        if (nextId !== prevAssigneeSnapshot.prevId || nextName !== prevAssigneeSnapshot.prevName) {
+          try {
+            await recordAssigneeChangeLogs({
+              entries: [{
+                propertyId: item.id || prevAssigneeSnapshot.id,
+                identityKey: item.raw?.registrationIdentityKey || prevAssigneeSnapshot.identityKey,
+                itemNo: item.item_no || prevAssigneeSnapshot.itemNo,
+                address: item.address || prevAssigneeSnapshot.address,
+                prevId: prevAssigneeSnapshot.prevId,
+                prevName: prevAssigneeSnapshot.prevName,
+                nextId,
+                nextName,
+              }],
+              actor: { id: session.userId || session.user?.id, name: session.name || session.user?.name || '' },
+              reason: 'manual',
+            });
+          } catch (logErr) {
+            console.warn('[assignee_change_log] admin/properties PATCH skipped:', logErr?.message || logErr);
+          }
+        }
+      }
       return send(res, 200, { ok: true, item });
     }
     const body = getJsonBody(req);
