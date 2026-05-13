@@ -8,7 +8,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}try{localStorage.setItem('knson_theme_v1','light');}catch(e){}try{document.documentElement.setAttribute('data-theme','light');}catch(e){}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260513-flame-weekly-fix2" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260513-flame-weekly-fix3" />
 </head>
 <body class="page-agent">
 
@@ -52,7 +52,6 @@
           <line x1="4" y1="17" x2="20" y2="17"></line>
         </svg>
       </button>
-      <h1 id="agTopbarTitle">홈</h1>
     </div>
     <div class="top-actions">
       <div class="topbar-user-menu" id="agentTopbarUserMenu">
@@ -100,7 +99,6 @@
           <div class="admin-home-overview-copy">
             <h3>전체 관리 물건</h3>
             <div class="highlight-number" id="agSumTotal">-</div>
-            <p class="admin-home-overview-sub">현재 배정된 물건</p>
           </div>
           <div class="admin-home-divider"></div>
           <div class="admin-home-source-grid">

@@ -2878,6 +2878,13 @@ html.modal-open-lock-html{
 /* ── 담당자 홈 — 내 물건 관리 현황 (2026-05-08, 2026-05-13 3열 + 위치 교체) ────── */
 /* 데스크탑: [배정 물건] [내 관리율] [금주 낙찰/매각] 3컬럼 — 가운데 내 관리율이 가장 넓음 */
 /* 주: HTML 클래스명은 agent-home-updates-grid (이전 admin-* 셀렉터는 매치 안 됨 버그 — 2026-05-13 수정) */
+
+/* 대시보드 타이틀 하단 마진 축소 — 상단(admin-shell padding-top 20px)과 시각적으로 동일하게
+   기존 18px margin + grid gap 22px = 약 40px 거리 → margin 0으로 줄이면 grid gap 22px 만 적용 */
+.page-agent .admin-home-page > .admin-page-heading{
+  margin-bottom: 0;
+}
+
 .page-agent .agent-home-updates-grid{
   display:grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(240px, 0.8fr);
