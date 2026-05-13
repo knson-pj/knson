@@ -10,8 +10,8 @@ const {
   id,
   nowIso,
 } = require('../_lib/utils');
-const { requireAdmin } = require('../_lib/auth');
-const { hasSupabaseAdminEnv, requireSupabaseAdmin, getEnv } = require('../_lib/supabase-admin');
+const { requireAdmin, requireAuth } = require('../_lib/auth');
+const { hasSupabaseAdminEnv, requireSupabaseAdmin, resolveCurrentUserContext, getEnv } = require('../_lib/supabase-admin');
 const { requireTierWrite } = require('../_lib/admin-tier');
 const PropertyDomain = require('../../knson-property-domain.js');
 
@@ -811,11 +811,42 @@ function buildSupabasePropertyPatch(body = {}) {
 
 module.exports = async function handler(req, res) {
   if (applyCors(req, res)) return;
+
+  // [2026-05-13] mode 사전 파싱 — weekly_auction_stats 는 단순 통계 조회로
+  // admin 뿐 아니라 staff(담당자)도 접근 허용. 다른 모든 mode 는 기존대로 admin 전용.
+  let _preMode = '';
+  if (req.method === 'GET') {
+    try {
+      _preMode = String(new URL(req.url, 'http://localhost').searchParams.get('mode') || '').trim().toLowerCase();
+    } catch (_) {}
+  }
+  const _isPublicReadMode = (_preMode === 'weekly_auction_stats');
+
   let session = null;
-  if (hasSupabaseAdminEnv()) {
-    session = await requireSupabaseAdmin(req, res);
+  if (_isPublicReadMode) {
+    // 로그인된 사용자(admin 또는 staff)면 통과 — 비로그인은 거부
+    if (hasSupabaseAdminEnv()) {
+      try {
+        const ctx = await resolveCurrentUserContext(req);
+        if (!ctx?.userId) {
+          send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+          return;
+        }
+        // 통계 조회는 식별 정보 최소화한 가짜 session 으로 진입
+        session = { userId: ctx.userId, role: ctx.role || 'staff', name: ctx.name, email: ctx.email };
+      } catch (err) {
+        send(res, 500, { ok: false, message: err.message || '프로필 조회에 실패했습니다.' });
+        return;
+      }
+    } else {
+      session = requireAuth(req, res);
+    }
   } else {
-    session = requireAdmin(req, res);
+    if (hasSupabaseAdminEnv()) {
+      session = await requireSupabaseAdmin(req, res);
+    } else {
+      session = requireAdmin(req, res);
+    }
   }
   if (!session) return;
 

@@ -8,7 +8,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}try{localStorage.setItem('knson_theme_v1','light');}catch(e){}try{document.documentElement.setAttribute('data-theme','light');}catch(e){}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260513-listmap" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260513-flame-weekly" />
 </head>
 <body class="page-agent">
 
@@ -172,7 +172,19 @@
                 <div class="admin-home-updates-row"><span>일반중개</span><strong id="agTodayAssignedDirect">-</strong></div>
                 <div class="admin-home-updates-row"><span>일반</span><strong id="agTodayAssignedGeneral">-</strong></div>
               </div>
-              <p id="agTodayAssignedDetail" class="admin-home-updates-footnote">금일 등록일 기준으로 집계됩니다.</p>
+            </article>
+
+            <!-- ── 금주 낙찰/매각 카드 (2026-05-13 신규) ────────────────────────── -->
+            <article class="card-unit admin-home-mini-card admin-home-weekly-card admin-home-weekly-large agent-home-weekly-card" id="homeWeeklyAuctionCard" title="이번 주 낙찰/매각 현황">
+              <div class="admin-home-mini-icon is-weekly">★</div>
+              <div class="admin-home-mini-copy">
+                <p>금주 낙찰/매각</p>
+                <div class="admin-home-weekly-number-row">
+                  <strong id="homeWeeklyWinCount">-</strong>
+                  <span class="admin-home-mini-sub admin-home-sub-chip" id="homeWeeklyAvgRatio"></span>
+                </div>
+                <button type="button" id="btnWeeklyAuctionDetail" class="btn btn-ghost admin-home-weekly-detail-btn">상세 내역 확인하기</button>
+              </div>
             </article>
 
             <!-- ── 내 관리율 카드 (2026-05-08 신규) ────────────────────────── -->
@@ -373,7 +385,7 @@
 <script src="./knson-property-photos.js?v=20260420-photo-fix2"></script>
 <script src="./knson-property-videos.js?v=20260504-video1"></script>
 <script src="./knson-easter-egg.js?v=20260429-noreload"></script>
-<script src="./agent-app.js?v=20260513-listmap"></script>
+<script src="./agent-app.js?v=20260513-flame-weekly"></script>
 <script src="./knson-idle-timeout.js?v=20260508-idle1"></script>
 
 <script>
@@ -475,5 +487,35 @@
   window.showDailyReportView=function(){switchView('dailyreport');};
 })();
 </script>
+
+<!-- ── 금주 낙찰/매각 상세 모달 (2026-05-13 신규 — 관리자와 동일 구조) ── -->
+<div id="weeklyAuctionDetailModal" class="modal hidden">
+  <div class="modal-backdrop" data-close="true"></div>
+  <div class="modal-card weekly-auction-modal-card">
+    <div class="modal-header">
+      <h3>금주 낙찰/매각 상세 내역 <span id="weeklyAuctionModalRange" class="weekly-auction-modal-range"></span></h3>
+      <button id="weeklyAuctionModalClose" class="icon-btn" type="button">✕</button>
+    </div>
+    <div class="modal-body weekly-auction-modal-body">
+      <div id="weeklyAuctionModalMsg" class="weekly-auction-modal-msg">로딩 중…</div>
+      <div class="table-wrap weekly-auction-modal-tablewrap hidden" id="weeklyAuctionModalTableWrap">
+        <table class="table weekly-auction-modal-table">
+          <thead>
+            <tr>
+              <th>물건번호</th>
+              <th>유형</th>
+              <th>주소</th>
+              <th class="num">감정가</th>
+              <th class="num">낙찰가</th>
+              <th class="num">낙찰율</th>
+            </tr>
+          </thead>
+          <tbody id="weeklyAuctionModalTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

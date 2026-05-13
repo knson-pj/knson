@@ -2875,17 +2875,23 @@ html.modal-open-lock-html{
   .admin-toast{ font-size:13px; padding:12px 18px; bottom:24px; min-width:0; }
 }
 
-/* ── 담당자 홈 — 내 물건 관리 현황 (2026-05-08) ──────────────────────── */
-/* 데스크탑: 좌(오늘의 배정 물건) / 우(내 관리율) 2컬럼 */
+/* ── 담당자 홈 — 내 물건 관리 현황 (2026-05-08, 2026-05-13 3열 확장) ───────── */
+/* 데스크탑: [배정 물건] [금주 낙찰/매각] [내 관리율] 3컬럼 */
 .page-agent .admin-home-updates-grid{
   display:grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.85fr) minmax(0, 1.3fr);
   gap:18px;
   align-items:stretch;
 }
 .page-agent .agent-home-updates-main{
   /* 기존 main 카드 — 그리드 자식 1번 */
   min-height:100%;
+}
+/* 금주 낙찰/매각 카드 — 담당자 페이지에서도 동일한 시각적 강조 */
+.page-agent .agent-home-weekly-card{
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
 }
 
 /* ── 내 관리율 카드 ──────────────────────────────────────────────── */
@@ -2970,11 +2976,25 @@ html.modal-open-lock-html{
   font-variant-numeric:tabular-nums;
 }
 
+/* 중간 단계 — 1024px↓: 2열 (배정+낙찰 위 / 내 관리율 풀폭 아래) (2026-05-13) */
+@media (max-width: 1024px) and (min-width: 881px){
+  .page-agent .admin-home-updates-grid{
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap:14px;
+  }
+  .page-agent .agent-myratio-card{
+    grid-column: 1 / -1;
+  }
+}
+
 /* 모바일 — 1컬럼 stack */
 @media (max-width: 880px){
   .page-agent .admin-home-updates-grid{
     grid-template-columns: 1fr !important;
     gap:12px;
+  }
+  .page-agent .agent-myratio-card{
+    grid-column: auto;
   }
 }
 @media (max-width: 480px){

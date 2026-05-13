@@ -1977,6 +1977,9 @@
     // 내 관리율 카드 — 총배정은 즉시 표시 (state.properties 기반)
     // 활동 통계는 비동기 fetch (loadMyRatio 가 별도 호출)
     if (els.agMyRatioTotal) els.agMyRatioTotal.textContent = fmt(summary.total);
+
+    // 금주 낙찰/매각 카드 비동기 로드 (2026-05-13 신규)
+    try { if (typeof renderAgentWeeklyAuctionCard === 'function') renderAgentWeeklyAuctionCard(); } catch (_) {}
   }
 
   // ═══ 내 관리율 카드 (2026-05-08) ════════════════════════════════════
@@ -5060,7 +5063,8 @@ function renderPagination(totalPages) {
       badges += '<path d="M-2 -7 L-0.5 -3.5 L3 -3.2 L0.5 -1 L1.2 2.5 L-2 0.7 L-5.2 2.5 L-4.5 -1 L-7 -3.2 L-3.5 -3.5 Z" fill="#fff"/>';
     } else if (hasFire) {
       badges += '<circle cx="-2" cy="-2" r="9" fill="#ea580c" stroke="#fff" stroke-width="1.5"/>';
-      badges += '<path d="M-2 -8 C-3.5 -5 -5 -3 -4 -0.5 C-3.5 1 -2 1 -2.5 -0.5 C-2.8 -1.5 -1.5 -2 -1.5 -0.5 C-1.5 1.5 0 3 2.5 2.5 C5 1 5 -1 4 -3.5 C3 -5 1 -5.5 1 -7 C1 -7.5 0 -8 -1 -8 Z" fill="#fff"/>';
+      // 불꽃 — 비대칭 자연 형태 (2026-05-13 V2: 원 중심 정렬 + 우측 곁불꽃)
+      badges += '<path d="M-2 -7.5 C-3.5 -5.5 -6 -3.5 -6 0 C-6 3 -3.5 4 -1.5 3 C1 2 2 -0.5 0.5 -2.5 C1 -3.5 0.5 -4.5 0 -5 C0 -4 -0.5 -3.5 -1 -4 C-1.5 -5 -1.7 -6 -2 -7.5 Z" fill="#fff"/>';
     }
     if (hasInsp) {
       badges += '<circle cx="92" cy="-2" r="9" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>';
@@ -5391,6 +5395,200 @@ function renderPagination(totalPages) {
     });
   });
   // ───────── 전체리스트 지도 보기 모듈 끝 ─────────
+
+
+  // ════════════════════════════════════════════════════════════════════
+  // 금주 낙찰/매각 카드 + 상세 모달 (2026-05-13 신규)
+  //   - 관리자 대시보드의 동일 카드/모달을 담당자 홈에 이식
+  //   - 같은 API (`/admin/properties?mode=weekly_auction_stats`) 호출
+  //   - admin 권한 분기를 추가하여 staff 도 호출 허용 (api/admin/properties.js)
+  //   - 30초 캐시로 중복 호출 방지
+  // ════════════════════════════════════════════════════════════════════
+  const _AGENT_WA_SOURCE_LABEL = {
+    auction: '경매', onbid: '공매',
+    realtor_naver: '네이버중개', realtor_direct: '일반중개', realtor: '중개',
+    general: '일반',
+  };
+  let _agentWeeklyAuctionLoading = false;
+  let _agentWeeklyAuctionFetchedAt = 0;
+  let _agentWeeklyAuctionData = null;
+
+  function _agentFormatWon(n) {
+    const num = Number(n);
+    if (!Number.isFinite(num) || num <= 0) return '-';
+    return num.toLocaleString('ko-KR') + '원';
+  }
+
+  function _agentEscHtmlLocal(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function renderAgentWeeklyAuctionCard() {
+    const countEl = document.getElementById('homeWeeklyWinCount');
+    const subEl = document.getElementById('homeWeeklyAvgRatio');
+    const cardEl = document.getElementById('homeWeeklyAuctionCard');
+    if (!countEl || !cardEl) return;
+    if (_agentWeeklyAuctionLoading) return;
+    if (Date.now() - _agentWeeklyAuctionFetchedAt < 30000 && countEl.textContent !== '-') return;
+    _agentWeeklyAuctionLoading = true;
+    try {
+      const data = await api('/admin/properties?mode=weekly_auction_stats', { auth: true });
+      if (!data?.ok) throw new Error(data?.message || '통계 실패');
+      _agentWeeklyAuctionData = data;
+      const c = data.counts || {};
+      const winCount = Number(c['낙찰'] || 0) + Number(c['매각'] || 0);
+      countEl.textContent = Number(winCount).toLocaleString('ko-KR');
+      if (subEl) {
+        if (data.avgRatio && winCount > 0) {
+          subEl.textContent = `평균 ${data.avgRatio}%`;
+        } else {
+          subEl.textContent = '';
+        }
+      }
+      if (data.weekStart && data.weekEnd) {
+        cardEl.title = `${data.weekStart} ~ ${data.weekEnd} 집계`;
+      }
+      _agentWeeklyAuctionFetchedAt = Date.now();
+    } catch (e) {
+      console.warn('[agent] weekly auction stats load failed', e);
+      countEl.textContent = '-';
+      if (subEl) subEl.textContent = '';
+    } finally {
+      _agentWeeklyAuctionLoading = false;
+    }
+  }
+
+  function _agentRenderWeeklyAuctionModalContent(data) {
+    const rangeEl = document.getElementById('weeklyAuctionModalRange');
+    const msgEl = document.getElementById('weeklyAuctionModalMsg');
+    const wrapEl = document.getElementById('weeklyAuctionModalTableWrap');
+    const tbodyEl = document.getElementById('weeklyAuctionModalTbody');
+    if (!msgEl || !wrapEl || !tbodyEl) return;
+    if (rangeEl) {
+      rangeEl.textContent = (data && data.weekStart && data.weekEnd)
+        ? `(${data.weekStart} ~ ${data.weekEnd})`
+        : '';
+    }
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) {
+      msgEl.textContent = '이번 주에 낙찰/매각된 물건이 없습니다.';
+      msgEl.classList.remove('hidden', 'is-error');
+      msgEl.classList.add('is-empty');
+      wrapEl.classList.add('hidden');
+      tbodyEl.innerHTML = '';
+      return;
+    }
+    msgEl.classList.add('hidden');
+    msgEl.classList.remove('is-empty', 'is-error');
+    wrapEl.classList.remove('hidden');
+    const rows = items.map((it) => {
+      const typeLabel = _agentEscHtmlLocal(_AGENT_WA_SOURCE_LABEL[it.sourceType] || it.sourceType || '-');
+      const assetLabel = _agentEscHtmlLocal(it.assetType || '');
+      const fullType = assetLabel ? `${typeLabel} · ${assetLabel}` : typeLabel;
+      const itemNoText = _agentEscHtmlLocal(it.itemNo || '-');
+      const sourceUrl = String(it.sourceUrl || '').trim();
+      const itemNo = sourceUrl
+        ? `<a href="${_agentEscHtmlLocal(sourceUrl)}" target="_blank" rel="noopener" class="item-no-link" title="탱크옥션에서 보기">${itemNoText}</a>`
+        : itemNoText;
+      const address = _agentEscHtmlLocal(it.address || '-');
+      const priceMain = _agentFormatWon(it.priceMain);
+      const resultPrice = _agentFormatWon(it.resultPrice);
+      let ratioHtml = '-';
+      if (typeof it.ratio === 'number' && Number.isFinite(it.ratio)) {
+        let cls = '';
+        if (it.ratio >= 100) cls = 'is-high';
+        else if (it.ratio < 80) cls = 'is-low';
+        ratioHtml = `<span class="ratio-badge ${cls}">${it.ratio.toFixed(1)}%</span>`;
+      }
+      return (
+        `<tr>`
+        + `<td class="col-item">${itemNo}</td>`
+        + `<td>${fullType}</td>`
+        + `<td class="col-address" title="${address}">${address}</td>`
+        + `<td class="num">${priceMain}</td>`
+        + `<td class="num">${resultPrice}</td>`
+        + `<td class="num">${ratioHtml}</td>`
+        + `</tr>`
+      );
+    }).join('');
+    tbodyEl.innerHTML = rows;
+  }
+
+  async function _agentOpenWeeklyAuctionDetailModal() {
+    const modalEl = document.getElementById('weeklyAuctionDetailModal');
+    const msgEl = document.getElementById('weeklyAuctionModalMsg');
+    const wrapEl = document.getElementById('weeklyAuctionModalTableWrap');
+    if (!modalEl) return;
+    modalEl.classList.remove('hidden');
+    if (_agentWeeklyAuctionData && (Date.now() - _agentWeeklyAuctionFetchedAt) < 30000) {
+      _agentRenderWeeklyAuctionModalContent(_agentWeeklyAuctionData);
+      return;
+    }
+    if (msgEl) {
+      msgEl.textContent = '로딩 중…';
+      msgEl.classList.remove('hidden', 'is-error', 'is-empty');
+    }
+    if (wrapEl) wrapEl.classList.add('hidden');
+    try {
+      const data = await api('/admin/properties?mode=weekly_auction_stats', { auth: true });
+      if (!data?.ok) throw new Error(data?.message || '통계 실패');
+      _agentWeeklyAuctionData = data;
+      _agentWeeklyAuctionFetchedAt = Date.now();
+      _agentRenderWeeklyAuctionModalContent(data);
+    } catch (e) {
+      console.warn('[agent] weekly auction detail load failed', e);
+      if (msgEl) {
+        msgEl.textContent = '상세 내역을 불러오지 못했습니다.';
+        msgEl.classList.add('is-error');
+        msgEl.classList.remove('hidden', 'is-empty');
+      }
+      if (wrapEl) wrapEl.classList.add('hidden');
+    }
+  }
+
+  function _agentCloseWeeklyAuctionDetailModal() {
+    const modalEl = document.getElementById('weeklyAuctionDetailModal');
+    if (modalEl) modalEl.classList.add('hidden');
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const btn = document.getElementById('btnWeeklyAuctionDetail');
+    if (btn && btn.dataset.bound !== '1') {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _agentOpenWeeklyAuctionDetailModal();
+      });
+    }
+    const cardEl = document.getElementById('homeWeeklyAuctionCard');
+    if (cardEl && cardEl.dataset.bound !== '1') {
+      cardEl.dataset.bound = '1';
+      // 카드 본체 클릭 시에도 상세 모달 열기 (관리자와 동일 UX)
+      cardEl.addEventListener('click', (e) => {
+        // 내부 버튼이 자체 핸들러를 가지므로 버튼은 통과
+        if (e.target.closest('#btnWeeklyAuctionDetail')) return;
+        _agentOpenWeeklyAuctionDetailModal();
+      });
+    }
+    const modalEl = document.getElementById('weeklyAuctionDetailModal');
+    if (modalEl && modalEl.dataset.bound !== '1') {
+      modalEl.dataset.bound = '1';
+      modalEl.addEventListener('click', (e) => {
+        const t = e.target;
+        if (t && t.dataset && t.dataset.close === 'true') _agentCloseWeeklyAuctionDetailModal();
+      });
+      const closeBtn = document.getElementById('weeklyAuctionModalClose');
+      if (closeBtn) closeBtn.addEventListener('click', _agentCloseWeeklyAuctionDetailModal);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modalEl.classList.contains('hidden')) {
+          _agentCloseWeeklyAuctionDetailModal();
+        }
+      });
+    }
+  });
+  // ───────── 금주 낙찰/매각 모듈 끝 ─────────
 
   // ── Start ──
   if (document.readyState === "loading") {
