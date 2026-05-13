@@ -5453,6 +5453,10 @@ function renderPagination(totalPages) {
       _agentWeeklyAuctionFetchedAt = Date.now();
     } catch (e) {
       console.warn('[agent] weekly auction stats load failed', e);
+      // [2026-05-13] 명확한 진단: 권한 에러 = 운영 서버에 새 API 가 적용 안 된 경우
+      if (String(e?.message || '').includes('관리자 권한')) {
+        console.warn('[agent] ⚠ 운영 서버의 api/admin/properties.js 가 v2(2026-05-13) 버전으로 배포되지 않았을 가능성이 있습니다. Vercel 재배포 또는 파일 누락 여부를 확인하세요.');
+      }
       countEl.textContent = '-';
       if (subEl) subEl.textContent = '';
     } finally {
@@ -5539,6 +5543,9 @@ function renderPagination(totalPages) {
       _agentRenderWeeklyAuctionModalContent(data);
     } catch (e) {
       console.warn('[agent] weekly auction detail load failed', e);
+      if (String(e?.message || '').includes('관리자 권한')) {
+        console.warn('[agent] ⚠ 운영 서버의 api/admin/properties.js 가 v2(2026-05-13) 버전으로 배포되지 않았을 가능성이 있습니다. Vercel 재배포 또는 파일 누락 여부를 확인하세요.');
+      }
       if (msgEl) {
         msgEl.textContent = '상세 내역을 불러오지 못했습니다.';
         msgEl.classList.add('is-error');

@@ -2875,24 +2875,39 @@ html.modal-open-lock-html{
   .admin-toast{ font-size:13px; padding:12px 18px; bottom:24px; min-width:0; }
 }
 
-/* ── 담당자 홈 — 내 물건 관리 현황 (2026-05-08, 2026-05-13 3열 확장) ───────── */
-/* 데스크탑: [배정 물건] [금주 낙찰/매각] [내 관리율] 3컬럼 */
+/* ── 담당자 홈 — 내 물건 관리 현황 (2026-05-08, 2026-05-13 3열 + 위치 교체) ────── */
+/* 데스크탑: [배정 물건] [내 관리율] [금주 낙찰/매각] 3컬럼 — 가운데 내 관리율이 가장 넓음 */
 /* 주: HTML 클래스명은 agent-home-updates-grid (이전 admin-* 셀렉터는 매치 안 됨 버그 — 2026-05-13 수정) */
 .page-agent .agent-home-updates-grid{
   display:grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.85fr) minmax(0, 1.3fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(240px, 0.8fr);
   gap:18px;
   align-items:stretch;
 }
 .page-agent .agent-home-updates-main{
-  /* 기존 main 카드 — 그리드 자식 1번 */
+  /* 배정 물건 카드 — 좌측 라벨/숫자 + 우측 리스트가 카드 폭 안에서 균형 잡히도록 */
   min-height:100%;
+  justify-content: space-between;
+  gap: 20px;
 }
-/* 금주 낙찰/매각 카드 — 담당자 페이지에서도 동일한 시각적 강조 */
+.page-agent .agent-home-updates-main > .admin-home-updates-list{
+  /* 우측 리스트가 남는 공간을 차지하되, 너무 넓어지지 않도록 */
+  flex: 1 1 auto;
+  max-width: 60%;
+}
+/* 금주 낙찰/매각 카드 — 가운데 콘텐츠 정렬 + 위아래 패딩 균형 */
 .page-agent .agent-home-weekly-card{
   min-height:100%;
   display:flex;
   flex-direction:column;
+  justify-content:center;  /* 위/아래 여백 균등 — 콘텐츠 가운데 정렬 */
+  align-items:center;
+}
+.page-agent .agent-home-weekly-card .admin-home-mini-copy{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
 }
 
 /* ── 내 관리율 카드 ──────────────────────────────────────────────── */
@@ -2977,18 +2992,24 @@ html.modal-open-lock-html{
   font-variant-numeric:tabular-nums;
 }
 
-/* 중간 단계 — 1024px↓: 2열 (배정+낙찰 위 / 내 관리율 풀폭 아래) (2026-05-13) */
+/* 중간 단계 — 1024px↓: 2열 (배정+금주 위 / 내 관리율 풀폭 아래) (2026-05-13) */
 @media (max-width: 1024px) and (min-width: 881px){
   .page-agent .agent-home-updates-grid{
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap:14px;
   }
+  /* 관리율 카드를 시각적으로 마지막에 — 첫 줄은 배정+금주 (둘 다 작은 카드) */
   .page-agent .agent-myratio-card{
+    order: 3;
     grid-column: 1 / -1;
+  }
+  /* 배정 물건 카드 — 좁아진 폭에서 리스트 max-width 해제 */
+  .page-agent .agent-home-updates-main > .admin-home-updates-list{
+    max-width: none;
   }
 }
 
-/* 모바일 — 1컬럼 stack */
+/* 모바일 — 1컬럼 stack (DOM 순서: 배정 → 관리율 → 금주) */
 @media (max-width: 880px){
   .page-agent .agent-home-updates-grid{
     grid-template-columns: 1fr !important;
@@ -2996,6 +3017,10 @@ html.modal-open-lock-html{
   }
   .page-agent .agent-myratio-card{
     grid-column: auto;
+    order: 0;
+  }
+  .page-agent .agent-home-updates-main > .admin-home-updates-list{
+    max-width: none;
   }
 }
 @media (max-width: 480px){

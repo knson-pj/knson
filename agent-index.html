@@ -8,7 +8,7 @@
   <style>html{visibility:hidden;}</style>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
   <script>(function(){try{var r=null;try{r=sessionStorage.getItem('knson_bms_session_v1');}catch(e){}try{localStorage.removeItem('knson_bms_session_v1');}catch(e){}var s=r?JSON.parse(r):null;if(!s||!s.token||!s.user){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}var role=String(s.user.role||'').trim().toLowerCase();if(role==='admin'){location.replace('./admin-index.html');return;}try{localStorage.setItem('knson_theme_v1','light');}catch(e){}try{document.documentElement.setAttribute('data-theme','light');}catch(e){}}catch(e){location.replace('./login.html?next='+encodeURIComponent('./agent-index.html'));return;}document.documentElement.style.visibility='visible';})();</script>
-  <link rel="stylesheet" href="./admin-styles.css?v=20260513-flame-weekly-fix1" />
+  <link rel="stylesheet" href="./admin-styles.css?v=20260513-flame-weekly-fix2" />
 </head>
 <body class="page-agent">
 
@@ -174,20 +174,7 @@
               </div>
             </article>
 
-            <!-- ── 금주 낙찰/매각 카드 (2026-05-13 신규) ────────────────────────── -->
-            <article class="card-unit admin-home-mini-card admin-home-weekly-card admin-home-weekly-large agent-home-weekly-card" id="homeWeeklyAuctionCard" title="이번 주 낙찰/매각 현황">
-              <div class="admin-home-mini-icon is-weekly">★</div>
-              <div class="admin-home-mini-copy">
-                <p>금주 낙찰/매각</p>
-                <div class="admin-home-weekly-number-row">
-                  <strong id="homeWeeklyWinCount">-</strong>
-                  <span class="admin-home-mini-sub admin-home-sub-chip" id="homeWeeklyAvgRatio"></span>
-                </div>
-                <button type="button" id="btnWeeklyAuctionDetail" class="btn btn-ghost admin-home-weekly-detail-btn">상세 내역 확인하기</button>
-              </div>
-            </article>
-
-            <!-- ── 내 관리율 카드 (2026-05-08 신규) ────────────────────────── -->
+            <!-- ── 내 관리율 카드 (2026-05-08 신규, 2026-05-13 위치: 가운데로 이동) ──── -->
             <article class="card-unit agent-myratio-card" id="agMyRatioCard" aria-label="기간별 내 관리율 통계">
               <div class="agent-myratio-header">
                 <h4 class="agent-myratio-title">내 관리율</h4>
@@ -223,6 +210,19 @@
                 <div class="agent-myratio-activity-row"><span>담당자의견</span><strong id="agMyRatioOpinion">-</strong></div>
                 <div class="agent-myratio-activity-row"><span>사진등록</span><strong id="agMyRatioPhoto">-</strong></div>
                 <div class="agent-myratio-activity-row"><span>동영상등록</span><strong id="agMyRatioVideo">-</strong></div>
+              </div>
+            </article>
+
+            <!-- ── 금주 낙찰/매각 카드 (2026-05-13 신규, 위치: 우측으로 이동) ──── -->
+            <article class="card-unit admin-home-mini-card admin-home-weekly-card admin-home-weekly-large agent-home-weekly-card" id="homeWeeklyAuctionCard" title="이번 주 낙찰/매각 현황">
+              <div class="admin-home-mini-icon is-weekly">★</div>
+              <div class="admin-home-mini-copy">
+                <p>금주 낙찰/매각</p>
+                <div class="admin-home-weekly-number-row">
+                  <strong id="homeWeeklyWinCount">-</strong>
+                  <span class="admin-home-mini-sub admin-home-sub-chip" id="homeWeeklyAvgRatio"></span>
+                </div>
+                <button type="button" id="btnWeeklyAuctionDetail" class="btn btn-ghost admin-home-weekly-detail-btn">상세 내역 확인하기</button>
               </div>
             </article>
           </div>
@@ -385,7 +385,7 @@
 <script src="./knson-property-photos.js?v=20260420-photo-fix2"></script>
 <script src="./knson-property-videos.js?v=20260504-video1"></script>
 <script src="./knson-easter-egg.js?v=20260429-noreload"></script>
-<script src="./agent-app.js?v=20260513-flame-weekly"></script>
+<script src="./agent-app.js?v=20260513-flame-weekly-fix2"></script>
 <script src="./knson-idle-timeout.js?v=20260508-idle1"></script>
 
 <script>
