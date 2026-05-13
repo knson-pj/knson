@@ -2375,7 +2375,7 @@ html[data-theme="dark"] .property-video-viewer-nav{background:rgba(15,23,42,.88)
 
   /* "오늘의 배정 물건" 블록 */
   .page-agent .admin-home-updates-block{margin-top:4px;}
-  .page-agent .admin-home-updates-grid{grid-template-columns:1fr !important;gap:12px;}
+  .page-agent .agent-home-updates-grid{grid-template-columns:1fr !important;gap:12px;}
   .page-agent .admin-home-updates-main{padding:16px;border-radius:16px;}
   .page-agent .admin-mini-label{font-size:13px;}
   .page-agent .admin-mini-number{font-size:40px;line-height:1;margin-top:4px;}
@@ -2877,7 +2877,8 @@ html.modal-open-lock-html{
 
 /* ── 담당자 홈 — 내 물건 관리 현황 (2026-05-08, 2026-05-13 3열 확장) ───────── */
 /* 데스크탑: [배정 물건] [금주 낙찰/매각] [내 관리율] 3컬럼 */
-.page-agent .admin-home-updates-grid{
+/* 주: HTML 클래스명은 agent-home-updates-grid (이전 admin-* 셀렉터는 매치 안 됨 버그 — 2026-05-13 수정) */
+.page-agent .agent-home-updates-grid{
   display:grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 0.85fr) minmax(0, 1.3fr);
   gap:18px;
@@ -2978,7 +2979,7 @@ html.modal-open-lock-html{
 
 /* 중간 단계 — 1024px↓: 2열 (배정+낙찰 위 / 내 관리율 풀폭 아래) (2026-05-13) */
 @media (max-width: 1024px) and (min-width: 881px){
-  .page-agent .admin-home-updates-grid{
+  .page-agent .agent-home-updates-grid{
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap:14px;
   }
@@ -2989,7 +2990,7 @@ html.modal-open-lock-html{
 
 /* 모바일 — 1컬럼 stack */
 @media (max-width: 880px){
-  .page-agent .admin-home-updates-grid{
+  .page-agent .agent-home-updates-grid{
     grid-template-columns: 1fr !important;
     gap:12px;
   }
