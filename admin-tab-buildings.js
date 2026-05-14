@@ -451,7 +451,9 @@
   async function runCollect() {
     if (isRunning) return;
     var dongs = Array.from(selectedDongs);
-    if (!dongs.length) return;
+    // [UX 2026-05-14] 동 미선택 시 조용히 return 하던 흐름을 안내 메시지로 교체.
+    //   사용자 실수로 동을 선택하지 않은 채 버튼을 누른 경우 알림.
+    if (!dongs.length) { alert("실행할 동을 먼저 선택해주세요."); return; }
 
     // Supabase 세션 동기화
     var K = window.KNSN || {};
@@ -623,7 +625,8 @@
   async function runEnrichOnly() {
     if (isRunning) return;
     var dongs = Array.from(selectedDongs);
-    if (!dongs.length) return;
+    // [UX 2026-05-14] 동 미선택 시 안내
+    if (!dongs.length) { alert("실행할 동을 먼저 선택해주세요."); return; }
     var K = window.KNSN || {};
     if (typeof K.sbSyncLocalSession === "function") {
       try { await K.sbSyncLocalSession(); } catch (e) {}
@@ -698,7 +701,8 @@
   async function runEnrichV4(mode, label, opts) {
     if (isRunning) return;
     var dongs = Array.from(selectedDongs);
-    if (!dongs.length) return;
+    // [UX 2026-05-14] 동 미선택 시 안내
+    if (!dongs.length) { alert("실행할 동을 먼저 선택해주세요."); return; }
 
     opts = opts || {};
     var limitPerCall = opts.limitPerCall || 15;   // 한 번 호출에 처리할 건물 수
@@ -869,7 +873,8 @@
   async function runBatchAll() {
     if (isRunning) return;
     var dongs = Array.from(selectedDongs);
-    if (!dongs.length) return;
+    // [UX 2026-05-14] 동 미선택 시 안내
+    if (!dongs.length) { alert("실행할 동을 먼저 선택해주세요."); return; }
 
     // 체크된 모드 수집
     // [개선 2026-05-11] maxRounds 확대 — 한 번 일괄 실행으로 동당 5,000~10,000건 처리.
