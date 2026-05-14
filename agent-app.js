@@ -5024,11 +5024,12 @@ function renderPagination(totalPages) {
     return 'D-' + diff;
   }
 
-  // 단일 매물 마커 SVG 빌더 — 시안 V2 디자인
+  // 단일 매물 마커 SVG 빌더 — 2026-05-14 A안 (platform 통일)
+  //   - 상단 컬러 헤더 + 흰 본문 + 검정 외곽선/꼬리 + 그림자
+  //   - 좌상단 즐겨찾기/핫 배지, 우상단 현장실사 배지, 우측 ↓N%/D-day 배지 유지
   function li_map_buildMarkerSvg(p) {
     const bucket = li_map_getBucket(p);
     const fill = LI_MAP_BUCKET_FILL[bucket] || LI_MAP_BUCKET_FILL.general;
-    const textColor = LI_MAP_BUCKET_TEXT[bucket] || LI_MAP_BUCKET_TEXT.general;
     const label = LI_MAP_BUCKET_LABEL[bucket] || '일반';
 
     const areaText = li_map_formatAreaShort(p?.exclusivearea);
@@ -5045,16 +5046,21 @@ function renderPagination(totalPages) {
     const hasTopRightBadge = hasInsp;
     const hasRightInfo = (discount !== null) || (dday !== null);
 
-    const left = hasLeftBadge ? -11 : -1;
-    const right = hasRightInfo ? 128 : (hasTopRightBadge ? 102 : 91);
-    const top = (hasLeftBadge || hasTopRightBadge) ? -11 : -1;
-    const bottom = 65;
+    // 좌표계: 카드 (0,0)~(96,50), 꼬리 끝 (48, 59)
+    //   - 좌상단 배지 cx=-2,r=9 → 끝 -11, 안전 padding -12
+    //   - 우상단 배지 cx=98,r=9 → 끝 107.75, 안전 padding 108
+    //   - 우측 정보 배지 x=100~130, padding 3 → 끝 133
+    //   - 배지 없으면 그림자 끝 97 + padding 3 = 100
+    const left = hasLeftBadge ? -12 : -3;
+    const right = hasRightInfo ? 133 : (hasTopRightBadge ? 108 : 100);
+    const top = (hasLeftBadge || hasTopRightBadge) ? -12 : -3;
+    const bottom = 62;  // 꼬리 끝 59 + padding 3
     const width = right - left;
     const height = bottom - top;
     const viewBox = left + ' ' + top + ' ' + width + ' ' + height;
-    // anchor: 포인터 끝 (46, 64) → SVG 픽셀 좌표
-    const anchorX = 46 - left;
-    const anchorY = 64 - top;
+    // anchor: 꼬리 끝 (48, 59) → SVG element 안 픽셀
+    const anchorX = 48 - left;
+    const anchorY = 59 - top;
 
     let badges = '';
 
@@ -5063,50 +5069,61 @@ function renderPagination(totalPages) {
       badges += '<path d="M-2 -7 L-0.5 -3.5 L3 -3.2 L0.5 -1 L1.2 2.5 L-2 0.7 L-5.2 2.5 L-4.5 -1 L-7 -3.2 L-3.5 -3.5 Z" fill="#fff"/>';
     } else if (hasFire) {
       badges += '<circle cx="-2" cy="-2" r="9" fill="#ea580c" stroke="#fff" stroke-width="1.5"/>';
-      // 불꽃 — 비대칭 자연 형태 (2026-05-13 V2: 원 중심 정렬 + 우측 곁불꽃)
+      // 불꽃 — 비대칭 자연 형태 (2026-05-13 V2 유지)
       badges += '<path d="M-2 -7.5 C-3.5 -5.5 -6 -3.5 -6 0 C-6 3 -3.5 4 -1.5 3 C1 2 2 -0.5 0.5 -2.5 C1 -3.5 0.5 -4.5 0 -5 C0 -4 -0.5 -3.5 -1 -4 C-1.5 -5 -1.7 -6 -2 -7.5 Z" fill="#fff"/>';
     }
     if (hasInsp) {
-      badges += '<circle cx="92" cy="-2" r="9" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>';
-      badges += '<path d="M87.5 -2 L91 1.2 L96.5 -5.5" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
+      // 현장실사 체크 — A안 카드폭 96에 맞춰 cx 92→98 시프트
+      badges += '<circle cx="98" cy="-2" r="9" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>';
+      badges += '<path d="M93.5 -2 L97 1.2 L102.5 -5.5" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
     }
     if (discount !== null && dday !== null) {
-      badges += '<rect x="94" y="14" width="32" height="16" rx="3.5" fill="#dc2626"/>';
-      badges += '<text x="110" y="25.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">↓' + discount + '%</text>';
-      badges += '<rect x="94" y="33" width="32" height="16" rx="3.5" fill="#1f2937"/>';
-      badges += '<text x="110" y="44.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">' + esc(dday) + '</text>';
+      badges += '<rect x="100" y="14" width="30" height="14" rx="3" fill="#dc2626"/>';
+      badges += '<text x="115" y="24.2" text-anchor="middle" font-size="9.5" font-weight="600" fill="#fff" font-family="-apple-system,system-ui,sans-serif">↓' + discount + '%</text>';
+      badges += '<rect x="100" y="30" width="30" height="14" rx="3" fill="#111827"/>';
+      badges += '<text x="115" y="40.2" text-anchor="middle" font-size="9.5" font-weight="600" fill="#fff" font-family="-apple-system,system-ui,sans-serif">' + esc(dday) + '</text>';
     } else if (discount !== null) {
-      badges += '<rect x="94" y="22" width="32" height="16" rx="3.5" fill="#dc2626"/>';
-      badges += '<text x="110" y="33.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">↓' + discount + '%</text>';
+      badges += '<rect x="100" y="22" width="30" height="14" rx="3" fill="#dc2626"/>';
+      badges += '<text x="115" y="32.2" text-anchor="middle" font-size="9.5" font-weight="600" fill="#fff" font-family="-apple-system,system-ui,sans-serif">↓' + discount + '%</text>';
     } else if (dday !== null) {
-      badges += '<rect x="94" y="22" width="32" height="16" rx="3.5" fill="#1f2937"/>';
-      badges += '<text x="110" y="33.5" text-anchor="middle" font-size="9.5" font-weight="500" fill="#fff" font-family="-apple-system,system-ui,sans-serif">' + esc(dday) + '</text>';
+      badges += '<rect x="100" y="22" width="30" height="14" rx="3" fill="#111827"/>';
+      badges += '<text x="115" y="32.2" text-anchor="middle" font-size="9.5" font-weight="600" fill="#fff" font-family="-apple-system,system-ui,sans-serif">' + esc(dday) + '</text>';
     }
 
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + viewBox + '" width="' + width + '" height="' + height + '">'
-      + '<rect x="1" y="1" width="90" height="56" rx="9" fill="#fff" stroke="#cfd4dc" stroke-width="0.7"/>'
-      + '<text x="9" y="18" font-size="11.5" font-weight="500" fill="' + textColor + '" font-family="-apple-system,system-ui,sans-serif">' + esc(label) + '</text>'
-      + '<text x="83" y="18" text-anchor="end" font-size="10" fill="#6b7280" font-family="-apple-system,system-ui,sans-serif">' + esc(areaText) + '</text>'
-      + '<text x="46" y="44" text-anchor="middle" font-size="17" font-weight="500" fill="#111827" font-family="-apple-system,system-ui,sans-serif">' + esc(priceText) + '</text>'
-      + '<path d="M41 57 L51 57 L46 64 Z" fill="' + fill + '"/>'
+      // 그림자
+      + '<rect x="1" y="2" width="96" height="50" rx="8" fill="#000" opacity="0.18"/>'
+      // 본체
+      + '<rect x="0" y="0" width="96" height="50" rx="8" fill="#fff" stroke="#111827" stroke-width="1"/>'
+      // 상단 컬러 헤더
+      + '<path d="M0 8 Q0 0 8 0 L88 0 Q96 0 96 8 L96 20 L0 20 Z" fill="' + fill + '"/>'
+      // 라벨
+      + '<text x="8" y="14.5" font-family="-apple-system,system-ui,sans-serif" font-size="11" font-weight="600" fill="#fff">' + esc(label) + '</text>'
+      // 면적
+      + (areaText ? '<text x="88" y="14.5" text-anchor="end" font-family="-apple-system,system-ui,sans-serif" font-size="10" fill="#fff" opacity="0.92">' + esc(areaText) + '</text>' : '')
+      // 가격
+      + '<text x="48" y="41" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-size="17" font-weight="600" fill="#111827">' + esc(priceText) + '</text>'
+      // 꼬리
+      + '<path d="M42 50 L54 50 L48 59 Z" fill="#111827"/>'
       + badges
       + '</svg>';
 
     return { svg: svg, width: width, height: height, anchorX: anchorX, anchorY: anchorY };
   }
 
-  // 묶음 마커(같은 좌표 N건) SVG — 시안 D 디자인 (원형 카운트)
+  // 묶음 마커(같은 좌표 N건) SVG — 2026-05-14 A안 (platform 통일)
   function li_map_buildClusterSvg(items) {
     const buckets = new Set(items.map(li_map_getBucket));
     const color = buckets.size === 1 ? (LI_MAP_BUCKET_FILL[items[0] ? li_map_getBucket(items[0]) : 'general'] || '#475569') : '#475569';
     const count = items.length;
-    const fontSize = count >= 100 ? 12 : 14;
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="60" height="60">'
-      + '<circle cx="30" cy="30" r="26.5" fill="none" stroke="' + color + '" stroke-width="1" opacity="0.35"/>'
-      + '<circle cx="30" cy="30" r="22" fill="' + color + '" stroke="#fff" stroke-width="3"/>'
-      + '<text x="30" y="35" text-anchor="middle" font-size="' + fontSize + '" fill="#fff" font-family="-apple-system,system-ui,sans-serif" font-weight="500">' + count + '</text>'
+    const fontSize = count >= 100 ? 13 : 15;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 66 66" width="66" height="66">'
+      + '<circle cx="30" cy="31" r="25" fill="#000" opacity="0.18"/>'
+      + '<circle cx="30" cy="29" r="25" fill="#fff" stroke="#111827" stroke-width="1.2"/>'
+      + '<circle cx="30" cy="29" r="20" fill="' + color + '"/>'
+      + '<text x="30" y="34" text-anchor="middle" font-size="' + fontSize + '" font-weight="600" fill="#fff" font-family="-apple-system,system-ui,sans-serif">' + count + '</text>'
       + '</svg>';
-    return { svg: svg, width: 60, height: 60, anchorX: 30, anchorY: 30 };
+    return { svg: svg, width: 66, height: 66, anchorX: 33, anchorY: 32 };
   }
 
   function li_map_svgToDataUri(svg) {
