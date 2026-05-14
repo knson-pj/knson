@@ -200,6 +200,9 @@ async function handlePublicMapRequest(req, res) {
   }
 
   const items = filtered.slice(offset, offset + limit);
+  // 2026-05-14 platform A안 마커 디자인 지원: 가격/면적/기일 4개 필드 추가
+  //   기존 items 응답에서 이미 회원에게 제공되던 값들이라 PII 노출 변화 없음
+  //   응답 크기 영향: 매물 1건당 약 50바이트 × 최대 markerLimit건
   const markers = filtered.slice(0, markerLimit).map((row) => ({
     id: row.id,
     address: row.address,
@@ -208,6 +211,10 @@ async function handlePublicMapRequest(req, res) {
     longitude: row.longitude,
     sourceBucket: row.sourceBucket,
     source: row.source,
+    appraisalPrice: row.appraisalPrice,
+    currentPrice: row.currentPrice,
+    exclusivearea: row.exclusivearea,
+    bidDate: row.bidDate,
   }));
 
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
