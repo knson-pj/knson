@@ -313,6 +313,182 @@ async function handlePublicMyListRequest(req, res, user) {
 
 
 // =============================================================================
+// platform 회원용 상권분석 (GET ?mode=area) — 2026-05-15
+// =============================================================================
+// 매물 상세 패널 내부의 "상권분석" 섹션이 호출.
+// 좌표 + 반경(50~2000m) 기준으로 buildings 테이블을 PostGIS 반경 조회하여
+//   - 지도 표시용 건물 점 리스트 (id/lat/lng/purposeClass/bldName)
+//   - 분류 6종 카운트 (residential/commercial/office/public/industrial/other)
+//   - 배후세대 4분류 합산 (apartment/villa/officetel/detached)
+//   - 추정 거주 인구 합산
+// 을 반환.
+//
+// PII 노출 없음 — 집계 통계 + 공개 건물 메타만.
+// PostGIS RPC 함수 `public_buildings_around` (마이그레이션 #0015) 활용.
+//
+// Rate limit: 회원 단위 — 슬라이더 드래그로 호출 폭주 가능성 있어 보수적 한도 설정.
+
+const AREA_RATE_LIMIT_BUCKETS = [
+  { windowMs:      10_000, max:  20, label: 'area-10sec' },  // 슬라이더 디바운스 보호
+  { windowMs:      60_000, max:  60, label: 'area-1min' },
+  { windowMs: 60 * 60_000, max: 600, label: 'area-1hour' },
+];
+
+// res_type / has_officetel_unit / main_purps_cd_nm → 배후세대 4분류 매핑
+// (결정 A 의 (c) — 호별 용도까지 확인하여 오피스텔 정확 추출)
+function pmClassifyResidence(row) {
+  const res = String(row.res_type || '').trim();
+  const hasOfficetel = row.has_officetel_unit === true;
+
+  // 1) 명시적으로 오피스텔이면 우선
+  if (res === '오피스텔' || hasOfficetel) return 'officetel';
+  // 2) 일반 분류
+  if (res === '아파트') return 'apartment';
+  if (res === '다세대주택' || res === '연립주택') return 'villa';
+  if (res === '단독주택'   || res === '다가구주택') return 'detached';
+  // 3) 그 외 주거(기숙사 등)는 합산에서 제외
+  return null;
+}
+
+// 세대수 합산 우선순위 (결정 B 적용)
+//   hhld_cnt → fmly_cnt → unit_count → 1
+function pmHouseholdCount(row) {
+  const a = Number(row.hhld_cnt);
+  if (Number.isFinite(a) && a > 0) return Math.round(a);
+  const b = Number(row.fmly_cnt);
+  if (Number.isFinite(b) && b > 0) return Math.round(b);
+  const c = Number(row.unit_count);
+  if (Number.isFinite(c) && c > 0) return Math.round(c);
+  return 1;
+}
+
+async function handlePublicAreaRequest(req, res, user) {
+  // DBMS 차단
+  const userApp = String((user.app_metadata && user.app_metadata.app) || '').trim();
+  if (userApp === 'dbms') {
+    return send(res, 403, { ok: false, message: 'DBMS 계정은 이 API 를 사용할 수 없습니다.' });
+  }
+
+  // Rate limit — IP + user id 둘 다 적용 (드래그 폭주 방지)
+  const ip = getClientIp(req);
+  const userId = String(user.id || '');
+  const buckets = AREA_RATE_LIMIT_BUCKETS.flatMap((b) => [
+    { ...b, key: `area:ip:${ip}:${b.label}` },
+    { ...b, key: `area:user:${userId}:${b.label}` },
+  ]);
+  const rl = checkRateLimitMany(buckets);
+  if (!rl.allowed) {
+    res.setHeader('Retry-After', String(Math.ceil((rl.retryAfterMs || 1000) / 1000)));
+    return send(res, 429, { ok: false, message: '요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.' });
+  }
+
+  // 쿼리 파라미터 검증
+  const url = new URL(req.url, 'http://localhost');
+  const lat = pmToFiniteNumber(url.searchParams.get('lat'));
+  const lng = pmToFiniteNumber(url.searchParams.get('lng'));
+  let   radius = pmToFiniteNumber(url.searchParams.get('radius'));
+  if (lat === null || lng === null) {
+    return send(res, 400, { ok: false, message: '좌표(lat, lng)가 필요합니다.' });
+  }
+  // 한국 영역 가드 (RPC 안에서도 한 번 더 가드되지만 조기 차단)
+  if (lat < 33 || lat > 39 || lng < 124 || lng > 132) {
+    return send(res, 400, { ok: false, message: '좌표가 서비스 영역을 벗어났습니다.' });
+  }
+  if (radius === null) radius = 300;
+  if (radius < 50)   radius = 50;
+  if (radius > 2000) radius = 2000;
+
+  // PostGIS RPC 호출
+  let rows;
+  try {
+    const params = new URLSearchParams();
+    params.set('p_lat', String(lat));
+    params.set('p_lng', String(lng));
+    params.set('p_radius', String(radius));
+    rows = await supabaseRestForPublicMap(`/rest/v1/rpc/public_buildings_around?${params.toString()}`);
+  } catch (err) {
+    return send(res, err.status || 500, {
+      ok: false,
+      message: '상권 데이터를 불러오지 못했습니다.',
+      detail: String(err.message || err),
+    });
+  }
+
+  const list = Array.isArray(rows) ? rows : [];
+
+  // 1) 지도 표시용 점 리스트 (가벼운 페이로드)
+  const buildings = list
+    .filter((r) => Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lng)))
+    .map((r) => ({
+      id: Number(r.id),
+      lat: Number(r.lat),
+      lng: Number(r.lng),
+      purposeClass: String(r.purpose_class || 'other'),
+      bldName: String(r.bld_nm || ''),
+      hhldCnt: pmHouseholdCount(r),
+    }));
+
+  // 2) 분류 6종 카운트
+  const byPurpose = {
+    residential: 0, commercial: 0, office: 0,
+    public:      0, industrial: 0, other: 0,
+  };
+  for (const r of list) {
+    const k = String(r.purpose_class || 'other');
+    if (Object.prototype.hasOwnProperty.call(byPurpose, k)) byPurpose[k] += 1;
+    else byPurpose.other += 1;
+  }
+
+  // 3) 배후세대 4분류 합산
+  const RES_LABELS = {
+    apartment: '아파트',
+    villa:     '빌라/다세대',
+    officetel: '오피스텔',
+    detached:  '단독주택',
+  };
+  const byResType = {
+    apartment: { label: RES_LABELS.apartment, buildings: 0, households: 0 },
+    villa:     { label: RES_LABELS.villa,     buildings: 0, households: 0 },
+    officetel: { label: RES_LABELS.officetel, buildings: 0, households: 0 },
+    detached:  { label: RES_LABELS.detached,  buildings: 0, households: 0 },
+  };
+  let householdsTotal = 0;
+  let estimatedResidents = 0;
+  for (const r of list) {
+    const cls = pmClassifyResidence(r);
+    if (!cls) continue;
+    const hh = pmHouseholdCount(r);
+    byResType[cls].buildings += 1;
+    byResType[cls].households += hh;
+    householdsTotal += hh;
+    const pop = Number(r.est_pop_by_area);
+    if (Number.isFinite(pop) && pop > 0) estimatedResidents += pop;
+  }
+  estimatedResidents = Math.round(estimatedResidents);
+
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  return send(res, 200, {
+    ok: true,
+    center: { lat, lng },
+    radius,
+    buildings,
+    summary: {
+      total: list.length,
+      byPurpose,
+      households: {
+        total: householdsTotal,
+        byResType,
+      },
+      estimatedResidents,
+    },
+  });
+}
+// =============================================================================
+// platform 회원용 상권분석 — 끝
+// =============================================================================
+
+
+// =============================================================================
 // 공개 등록 스팸 방어 상수 (2026-04-22)
 // =============================================================================
 // Honeypot: 프런트 폼에 CSS 로 숨겨둔 필드. 사람은 보지 못하므로 비어있고,
@@ -947,6 +1123,17 @@ module.exports = async function handler(req, res) {
         return send(res, 403, { ok: false, message: 'DBMS 계정은 이 API 를 사용할 수 없습니다.' });
       }
       return handlePublicMyListRequest(req, res, user);
+    }
+    if (mode === 'area') {
+      // 2026-05-15 상권분석 — JWT 인증된 회원만 허용
+      let user;
+      try { user = await verifySupabaseUser(req); } catch (e) {
+        return send(res, 401, { ok: false, message: '인증에 실패했습니다.' });
+      }
+      if (!user || !user.id) {
+        return send(res, 401, { ok: false, message: '로그인이 필요합니다.' });
+      }
+      return handlePublicAreaRequest(req, res, user);
     }
     // 기본 GET — 도움말 (기존 동작 유지)
     return send(res, 200, {
