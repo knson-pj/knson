@@ -776,6 +776,16 @@ td.fav-col .btn-fav,td.fav-col .btn-fire{display:inline-flex;vertical-align:midd
 #pwdMsg[data-state="success"]{color:var(--success);font-weight:500;}
 #pwdMsg[data-state="warning"]{color:var(--warning);}
 #pwdMsg[data-state="error"]{color:var(--danger);font-weight:500;}
+
+/* 메시지를 변경 버튼과 같은 라인 좌측에 배치 (.modal-actions 는 flex-end) */
+.modal-actions > #pwdMsg{
+  margin-right:auto;
+  align-self:center;
+  text-align:left;
+  flex:0 1 auto;
+}
+/* 변경 버튼 비활성화 시각 표시 (비번 검증 실패 시) */
+#pwdSave:disabled,#pwdSave[disabled]{opacity:.45;cursor:not-allowed;}
 .muted{color:var(--text-3);}
 .small{font-size:12px;}
 .group-suggest-box{display:grid;gap:10px;}

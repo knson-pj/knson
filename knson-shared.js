@@ -327,6 +327,9 @@
           msgEl.textContent = "";
           msgEl.removeAttribute("data-state");
         }
+        // 변경 버튼도 초기에는 비활성화 (입력 시작하면 validatePwdLive 가 다시 평가)
+        const saveBtn = document.getElementById("pwdSave");
+        if (saveBtn) saveBtn.disabled = true;
       }
     }, true);
   }
@@ -361,18 +364,24 @@
 
       const pw = String(pwInput.value || "");
       const cf = String(cfInput.value || "");
+      let canSubmit = false;
 
-      if (!pw && !cf) { writePwdMsg("", ""); return; }
-      if (pw.length > 0 && pw.length < 8) {
+      if (!pw && !cf) {
+        writePwdMsg("", "");
+      } else if (pw.length > 0 && pw.length < 8) {
         writePwdMsg("warning", "비밀번호는 8자 이상이어야 합니다.");
-        return;
-      }
-      if (!cf) {
+      } else if (!cf) {
         writePwdMsg("warning", "확인 비밀번호도 입력해 주세요.");
-        return;
+      } else if (pw === cf) {
+        writePwdMsg("success", "✓ 비밀번호가 일치합니다.");
+        canSubmit = true;
+      } else {
+        writePwdMsg("error", "✕ 비밀번호가 일치하지 않습니다.");
       }
-      if (pw === cf) writePwdMsg("success", "✓ 비밀번호가 일치합니다.");
-      else writePwdMsg("error", "✕ 비밀번호가 일치하지 않습니다.");
+
+      // 변경 버튼은 두 비번이 일치하고 8자 이상일 때만 활성화
+      const saveBtn = document.getElementById("pwdSave");
+      if (saveBtn) saveBtn.disabled = !canSubmit;
     }
 
     // 두 입력 어느 쪽이든 변경되면 검증 — 위임 방식으로 모달이 동적 로드돼도 안전
