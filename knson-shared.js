@@ -339,8 +339,14 @@
       const msgEl = document.getElementById("pwdMsg");
       if (!msgEl) return;
       msgEl.textContent = text || "";
-      if (state) msgEl.setAttribute("data-state", state);
-      else msgEl.removeAttribute("data-state");
+      if (state) {
+        msgEl.setAttribute("data-state", state);
+        // 앱 측 setPwdMsg('') 가 'hidden' 클래스를 붙여 display:none 시키므로
+        // 메시지를 보여줄 때는 반드시 제거해야 함
+        msgEl.classList.remove("hidden");
+      } else {
+        msgEl.removeAttribute("data-state");
+      }
       // 기존 인라인 color 가 있으면 (앱 측 setPwdMsg 가 남긴 것) 비워서
       // CSS data-state 색이 적용되도록 함
       try { msgEl.style.color = ""; } catch {}
