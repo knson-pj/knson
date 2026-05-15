@@ -270,4 +270,25 @@
       }
     } catch {}
   })();
+
+  // ── 비밀번호 표시 토글 (눈알 아이콘) — 2026-05-15 ─────
+  (function bindPasswordToggle() {
+    const input = document.getElementById("loginPassword");
+    const btn = document.getElementById("togglePassword");
+    if (!input || !btn) return;
+
+    btn.addEventListener("click", () => {
+      const showing = input.type === "text";
+      const next = showing ? "password" : "text";
+      input.type = next;
+      btn.setAttribute("aria-pressed", String(!showing));
+      btn.setAttribute("aria-label", showing ? "비밀번호 표시" : "비밀번호 숨기기");
+      // 클릭 후에도 포커스가 input 에 있도록 유지 (UX)
+      try {
+        const len = input.value.length;
+        input.focus({ preventScroll: true });
+        input.setSelectionRange(len, len);
+      } catch {}
+    });
+  })();
 })();
