@@ -481,6 +481,25 @@ body.sidebar-collapsed .sidebar-group-items{max-height:0 !important;}
 }
 .input[readonly]{background:var(--surface-2);color:var(--text-2);cursor:default;}
 
+/* 비밀번호 표시 토글 (모달 내 입력) — 2026-05-15 */
+.input-with-toggle{position:relative;display:block;}
+.input-with-toggle .input{padding-right:36px;}
+.input-toggle{
+  position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;padding:0;
+  background:transparent;border:0;border-radius:6px;
+  color:var(--text-2);cursor:pointer;
+  transition:color .12s,background-color .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.input-toggle:hover{color:var(--text);background:var(--surface-2);}
+.input-toggle:focus-visible{outline:2px solid var(--brand);outline-offset:1px;color:var(--text);}
+.input-toggle .eye-icon{display:block;pointer-events:none;}
+.input-toggle .eye-hide{display:none;}
+.input-toggle[aria-pressed="true"] .eye-show{display:none;}
+.input-toggle[aria-pressed="true"] .eye-hide{display:block;}
+
 /* Field */
 .field{display:grid;gap:5px;}
 .field>span,.field-label{

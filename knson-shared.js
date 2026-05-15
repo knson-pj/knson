@@ -281,4 +281,45 @@
     formatDate,
     createApiClient,
   };
+
+  // 비밀번호 표시 토글 (.input-toggle) — 2026-05-15
+  // 페이지 어디서든 .input-with-toggle > input + .input-toggle 구조면 자동 동작.
+  // 같은 페이지 안에서 여러 번 로드돼도 1회만 바인딩.
+  if (typeof document !== "undefined" && !window.__knsonPwdToggleBound) {
+    window.__knsonPwdToggleBound = true;
+
+    // 클릭: type 토글 + aria 상태 갱신 + 커서 위치 유지
+    document.addEventListener("click", (e) => {
+      const btn = e.target && typeof e.target.closest === "function"
+        ? e.target.closest(".input-toggle")
+        : null;
+      if (!btn) return;
+      e.preventDefault();
+      const wrap = btn.closest(".input-with-toggle");
+      const input = wrap && wrap.querySelector("input");
+      if (!input) return;
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.setAttribute("aria-pressed", String(!showing));
+      btn.setAttribute("aria-label", showing ? "비밀번호 표시" : "비밀번호 숨기기");
+      try {
+        const len = input.value.length;
+        input.focus({ preventScroll: true });
+        input.setSelectionRange(len, len);
+      } catch {}
+    });
+
+    // 폼 reset 시 토글도 기본(마스킹) 상태로 복귀 — 보안 기본값
+    document.addEventListener("reset", (e) => {
+      const form = e.target;
+      if (!form || typeof form.querySelectorAll !== "function") return;
+      form.querySelectorAll('.input-toggle[aria-pressed="true"]').forEach((btn) => {
+        const wrap = btn.closest(".input-with-toggle");
+        const input = wrap && wrap.querySelector("input");
+        if (input) input.type = "password";
+        btn.setAttribute("aria-pressed", "false");
+        btn.setAttribute("aria-label", "비밀번호 표시");
+      });
+    }, true);
+  }
 })();
