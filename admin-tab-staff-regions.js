@@ -98,6 +98,36 @@
       return;
     }
 
+    if (act === 'reset-password') {
+      // master 만 가능 — 백엔드 PATCH 도 동일 체크 (api/admin/staff/index.js)
+      if (utils.ensureAdminWrite && !utils.ensureAdminWrite('staff')) return;
+
+      const targetLabel = row.name || row.email || id;
+      const input = window.prompt(`[${targetLabel}] 님의 새 임시 비밀번호 (8자 이상):`);
+      if (input == null) return;                       // 취소
+      const newPwd = String(input || '').trim();
+      if (newPwd.length < 8) {
+        alert('비밀번호는 8자 이상이어야 합니다.');
+        return;
+      }
+      if (!confirm(`${row.email || targetLabel} 의 비밀번호를 재설정합니다. 진행할까요?`)) return;
+
+      try {
+        if (DataAccess && typeof DataAccess.updateAdminStaffViaApi === 'function') {
+          await DataAccess.updateAdminStaffViaApi(api, id, { password: newPwd }, { auth: true });
+        } else {
+          await api(`/admin/staff?id=${encodeURIComponent(id)}`, {
+            method: 'PATCH', auth: true, body: { id, password: newPwd }
+          });
+        }
+        alert(`비밀번호가 재설정되었습니다.\n${targetLabel} 님께 새 임시 비번을 안전한 채널(전화/대면)로 전달하고,\n첫 로그인 후 본인이 직접 변경하도록 안내해 주세요.`);
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '비밀번호 재설정 실패');
+      }
+      return;
+    }
+
     if (act === 'delete') {
       if (!confirm(`계정 '${row.name || row.email || id}'을 삭제할까요?`)) return;
       try {
@@ -260,6 +290,9 @@
       return (nowTs - ts) <= LOGIN_WINDOW_MS;
     };
 
+    // master 만 비번 재설정 버튼 노출 (백엔드 PATCH 도 동일 체크)
+    const canResetPassword = utils.canAdminWrite ? utils.canAdminWrite('staff') : false;
+
     const frag = document.createDocumentFragment();
     rows.forEach((staff) => {
       const tr = document.createElement("tr");
@@ -279,6 +312,7 @@
         <td>
           <div class="action-row">
             <button type="button" class="btn btn-secondary btn-sm" data-act="edit" data-id="${escapeAttr(staff.id)}">수정</button>
+            ${canResetPassword ? `<button type="button" class="btn btn-ghost btn-sm" data-act="reset-password" data-id="${escapeAttr(staff.id)}">비번 재설정</button>` : ''}
             <button type="button" class="btn btn-ghost btn-sm" data-act="delete" data-id="${escapeAttr(staff.id)}">삭제</button>
           </div>
         </td>
