@@ -320,6 +320,72 @@
         btn.setAttribute("aria-pressed", "false");
         btn.setAttribute("aria-label", "비밀번호 표시");
       });
+      // 비번 변경 모달 안내 메시지도 초기화
+      if (form.id === "passwordChangeForm") {
+        const msgEl = document.getElementById("pwdMsg");
+        if (msgEl) {
+          msgEl.textContent = "";
+          msgEl.removeAttribute("data-state");
+        }
+      }
+    }, true);
+  }
+
+  // 비밀번호 변경 모달 실시간 일치/길이 안내 — 2026-05-15
+  if (typeof document !== "undefined" && !window.__knsonPwdMatchBound) {
+    window.__knsonPwdMatchBound = true;
+
+    function writePwdMsg(state, text) {
+      const msgEl = document.getElementById("pwdMsg");
+      if (!msgEl) return;
+      msgEl.textContent = text || "";
+      if (state) msgEl.setAttribute("data-state", state);
+      else msgEl.removeAttribute("data-state");
+      // 기존 인라인 color 가 있으면 (앱 측 setPwdMsg 가 남긴 것) 비워서
+      // CSS data-state 색이 적용되도록 함
+      try { msgEl.style.color = ""; } catch {}
+    }
+
+    function validatePwdLive() {
+      const form = document.getElementById("passwordChangeForm");
+      if (!form) return;
+      const pwInput = form.querySelector('input[name="newPassword"]');
+      const cfInput = form.querySelector('input[name="confirmPassword"]');
+      if (!pwInput || !cfInput) return;
+
+      const pw = String(pwInput.value || "");
+      const cf = String(cfInput.value || "");
+
+      if (!pw && !cf) { writePwdMsg("", ""); return; }
+      if (pw.length > 0 && pw.length < 8) {
+        writePwdMsg("warning", "비밀번호는 8자 이상이어야 합니다.");
+        return;
+      }
+      if (!cf) {
+        writePwdMsg("warning", "확인 비밀번호도 입력해 주세요.");
+        return;
+      }
+      if (pw === cf) writePwdMsg("success", "✓ 비밀번호가 일치합니다.");
+      else writePwdMsg("error", "✕ 비밀번호가 일치하지 않습니다.");
+    }
+
+    // 두 입력 어느 쪽이든 변경되면 검증 — 위임 방식으로 모달이 동적 로드돼도 안전
+    document.addEventListener("input", (e) => {
+      const t = e.target;
+      if (!t || typeof t.matches !== "function") return;
+      if (!t.matches(
+        '#passwordChangeForm input[name="newPassword"], #passwordChangeForm input[name="confirmPassword"]'
+      )) return;
+      validatePwdLive();
+    });
+
+    // 제출 직전에 우리 data-state 를 비워서 — 앱 측 setPwdMsg(인라인 color)
+    // 가 그리는 메시지와 색 충돌이 안 나도록 함
+    document.addEventListener("submit", (e) => {
+      const f = e.target;
+      if (!f || f.id !== "passwordChangeForm") return;
+      const msgEl = document.getElementById("pwdMsg");
+      if (msgEl) msgEl.removeAttribute("data-state");
     }, true);
   }
 })();

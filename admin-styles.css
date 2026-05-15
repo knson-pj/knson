@@ -770,6 +770,12 @@ td.fav-col .btn-fav,td.fav-col .btn-fire{display:inline-flex;vertical-align:midd
 .hint-box li{margin-top:3px;}
 .hint-box code{display:block;margin-top:6px;padding:10px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface-2);overflow:auto;font-size:12px;}
 .note{font-size:12px;color:var(--text-3);}
+
+/* 비밀번호 변경 모달 실시간 안내 상태 — 2026-05-15 */
+#pwdMsg{transition:color .12s;}
+#pwdMsg[data-state="success"]{color:var(--success);font-weight:500;}
+#pwdMsg[data-state="warning"]{color:var(--warning);}
+#pwdMsg[data-state="error"]{color:var(--danger);font-weight:500;}
 .muted{color:var(--text-3);}
 .small{font-size:12px;}
 .group-suggest-box{display:grid;gap:10px;}
