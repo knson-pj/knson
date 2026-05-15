@@ -5,6 +5,7 @@
     ? window.KNSN.getApiBase()
     : "https://knson.vercel.app/api";
   const SESSION_KEY = "knson_bms_session_v1";
+  const PLATFORM_URL = "https://knson-pj.github.io/platform"; // 2026-05-15: 외부 Platform 페이지
 
   const form = document.getElementById("loginForm");
   const msgEl = document.getElementById("loginMsg");
@@ -122,8 +123,8 @@
       }
 
       const platformRole = normalizeRole(session?.user?.role);
-      if (platformRole === "staff" || platformRole === "agent") {
-        // 담당자는 플랫폼 접근 금지 — Supabase 세션을 즉시 정리해서 F5 우회 차단
+      if (platformRole !== "admin") {
+        // 플랫폼 접근은 관리자(admin) 계정만 허용 — 세션 즉시 정리해서 F5 우회 차단
         try {
           if (sbEnabled && K && typeof K.sbHardSignOut === "function") await K.sbHardSignOut();
           else if (sbEnabled && K && typeof K.sbSignOut === "function") await K.sbSignOut();
@@ -135,10 +136,14 @@
             try { localStorage.removeItem(SESSION_KEY); } catch {}
           }
         } catch {}
-        throw new Error("담당자는 <strong>임직원 시스템 로그인</strong>을 이용해주세요.");
+        if (platformRole === "staff" || platformRole === "agent") {
+          throw new Error("담당자는 <strong>임직원 시스템 로그인</strong>을 이용해주세요.");
+        }
+        throw new Error("플랫폼은 관리자 계정만 이용할 수 있습니다.");
       }
 
-      location.replace("./index.html");
+      // admin 만 도달 — 외부 Platform 으로 이동
+      location.replace(PLATFORM_URL);
     } catch (err) {
       setMsg(err?.message || "로그인에 실패했습니다.", "error");
     } finally {
